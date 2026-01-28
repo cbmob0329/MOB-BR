@@ -2,210 +2,210 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0b0f" />
-  <title>MOB BATTLE ROYALE - Coach (Prototype)</title>
-  <link rel="stylesheet" href="./style.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="theme-color" content="#111" />
+  <title>MOB BATTLE ROYALE - Coach Demo</title>
+  <link rel="stylesheet" href="./style.css?v=1" />
 </head>
 
 <body>
   <div id="app">
-    <!-- Top HUD (共通) -->
-    <header id="topHud" class="hud">
-      <div class="hud-left">
-        <div class="hud-line">
-          <span class="label">企業名</span>
-          <span id="hud_company" class="value">---</span>
-        </div>
-        <div class="hud-line">
-          <span class="label">企業ランク</span>
-          <span id="hud_rank" class="value">---</span>
-        </div>
-        <div class="hud-line">
-          <span class="label">チーム名</span>
-          <span id="hud_team" class="value">---</span>
-        </div>
+    <!-- Header -->
+    <header id="topbar">
+      <div class="top-left">
+        <div class="label">企業名</div>
+        <div id="companyName" class="value">MOB COMPANY</div>
       </div>
 
-      <div class="hud-right">
-        <div class="hud-line">
-          <span class="label">週</span>
-          <span id="hud_week" class="value">1</span>
-        </div>
-        <div class="hud-line">
-          <span class="label">G</span>
-          <span id="hud_gold" class="value">0</span>
-        </div>
+      <div class="top-mid">
+        <div class="label">企業ランク</div>
+        <div id="companyRank" class="value rank">C</div>
+      </div>
+
+      <div class="top-right">
+        <div class="label">チーム名</div>
+        <div id="teamName" class="value">PLAYER TEAM</div>
       </div>
     </header>
 
-    <!-- Main Area -->
-    <main id="stage">
+    <!-- Main Screen Container -->
+    <main id="screenRoot">
 
       <!-- SCREEN: MAIN -->
-      <section id="screen_main" class="screen is-active" aria-label="Main Screen">
-        <div class="screen-inner">
-          <!-- 背景画像（無い場合は assets.js 側でプレースホルダに差し替え） -->
-          <img id="img_main" class="bg-image" src="./main.png" alt="main" draggable="false" />
-
-          <!-- クリック判定用オーバーレイ（ボタンID1〜19をここに生成して配置） -->
-          <div id="main_hotspots" class="hotspots" aria-hidden="true"></div>
-
-          <!-- デバッグ/案内（不要ならcssで非表示） -->
-          <div id="main_hint" class="hint">
-            <div class="hint-title">MAIN</div>
-            <div class="hint-text">ボタンは画像上に透明エリアで重ねます（ID1〜19）</div>
+      <section id="screenMain" class="screen active">
+        <div class="screenTitleRow">
+          <div class="screenTitle">MAIN</div>
+          <div class="screenMeta">
+            <span class="metaItem">Year <b id="yearText">1989</b></span>
+            <span class="metaItem">Week <b id="weekText">1</b></span>
+            <span class="metaItem gold">G <b id="goldText">0</b></span>
           </div>
+        </div>
+
+        <!-- Main image area (main.png) -->
+        <div id="mainImageWrap" class="imageWrap">
+          <img id="mainImage" class="screenImage" src="./main.png" alt="main" />
+          <!-- Transparent clickable buttons are injected here (ID1..19) -->
+          <div id="mainButtonsLayer" class="buttonsLayer" aria-hidden="true"></div>
+
+          <!-- Fallback if image is missing -->
+          <div id="mainFallback" class="imageFallback hidden">
+            <div class="fallbackBox">
+              <div class="fallbackTitle">main.png が見つかりません</div>
+              <div class="fallbackSub">クリック領域は動作します（仮表示）</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hintRow">
+          <div class="hint">※メイン画面ボタンは画像上に透明エリアで配置します（ID1〜19）</div>
         </div>
       </section>
 
-      <!-- SCREEN: MAP (表示のみ / クリックなし) -->
-      <section id="screen_map" class="screen" aria-label="Map Screen">
-        <div class="screen-inner">
-          <img id="img_map" class="bg-image" src="./map.png" alt="map" draggable="false" />
-          <div class="map-overlay">
-            <div class="map-title" id="map_title">降下マップ</div>
-            <div class="map-sub" id="map_sub">（クリック無し／表示のみ）</div>
-            <button id="btn_map_next" class="btn primary">次へ</button>
+      <!-- SCREEN: MAP (view only) -->
+      <section id="screenMap" class="screen">
+        <div class="screenTitleRow">
+          <div class="screenTitle">MAP</div>
+          <div class="screenMeta">
+            <button id="btnMapNext" class="miniBtn">NEXT</button>
           </div>
+        </div>
+
+        <div id="mapImageWrap" class="imageWrap">
+          <img id="mapImage" class="screenImage" src="./map.png" alt="map" />
+          <div id="mapFallback" class="imageFallback hidden">
+            <div class="fallbackBox">
+              <div class="fallbackTitle">map.png が見つかりません</div>
+              <div class="fallbackSub">この画面は表示専用です</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hintRow">
+          <div class="hint">※MAPはクリックしません（試合開始の演出表示のみ）</div>
         </div>
       </section>
 
-      <!-- SCREEN: MATCH -->
-      <section id="screen_match" class="screen" aria-label="Match Screen">
-        <div class="screen-inner">
-          <!-- 重要シーン/演出の表示領域（画像＋テキスト） -->
-          <div id="match_scene" class="scene">
-            <div class="scene-media">
-              <div id="scene_media" class="media-placeholder">SCENE</div>
+      <!-- SCREEN: MATCH (log + status) -->
+      <section id="screenMatch" class="screen">
+        <div class="screenTitleRow">
+          <div class="screenTitle">MATCH</div>
+          <div class="screenMeta">
+            <button id="btnAutoToggle" class="miniBtn">AUTO: OFF</button>
+            <button id="btnNextStep" class="miniBtn primary">NEXT</button>
+          </div>
+        </div>
+
+        <div class="matchTop">
+          <div class="matchCard">
+            <div class="matchLine">
+              <span class="k">試合</span>
+              <b id="matchIndexText">1</b>
+              <span class="k">/</span>
+              <b id="matchTotalText">5</b>
             </div>
-            <div class="scene-meta">
-              <div id="scene_title" class="scene-title">シーンタイトル</div>
-              <div id="scene_desc" class="scene-desc">ここに重要シーンの説明が入ります。</div>
-              <div class="scene-actions">
-                <button id="btn_scene_next" class="btn primary">次へ</button>
-                <button id="btn_scene_auto" class="btn">オート</button>
-                <span id="auto_state" class="chip">AUTO: OFF</span>
-              </div>
+            <div class="matchLine">
+              <span class="k">ラウンド</span>
+              <b id="roundText">R1</b>
+            </div>
+            <div class="matchLine">
+              <span class="k">残り</span>
+              <b id="aliveTeamsText">20</b>
+              <span class="k">チーム</span>
             </div>
           </div>
 
-          <!-- ログ（邪魔にならない程度に） -->
-          <div id="match_logWrap" class="logwrap">
-            <div class="loghead">
-              <div class="logtitle">ログ</div>
-              <button id="btn_log_clear" class="btn tiny">クリア</button>
+          <div class="matchCard">
+            <div class="matchLine">
+              <span class="k">重要シーン</span>
+              <b id="importantSceneText">---</b>
             </div>
-            <div id="match_log" class="log" role="log" aria-live="polite"></div>
+            <div class="matchLine">
+              <span class="k">イベント</span>
+              <b id="eventText">---</b>
+            </div>
           </div>
+        </div>
 
-          <!-- ラウンド/試合情報 -->
-          <div class="matchbar">
-            <div class="matchbar-left">
-              <span class="chip" id="chip_stage">SP1</span>
-              <span class="chip" id="chip_tournament">ローカル</span>
-              <span class="chip" id="chip_matchNo">試合 1 / 5</span>
-              <span class="chip" id="chip_round">R1</span>
-            </div>
-            <div class="matchbar-right">
-              <button id="btn_match_next" class="btn primary">NEXT</button>
-              <button id="btn_match_auto" class="btn">AUTO</button>
-            </div>
+        <div class="logWrap">
+          <div class="logTitleRow">
+            <div class="logTitle">LOG</div>
+            <button id="btnClearLog" class="miniBtn">CLEAR</button>
           </div>
+          <div id="logBox" class="logBox"></div>
         </div>
       </section>
 
-      <!-- SCREEN: RESULT (1試合の結果：20チーム全部) -->
-      <section id="screen_result" class="screen" aria-label="Result Screen">
-        <div class="screen-inner">
-          <div class="panel">
-            <div class="panel-head">
-              <div class="panel-title" id="result_title">試合結果</div>
-              <div class="panel-actions">
-                <button id="btn_result_next" class="btn primary">次へ</button>
-                <button id="btn_result_backMain" class="btn">メインへ</button>
-              </div>
-            </div>
-
-            <div class="panel-body">
-              <div class="tables">
-                <div class="tablebox">
-                  <div class="boxtitle">順位（20チーム）</div>
-                  <div id="table_match_result" class="table" aria-label="match result table"></div>
-                </div>
-              </div>
-            </div>
+      <!-- SCREEN: RESULT (one match) -->
+      <section id="screenResult" class="screen">
+        <div class="screenTitleRow">
+          <div class="screenTitle">RESULT</div>
+          <div class="screenMeta">
+            <button id="btnResultNext" class="miniBtn primary">次へ</button>
           </div>
+        </div>
+
+        <div class="tableWrap">
+          <div class="tableTitle">試合結果（20チーム）</div>
+          <div id="resultTable" class="tableBox"></div>
         </div>
       </section>
 
-      <!-- SCREEN: TOTAL (総合順位：20 or 40) -->
-      <section id="screen_total" class="screen" aria-label="Total Ranking Screen">
-        <div class="screen-inner">
-          <div class="panel">
-            <div class="panel-head">
-              <div class="panel-title" id="total_title">総合順位</div>
-              <div class="panel-actions">
-                <button id="btn_total_next" class="btn primary">次へ</button>
-                <button id="btn_total_backMain" class="btn">メインへ</button>
-              </div>
-            </div>
-
-            <div class="panel-body">
-              <div class="tables">
-                <div class="tablebox">
-                  <div class="boxtitle" id="total_table_caption">総合（20チーム）</div>
-                  <div id="table_total" class="table" aria-label="total table"></div>
-                </div>
-              </div>
-            </div>
+      <!-- SCREEN: TOTAL (overall standings) -->
+      <section id="screenTotal" class="screen">
+        <div class="screenTitleRow">
+          <div class="screenTitle">TOTAL</div>
+          <div class="screenMeta">
+            <button id="btnBackToMain" class="miniBtn primary">メインへ</button>
           </div>
+        </div>
+
+        <div class="tableWrap">
+          <div class="tableTitle">総合順位</div>
+          <div id="totalTable" class="tableBox"></div>
         </div>
       </section>
-
-      <!-- SCREEN: LOADING -->
-      <section id="screen_loading" class="screen" aria-label="Loading Screen">
-        <div class="screen-inner center">
-          <div class="loading">
-            <div class="spinner" aria-hidden="true"></div>
-            <div class="loading-text" id="loading_text">読み込み中...</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- MODAL（重要シーンを大きく見せる用） -->
-      <div id="modal" class="modal" aria-hidden="true">
-        <div class="modal-backdrop" id="modal_backdrop"></div>
-        <div class="modal-card" role="dialog" aria-modal="true" aria-label="Important Scene">
-          <div class="modal-head">
-            <div id="modal_title" class="modal-title">IMPORTANT</div>
-            <button id="btn_modal_close" class="btn tiny">閉じる</button>
-          </div>
-          <div class="modal-body">
-            <div id="modal_media" class="modal-media">SCENE</div>
-            <div id="modal_text" class="modal-text">ここに説明</div>
-          </div>
-          <div class="modal-foot">
-            <button id="btn_modal_next" class="btn primary">次へ</button>
-          </div>
-        </div>
-      </div>
 
     </main>
 
-    <!-- Footer -->
-    <footer id="footer" class="footer">
-      <div class="foot-left">
-        <span class="chip">VERSION</span>
-        <span id="hud_version" class="mono">v0</span>
+    <!-- Modal (important scenes / etc) -->
+    <div id="modalRoot" class="modalRoot hidden">
+      <div id="modalBackdrop" class="modalBackdrop"></div>
+      <div class="modalCard">
+        <div class="modalHead">
+          <div id="modalTitle" class="modalTitle">重要シーン</div>
+          <button id="btnModalClose" class="miniBtn">閉じる</button>
+        </div>
+        <div id="modalBody" class="modalBody">
+          <div class="modalText">---</div>
+        </div>
+        <div class="modalFoot">
+          <button id="btnModalNext" class="miniBtn primary">次へ</button>
+        </div>
       </div>
-      <div class="foot-right">
-        <span id="hud_status" class="mono">READY</span>
+    </div>
+
+    <!-- Footer -->
+    <footer id="footerBar">
+      <div class="footerLeft">
+        <span class="verLabel">VERSION</span>
+        <b id="versionText">v0.1</b>
+      </div>
+      <div class="footerRight">
+        <span class="small">MOB Battle Royale - Coach View</span>
       </div>
     </footer>
   </div>
 
-  <!-- JS: ES Modules -->
-  <script type="module" src="./game.js"></script>
+  <!-- Scripts (ES Modules) -->
+  <script type="module" src="./assets.js?v=1"></script>
+  <script type="module" src="./state.js?v=1"></script>
+  <script type="module" src="./data_teams.js?v=1"></script>
+  <script type="module" src="./data_players.js?v=1"></script>
+  <script type="module" src="./data_items.js?v=1"></script>
+
+  <script type="module" src="./ui_common.js?v=1"></script>
+  <script type="module" src="./ui_main.js?v=1"></script>
+  <script type="module" src="./sim.js?v=1"></script>
 </body>
 </html>
