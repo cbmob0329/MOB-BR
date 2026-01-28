@@ -2,210 +2,100 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="theme-color" content="#111" />
-  <title>MOB BATTLE ROYALE - Coach Demo</title>
-  <link rel="stylesheet" href="./style.css?v=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>MOB BR (Demo)</title>
+  <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
+  <!-- game.js / ui.js がここを起点に画面を切り替える -->
   <div id="app">
-    <!-- Header -->
-    <header id="topbar">
-      <div class="top-left">
-        <div class="label">企業名</div>
-        <div id="companyName" class="value">MOB COMPANY</div>
+    <!-- MAIN SCREEN -->
+    <section id="screen-main" class="screen is-active" aria-label="Main Screen">
+      <div class="stage" id="mainStage">
+        <img id="mainImage" src="./main.png" alt="main" class="stage-img" />
+
+        <!-- 透明ボタン（配置指定IDに対応） -->
+        <!-- 左縦（ID1〜ID6） -->
+        <button class="hit" data-action="ID1" aria-label="ID1 チーム編成"
+          style="left:3.7862%; top:20.2637%; width:22.3460%; height:8.6914%;"></button>
+
+        <button class="hit" data-action="ID2" aria-label="ID2 ガチャ"
+          style="left:3.8604%; top:28.5645%; width:22.6429%; height:6.4941%;"></button>
+
+        <button class="hit" data-action="ID3" aria-label="ID3 大会エントリー"
+          style="left:3.6377%; top:34.5215%; width:25.3155%; height:8.1055%;"></button>
+
+        <button class="hit" data-action="ID4" aria-label="ID4 参加中の大会"
+          style="left:4.0089%; top:42.0898%; width:22.8656%; height:6.1523%;"></button>
+
+        <button class="hit" data-action="ID5" aria-label="ID5 セーブ"
+          style="left:4.3801%; top:47.8516%; width:21.6036%; height:8.5449%;"></button>
+
+        <button class="hit" data-action="ID6" aria-label="ID6 戦績"
+          style="left:4.3059%; top:56.2988%; width:21.7520%; height:7.8125%;"></button>
+
+        <!-- 上（ID7〜ID8） -->
+        <button class="hit" data-action="ID7" aria-label="ID7 大会結果"
+          style="left:53.0809%; top:13.7207%; width:22.4202%; height:8.5938%;"></button>
+
+        <button class="hit" data-action="ID8" aria-label="ID8 スケジュール"
+          style="left:75.2784%; top:14.5508%; width:23.1626%; height:7.6172%;"></button>
+
+        <!-- 下段1（ID9〜ID12） -->
+        <button class="hit" data-action="ID9" aria-label="ID9 射撃"
+          style="left:7.5724%; top:68.7500%; width:15.8872%; height:8.2031%;"></button>
+
+        <button class="hit" data-action="ID10" aria-label="ID10 ダッシュ"
+          style="left:24.1277%; top:68.7500%; width:18.1886%; height:9.9121%;"></button>
+
+        <button class="hit" data-action="ID11" aria-label="ID11 パズル"
+          style="left:40.4603%; top:69.1406%; width:16.7038%; height:7.7637%;"></button>
+
+        <button class="hit" data-action="ID12" aria-label="ID12 実戦"
+          style="left:56.4959%; top:69.0430%; width:16.8523%; height:7.7637%;"></button>
+
+        <!-- 下段2（ID13〜ID15） -->
+        <button class="hit" data-action="ID13" aria-label="ID13 滝"
+          style="left:6.9042%; top:77.3438%; width:16.1099%; height:8.3496%;"></button>
+
+        <button class="hit" data-action="ID14" aria-label="ID14 研究"
+          style="left:23.6080%; top:77.2461%; width:16.4811%; height:8.3984%;"></button>
+
+        <button class="hit" data-action="ID15" aria-label="ID15 総合"
+          style="left:40.3118%; top:77.6855%; width:16.5553%; height:7.9590%;"></button>
+
+        <!-- 下段3（ID16〜ID18） -->
+        <button class="hit" data-action="ID16" aria-label="ID16 コレクション"
+          style="left:1.0393%; top:87.4512%; width:19.9703%; height:10.0586%;"></button>
+
+        <button class="hit" data-action="ID17" aria-label="ID17 ショップ"
+          style="left:20.3415%; top:88.3789%; width:20.3415%; height:8.9844%;"></button>
+
+        <button class="hit" data-action="ID18" aria-label="ID18 遠征"
+          style="left:39.7179%; top:87.3047%; width:20.0445%; height:10.0098%;"></button>
+
+        <!-- 右下（ID19 最近の出来事） -->
+        <button class="hit" data-action="ID19" aria-label="ID19 最近の出来事"
+          style="left:62.1381%; top:77.4414%; width:32.5909%; height:21.3867%;"></button>
       </div>
+    </section>
 
-      <div class="top-mid">
-        <div class="label">企業ランク</div>
-        <div id="companyRank" class="value rank">C</div>
+    <!-- MAP SCREEN（クリックはしない：表示だけ） -->
+    <section id="screen-map" class="screen" aria-label="Map Screen">
+      <div class="stage" id="mapStage">
+        <img id="mapImage" src="./map.png" alt="map" class="stage-img" />
       </div>
-
-      <div class="top-right">
-        <div class="label">チーム名</div>
-        <div id="teamName" class="value">PLAYER TEAM</div>
-      </div>
-    </header>
-
-    <!-- Main Screen Container -->
-    <main id="screenRoot">
-
-      <!-- SCREEN: MAIN -->
-      <section id="screenMain" class="screen active">
-        <div class="screenTitleRow">
-          <div class="screenTitle">MAIN</div>
-          <div class="screenMeta">
-            <span class="metaItem">Year <b id="yearText">1989</b></span>
-            <span class="metaItem">Week <b id="weekText">1</b></span>
-            <span class="metaItem gold">G <b id="goldText">0</b></span>
-          </div>
-        </div>
-
-        <!-- Main image area (main.png) -->
-        <div id="mainImageWrap" class="imageWrap">
-          <img id="mainImage" class="screenImage" src="./main.png" alt="main" />
-          <!-- Transparent clickable buttons are injected here (ID1..19) -->
-          <div id="mainButtonsLayer" class="buttonsLayer" aria-hidden="true"></div>
-
-          <!-- Fallback if image is missing -->
-          <div id="mainFallback" class="imageFallback hidden">
-            <div class="fallbackBox">
-              <div class="fallbackTitle">main.png が見つかりません</div>
-              <div class="fallbackSub">クリック領域は動作します（仮表示）</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="hintRow">
-          <div class="hint">※メイン画面ボタンは画像上に透明エリアで配置します（ID1〜19）</div>
-        </div>
-      </section>
-
-      <!-- SCREEN: MAP (view only) -->
-      <section id="screenMap" class="screen">
-        <div class="screenTitleRow">
-          <div class="screenTitle">MAP</div>
-          <div class="screenMeta">
-            <button id="btnMapNext" class="miniBtn">NEXT</button>
-          </div>
-        </div>
-
-        <div id="mapImageWrap" class="imageWrap">
-          <img id="mapImage" class="screenImage" src="./map.png" alt="map" />
-          <div id="mapFallback" class="imageFallback hidden">
-            <div class="fallbackBox">
-              <div class="fallbackTitle">map.png が見つかりません</div>
-              <div class="fallbackSub">この画面は表示専用です</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="hintRow">
-          <div class="hint">※MAPはクリックしません（試合開始の演出表示のみ）</div>
-        </div>
-      </section>
-
-      <!-- SCREEN: MATCH (log + status) -->
-      <section id="screenMatch" class="screen">
-        <div class="screenTitleRow">
-          <div class="screenTitle">MATCH</div>
-          <div class="screenMeta">
-            <button id="btnAutoToggle" class="miniBtn">AUTO: OFF</button>
-            <button id="btnNextStep" class="miniBtn primary">NEXT</button>
-          </div>
-        </div>
-
-        <div class="matchTop">
-          <div class="matchCard">
-            <div class="matchLine">
-              <span class="k">試合</span>
-              <b id="matchIndexText">1</b>
-              <span class="k">/</span>
-              <b id="matchTotalText">5</b>
-            </div>
-            <div class="matchLine">
-              <span class="k">ラウンド</span>
-              <b id="roundText">R1</b>
-            </div>
-            <div class="matchLine">
-              <span class="k">残り</span>
-              <b id="aliveTeamsText">20</b>
-              <span class="k">チーム</span>
-            </div>
-          </div>
-
-          <div class="matchCard">
-            <div class="matchLine">
-              <span class="k">重要シーン</span>
-              <b id="importantSceneText">---</b>
-            </div>
-            <div class="matchLine">
-              <span class="k">イベント</span>
-              <b id="eventText">---</b>
-            </div>
-          </div>
-        </div>
-
-        <div class="logWrap">
-          <div class="logTitleRow">
-            <div class="logTitle">LOG</div>
-            <button id="btnClearLog" class="miniBtn">CLEAR</button>
-          </div>
-          <div id="logBox" class="logBox"></div>
-        </div>
-      </section>
-
-      <!-- SCREEN: RESULT (one match) -->
-      <section id="screenResult" class="screen">
-        <div class="screenTitleRow">
-          <div class="screenTitle">RESULT</div>
-          <div class="screenMeta">
-            <button id="btnResultNext" class="miniBtn primary">次へ</button>
-          </div>
-        </div>
-
-        <div class="tableWrap">
-          <div class="tableTitle">試合結果（20チーム）</div>
-          <div id="resultTable" class="tableBox"></div>
-        </div>
-      </section>
-
-      <!-- SCREEN: TOTAL (overall standings) -->
-      <section id="screenTotal" class="screen">
-        <div class="screenTitleRow">
-          <div class="screenTitle">TOTAL</div>
-          <div class="screenMeta">
-            <button id="btnBackToMain" class="miniBtn primary">メインへ</button>
-          </div>
-        </div>
-
-        <div class="tableWrap">
-          <div class="tableTitle">総合順位</div>
-          <div id="totalTable" class="tableBox"></div>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- Modal (important scenes / etc) -->
-    <div id="modalRoot" class="modalRoot hidden">
-      <div id="modalBackdrop" class="modalBackdrop"></div>
-      <div class="modalCard">
-        <div class="modalHead">
-          <div id="modalTitle" class="modalTitle">重要シーン</div>
-          <button id="btnModalClose" class="miniBtn">閉じる</button>
-        </div>
-        <div id="modalBody" class="modalBody">
-          <div class="modalText">---</div>
-        </div>
-        <div class="modalFoot">
-          <button id="btnModalNext" class="miniBtn primary">次へ</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <footer id="footerBar">
-      <div class="footerLeft">
-        <span class="verLabel">VERSION</span>
-        <b id="versionText">v0.1</b>
-      </div>
-      <div class="footerRight">
-        <span class="small">MOB Battle Royale - Coach View</span>
-      </div>
-    </footer>
+    </section>
   </div>
 
-  <!-- Scripts (ES Modules) -->
-  <script type="module" src="./assets.js?v=1"></script>
-  <script type="module" src="./state.js?v=1"></script>
-  <script type="module" src="./data_teams.js?v=1"></script>
-  <script type="module" src="./data_players.js?v=1"></script>
-  <script type="module" src="./data_items.js?v=1"></script>
+  <!-- デバッグ：Hキーで当たり判定を可視化 -->
+  <script>
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('hit-debug');
+    });
+  </script>
 
-  <script type="module" src="./ui_common.js?v=1"></script>
-  <script type="module" src="./ui_main.js?v=1"></script>
-  <script type="module" src="./sim.js?v=1"></script>
+  <script type="module" src="./game.js"></script>
 </body>
 </html>
