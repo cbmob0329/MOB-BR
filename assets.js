@@ -1,204 +1,172 @@
 // assets.js (ES Modules)
-// - Image loading helper
-// - Fallback placeholder generator (no image required)
-// - Safe attach to DOM on load
+// Purpose:
+// - Preload known images (main.png, map.png, P1.png)
+// - Provide safe fallbacks when images are missing (color + text placeholder)
+// - Never throw on missing assets (GitHub Pagesでも安定)
+//
+// Public API:
+//   await loadAll();
+//   getImage(key) -> HTMLImageElement (always returns something usable)
+//   hasRealImage(key) -> boolean
+//   createPlaceholderDataUrl({w,h,bg,fg,textLines}) -> string
 
-export const ASSETS = {
-  images: {
-    main: null,
-    map: null,
-    p1: null,
-  },
-  flags: {
-    mainOk: false,
-    mapOk: false,
-    p1Ok: false,
-  }
+const MANIFEST = {
+  main: { src: "./main.png", label: "MAIN", w: 1347, h: 2048, bg: "#222" },
+  map:  { src: "./map.png",  label: "MAP",  w: 1347, h: 2048, bg: "#123" },
+  p1:   { src: "./P1.png",   label: "P1",   w: 512,  h: 512,  bg: "#331" },
 };
 
-function $(id){ return document.getElementById(id); }
+const _images = new Map();     // key -> HTMLImageElement
+const _isReal = new Map();     // key -> boolean (real loaded or placeholder)
+let _loaded = false;
 
-/**
- * Load an image with timeout & safe error handling.
- */
-export function loadImage(src, timeoutMs = 2500) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    let done = false;
+export async function loadAll() {
+  if (_loaded) return;
+  _loaded = true;
 
-    const finish = (ok) => {
-      if (done) return;
-      done = true;
-      resolve({ ok, img });
-    };
-
-    const t = setTimeout(() => finish(false), timeoutMs);
-
-    img.onload = () => {
-      clearTimeout(t);
-      finish(true);
-    };
-    img.onerror = () => {
-      clearTimeout(t);
-      finish(false);
-    };
-
-    // Cache-bust for GitHub Pages / edge reflection delays
-    const bust = `cb=${Date.now()}_${Math.floor(Math.random()*9999)}`;
-    img.src = src.includes("?") ? `${src}&${bust}` : `${src}?${bust}`;
-  });
+  const keys = Object.keys(MANIFEST);
+  await Promise.all(keys.map(k => loadOne(k)));
 }
 
-/**
- * Build a placeholder PNG dataURL using canvas.
- * - user requested: "色と文字で表示"
- */
-export function makePlaceholderDataURL({
-  w = 360,
-  h = 360,
-  bg = "#1b1f34",
-  border = "#ffcc33",
-  title = "MISSING IMAGE",
-  sub = "placeholder",
-  mono = true,
-} = {}) {
+export function getImage(key) {
+  if (_images.has(key)) return _images.get(key);
+  // unknown key -> generic placeholder
+  const ph = makePlaceholderImage({
+    w: 512,
+    h: 512,
+    bg: "#444",
+    fg: "#fff",
+    textLines: [`MISSING`, String(key || "asset")],
+  });
+  _images.set(key, ph);
+  _isReal.set(key, false);
+  return ph;
+}
+
+export function hasRealImage(key) {
+  return _isReal.get(key) === true;
+}
+
+export function createPlaceholderDataUrl({ w = 512, h = 512, bg = "#333", fg = "#fff", textLines = [] } = {}) {
   const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
+  c.width = Math.max(8, Math.floor(w));
+  c.height = Math.max(8, Math.floor(h));
   const ctx = c.getContext("2d");
 
   // background
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, c.width, c.height);
 
-  // subtle pattern
-  ctx.globalAlpha = 0.20;
-  ctx.fillStyle = "#000";
-  for(let y=0;y<h;y+=16){
-    for(let x=0;x<w;x+=16){
-      if(((x+y)/16)%2===0){
-        ctx.fillRect(x, y, 16, 16);
-      }
-    }
+  // subtle grid
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = fg;
+  ctx.lineWidth = 1;
+  const step = Math.max(24, Math.floor(Math.min(c.width, c.height) / 10));
+  for (let x = 0; x < c.width; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, c.height); ctx.stroke();
+  }
+  for (let y = 0; y < c.height; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(c.width, y); ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
   // border
-  ctx.strokeStyle = border;
-  ctx.lineWidth = 6;
-  ctx.strokeRect(6, 6, w-12, h-12);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(6, 6, c.width - 12, c.height - 12);
 
-  // title
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `900 20px ${mono ? "monospace" : "sans-serif"}`;
+  // text
+  const lines = Array.isArray(textLines) ? textLines : [String(textLines)];
+  const pad = 18;
+  const base = Math.max(18, Math.floor(Math.min(c.width, c.height) / 14));
+  ctx.fillStyle = fg;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(title, w/2, h/2 - 18);
+  ctx.font = `700 ${base}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
 
-  // sub
-  ctx.fillStyle = "rgba(255,255,255,.85)";
-  ctx.font = `700 13px ${mono ? "monospace" : "sans-serif"}`;
-  ctx.fillText(sub, w/2, h/2 + 16);
+  const cx = c.width / 2;
+  const cy = c.height / 2;
+  const lineH = Math.floor(base * 1.35);
+  const startY = cy - ((lines.length - 1) * lineH) / 2;
 
-  // hint
-  ctx.fillStyle = "rgba(255,255,255,.60)";
-  ctx.font = `600 11px ${mono ? "monospace" : "sans-serif"}`;
-  ctx.fillText("This is a placeholder (ok)", w/2, h/2 + 40);
+  for (let i = 0; i < lines.length; i++) {
+    const t = String(lines[i] ?? "");
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillText(t, cx + 2, startY + i * lineH + 2);
+    ctx.fillStyle = fg;
+    ctx.fillText(t, cx, startY + i * lineH);
+  }
 
   return c.toDataURL("image/png");
 }
 
-/**
- * Apply placeholder if real file is missing.
- * This keeps the UI stable even when images are not present.
- */
-function applyImageOrFallback({
-  imgElId,
-  fallbackElId,
-  dataUrl,
-  ok,
-}) {
-  const imgEl = $(imgElId);
-  const fb = $(fallbackElId);
+// -----------------------------
+// Internals
+// -----------------------------
 
-  if (!imgEl) return;
-
-  if (ok) {
-    // show real img
-    imgEl.classList.remove("hidden");
-    if (fb) fb.classList.add("hidden");
-  } else {
-    // show placeholder inside <img> + show fallback message layer
-    imgEl.src = dataUrl;
-    imgEl.classList.remove("hidden");
-    if (fb) fb.classList.remove("hidden");
+async function loadOne(key) {
+  const info = MANIFEST[key];
+  if (!info) {
+    // unknown key
+    getImage(key);
+    return;
   }
-}
 
-/**
- * Initialize all images.
- */
-export async function initAssets() {
-  // Try to load actual images
-  const [mainRes, mapRes, p1Res] = await Promise.all([
-    loadImage("./main.png"),
-    loadImage("./map.png"),
-    loadImage("./P1.png"),
+  const img = new Image();
+  img.decoding = "async";
+  img.loading = "eager";
+
+  const p = new Promise((resolve) => {
+    img.onload = () => {
+      _images.set(key, img);
+      _isReal.set(key, true);
+      resolve();
+    };
+    img.onerror = () => {
+      const ph = makePlaceholderImage({
+        w: info.w,
+        h: info.h,
+        bg: info.bg || "#333",
+        fg: "#fff",
+        textLines: [`${info.label}`, "IMAGE NOT FOUND"],
+      });
+      _images.set(key, ph);
+      _isReal.set(key, false);
+      resolve();
+    };
+  });
+
+  // start
+  img.src = info.src;
+
+  // timeout safety (never hang)
+  const timeoutMs = 2500;
+  await Promise.race([
+    p,
+    new Promise((resolve) => {
+      setTimeout(() => {
+        if (!_images.has(key)) {
+          const ph = makePlaceholderImage({
+            w: info.w,
+            h: info.h,
+            bg: info.bg || "#333",
+            fg: "#fff",
+            textLines: [`${info.label}`, "LOAD TIMEOUT"],
+          });
+          _images.set(key, ph);
+          _isReal.set(key, false);
+        }
+        resolve();
+      }, timeoutMs);
+    }),
   ]);
-
-  ASSETS.flags.mainOk = mainRes.ok;
-  ASSETS.flags.mapOk  = mapRes.ok;
-  ASSETS.flags.p1Ok   = p1Res.ok;
-
-  ASSETS.images.main = mainRes.img;
-  ASSETS.images.map  = mapRes.img;
-  ASSETS.images.p1   = p1Res.img;
-
-  // If missing, create placeholders
-  const mainPH = makePlaceholderDataURL({
-    title: "main.png",
-    sub: "missing → placeholder",
-    bg: "#1a1630",
-    border: "#ffcc33"
-  });
-
-  const mapPH = makePlaceholderDataURL({
-    title: "map.png",
-    sub: "missing → placeholder",
-    bg: "#0f2030",
-    border: "#5eead4"
-  });
-
-  // Apply to DOM img tags
-  applyImageOrFallback({
-    imgElId: "mainImage",
-    fallbackElId: "mainFallback",
-    dataUrl: mainPH,
-    ok: mainRes.ok
-  });
-
-  applyImageOrFallback({
-    imgElId: "mapImage",
-    fallbackElId: "mapFallback",
-    dataUrl: mapPH,
-    ok: mapRes.ok
-  });
-
-  // (P1 is not placed in HTML directly yet; used in UI later)
-  return ASSETS;
 }
 
-/**
- * Auto-init when loaded (safe).
- * Other modules can call initAssets() too, but this ensures it runs once.
- */
-let __assetsInited = false;
-export async function ensureAssetsReady(){
-  if (__assetsInited) return ASSETS;
-  __assetsInited = true;
-  await initAssets();
-  return ASSETS;
+function makePlaceholderImage({ w, h, bg, fg, textLines }) {
+  const url = createPlaceholderDataUrl({ w, h, bg, fg, textLines });
+  const img = new Image();
+  img.decoding = "async";
+  img.src = url;
+  return img;
 }
-
-// Auto start assets init (non-blocking)
-ensureAssetsReady();
