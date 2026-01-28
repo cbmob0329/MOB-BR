@@ -1,162 +1,258 @@
-// state.js
-// アプリ全体の状態（どの画面か、進行状況、設定）だけを持つ。
-// ロジックは持たない。更新は reducer 形式で統一。
+// state.js (ES Modules)
+// - Central state store (no UI rendering here)
+// - Save/Load (localStorage)
+// - Time progression (Year/Week)
+// - Tournament progress skeleton (SP1/SP2/CHAMP)
+// NOTE: This file must be logic-light; simulation stays in sim.js.
 
-export const SCREENS = {
-  MAIN: 'main',
-  MAP: 'map',
-  MATCH: 'match',
-  RESULT: 'result',
-  TOTAL: 'total',
-  LOADING: 'loading',
-};
+export const VERSION = "v0.1";
+export const SAVE_KEY = "mob_battle_royale_coach_save_v1";
 
-export const TOUR_STAGE = {
-  SP1: 'SP1',
-  SP2: 'SP2',
-  CHAMP: 'CHAMPIONSHIP',
-};
+export const SCREENS = Object.freeze({
+  MAIN:   "main",
+  MAP:    "map",
+  MATCH:  "match",
+  RESULT: "result",
+  TOTAL:  "total",
+});
 
-export const TOURNAMENT_KIND = {
-  LOCAL: 'LOCAL',
-  NATIONAL: 'NATIONAL',
-  LAST_CHANCE: 'LAST_CHANCE',
-  WF: 'WF', // World Final
-};
+export const LEAGUES = Object.freeze({
+  SP1: "SP1",
+  SP2: "SP2",
+  CHAMP: "CHAMPIONSHIP",
+});
 
-export const DEFAULT_SETTINGS = {
-  autoAdvance: false,     // オート進行（match画面）
-  autoIntervalMs: 3000,   // 3秒（仕様）
-  debugHotspots: false,   // 透明ボタンを可視化する
-};
+export const DEFAULT_STATE = Object.freeze({
+  version: VERSION,
 
-export function createInitialState() {
-  return {
-    version: 'v0.1',
-    screen: SCREENS.LOADING,
+  // Profile
+  companyName: "MOB COMPANY",
+  companyRank: "C", // A/B/C/D...
+  teamName: "PLAYER TEAM",
 
-    // HUD
-    companyName: 'CB Memory', // 仮（後で変更可能）
-    companyRank: 'C',
-    teamName: 'PLAYER TEAM',
-    week: 1,
-    gold: 0,
+  // Time
+  year: 1989,
+  week: 1, // 1..52 (we keep flexible)
+  gold: 0,
 
-    // 進行
-    seasonStage: TOUR_STAGE.SP1,       // SP1 / SP2 / CHAMPIONSHIP
-    tournamentKind: TOURNAMENT_KIND.LOCAL,
-    matchIndex: 0,                     // 0-based
-    matchCount: 5,                     // 基本5試合
-    roundIndex: 0,                     // R1〜R6: 0-based
-    roundCount: 6,
+  // UI
+  screen: SCREENS.MAIN,
+  autoNext: false, // for match step auto 3s etc.
 
-    // 表示用
-    statusText: 'READY',
+  // Player team selection / roster
+  playerTeamId: "PLAYER",
+  roster: [], // player-controlled characters (ids) - loaded from data_players.js later
 
-    // 現在の試合データ（uiが参照するための箱）
-    currentMatch: null,                // simが詰める
-    lastMatchResult: null,             // 1試合結果（20）
-    totalStandings: null,              // 総合（20 or 40）
-    mapDisplay: {
-      title: '降下マップ',
-      sub: '（クリック無し／表示のみ）',
-    },
+  // League progress & history (for MAIN screen "戦績")
+  league: {
+    current: null, // LEAGUES.SP1 / SP2 / CHAMP
+    stage: null,   // "LOCAL" / "NATIONAL" / "LASTCHANCE" / "WF" / etc
+    seasonWeekAnchor: null, // optional anchor for calendars
+  },
 
-    // 設定
-    settings: { ...DEFAULT_SETTINGS },
-  };
+  // Records for results display (SP1/SP2/CHAMP)
+  records: {
+    // Each item example: { league:"SP1", stage:"LOCAL", rank:12, pts:40, kills:15, date:{year,week} }
+    history: [],
+    // Standing points totals per league
+    totals: {
+      SP1: { pts: 0, champWins: 0 },
+      SP2: { pts: 0, champWins: 0 },
+      CHAMPIONSHIP: { pts: 0, champWins: 0 },
+    }
+  },
+
+  // Match runtime (driven by sim.js)
+  runtime: {
+    matchIndex: 1,
+    matchTotal: 5,
+    round: "R1",
+    aliveTeams: 20,
+
+    // Latest event / highlight (for UI)
+    lastEvent: "",
+    lastImportantScene: "",
+
+    // Tables to render
+    lastMatchResultRows: [], // 20 rows
+    lastTotalRows: [],       // 20 or 40 rows
+
+    // When running: internal sim snapshots
+    sim: {
+      tournamentId: null,
+      teamsCount: 20,
+      teams: [], // expanded team objects (from data_teams.js)
+    }
+  }
+});
+
+function deepCopy(obj){
+  return JSON.parse(JSON.stringify(obj));
 }
 
-export function reducer(state, action) {
-  switch (action.type) {
-    case 'SET_SCREEN':
-      return { ...state, screen: action.screen };
+const listeners = new Set();
 
-    case 'SET_STATUS':
-      return { ...state, statusText: String(action.text ?? '') };
+/**
+ * In-memory mutable state
+ */
+let state = deepCopy(DEFAULT_STATE);
 
-    case 'SET_HUD':
-      return {
-        ...state,
-        companyName: action.companyName ?? state.companyName,
-        companyRank: action.companyRank ?? state.companyRank,
-        teamName: action.teamName ?? state.teamName,
-        week: Number.isFinite(action.week) ? action.week : state.week,
-        gold: Number.isFinite(action.gold) ? action.gold : state.gold,
-      };
+export function getState(){
+  return state;
+}
 
-    case 'TOGGLE_AUTO':
-      return {
-        ...state,
-        settings: {
-          ...state.settings,
-          autoAdvance: action.value != null ? !!action.value : !state.settings.autoAdvance,
-        },
-      };
+export function setState(patch){
+  // shallow merge at top, and merge nested objects if present
+  state = {
+    ...state,
+    ...patch,
+    league: { ...state.league, ...(patch.league || {}) },
+    records: {
+      ...state.records,
+      ...(patch.records || {}),
+      totals: { ...state.records.totals, ...((patch.records||{}).totals || {}) }
+    },
+    runtime: {
+      ...state.runtime,
+      ...(patch.runtime || {}),
+      sim: { ...state.runtime.sim, ...((patch.runtime||{}).sim || {}) }
+    }
+  };
+  emit();
+}
 
-    case 'SET_DEBUG_HOTSPOTS':
-      return {
-        ...state,
-        settings: {
-          ...state.settings,
-          debugHotspots: !!action.value,
-        },
-      };
+export function resetState(){
+  state = deepCopy(DEFAULT_STATE);
+  emit();
+}
 
-    case 'SET_STAGE':
-      return {
-        ...state,
-        seasonStage: action.seasonStage ?? state.seasonStage,
-        tournamentKind: action.tournamentKind ?? state.tournamentKind,
-      };
+export function subscribe(fn){
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
 
-    case 'SET_PROGRESS':
-      return {
-        ...state,
-        matchIndex: Number.isFinite(action.matchIndex) ? action.matchIndex : state.matchIndex,
-        matchCount: Number.isFinite(action.matchCount) ? action.matchCount : state.matchCount,
-        roundIndex: Number.isFinite(action.roundIndex) ? action.roundIndex : state.roundIndex,
-        roundCount: Number.isFinite(action.roundCount) ? action.roundCount : state.roundCount,
-      };
-
-    case 'SET_MATCH_DATA':
-      return {
-        ...state,
-        currentMatch: action.currentMatch ?? state.currentMatch,
-        lastMatchResult: action.lastMatchResult ?? state.lastMatchResult,
-        totalStandings: action.totalStandings ?? state.totalStandings,
-      };
-
-    case 'SET_MAP_TEXT':
-      return {
-        ...state,
-        mapDisplay: {
-          title: action.title ?? state.mapDisplay.title,
-          sub: action.sub ?? state.mapDisplay.sub,
-        },
-      };
-
-    default:
-      return state;
+function emit(){
+  for (const fn of listeners) {
+    try { fn(state); } catch(e) { console.error(e); }
   }
 }
 
 /**
- * 小さなストア（subscribe/dispatch）
+ * Save/Load
  */
-export function createStore(initialState) {
-  let state = initialState;
-  const listeners = new Set();
-
-  return {
-    getState() { return state; },
-    dispatch(action) {
-      state = reducer(state, action);
-      for (const fn of listeners) fn(state, action);
-    },
-    subscribe(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-  };
+export function save(){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    return true;
+  }catch(e){
+    console.warn("Save failed:", e);
+    return false;
+  }
 }
+
+export function load(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const obj = JSON.parse(raw);
+
+    // Minimal validation
+    if (!obj || typeof obj !== "object") return false;
+
+    // Merge with defaults to avoid missing keys
+    state = {
+      ...deepCopy(DEFAULT_STATE),
+      ...obj,
+      league: { ...deepCopy(DEFAULT_STATE).league, ...(obj.league || {}) },
+      records: {
+        ...deepCopy(DEFAULT_STATE).records,
+        ...(obj.records || {}),
+        totals: { ...deepCopy(DEFAULT_STATE).records.totals, ...((obj.records||{}).totals || {}) }
+      },
+      runtime: {
+        ...deepCopy(DEFAULT_STATE).runtime,
+        ...(obj.runtime || {}),
+        sim: { ...deepCopy(DEFAULT_STATE).runtime.sim, ...((obj.runtime||{}).sim || {}) }
+      }
+    };
+    emit();
+    return true;
+  }catch(e){
+    console.warn("Load failed:", e);
+    return false;
+  }
+}
+
+/**
+ * Time progression (1 action = 1 week)
+ * Week range is flexible; if it exceeds 52, roll year.
+ */
+export function advanceWeek(weeks=1){
+  let y = state.year;
+  let w = state.week;
+
+  for(let i=0;i<weeks;i++){
+    w += 1;
+    if (w > 52) { w = 1; y += 1; }
+  }
+  setState({ year: y, week: w });
+}
+
+/**
+ * Gold operations
+ */
+export function addGold(amount){
+  const g = Math.max(0, Math.floor((state.gold || 0) + amount));
+  setState({ gold: g });
+}
+export function spendGold(amount){
+  const g0 = state.gold || 0;
+  const need = Math.max(0, Math.floor(amount));
+  if (g0 < need) return false;
+  setState({ gold: g0 - need });
+  return true;
+}
+
+/**
+ * Screen navigation
+ */
+export function goto(screen){
+  if (!Object.values(SCREENS).includes(screen)) return;
+  setState({ screen });
+}
+
+/**
+ * Match runtime helpers
+ */
+export function setAutoNext(on){
+  setState({ autoNext: !!on });
+}
+
+export function setRuntime(patch){
+  setState({ runtime: { ...state.runtime, ...patch, sim: { ...state.runtime.sim, ...(patch.sim || {}) } } });
+}
+
+/**
+ * Records
+ */
+export function addRecord(entry){
+  const history = state.records.history.slice();
+  history.push(entry);
+  setState({ records: { ...state.records, history } });
+}
+
+/**
+ * Totals update helper (pts, champWins)
+ */
+export function addLeagueTotals(leagueKey, addPts=0, addChampWins=0){
+  const totals = deepCopy(state.records.totals);
+  if (!totals[leagueKey]) totals[leagueKey] = { pts: 0, champWins: 0 };
+  totals[leagueKey].pts = (totals[leagueKey].pts || 0) + (addPts || 0);
+  totals[leagueKey].champWins = (totals[leagueKey].champWins || 0) + (addChampWins || 0);
+  setState({ records: { ...state.records, totals } });
+}
+
+/**
+ * Boot: try load saved state, else keep default.
+ */
+load();
