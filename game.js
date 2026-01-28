@@ -1,5 +1,6 @@
 // game.js (ES Modules)
 // Controller: screen switching, button wiring, time progression, tournament progression.
+// - SP1 auto-start on boot (local demo)
 // - SP1 -> (wait weeks) -> SP2 -> (wait weeks) -> CHAMP
 // - ID1..ID19 actions follow your "role" labels; unimplemented shows modal safely.
 
@@ -12,11 +13,16 @@ import * as State from "./state.js";
  *  Config (adjust later easily)
  *  ---------------------------- */
 const WAIT_WEEKS = {
-  SP1_TO_SP2: 2,      // SP1終了→SP2開始までの待機週（ここが「時間が空く」）
+  SP1_TO_SP2: 2,      // SP1終了→SP2開始までの待機週
   SP2_TO_CHAMP: 2,    // SP2終了→CHAMP開始までの待機週
 };
 
-// localStorage fallback key (if state.js API differs)
+// 起動直後にSP1を自動開始するか
+const AUTO_START_SP1_ON_BOOT = true;
+// true なら「初回だけ」自動開始（2回目以降は自動開始しない）
+const AUTO_START_ONCE_ONLY = false;
+const AUTO_START_ONCE_KEY = "mobbr_autostart_sp1_done";
+
 const LS_KEY = "mobbr_runtime_v1";
 
 /** ----------------------------
@@ -31,21 +37,20 @@ const S = {
  *  Runtime (this is the true working state for the demo)
  *  ---------------------------- */
 function defaultRuntime() {
-  // “週で進む”前提（年/週はstate.jsが持ってても、無くても動く）
   return {
     year: 1989,
     week: 1,
 
     // tournament progress
-    inProgress: false,              // 参加中フラグ
-    phase: "NONE",                  // NONE | SP1 | WAIT_SP2 | SP2 | WAIT_CHAMP | CHAMP | DONE
-    waitWeeks: 0,                   // WAIT_* 中の残り週
-    nextPhase: null,                // "SP2" or "CHAMP"
+    inProgress: false,
+    phase: "NONE",          // NONE | SP1 | WAIT_SP2 | SP2 | WAIT_CHAMP | CHAMP | DONE
+    waitWeeks: 0,
+    nextPhase: null,        // "SP2" or "CHAMP"
 
     // results
-    lastResult: null,               // 最後に表示したresult
-    lastResultByLeague: {},         // { SP1:..., SP2:..., CHAMPIONSHIP:... }
-    history: [],                    // [{league, championName, at:{year,week}, summary}]
+    lastResult: null,
+    lastResultByLeague: {}, // { SP1:..., SP2:..., CHAMPIONSHIP:... }
+    history: [],            // [{league, championName, at:{year,week}, summary}]
   };
 }
 
@@ -73,6 +78,18 @@ let runtime = loadRuntime();
   // initial HUD
   refreshHud();
   UI.showScreen("main");
+
+  // ✅追加：起動直後にSP1（ローカル）を自動開始
+  if (AUTO_START_SP1_ON_BOOT) {
+    if (AUTO_START_ONCE_ONLY) {
+      if (!localStorage.getItem(AUTO_START_ONCE_KEY)) {
+        localStorage.setItem(AUTO_START_ONCE_KEY, "1");
+        setTimeout(() => onAction("ID3"), 0); // ID3 = 大会エントリー（SP1開始）
+      }
+    } else {
+      setTimeout(() => onAction("ID3"), 0);
+    }
+  }
 })();
 
 /** ----------------------------
@@ -86,7 +103,7 @@ function bindButtons() {
 }
 
 /** ----------------------------
- *  ID role labels (あなたの説明をそのまま保持)
+ *  ID role labels (あなたの説明を保持)
  *  ---------------------------- */
 const ROLE = Object.freeze({
   ID1:  "チーム編成",
@@ -118,31 +135,24 @@ async function onAction(action) {
 
   switch (action) {
     /** ---------- Tournament core ---------- */
-
-    // ID3: 大会エントリー（= 参加開始）
-    case "ID3":
+    case "ID3": // 大会エントリー（参加開始）
       await handleEntry();
       return;
 
-    // ID4: 参加中の大会（= 進行 / 続き）
-    case "ID4":
+    case "ID4": // 参加中の大会（進行/続き）
       await handleContinue();
       return;
 
-    // ID7: 大会結果（= 直近or履歴）
-    case "ID7":
+    case "ID7": // 大会結果（直近or履歴）
       await handleResults();
       return;
 
-    // ID15: 総合（= まとめ）
-    case "ID15":
+    case "ID15": // 総合（まとめ）
       showSummary();
       return;
 
     /** ---------- Schedule / time ---------- */
-
-    // ID8: スケジュール（= 現在の状態/次大会までの週）
-    case "ID8":
+    case "ID8": // スケジュール
       showSchedule();
       return;
 
@@ -201,7 +211,6 @@ async function onAction(action) {
 /** ----------------------------
  *  Tournament handlers
  *  ---------------------------- */
-
 async function handleEntry() {
   // すでに参加中なら、参加中画面へ誘導
   if (runtime.inProgress) {
@@ -248,7 +257,7 @@ async function handleContinue() {
     return;
   }
 
-  // If waiting, advance time until it reaches 0, then start next league.
+  // waiting -> advance time and start next when ready
   if (runtime.phase === "WAIT_SP2" || runtime.phase === "WAIT_CHAMP") {
     if (runtime.waitWeeks > 0) {
       advanceWeek(1, "大会待機（デモ：1週進行）");
@@ -263,6 +272,7 @@ async function handleContinue() {
         ]);
         return;
       }
+
       // reached 0 -> start next
       const next = runtime.nextPhase;
       if (next === "SP2") {
@@ -329,7 +339,6 @@ async function handleContinue() {
       return;
     }
 
-    // waitWeeks already 0 but phase still WAIT_* -> treat as ready
     UI.showModal("大会準備完了", [
       `${runtime.nextPhase} を開始できます。`,
       "もう一度「参加中の大会」を押してください。",
@@ -337,7 +346,7 @@ async function handleContinue() {
     return;
   }
 
-  // If currently marked as SP1/SP2/CHAMP (should not happen in this demo, but safe)
+  // Running phases (safety)
   if (runtime.phase === "SP1" || runtime.phase === "SP2" || runtime.phase === "CHAMP") {
     UI.showModal("進行中", [
       "このデモは「リーグ単位」で一気に実行する形式です。",
@@ -362,7 +371,6 @@ async function handleContinue() {
 }
 
 async function handleResults() {
-  // show lastResult if exists, else show history list
   const r = runtime.lastResult;
   if (r) {
     UI.renderTournamentResult(r);
@@ -377,7 +385,6 @@ async function handleResults() {
     return;
   }
 
-  // show simple list in modal
   const lines = runtime.history.slice(-8).reverse().map(linesFromHistoryItem);
   UI.showModal("大会結果（履歴）", lines.flat());
 }
@@ -393,7 +400,6 @@ function showSummary() {
     lines.push(`次: ${runtime.nextPhase}（あと ${runtime.waitWeeks}週）`);
   }
 
-  // best-known champions
   const sp1 = runtime.lastResultByLeague["SP1"];
   const sp2 = runtime.lastResultByLeague["SP2"];
   const ch  = runtime.lastResultByLeague["CHAMPIONSHIP"];
@@ -408,6 +414,7 @@ function showSummary() {
 function showSchedule() {
   const lines = [];
   lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
+
   if (!runtime.inProgress && runtime.phase === "NONE") {
     lines.push("未参加：大会エントリーでSP1開始");
     UI.showModal("スケジュール", lines);
@@ -434,6 +441,7 @@ function showSchedule() {
 function showRecord() {
   const lines = [];
   lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
+
   if (!runtime.history.length) {
     lines.push("戦績はまだありません。");
     UI.showModal("戦績", lines);
@@ -449,7 +457,6 @@ function showRecord() {
 }
 
 function showRecentEvents() {
-  // In demo, show last logs + current state
   const lines = [];
   lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
   lines.push(`状態: ${runtime.phase}`);
@@ -492,7 +499,6 @@ async function runLeagueAndStore(leagueKey) {
   saveRuntime();
   refreshHud();
 
-  // render result screen
   UI.renderTournamentResult(result);
 }
 
@@ -557,9 +563,7 @@ function saveRuntime(showToast = false) {
 
   // 2) also try state.js runtime slot (if exists)
   try {
-    const st = S.getState();
-    const next = { ...(st || {}), runtime: runtime };
-    S.setRuntime(next.runtime); // if state.js expects runtime only
+    S.setRuntime(runtime);
   } catch (_) {}
 
   if (showToast) UI.pushLog("保存しました（デモ）");
@@ -569,7 +573,6 @@ function normalizeRuntime(r) {
   const base = defaultRuntime();
   const out = { ...base, ...(r || {}) };
 
-  // guard types
   out.year = Number.isFinite(out.year) ? out.year : base.year;
   out.week = Number.isFinite(out.week) ? out.week : base.week;
   out.inProgress = !!out.inProgress;
@@ -591,11 +594,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function getChampionName(result) {
   const teamId = result?.championTeamId || "";
   if (!teamId) return "";
-  // try finalStandings
   const a = result?.finalStandings?.find(x => x.teamId === teamId || x.team?.id === teamId);
   if (a?.team?.name) return a.team.name;
   if (a?.name) return a.name;
-  // fallback
   return teamId;
 }
 
