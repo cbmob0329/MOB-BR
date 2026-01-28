@@ -113,3 +113,92 @@ export function makePlaceholderDataURL({
  * This keeps the UI stable even when images are not present.
  */
 function applyImageOrFallback({
+  imgElId,
+  fallbackElId,
+  dataUrl,
+  ok,
+}) {
+  const imgEl = $(imgElId);
+  const fb = $(fallbackElId);
+
+  if (!imgEl) return;
+
+  if (ok) {
+    // show real img
+    imgEl.classList.remove("hidden");
+    if (fb) fb.classList.add("hidden");
+  } else {
+    // show placeholder inside <img> + show fallback message layer
+    imgEl.src = dataUrl;
+    imgEl.classList.remove("hidden");
+    if (fb) fb.classList.remove("hidden");
+  }
+}
+
+/**
+ * Initialize all images.
+ */
+export async function initAssets() {
+  // Try to load actual images
+  const [mainRes, mapRes, p1Res] = await Promise.all([
+    loadImage("./main.png"),
+    loadImage("./map.png"),
+    loadImage("./P1.png"),
+  ]);
+
+  ASSETS.flags.mainOk = mainRes.ok;
+  ASSETS.flags.mapOk  = mapRes.ok;
+  ASSETS.flags.p1Ok   = p1Res.ok;
+
+  ASSETS.images.main = mainRes.img;
+  ASSETS.images.map  = mapRes.img;
+  ASSETS.images.p1   = p1Res.img;
+
+  // If missing, create placeholders
+  const mainPH = makePlaceholderDataURL({
+    title: "main.png",
+    sub: "missing → placeholder",
+    bg: "#1a1630",
+    border: "#ffcc33"
+  });
+
+  const mapPH = makePlaceholderDataURL({
+    title: "map.png",
+    sub: "missing → placeholder",
+    bg: "#0f2030",
+    border: "#5eead4"
+  });
+
+  // Apply to DOM img tags
+  applyImageOrFallback({
+    imgElId: "mainImage",
+    fallbackElId: "mainFallback",
+    dataUrl: mainPH,
+    ok: mainRes.ok
+  });
+
+  applyImageOrFallback({
+    imgElId: "mapImage",
+    fallbackElId: "mapFallback",
+    dataUrl: mapPH,
+    ok: mapRes.ok
+  });
+
+  // (P1 is not placed in HTML directly yet; used in UI later)
+  return ASSETS;
+}
+
+/**
+ * Auto-init when loaded (safe).
+ * Other modules can call initAssets() too, but this ensures it runs once.
+ */
+let __assetsInited = false;
+export async function ensureAssetsReady(){
+  if (__assetsInited) return ASSETS;
+  __assetsInited = true;
+  await initAssets();
+  return ASSETS;
+}
+
+// Auto start assets init (non-blocking)
+ensureAssetsReady();
