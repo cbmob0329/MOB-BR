@@ -3,26 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>MOB BR - Prototype</title>
+  <title>MOB BR</title>
   <link rel="stylesheet" href="./style.css?v=1">
 </head>
 <body>
   <div id="app" class="app">
 
-    <!-- 背景（あなたの画像に差し替えOK） -->
-    <div class="bg">
-      <!-- 例：送ってくれたメイン画面レイアウトPNGを assets に置く想定 -->
+    <!-- 背景（任意で差し替え：画像が無い場合はCSS背景） -->
+    <div class="bg" aria-hidden="true">
+      <!-- 画像を使う場合は assets に置いて src を差し替え -->
       <!-- <img class="bgImg" src="./assets/メイン画面レイアウト.png" alt=""> -->
     </div>
 
-    <!-- 上部：企業名/ランク/チーム名 -->
-    <header class="topInfo">
+    <!-- 上部：企業名 / 企業ランク / チーム名 -->
+    <header class="topInfo" id="topInfo">
       <div class="infoRow">
-        <div class="label">企業名：</div>
+        <div class="label">企業名</div>
         <input id="companyName" class="textInput" value="MOB COMPANY" />
       </div>
       <div class="infoRow">
-        <div class="label">企業ランク：</div>
+        <div class="label">企業ランク</div>
         <select id="companyRank" class="select">
           <option value="S">S</option>
           <option value="A" selected>A</option>
@@ -32,65 +32,85 @@
         </select>
       </div>
       <div class="infoRow">
-        <div class="label">チーム名：</div>
+        <div class="label">チーム名</div>
         <input id="teamName" class="textInput" value="MOBCREW" />
       </div>
     </header>
 
-    <!-- メイン：左コマンド＋中央正方形＋右サブ -->
+    <!-- 中段：左コマンド / 中央 正方形枠(重要シーン) / 右ログ -->
     <main class="main">
-      <aside class="leftMenu">
-        <button class="menuBtn" id="btnTeam">チーム</button>
+      <aside class="leftMenu" id="leftMenu">
+        <button class="menuBtn" id="btnTeam">チーム編成</button>
+        <button class="menuBtn" id="btnRecruit">勧誘</button>
+        <button class="menuBtn" id="btnGacha">ガチャ</button>
         <button class="menuBtn" id="btnTournament">大会</button>
         <button class="menuBtn" id="btnMap">マップ</button>
         <button class="menuBtn" id="btnReset">リセット</button>
       </aside>
 
-      <section class="center">
-        <div class="logoRow">
-          <div class="logoBox">
-            <div class="logoTitle">MOB BR</div>
-            <div class="logoSub">Prototype</div>
+      <section class="center" id="center">
+        <div class="brandRow">
+          <div class="brandBox">
+            <div class="brandTitle" id="brandTitle">MOB BR</div>
+            <div class="brandSub" id="brandSub">MAIN</div>
+          </div>
+          <div class="versionBox">
+            <div class="versionLabel">VERSION</div>
+            <div class="versionValue" id="versionValue">v0.1</div>
           </div>
         </div>
 
-        <div class="mainSquare">
-          <!-- 重要シーン「絵＋演出」枠（とりあえず文字演出） -->
-          <div id="sceneTitle" class="sceneTitle">メイン画面</div>
-          <div id="sceneBody" class="sceneBody">
-            左のコマンドから進めてください。<br>
-            大会は「ローカル→ナショナル→ラストチャンス→WF（W/L/Final）」まで簡易実装。
+        <!-- 正方形：重要シーン（絵＋演出） -->
+        <div class="mainSquare" id="mainSquare" role="region" aria-label="重要シーン">
+          <div class="sceneHeader">
+            <div class="sceneTitle" id="sceneTitle">メイン画面</div>
+            <div class="sceneBadge" id="sceneBadge">READY</div>
           </div>
-          <div class="sceneHint">※後で画像差し込みOK（ここをimgにしてもOK）</div>
+
+          <!-- 画像を入れる場合：ここに <img> を差し込む（JS側で切替） -->
+          <div class="sceneCanvas" id="sceneCanvas">
+            <div class="sceneText" id="sceneText">
+              左のコマンドから進めてください。
+            </div>
+          </div>
+
+          <div class="sceneFooter">
+            <div class="hint" id="hint">※重要シーンは「絵＋演出」でここに表示</div>
+          </div>
         </div>
 
-        <div class="barRow">
-          <div class="hotBar" id="hotMessage">READY</div>
+        <div class="hotRow">
+          <div class="hotBar" id="hotBar">READY</div>
         </div>
       </section>
 
-      <section class="rightPanel">
+      <section class="rightPanel" id="rightPanel">
         <div class="panelTitle">ログ</div>
-        <div id="log" class="log"></div>
+        <div id="log" class="log" aria-label="ログ"></div>
       </section>
     </main>
 
-    <!-- 下部：スクロールできる修行項目エリア -->
-    <footer class="bottom">
-      <div class="bottomTitle">修行 / できること（スクロール）</div>
-      <div id="todo" class="todo"></div>
+    <!-- 下段：修行（横スライド/スクロール） -->
+    <footer class="bottom" id="bottom">
+      <div class="bottomTitle">修行（横スライド）</div>
+
+      <!-- JSでカードを並べる：中央に来たカードを拡大強調 -->
+      <div class="trainRail" id="trainRail" aria-label="修行一覧">
+        <div class="trainList" id="trainList"></div>
+      </div>
+
       <div class="bottomActions">
-        <button class="smallBtn" id="btnWeek">1週進める（育成だけ）</button>
+        <button class="smallBtn" id="btnDoTrain">修行する</button>
         <button class="smallBtn" id="btnClearLog">ログ消去</button>
       </div>
     </footer>
 
-    <!-- モーダル -->
-    <div id="modal" class="modal hidden">
+    <!-- モーダル（共通） -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-hidden="true">
       <div class="modalInner">
         <div class="modalHead">
           <div id="modalTitle" class="modalTitle">TITLE</div>
-          <button id="modalClose" class="modalClose">×</button>
+          <button id="modalClose" class="modalClose" aria-label="閉じる">×</button>
         </div>
         <div id="modalBody" class="modalBody"></div>
         <div class="modalFoot">
@@ -101,6 +121,7 @@
 
   </div>
 
-  <script type="module" src="./game.js?v=1"></script>
+  <!-- ルール：index.html の script は game.js のみ -->
+  <script src="./game.js?v=1"></script>
 </body>
 </html>
