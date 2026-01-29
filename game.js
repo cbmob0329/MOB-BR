@@ -1,401 +1,464 @@
-了解。**③ game.js（フル）**いきます。
-※ここでは **起動・メイン画面UI・修行横スライド強調・ログ・モーダル**までを確実に動かします。
-（大会シミュ等は次のファイルで順番に追加）
-
-```js
-// MOB BR - game.js (v0.1)
-// ルール：index.html の script は game.js 1本のみ
-// このファイルは「起動・共通UI管理・画面遷移の土台」を担当
+/* =========================================================
+   game.js (FULL)
+   MOB Battle Royale Simulator (Apex-like tournament sim)
+   - index.html から script 1本で読み込まれる前提
+   - 19ファイル構成の中心オーケストレーター
+   - まだ未実装のモジュール(UI/ASSETS/STATE等)があっても落ちないよう保険実装
+   ========================================================= */
 
 (() => {
-  "use strict";
+  'use strict';
 
-  /* =========================
-    DOM
-  ========================= */
-  const $ = (id) => document.getElementById(id);
+  const VERSION = 'v0.1-proto';
 
-  const companyNameEl = $("companyName");
-  const companyRankEl = $("companyRank");
-  const teamNameEl = $("teamName");
+  // ---------------------------------------------------------
+  // DOM
+  // ---------------------------------------------------------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: false });
 
-  const btnTeam = $("btnTeam");
-  const btnRecruit = $("btnRecruit");
-  const btnGacha = $("btnGacha");
-  const btnTournament = $("btnTournament");
-  const btnMap = $("btnMap");
-  const btnReset = $("btnReset");
+  // “ui.js で必ず作る予定”の要素が無い場合も落ちないように取得しておく
+  const uiRoot = document.getElementById('ui');
+  const elCompany = document.getElementById('hud_company');
+  const elRank = document.getElementById('hud_rank');
+  const elTeam = document.getElementById('hud_team');
+  const elLogText = document.getElementById('logText');
 
-  const sceneTitleEl = $("sceneTitle");
-  const sceneBadgeEl = $("sceneBadge");
-  const sceneTextEl  = $("sceneText");
-  const hotBarEl = $("hotBar");
+  // ---------------------------------------------------------
+  // Basic util
+  // ---------------------------------------------------------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const randInt = (a, b) => (a + Math.floor(Math.random() * (b - a + 1)));
+  const now = () => performance.now();
 
-  const logEl = $("log");
+  function fitRectContain(srcW, srcH, dstW, dstH) {
+    const s = Math.min(dstW / srcW, dstH / srcH);
+    const w = srcW * s;
+    const h = srcH * s;
+    return { x: (dstW - w) * 0.5, y: (dstH - h) * 0.5, w, h, s };
+  }
 
-  const trainListEl = $("trainList");
-  const btnDoTrain = $("btnDoTrain");
-  const btnClearLog = $("btnClearLog");
+  function drawPlaceholderBG(title, sub = '') {
+    // 背景が無い場合の簡易表示（色＋文字）
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const modalEl = $("modal");
-  const modalTitleEl = $("modalTitle");
-  const modalBodyEl = $("modalBody");
-  const modalCloseEl = $("modalClose");
-  const modalOkEl = $("modalOk");
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(20, 20, canvas.width - 40, canvas.height - 40);
 
-  /* =========================
-    Version
-  ========================= */
-  const VERSION = "v0.1";
-  const versionValueEl = $("versionValue");
-  if (versionValueEl) versionValueEl.textContent = VERSION;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 22px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 10);
 
-  /* =========================
-    Storage
-  ========================= */
-  const LS_KEY = "mobbr_save_v01";
-
-  function loadSave() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch (e) {
-      return null;
+    if (sub) {
+      ctx.fillStyle = 'rgba(255,255,255,0.70)';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(sub, canvas.width / 2, canvas.height / 2 + 18);
     }
   }
 
-  function saveNow() {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-    } catch (e) {
-      // ignore
+  function logSet(text) {
+    if (elLogText) elLogText.textContent = text;
+    // ui.js のログ制御が来たらそっち優先
+    if (window.UI && typeof window.UI.setLog === 'function') {
+      window.UI.setLog(text);
     }
   }
 
-  /* =========================
-    Utils
-  ========================= */
-  function nowTag() {
-    const d = new Date();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const ss = String(d.getSeconds()).padStart(2, "0");
-    return `${hh}:${mm}:${ss}`;
+  function hudSet({ company, rank, team }) {
+    if (elCompany && company != null) elCompany.textContent = String(company);
+    if (elRank && rank != null) elRank.textContent = String(rank);
+    if (elTeam && team != null) elTeam.textContent = String(team);
+
+    if (window.UI && typeof window.UI.setHUD === 'function') {
+      window.UI.setHUD({ company, rank, team });
+    }
   }
 
-  function log(line) {
-    const msg = `[${nowTag()}] ${line}\n`;
-    logEl.textContent += msg;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  function setScene(title, badge, text) {
-    sceneTitleEl.textContent = title;
-    sceneBadgeEl.textContent = badge;
-    sceneTextEl.textContent = text;
-  }
-
-  function setHot(text) {
-    hotBarEl.textContent = text;
-  }
-
-  function clamp(v, a, b) {
-    return Math.max(a, Math.min(b, v));
-  }
-
-  /* =========================
-    Modal
-  ========================= */
-  function openModal(title, body) {
-    modalTitleEl.textContent = title;
-    modalBodyEl.textContent = body;
-    modalEl.classList.remove("hidden");
-    modalEl.setAttribute("aria-hidden", "false");
-  }
-
-  function closeModal() {
-    modalEl.classList.add("hidden");
-    modalEl.setAttribute("aria-hidden", "true");
-  }
-
-  modalCloseEl.onclick = closeModal;
-  modalOkEl.onclick = closeModal;
-  modalEl.onclick = (e) => {
-    if (e.target === modalEl) closeModal();
+  // ---------------------------------------------------------
+  // ASSET LOADER (temporary)
+  // - 本命は assets.js で window.ASSETS が提供する
+  // - ここは “無い画像もある” を前提に、無くても成立させる
+  // ---------------------------------------------------------
+  const Img = {
+    main: new Image(),
+    ido: new Image(),
+    map: new Image(),
+    shop: new Image(),
+    heal: new Image(),
+    battle: new Image(),
+    winner: new Image(),
+    p1: new Image(),
   };
 
-  /* =========================
-    State
-  ========================= */
-  const defaultState = {
+  const ImgLoaded = {
+    main: false, ido: false, map: false, shop: false, heal: false, battle: false, winner: false, p1: false
+  };
+
+  function loadImage(key, src) {
+    return new Promise((resolve) => {
+      const im = Img[key];
+      im.onload = () => { ImgLoaded[key] = true; resolve(true); };
+      im.onerror = () => { ImgLoaded[key] = false; resolve(false); };
+      im.src = src;
+    });
+  }
+
+  async function preloadCoreImages() {
+    // ユーザー指定の固定名。変更禁止。
+    // ここは “そのまま” 読みに行く（存在しなければプレースホルダ描画へ）
+    await Promise.all([
+      loadImage('p1', 'P1.png'),
+      loadImage('main', 'main.png'),
+      loadImage('ido', 'ido.png'),
+      loadImage('map', 'map.png'),
+      loadImage('shop', 'shop.png'),
+      loadImage('heal', 'heal.png'),
+      loadImage('battle', 'battle.png'),
+      loadImage('winner', 'winner.png'),
+    ]);
+
+    // assets.js が出来たら、ここで window.ASSETS 側のプレロードにも寄せる
+    if (window.ASSETS && typeof window.ASSETS.preload === 'function') {
+      try { await window.ASSETS.preload(); } catch(e) { /* ignore */ }
+    }
+  }
+
+  // ---------------------------------------------------------
+  // GAME STATE (temporary)
+  // - 本命は state.js で window.STATE を作る
+  // ---------------------------------------------------------
+  const Phase = {
+    MAIN: 'MAIN',
+    SHOP: 'SHOP',
+    HEAL: 'HEAL',
+    DROP: 'DROP',         // 降下前（マップ表示）
+    MOVE: 'MOVE',         // 移動フェーズ（ido）
+    BATTLE: 'BATTLE',     // 戦闘フェーズ（battle）
+    RESULT: 'RESULT',     // 1試合結果
+    TOURNAMENT: 'TOURNAMENT', // 大会進行（週・グループ・順位）
+    WINNER: 'WINNER',     // 優勝演出（winner）
+  };
+
+  const Game = {
     version: VERSION,
+    t0: now(),
+    phase: Phase.MAIN,
 
-    companyName: "MOB COMPANY",
-    companyRank: "A",
-    teamName: "MOBCREW",
+    // input
+    btnLocked: false,
 
-    // 育成（週進行の土台）
+    // quick settings
+    companyName: 'MOB COMPANY',
+    companyRank: 10,
+    teamName: 'PLAYER TEAM',
+
+    // “現状できることは全てやってみたい”のための土台（のちに state.js に移す）
     week: 1,
+    month: 2,
+    year: 1989,
+    split: 1,
+    seasonLabel: 'Split 1',
+    inTournamentDay: false,
 
-    // 修行選択
-    trainIndex: 0,
+    // player team image control
+    playerImgScale: 1,
 
-    // ログ設定
-    logLines: [],
+    // step-by-step / skip
+    allowSkip: true,
 
-    // ここから後の大会・チーム・アイテム等は次ファイルで増やす
+    // minimal placeholders
+    lastMessage: '',
+    winnerTeamName: '',
+    winnerTeamIsPlayer: false,
   };
 
-  const loaded = loadSave();
-  const state = loaded ? { ...defaultState, ...loaded } : { ...defaultState };
+  window.GAME = Game; // デバッグ用（後で残してOK）
 
-  /* =========================
-    Train Menu (あなたの仕様の修行カテゴリ)
-    射撃 / ダッシュ / パズル / 実戦 / 滝 / 研究 / 総合
-    ※画像が来たらアイコン化する
-  ========================= */
-  const TRAIN_MENU = [
-    { key: "shoot", name: "射撃", sub: "aim / recoil" },
-    { key: "dash",  name: "ダッシュ", sub: "speed / move" },
-    { key: "puzzle",name: "パズル", sub: "判断 / 思考" },
-    { key: "field", name: "実戦", sub: "立ち回り" },
-    { key: "fall",  name: "滝", sub: "メンタル" },
-    { key: "lab",   name: "研究", sub: "分析" },
-    { key: "all",   name: "総合", sub: "all exp +" },
-  ];
+  // ---------------------------------------------------------
+  // Buttons wiring (UI is in ui.js later)
+  // - ここでは index.html のボタンIDを前提にする
+  // ---------------------------------------------------------
+  const btnTeam = document.getElementById('btnTeam');
+  const btnScout = document.getElementById('btnScout');
+  const btnTournament = document.getElementById('btnTournament');
+  const btnNext = document.getElementById('btnNext');
+  const btnSkip = document.getElementById('btnSkip');
 
-  /* =========================
-    Render Train Cards
-    - 横スクロール
-    - 中央に来たカードを強調（active）
-  ========================= */
-  function renderTrainCards() {
-    trainListEl.innerHTML = "";
-
-    TRAIN_MENU.forEach((t, i) => {
-      const card = document.createElement("div");
-      card.className = "trainCard";
-      card.dataset.index = String(i);
-
-      const title = document.createElement("div");
-      title.className = "tTitle";
-      title.textContent = t.name;
-
-      const sub = document.createElement("div");
-      sub.className = "tSub";
-      sub.textContent = t.sub;
-
-      card.appendChild(title);
-      card.appendChild(sub);
-
-      card.onclick = () => {
-        state.trainIndex = i;
-        highlightActiveTrain();
-        saveNow();
-        setHot(`修行：${TRAIN_MENU[state.trainIndex].name}`);
-      };
-
-      trainListEl.appendChild(card);
-    });
-
-    // 初期位置：選択中へ寄せる
-    requestAnimationFrame(() => {
-      scrollToTrain(state.trainIndex);
-      highlightActiveTrain();
+  function safeOn(el, ev, fn) {
+    if (!el) return;
+    el.addEventListener(ev, (e) => {
+      if (Game.btnLocked) return;
+      fn(e);
     });
   }
 
-  function getTrainCards() {
-    return Array.from(trainListEl.querySelectorAll(".trainCard"));
+  function lockButtons(ms = 250) {
+    Game.btnLocked = true;
+    setTimeout(() => Game.btnLocked = false, ms);
   }
 
-  function highlightActiveTrain() {
-    const cards = getTrainCards();
-    cards.forEach((c) => c.classList.remove("active"));
-    const active = cards[state.trainIndex];
-    if (active) active.classList.add("active");
+  function gotoPhase(p) {
+    Game.phase = p;
+    // phase遷移を ui.js に通知
+    if (window.UI && typeof window.UI.onPhaseChange === 'function') {
+      window.UI.onPhaseChange(p, Game);
+    }
   }
 
-  function scrollToTrain(index) {
-    const cards = getTrainCards();
-    const card = cards[index];
-    if (!card) return;
-    card.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  }
-
-  // スクロールして中央付近のカードを自動でactiveにする
-  let railTick = 0;
-  trainListEl.addEventListener("scroll", () => {
-    // スクロールのたびに重くしない
-    railTick++;
-    const tick = railTick;
-    requestAnimationFrame(() => {
-      if (tick !== railTick) return;
-      autoPickCenterTrain();
-    });
+  // メインコマンド
+  safeOn(btnTeam, 'click', () => {
+    lockButtons();
+    // “未実装でも現状できることは見せる”：モーダル等は ui.js で
+    logSet('チーム編成（未実装）\n今はデータ土台のみ。次で実装していく。');
+    if (window.UI && typeof window.UI.openModal === 'function') {
+      window.UI.openModal('チーム編成', '（未実装）\n今後：選手一覧／装備／連携／企業ランク等を表示。');
+    }
   });
 
-  function autoPickCenterTrain() {
-    const cards = getTrainCards();
-    if (!cards.length) return;
+  safeOn(btnScout, 'click', () => {
+    lockButtons();
+    logSet('勧誘（未実装）\n今後：オファーキャラ購入／加入処理。');
+    if (window.UI && typeof window.UI.openModal === 'function') {
+      window.UI.openModal('勧誘', '（未実装）\n今後：オファーキャラ（企業ランク適正）を購入・加入。');
+    }
+  });
 
-    const railRect = trainListEl.getBoundingClientRect();
-    const centerX = railRect.left + railRect.width / 2;
+  safeOn(btnTournament, 'click', () => {
+    lockButtons();
+    // 大会の日メッセージは tournamentルール側で詳細化（sim_rules_*.js）
+    gotoPhase(Phase.DROP);
+    logSet('降下フェーズ（MAP）\nNEXTで移動へ / SKIPで結果まで（プロト）。');
+  });
 
-    let bestIdx = 0;
-    let bestDist = Infinity;
+  // NEXT / SKIP
+  safeOn(btnNext, 'click', () => {
+    lockButtons();
+    onNext();
+  });
 
-    cards.forEach((card, i) => {
-      const r = card.getBoundingClientRect();
-      const cardCenter = r.left + r.width / 2;
-      const dist = Math.abs(cardCenter - centerX);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = i;
-      }
-    });
+  safeOn(btnSkip, 'click', () => {
+    lockButtons();
+    if (!Game.allowSkip) return;
+    onSkip();
+  });
 
-    bestIdx = clamp(bestIdx, 0, TRAIN_MENU.length - 1);
-    if (state.trainIndex !== bestIdx) {
-      state.trainIndex = bestIdx;
-      highlightActiveTrain();
-      saveNow();
+  function onNext() {
+    // プロト段階：フェーズを順に回す（後で state.js + sim_* で本格化）
+    switch (Game.phase) {
+      case Phase.MAIN:
+        gotoPhase(Phase.DROP);
+        logSet('降下フェーズ（MAP）\nNEXTで移動へ / SKIPで結果まで。');
+        break;
+
+      case Phase.DROP:
+        gotoPhase(Phase.MOVE);
+        logSet('移動フェーズ（IDO）\nプレイヤーチーム画像を前面に表示。\nNEXTで戦闘へ。');
+        break;
+
+      case Phase.MOVE:
+        gotoPhase(Phase.BATTLE);
+        logSet('戦闘開始！\n（プロト：まだ簡易）\nNEXTで結果へ。');
+        break;
+
+      case Phase.BATTLE:
+        gotoPhase(Phase.RESULT);
+        logSet('結果（プロト）\nNEXTでメインへ戻る。');
+        // 仮の勝敗
+        Game.winnerTeamIsPlayer = Math.random() < 0.35;
+        Game.winnerTeamName = Game.winnerTeamIsPlayer ? Game.teamName : 'ENEMY TEAM';
+        break;
+
+      case Phase.RESULT:
+        gotoPhase(Phase.WINNER);
+        logSet(`WINNER!\n${Game.winnerTeamName}`);
+        break;
+
+      case Phase.WINNER:
+      default:
+        gotoPhase(Phase.MAIN);
+        logSet('メイン画面\n大会ボタンで開始（プロト）。');
+        break;
     }
   }
 
-  /* =========================
-    Top Inputs Sync
-  ========================= */
-  function syncTopInputsFromState() {
-    companyNameEl.value = state.companyName;
-    companyRankEl.value = state.companyRank;
-    teamNameEl.value = state.teamName;
+  function onSkip() {
+    // プロト段階：一気にWINNERまで飛ばす
+    if (Game.phase === Phase.MAIN) {
+      gotoPhase(Phase.DROP);
+    }
+    // “結果まで一気に可能”
+    Game.winnerTeamIsPlayer = Math.random() < 0.35;
+    Game.winnerTeamName = Game.winnerTeamIsPlayer ? Game.teamName : 'ENEMY TEAM';
+    gotoPhase(Phase.WINNER);
+    logSet(`SKIP結果\nWINNER: ${Game.winnerTeamName}`);
   }
 
-  function bindTopInputs() {
-    companyNameEl.addEventListener("input", () => {
-      state.companyName = companyNameEl.value.trim() || "MOB COMPANY";
-      saveNow();
+  // ---------------------------------------------------------
+  // Draw helpers
+  // ---------------------------------------------------------
+  function drawImageOrPlaceholder(key, title) {
+    const im = Img[key];
+    const ok = ImgLoaded[key] && im && im.naturalWidth > 0;
+    if (ok) {
+      ctx.drawImage(im, 0, 0, canvas.width, canvas.height);
+    } else {
+      drawPlaceholderBG(title, `missing: ${key}.png`);
+    }
+  }
+
+  function drawOverlayPlayerImage() {
+    // ido.png の前面に P1.png を表示（大きい場合は最適化）
+    const ok = ImgLoaded.p1 && Img.p1.naturalWidth > 0;
+    if (!ok) return;
+
+    // 表示枠（画面右側のメイン枠を想定：おおよそ center-right）
+    const frameX = 160;
+    const frameY = 110;
+    const frameW = 240;
+    const frameH = 260;
+
+    // 枠内に収める（contain）
+    const f = fitRectContain(Img.p1.naturalWidth, Img.p1.naturalHeight, frameW, frameH);
+    const dx = frameX + f.x;
+    const dy = frameY + f.y;
+    ctx.drawImage(Img.p1, dx, dy, f.w, f.h);
+  }
+
+  function drawOverlayWinnerImage() {
+    // winner.png の前面に “優勝チーム画像” を表示
+    // 現時点：プレイヤー優勝ならP1.png、敵なら簡易絵（未実装）
+    if (Game.winnerTeamIsPlayer && ImgLoaded.p1 && Img.p1.naturalWidth > 0) {
+      const frameX = 90;
+      const frameY = 140;
+      const frameW = 240;
+      const frameH = 240;
+
+      const f = fitRectContain(Img.p1.naturalWidth, Img.p1.naturalHeight, frameW, frameH);
+      ctx.drawImage(Img.p1, frameX + f.x, frameY + f.y, f.w, f.h);
+      return;
+    }
+
+    // 敵優勝：簡易的な絵（色＋文字）
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(90, 170, 240, 180);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ENEMY WIN', canvas.width / 2, 250);
+
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText('（敵画像 未実装）', canvas.width / 2, 280);
+  }
+
+  function drawTopDebug() {
+    // バージョン表示（UI側に出す想定だが、保険でCanvasにも）
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(6, 6, 120, 22);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`VER ${VERSION}`, 12, 17);
+  }
+
+  // ---------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------
+  function render() {
+    switch (Game.phase) {
+      case Phase.MAIN:
+        drawImageOrPlaceholder('main', 'MAIN');
+        break;
+      case Phase.SHOP:
+        drawImageOrPlaceholder('shop', 'SHOP');
+        break;
+      case Phase.HEAL:
+        drawImageOrPlaceholder('heal', 'HEAL');
+        break;
+      case Phase.DROP:
+        drawImageOrPlaceholder('map', 'MAP');
+        break;
+      case Phase.MOVE:
+        drawImageOrPlaceholder('ido', 'IDO');
+        drawOverlayPlayerImage(); // ✅ ido前面にP1
+        break;
+      case Phase.BATTLE:
+        drawImageOrPlaceholder('battle', 'BATTLE');
+        break;
+      case Phase.RESULT:
+        // いったんbattle背景の上に結果文字（のちにUI/演出へ）
+        drawImageOrPlaceholder('battle', 'BATTLE');
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(40, 210, canvas.width - 80, 140);
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.font = 'bold 18px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('RESULT (PROTO)', canvas.width / 2, 245);
+        ctx.font = 'bold 16px system-ui, sans-serif';
+        ctx.fillText(`Winner: ${Game.winnerTeamName || '---'}`, canvas.width / 2, 280);
+        break;
+      case Phase.WINNER:
+        drawImageOrPlaceholder('winner', 'WINNER');
+        drawOverlayWinnerImage(); // ✅ winner前面に優勝チーム（P1 or 簡易）
+        break;
+      default:
+        drawPlaceholderBG('UNKNOWN', Game.phase);
+        break;
+    }
+
+    drawTopDebug();
+  }
+
+  // ---------------------------------------------------------
+  // Tick
+  // ---------------------------------------------------------
+  let raf = 0;
+  function loop() {
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  // ---------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------
+  async function boot() {
+    // HUD
+    hudSet({
+      company: Game.companyName,
+      rank: `RANK ${Game.companyRank}`,
+      team: Game.teamName,
     });
-    companyRankEl.addEventListener("change", () => {
-      state.companyRank = companyRankEl.value;
-      saveNow();
-    });
-    teamNameEl.addEventListener("input", () => {
-      state.teamName = teamNameEl.value.trim() || "MOBCREW";
-      saveNow();
-    });
+
+    // 初期ログ
+    logSet('メイン画面\n「大会」ボタンでプロト開始。\n（今は流れだけ、次で実装を詰める）');
+
+    // 画像プリロード（無くてもOK）
+    await preloadCoreImages();
+
+    // ui.js が来たら、UI初期化へ寄せる
+    if (window.UI && typeof window.UI.init === 'function') {
+      try { window.UI.init(Game); } catch(e) { /* ignore */ }
+    }
+
+    // 開始
+    gotoPhase(Phase.MAIN);
+    loop();
   }
 
-  /* =========================
-    Screens (今はメインだけ)
-  ========================= */
-  const SCREENS = {
-    MAIN: "MAIN",
-  };
-
-  function goMain() {
-    setScene(
-      "メイン画面",
-      "READY",
-      [
-        "左メニューから進めます。",
-        "",
-        "■今この段階で動くもの",
-        "・修行（横スライド、中央強調）",
-        "・ログ",
-        "・保存/ロード（ローカルストレージ）",
-        "",
-        "次：大会/チーム/マップ/戦闘を順番に実装します。",
-      ].join("\n")
-    );
-    setHot(`READY / Week ${state.week}`);
-    log("起動しました");
-  }
-
-  /* =========================
-    Actions
-  ========================= */
-  function doTrainOnce() {
-    const t = TRAIN_MENU[state.trainIndex];
-    state.week += 1;
-    saveNow();
-
-    // ここは後でステータス実装に繋げる
-    setHot(`Week ${state.week}：${t.name} 修行！`);
-    log(`修行：${t.name}（Week ${state.week}）`);
-
-    openModal(
-      "修行結果",
-      [
-        `選択：${t.name}`,
-        `週：${state.week}`,
-        "",
-        "※ステータス上昇の詳細は次の実装で反映します。",
-      ].join("\n")
-    );
-  }
-
-  function clearLog() {
-    logEl.textContent = "";
-    log("ログ消去");
-  }
-
-  function hardReset() {
-    if (!confirm("本当にリセットしますか？（セーブが消えます）")) return;
-    localStorage.removeItem(LS_KEY);
-    location.reload();
-  }
-
-  /* =========================
-    Left Menu Buttons (今は仮の通知だけ)
-  ========================= */
-  btnTeam.onclick = () => {
-    openModal("チーム編成", "次のファイルで実装します。");
-    log("チーム編成を開こうとしました");
-  };
-  btnRecruit.onclick = () => {
-    openModal("勧誘", "次のファイルで実装します。");
-    log("勧誘を開こうとしました");
-  };
-  btnGacha.onclick = () => {
-    openModal("ガチャ", "次のファイルで実装します。");
-    log("ガチャを開こうとしました");
-  };
-  btnTournament.onclick = () => {
-    openModal("大会", "次のファイルで実装します。");
-    log("大会を開こうとしました");
-  };
-  btnMap.onclick = () => {
-    openModal("マップ", "次のファイルで実装します。");
-    log("マップを開こうとしました");
-  };
-
-  btnReset.onclick = hardReset;
-
-  btnDoTrain.onclick = doTrainOnce;
-  btnClearLog.onclick = clearLog;
-
-  /* =========================
-    Boot
-  ========================= */
-  function boot() {
-    syncTopInputsFromState();
-    bindTopInputs();
-
-    renderTrainCards();
-    goMain();
-
-    // 初期ログ少なめ
-    setTimeout(() => {
-      log("修行は下の横スライドから選べます");
-    }, 150);
-  }
-
+  // start
   boot();
-})();
-```
 
-次は **④ チーム編成（ui_team相当）** を入れるか、
-あなたの順番指定が「④〜」で決まってるなら、その番号を教えて。
+  // ---------------------------------------------------------
+  // Cleanup (optional)
+  // ---------------------------------------------------------
+  window.addEventListener('beforeunload', () => {
+    if (raf) cancelAnimationFrame(raf);
+  });
+
+})();
