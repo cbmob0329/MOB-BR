@@ -1,77 +1,116 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="theme-color" content="#111111" />
-  <title>MOB BR - Tournament Simulator</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>MOB TOURNAMENT SIM</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-  <div id="app">
-    <canvas id="game" width="420" height="560"></canvas>
 
-    <!-- UI Overlay -->
-    <div id="ui">
-      <!-- Top Left: Company / Rank / Team -->
-      <div id="hudTopLeft" class="panel">
-        <div class="hudLine"><span class="hudLabel">企業名：</span><span id="hud_company">---</span></div>
-        <div class="hudLine"><span class="hudLabel">企業ランク：</span><span id="hud_rank">---</span></div>
-        <div class="hudLine"><span class="hudLabel">チーム名：</span><span id="hud_team">---</span></div>
+  <!-- ===== HEADER ===== -->
+  <header id="header">
+    <div id="header-left">
+      <img id="logo" src="rogo.png" alt="MOB LOGO">
+    </div>
+    <div id="header-center">
+      <div id="time-info">
+        <span id="current-date">1989年 第1週</span>
       </div>
-
-      <!-- Buttons (Left) -->
-      <div id="menuButtons">
-        <button id="btn_team" class="uiBtn">チーム</button>
-        <button id="btn_tournament" class="uiBtn">大会</button>
-        <button id="btn_shop" class="uiBtn">ショップ</button>
-        <button id="btn_train" class="uiBtn">修行</button>
-      </div>
-
-      <!-- Center / Right Main Image Frame -->
-      <div id="mainFrame">
-        <div id="mainFrameInner">
-          <div id="mainFrameTitle">MAIN</div>
-          <div id="mainFrameSub">（絵＋演出）</div>
-        </div>
-      </div>
-
-      <!-- Wide Log / Message Box -->
-      <div id="logBox">
-        <div id="logText">MOB BR へようこそ！</div>
-      </div>
-
-      <!-- Bottom Controls -->
-      <div id="bottomControls">
-        <button id="btn_next" class="uiBtn uiBtnWide">NEXT</button>
-        <button id="btn_skip" class="uiBtn uiBtnWide">SKIP</button>
-      </div>
-
-      <!-- Modal Backdrop -->
-      <div id="modalBackdrop" class="hidden"></div>
-
-      <!-- Modal Panel -->
-      <div id="modalPanel" class="hidden">
-        <div id="modalHeader">
-          <div id="modalTitle">MENU</div>
-          <button id="modalClose" class="uiBtnSmall">×</button>
-        </div>
-
-        <div id="modalBody">
-          <div id="modalContent">
-            <div class="modalText">ここに各画面（チーム編成／大会／ショップ／修行など）を表示します。</div>
-          </div>
-        </div>
-
-        <div id="modalFooter">
-          <button id="modalOk" class="uiBtn">OK</button>
-        </div>
+      <div id="next-tournament">
+        次の大会：<span id="next-tournament-name">SP1 ローカル大会</span>
+        （<span id="next-tournament-date">2月第1週</span>）
       </div>
     </div>
+    <div id="header-right">
+      <div id="gold-info">
+        <span id="gold-value">0</span> G
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main id="main">
+
+    <!-- ===== LEFT MENU ===== -->
+    <section id="left-menu">
+      <button class="menu-btn" id="btn-team">
+        <img src="team.png" alt="TEAM">
+      </button>
+      <button class="menu-btn" id="btn-tournament">
+        <img src="taikai.png" alt="TOURNAMENT">
+      </button>
+      <button class="menu-btn" id="btn-training">
+        <img src="syageki.png" alt="TRAINING">
+      </button>
+      <button class="menu-btn" id="btn-shop">
+        <img src="shop.png" alt="SHOP">
+      </button>
+    </section>
+
+    <!-- ===== CENTER VIEW ===== -->
+    <section id="center-view">
+
+      <!-- メイン背景 -->
+      <div id="main-background">
+        <img src="haikeimain.png" alt="MAIN BG">
+      </div>
+
+      <!-- 正方形メイン表示 -->
+      <div id="main-square">
+        <img id="main-image" src="main1.png" alt="MAIN IMAGE">
+        <img id="player-team-image" src="P1.png" alt="PLAYER TEAM">
+      </div>
+
+      <!-- ログ表示 -->
+      <div id="log-area">
+        <div class="log-line">ゲーム開始</div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ===== POPUP OVERLAY ===== -->
+  <div id="overlay" class="hidden"></div>
+
+  <!-- ===== GENERIC POPUP ===== -->
+  <div id="popup" class="hidden">
+    <div id="popup-content"></div>
+    <button id="popup-close">閉じる</button>
   </div>
 
-  <!-- Only one script: game.js -->
+  <!-- ===== FOOTER ===== -->
+  <footer id="footer">
+    <span>MOB TOURNAMENT SIMULATION</span>
+  </footer>
+
+  <!-- ===== SCRIPTS ===== -->
+  <!-- 基本制御 -->
+  <script src="assets.js"></script>
+  <script src="state.js"></script>
+  <script src="data_const.js"></script>
+
+  <!-- データ -->
+  <script src="data_coachskills.js"></script>
+  <script src="data_players.js"></script>
+  <script src="data_items.js"></script>
+
+  <script src="data_teams_local.js"></script>
+  <script src="data_teams_national.js"></script>
+  <script src="data_teams_world.js"></script>
+  <script src="data_teams_index.js"></script>
+
+  <!-- シミュレーション -->
+  <script src="sim_battle.js"></script>
+  <script src="sim_tournament_core.js"></script>
+  <script src="sim_rules_sp1.js"></script>
+  <script src="sim_rules_sp2.js"></script>
+  <script src="sim_rules_champ.js"></script>
+
+  <!-- UI / GAME -->
+  <script src="ui.js"></script>
   <script src="game.js"></script>
+
 </body>
 </html>
