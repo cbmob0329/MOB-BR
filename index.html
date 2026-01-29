@@ -2,99 +2,105 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f18" />
-  <title>MOB APEX SIM</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>MOB BR - Prototype</title>
+  <link rel="stylesheet" href="./style.css?v=1">
 </head>
-
 <body>
-  <div id="app">
+  <div id="app" class="app">
 
-    <!-- Header -->
-    <header id="topbar">
-      <div class="top-left">
-        <div id="companyName" class="top-company">企業名：---</div>
-        <div id="companyRank" class="top-rank">企業ランク：---</div>
+    <!-- 背景（あなたの画像に差し替えOK） -->
+    <div class="bg">
+      <!-- 例：送ってくれたメイン画面レイアウトPNGを assets に置く想定 -->
+      <!-- <img class="bgImg" src="./assets/メイン画面レイアウト.png" alt=""> -->
+    </div>
+
+    <!-- 上部：企業名/ランク/チーム名 -->
+    <header class="topInfo">
+      <div class="infoRow">
+        <div class="label">企業名：</div>
+        <input id="companyName" class="textInput" value="MOB COMPANY" />
       </div>
-      <div class="top-right">
-        <div id="teamName" class="top-team">チーム名：---</div>
-        <div id="weekInfo" class="top-week">YEAR --- / WEEK ---</div>
+      <div class="infoRow">
+        <div class="label">企業ランク：</div>
+        <select id="companyRank" class="select">
+          <option value="S">S</option>
+          <option value="A" selected>A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+      </div>
+      <div class="infoRow">
+        <div class="label">チーム名：</div>
+        <input id="teamName" class="textInput" value="MOBCREW" />
       </div>
     </header>
 
-    <!-- Main Layout -->
-    <main id="layout">
-
-      <!-- Left Commands -->
-      <aside id="leftMenu">
-        <button class="cmd" data-cmd="team">チーム編成</button>
-        <button class="cmd" data-cmd="offer">勧誘</button>
-        <button class="cmd" data-cmd="gacha">ガチャ</button>
-        <button class="cmd" data-cmd="tournament">参戦中の大会</button>
-        <button class="cmd" data-cmd="results">大会の結果</button>
-        <button class="cmd" data-cmd="schedule">スケジュール</button>
-        <button class="cmd" data-cmd="train">修行</button>
-        <button class="cmd" data-cmd="shop">ショップ</button>
-        <button class="cmd" data-cmd="save">セーブ</button>
+    <!-- メイン：左コマンド＋中央正方形＋右サブ -->
+    <main class="main">
+      <aside class="leftMenu">
+        <button class="menuBtn" id="btnTeam">チーム</button>
+        <button class="menuBtn" id="btnTournament">大会</button>
+        <button class="menuBtn" id="btnMap">マップ</button>
+        <button class="menuBtn" id="btnReset">リセット</button>
       </aside>
 
-      <!-- Center Stage -->
-      <section id="mainPanel">
-
-        <!-- Main Square Visual -->
-        <div id="mainView" class="squareView">
-          <canvas id="screen" width="640" height="640"></canvas>
-
-          <!-- overlay for messages -->
-          <div id="overlayMessage" class="overlayMessage hidden"></div>
-
-          <!-- bottom small log -->
-          <div id="miniLog" class="miniLog"></div>
-        </div>
-
-        <!-- Main bottom info -->
-        <div id="bottomInfo">
-          <div class="infoRow">
-            <div class="infoBox" id="goldBox">所持G：<span id="goldValue">0</span></div>
-            <div class="infoBox" id="nextTournamentBox">次の大会：<span id="nextTournamentValue">---</span></div>
-            <div class="infoBox" id="statusBox">状態：<span id="statusValue">---</span></div>
-          </div>
-
-          <div class="infoRow">
-            <div class="infoHint" id="hintText">左のコマンドから選んでください。</div>
-            <div class="infoVersion" id="versionText">v0.0</div>
+      <section class="center">
+        <div class="logoRow">
+          <div class="logoBox">
+            <div class="logoTitle">MOB BR</div>
+            <div class="logoSub">Prototype</div>
           </div>
         </div>
 
+        <div class="mainSquare">
+          <!-- 重要シーン「絵＋演出」枠（とりあえず文字演出） -->
+          <div id="sceneTitle" class="sceneTitle">メイン画面</div>
+          <div id="sceneBody" class="sceneBody">
+            左のコマンドから進めてください。<br>
+            大会は「ローカル→ナショナル→ラストチャンス→WF（W/L/Final）」まで簡易実装。
+          </div>
+          <div class="sceneHint">※後で画像差し込みOK（ここをimgにしてもOK）</div>
+        </div>
+
+        <div class="barRow">
+          <div class="hotBar" id="hotMessage">READY</div>
+        </div>
       </section>
 
-      <!-- Right Panel (detail / lists) -->
-      <aside id="rightPanel">
-        <div class="panelTitle" id="panelTitle">詳細</div>
-        <div id="panelBody" class="panelBody"></div>
-
-        <div id="panelFooter" class="panelFooter hidden">
-          <button id="panelClose" class="subBtn">閉じる</button>
-        </div>
-      </aside>
-
+      <section class="rightPanel">
+        <div class="panelTitle">ログ</div>
+        <div id="log" class="log"></div>
+      </section>
     </main>
 
-    <!-- Modal -->
+    <!-- 下部：スクロールできる修行項目エリア -->
+    <footer class="bottom">
+      <div class="bottomTitle">修行 / できること（スクロール）</div>
+      <div id="todo" class="todo"></div>
+      <div class="bottomActions">
+        <button class="smallBtn" id="btnWeek">1週進める（育成だけ）</button>
+        <button class="smallBtn" id="btnClearLog">ログ消去</button>
+      </div>
+    </footer>
+
+    <!-- モーダル -->
     <div id="modal" class="modal hidden">
       <div class="modalInner">
-        <div class="modalTitle" id="modalTitle">TITLE</div>
-        <div class="modalBody" id="modalBody"></div>
-        <div class="modalButtons">
-          <button id="modalOk" class="subBtn">OK</button>
+        <div class="modalHead">
+          <div id="modalTitle" class="modalTitle">TITLE</div>
+          <button id="modalClose" class="modalClose">×</button>
+        </div>
+        <div id="modalBody" class="modalBody"></div>
+        <div class="modalFoot">
+          <button id="modalOk" class="modalOk">OK</button>
         </div>
       </div>
     </div>
 
   </div>
 
-  <!-- scriptは game.js 1本だけ -->
-  <script src="game.js"></script>
+  <script type="module" src="./game.js?v=1"></script>
 </body>
 </html>
