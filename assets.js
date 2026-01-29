@@ -1,282 +1,234 @@
-/* =========================================================
-   assets.js (FULL)
-   - 画像アセット管理（ロード/参照/プレースホルダ）
-   - 「無い画像は assets.js のプレースホルダで表示」ルール厳守
-   - game.js / sim 側は ASSETS.get(name) / ASSETS.isReady() を使う想定
-   ========================================================= */
+// assets.js (FULL) MOB BR
+// 画像管理＆未画像プレースホルダ描画
+// ルール：未画像はここで「色＋文字」で表示する（勝手に別処理しない）
 
 (() => {
   'use strict';
 
-  // ----------------------------
-  // Utils
-  // ----------------------------
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const AS = (window.MOBBR_ASSETS = window.MOBBR_ASSETS || {});
 
-  function makeCanvas(w, h) {
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    return c;
-  }
+  // =========================
+  // 1) 画像パス定義（固定）
+  // =========================
+  AS.PATHS = {
+    // メイン周り
+    haikeimain: 'haikeimain.png',
+    rogo: 'rogo.png',
+    main1: 'main1.png',
 
-  // プレースホルダ描画（画像が無い/ロード失敗）
-  function drawPlaceholder(label, w, h, theme = 'dark') {
-    w = Math.max(64, w | 0);
-    h = Math.max(64, h | 0);
+    // プレイヤーチーム（衣装で増える想定）
+    P1: 'P1.png',
+    P2: 'P2.png',
+    P3: 'P3.png',
 
-    const c = makeCanvas(w, h);
-    const g = c.getContext('2d');
+    // 試合演出
+    map: 'map.png',
+    ido: 'ido.png',
+    shop: 'shop.png',
+    heal: 'heal.png',
+    battle: 'battle.png',
+    winner: 'winner.png',
 
-    // 背景
-    if (theme === 'light') {
-      g.fillStyle = '#e9e9e9';
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = '#d2d2d2';
-    } else {
-      g.fillStyle = '#1a1a1a';
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = '#2a2a2a';
-    }
+    // ボタン画像
+    teamBtn: 'team.png',
+    taikaiBtn: 'taikai.png',
 
-    // 斜線パターン
-    g.save();
-    g.globalAlpha = 0.35;
-    for (let x = -h; x < w + h; x += 18) {
-      g.fillRect(x, 0, 8, h);
-      g.translate(18, 0);
-    }
-    g.restore();
+    // 修行アイコン
+    syageki: 'syageki.png',
+    dash: 'dash.png',
+    paz: 'paz.png',
+    zitugi: 'zitugi.png',
+    taki: 'taki.png',
+    kenq: 'kenq.png',
+    sougou: 'sougou.png',
+  };
 
-    // 枠
-    g.strokeStyle = theme === 'light' ? '#777' : 'rgba(255,255,255,0.35)';
-    g.lineWidth = 2;
-    g.strokeRect(1, 1, w - 2, h - 2);
+  // =========================
+  // 2) マップエリア画像
+  // =========================
+  AS.MAP_AREAS = {
+    1: { name: 'ネオン噴水', file: 'neonhun.png' },
+    2: { name: 'ネオンジム', file: 'neongym.png' },
+    3: { name: 'ネオンストリート', file: 'neonstreet.png' },
+    4: { name: 'ネオン中心街', file: 'neonmain.png' },
+    5: { name: 'ネオン大橋', file: 'neonbrige.png' },
+    6: { name: 'ネオン工場', file: 'neonfact.png' },
 
-    // ラベル（文字）
-    const text = String(label ?? 'MISSING');
-    g.fillStyle = theme === 'light' ? '#333' : 'rgba(255,255,255,0.85)';
-    g.font = `bold ${clamp(Math.floor(Math.min(w, h) / 10), 10, 18)}px system-ui, sans-serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
+    7: { name: '海辺の駅', file: 'seast.png' },
+    8: { name: '海辺の学校', file: 'seasc.png' },
+    9: { name: '海辺の草原', file: 'seasou.png' },
+    10:{ name: '海辺の牧場', file: 'seausi.png' },
 
-    // 2行に分ける
-    const maxLen = 16;
-    const line1 = text.length > maxLen ? text.slice(0, maxLen) : text;
-    const line2 = text.length > maxLen ? text.slice(maxLen, maxLen * 2) : '';
+    11:{ name: 'テント', file: 'mtent.png' },
+    12:{ name: '噴水', file: 'mhunsui.png' },
+    13:{ name: 'バトルフロアA', file: 'ma.png' },
+    14:{ name: 'バトルフロアB', file: 'mb.png' },
+    15:{ name: '音大橋', file: 'mhasi.png' },
+    16:{ name: '看板地点', file: 'mkanban.png' },
 
-    g.fillText(line1, w / 2, h / 2 - (line2 ? 10 : 0));
-    if (line2) g.fillText(line2, w / 2, h / 2 + 10);
+    17:{ name: '高層ビル中心街', file: 'kosomain.png' },
+    18:{ name: '高層ビルファイトリング', file: 'kosoring.png' },
+    19:{ name: '高層ビルヘリポート', file: 'kosoheri.png' },
+    20:{ name: '高層ビルサーキット', file: 'kososakit.png' },
 
-    // 小さく “PLACEHOLDER”
-    g.globalAlpha = 0.8;
-    g.font = `900 ${clamp(Math.floor(Math.min(w, h) / 16), 9, 12)}px system-ui, sans-serif`;
-    g.fillStyle = theme === 'light' ? '#555' : 'rgba(255,255,255,0.55)';
-    g.fillText('PLACEHOLDER', w / 2, h - 14);
+    21:{ name: 'お土産売り場', file: 'hikouri.png' },
+    22:{ name: '飛行場通路', file: 'hikoroad.png' },
 
-    return c;
-  }
+    23:{ name: 'パン売り場', file: 'panuri.png' },
+    24:{ name: 'パン製造工場', file: 'pankou.png' },
 
-  // 画像ロード（失敗時は placeholder）
-  function loadImage(src, fallbackLabel, fallbackW = 512, fallbackH = 512) {
-    return new Promise((resolve) => {
+    25:{ name: 'メインステージ', file: 'stagemain.png' },
+    26:{ name: 'サブステージ', file: 'stagesub.png' },
+    27:{ name: 'サードステージ', file: 'stage3.png' },
+    28:{ name: '巨大トラック', file: 'stagetrack.png' },
+
+    29:{ name: 'ラストロード', file: 'lastroad.png' },
+    30:{ name: 'ラストキング', file: 'lastking.png' },
+    31:{ name: 'ラストモーム', file: 'lastmomu.png' },
+    32:{ name: 'ラストリング', file: 'lastring.png' },
+  };
+
+  // 初動降下禁止（確定）
+  AS.DROP_FORBIDDEN = new Set([5, 9, 12, 20, 28, 29, 30, 31, 32]);
+
+  // =========================
+  // 3) Image Cache
+  // =========================
+  AS.cache = AS.cache || new Map();
+
+  AS.loadImage = function loadImage(src) {
+    if (!src) return Promise.reject(new Error('src is empty'));
+    if (AS.cache.has(src)) return AS.cache.get(src);
+
+    const p = new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve({ ok: true, img, src });
-      img.onerror = () => resolve({ ok: false, img: drawPlaceholder(fallbackLabel, fallbackW, fallbackH), src });
+      img.onerror = () => resolve({ ok: false, img: null, src });
       img.src = src;
     });
+
+    AS.cache.set(src, p);
+    return p;
+  };
+
+  AS.preloadCore = async function preloadCore() {
+    const list = [
+      AS.PATHS.haikeimain,
+      AS.PATHS.rogo,
+      AS.PATHS.main1,
+      AS.PATHS.P1,
+      AS.PATHS.map,
+      AS.PATHS.ido,
+      AS.PATHS.shop,
+      AS.PATHS.heal,
+      AS.PATHS.battle,
+      AS.PATHS.winner,
+      AS.PATHS.teamBtn,
+      AS.PATHS.taikaiBtn,
+      AS.PATHS.syageki,
+      AS.PATHS.dash,
+      AS.PATHS.paz,
+      AS.PATHS.zitugi,
+      AS.PATHS.taki,
+      AS.PATHS.kenq,
+      AS.PATHS.sougou,
+    ].filter(Boolean);
+
+    const results = await Promise.all(list.map((s) => AS.loadImage(s)));
+    return results;
+  };
+
+  // =========================
+  // 4) Placeholder Drawing
+  // =========================
+  function hashCode(str) {
+    str = String(str || '');
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+      h = (h << 5) - h + str.charCodeAt(i);
+      h |= 0;
+    }
+    return h >>> 0;
   }
 
-  // ----------------------------
-  // ASSET TABLE
-  // - “ファイル名は変更禁止”なので、ここは参照専用
-  // - 実ファイルが無い場合でもゲームが動くように placeholder を返す
-  // ----------------------------
-  const MANIFEST = {
-    // ----- 必須UI背景（ユーザー指定） -----
-    P1: { src: 'P1.png', w: 420, h: 560, label: 'P1.png' },
-    main: { src: 'main.png', w: 420, h: 560, label: 'main.png' },
-    ido: { src: 'ido.png', w: 420, h: 560, label: 'ido.png' },
-    map: { src: 'map.png', w: 420, h: 560, label: 'map.png' },
-    shop: { src: 'shop.png', w: 420, h: 560, label: 'shop.png' },
-    heal: { src: 'heal.png', w: 420, h: 560, label: 'heal.png' },
-    battle: { src: 'battle.png', w: 420, h: 560, label: 'battle.png' },
-    winner: { src: 'winner.png', w: 420, h: 560, label: 'winner.png' },
+  function pickColor(key) {
+    const h = hashCode(key);
+    const hue = h % 360;
+    return `hsl(${hue}, 70%, 45%)`;
+  }
 
-    // ----- 修行アイコン（ユーザー指定） -----
-    tr_syageki: { src: 'syageki.png', w: 128, h: 128, label: 'syageki.png' },
-    tr_dash: { src: 'dash.png', w: 128, h: 128, label: 'dash.png' },
-    tr_paz: { src: 'paz.png', w: 128, h: 128, label: 'paz.png' },
-    tr_zitugi: { src: 'zitugi.png', w: 128, h: 128, label: 'zitugi.png' },
-    tr_taki: { src: 'taki.png', w: 128, h: 128, label: 'taki.png' },
-    tr_kenq: { src: 'kenq.png', w: 128, h: 128, label: 'kenq.png' },
-    tr_sougou: { src: 'sougou.png', w: 128, h: 128, label: 'sougou.png' },
+  AS.drawPlaceholder = function drawPlaceholder(ctx, x, y, w, h, label, subLabel) {
+    if (!ctx) return;
+    ctx.save();
 
-    // ----- マップエリア画像（ユーザー指定ファイル名） -----
-    // ネオン街
-    neonhun: { src: 'neonhun.png', w: 256, h: 256, label: 'neonhun.png' },
-    neongym: { src: 'neongym.png', w: 256, h: 256, label: 'neongym.png' },
-    neonstreet: { src: 'neonstreet.png', w: 256, h: 256, label: 'neonstreet.png' },
-    neonmain: { src: 'neonmain.png', w: 256, h: 256, label: 'neonmain.png' },
-    neonbrige: { src: 'neonbrige.png', w: 256, h: 256, label: 'neonbrige.png' },
-    neonfact: { src: 'neonfact.png', w: 256, h: 256, label: 'neonfact.png' },
+    const bg = pickColor(label || 'missing');
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, w, h);
 
-    // 海の見える町
-    seast: { src: 'seast.png', w: 256, h: 256, label: 'seast.png' },
-    seasc: { src: 'seasc.png', w: 256, h: 256, label: 'seasc.png' },
-    seasou: { src: 'seasou.png', w: 256, h: 256, label: 'seasou.png' },
-    seausi: { src: 'seausi.png', w: 256, h: 256, label: 'seausi.png' },
+    // border
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
 
-    // ミュージックマウンテン
-    mtent: { src: 'mtent.png', w: 256, h: 256, label: 'mtent.png' },
-    mhunsui: { src: 'mhunsui.png', w: 256, h: 256, label: 'mhunsui.png' },
-    ma: { src: 'ma.png', w: 256, h: 256, label: 'ma.png' },
-    mb: { src: 'mb.png', w: 256, h: 256, label: 'mb.png' },
-    mhasi: { src: 'mhasi.png', w: 256, h: 256, label: 'mhasi.png' },
-    mkanban: { src: 'mkanban.png', w: 256, h: 256, label: 'mkanban.png' },
+    // overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
 
-    // 高層ビルの街
-    kosomain: { src: 'kosomain.png', w: 256, h: 256, label: 'kosomain.png' },
-    kosoring: { src: 'kosoring.png', w: 256, h: 256, label: 'kosoring.png' },
-    kosoheri: { src: 'kosoheri.png', w: 256, h: 256, label: 'kosoheri.png' },
-    kososakit: { src: 'kososakit.png', w: 256, h: 256, label: 'kososakit.png' },
+    // text
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label || 'NO IMAGE', x + w / 2, y + h * 0.72);
 
-    // 飛行場
-    hikouri: { src: 'hikouri.png', w: 256, h: 256, label: 'hikouri.png' },
-    hikoroad: { src: 'hikoroad.png', w: 256, h: 256, label: 'hikoroad.png' },
+    if (subLabel) {
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(subLabel, x + w / 2, y + h * 0.86);
+    }
 
-    // パン工場
-    panuri: { src: 'panuri.png', w: 256, h: 256, label: 'panuri.png' },
-    pankou: { src: 'pankou.png', w: 256, h: 256, label: 'pankou.png' },
-
-    // ライブイベント
-    stagemain: { src: 'stagemain.png', w: 256, h: 256, label: 'stagemain.png' },
-    stagesub: { src: 'stagesub.png', w: 256, h: 256, label: 'stagesub.png' },
-    stage3: { src: 'stage3.png', w: 256, h: 256, label: 'stage3.png' },
-    stagetrack: { src: 'stagetrack.png', w: 256, h: 256, label: 'stagetrack.png' },
-
-    // ラストモブ（降下不可）
-    lastroad: { src: 'lastroad.png', w: 256, h: 256, label: 'lastroad.png' },
-    lastking: { src: 'lastking.png', w: 256, h: 256, label: 'lastking.png' },
-    lastmomu: { src: 'lastmomu.png', w: 256, h: 256, label: 'lastmomu.png' },
-    lastring: { src: 'lastring.png', w: 256, h: 256, label: 'lastring.png' },
+    ctx.restore();
   };
 
-  // ----------------------------
-  // ASSETS singleton
-  // ----------------------------
-  const ASSETS = {
-    _loaded: false,
-    _loading: false,
-    _map: new Map(),     // key -> (HTMLImageElement or Canvas)
-    _ok: new Map(),      // key -> boolean
-    _progress: { total: 0, done: 0 },
+  // =========================
+  // 5) Draw Image or Placeholder
+  // =========================
+  AS.drawImageOrPlaceholder = async function drawImageOrPlaceholder(
+    ctx,
+    src,
+    x,
+    y,
+    w,
+    h,
+    labelIfMissing
+  ) {
+    if (!ctx) return false;
 
-    // 初期化（ロード開始）
-    async init() {
-      if (this._loaded || this._loading) return;
-      this._loading = true;
-
-      const keys = Object.keys(MANIFEST);
-      this._progress.total = keys.length;
-      this._progress.done = 0;
-
-      // 先に全部 placeholder を入れて “参照先が必ず存在する” 状態にする
-      for (const k of keys) {
-        const m = MANIFEST[k];
-        this._map.set(k, drawPlaceholder(m.label || k, m.w || 256, m.h || 256));
-        this._ok.set(k, false);
-      }
-
-      // 実ロード
-      for (const k of keys) {
-        const m = MANIFEST[k];
-        const res = await loadImage(m.src, m.label || k, m.w || 256, m.h || 256);
-        this._map.set(k, res.img);
-        this._ok.set(k, !!res.ok);
-        this._progress.done++;
-      }
-
-      this._loaded = true;
-      this._loading = false;
-    },
-
-    isReady() {
-      return this._loaded;
-    },
-
-    isLoading() {
-      return this._loading;
-    },
-
-    progress() {
-      return { ...this._progress };
-    },
-
-    // 取得（必ず何か返る）
-    get(key) {
-      if (!this._map.has(key)) {
-        // 未定義キーでも落とさない
-        return drawPlaceholder(String(key), 256, 256);
-      }
-      return this._map.get(key);
-    },
-
-    // ロード成功したか（無くても動くが、デバッグ用）
-    ok(key) {
-      return !!this._ok.get(key);
-    },
-
-    // 任意のキーで placeholder を生成（sim側で用途別の図を出したい時に使える）
-    makePlaceholder(label, w, h, theme) {
-      return drawPlaceholder(label, w, h, theme);
-    },
-
-    // 画像を描画する時の “適正フィット”（縦横比維持）
-    // ctx.drawImage の前に使う想定
-    fitRect(srcW, srcH, dstX, dstY, dstW, dstH, mode = 'contain') {
-      srcW = Math.max(1, srcW);
-      srcH = Math.max(1, srcH);
-      dstW = Math.max(1, dstW);
-      dstH = Math.max(1, dstH);
-
-      const srcAR = srcW / srcH;
-      const dstAR = dstW / dstH;
-
-      let w, h, x, y;
-      if (mode === 'cover') {
-        // 画面を埋める（切り抜き発生）
-        if (srcAR > dstAR) {
-          h = dstH;
-          w = dstH * srcAR;
-        } else {
-          w = dstW;
-          h = dstW / srcAR;
-        }
-      } else {
-        // contain（全体が入る）
-        if (srcAR > dstAR) {
-          w = dstW;
-          h = dstW / srcAR;
-        } else {
-          h = dstH;
-          w = dstH * srcAR;
-        }
-      }
-      x = dstX + (dstW - w) / 2;
-      y = dstY + (dstH - h) / 2;
-      return { x, y, w, h };
-    },
-
-    // 画像のサイズ取り（CanvasもImageも対応）
-    size(img) {
-      if (!img) return { w: 0, h: 0 };
-      if (img instanceof HTMLImageElement) return { w: img.naturalWidth || img.width || 0, h: img.naturalHeight || img.height || 0 };
-      if (img instanceof HTMLCanvasElement) return { w: img.width || 0, h: img.height || 0 };
-      return { w: img.width || 0, h: img.height || 0 };
-    },
+    const res = await AS.loadImage(src).catch(() => ({ ok: false }));
+    if (res && res.ok && res.img) {
+      ctx.drawImage(res.img, x, y, w, h);
+      return true;
+    } else {
+      AS.drawPlaceholder(ctx, x, y, w, h, labelIfMissing || 'MISSING', src || '');
+      return false;
+    }
   };
 
-  // expose
-  window.ASSETS = ASSETS;
+  // =========================
+  // 6) Player Outfit pick
+  // =========================
+  AS.getPlayerImagePath = function getPlayerImagePath(playerOutfitIndex) {
+    // 0=P1, 1=P2, 2=P3...
+    const n = Number(playerOutfitIndex || 0);
+    if (n <= 0) return AS.PATHS.P1;
+    if (n === 1) return AS.PATHS.P2 || AS.PATHS.P1;
+    if (n === 2) return AS.PATHS.P3 || AS.PATHS.P1;
+    return AS.PATHS.P1;
+  };
+
+  // =========================
+  // 7) Export safe
+  // =========================
+  window.ASSETS = AS; // legacy alias (optional)
+
 })();
