@@ -2,126 +2,76 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>MOB BR</title>
-  <link rel="stylesheet" href="./style.css?v=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="theme-color" content="#111111" />
+  <title>MOB BR - Tournament Simulator</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-  <div id="app" class="app">
+  <div id="app">
+    <canvas id="game" width="420" height="560"></canvas>
 
-    <!-- 背景（任意で差し替え：画像が無い場合はCSS背景） -->
-    <div class="bg" aria-hidden="true">
-      <!-- 画像を使う場合は assets に置いて src を差し替え -->
-      <!-- <img class="bgImg" src="./assets/メイン画面レイアウト.png" alt=""> -->
-    </div>
-
-    <!-- 上部：企業名 / 企業ランク / チーム名 -->
-    <header class="topInfo" id="topInfo">
-      <div class="infoRow">
-        <div class="label">企業名</div>
-        <input id="companyName" class="textInput" value="MOB COMPANY" />
+    <!-- UI Overlay -->
+    <div id="ui">
+      <!-- Top Left: Company / Rank / Team -->
+      <div id="hudTopLeft" class="panel">
+        <div class="hudLine"><span class="hudLabel">企業名：</span><span id="hud_company">---</span></div>
+        <div class="hudLine"><span class="hudLabel">企業ランク：</span><span id="hud_rank">---</span></div>
+        <div class="hudLine"><span class="hudLabel">チーム名：</span><span id="hud_team">---</span></div>
       </div>
-      <div class="infoRow">
-        <div class="label">企業ランク</div>
-        <select id="companyRank" class="select">
-          <option value="S">S</option>
-          <option value="A" selected>A</option>
-          <option value="B">B</option>
-          <option value="C">C</option>
-          <option value="D">D</option>
-        </select>
-      </div>
-      <div class="infoRow">
-        <div class="label">チーム名</div>
-        <input id="teamName" class="textInput" value="MOBCREW" />
-      </div>
-    </header>
 
-    <!-- 中段：左コマンド / 中央 正方形枠(重要シーン) / 右ログ -->
-    <main class="main">
-      <aside class="leftMenu" id="leftMenu">
-        <button class="menuBtn" id="btnTeam">チーム編成</button>
-        <button class="menuBtn" id="btnRecruit">勧誘</button>
-        <button class="menuBtn" id="btnGacha">ガチャ</button>
-        <button class="menuBtn" id="btnTournament">大会</button>
-        <button class="menuBtn" id="btnMap">マップ</button>
-        <button class="menuBtn" id="btnReset">リセット</button>
-      </aside>
+      <!-- Buttons (Left) -->
+      <div id="menuButtons">
+        <button id="btn_team" class="uiBtn">チーム</button>
+        <button id="btn_tournament" class="uiBtn">大会</button>
+        <button id="btn_shop" class="uiBtn">ショップ</button>
+        <button id="btn_train" class="uiBtn">修行</button>
+      </div>
 
-      <section class="center" id="center">
-        <div class="brandRow">
-          <div class="brandBox">
-            <div class="brandTitle" id="brandTitle">MOB BR</div>
-            <div class="brandSub" id="brandSub">MAIN</div>
-          </div>
-          <div class="versionBox">
-            <div class="versionLabel">VERSION</div>
-            <div class="versionValue" id="versionValue">v0.1</div>
+      <!-- Center / Right Main Image Frame -->
+      <div id="mainFrame">
+        <div id="mainFrameInner">
+          <div id="mainFrameTitle">MAIN</div>
+          <div id="mainFrameSub">（絵＋演出）</div>
+        </div>
+      </div>
+
+      <!-- Wide Log / Message Box -->
+      <div id="logBox">
+        <div id="logText">MOB BR へようこそ！</div>
+      </div>
+
+      <!-- Bottom Controls -->
+      <div id="bottomControls">
+        <button id="btn_next" class="uiBtn uiBtnWide">NEXT</button>
+        <button id="btn_skip" class="uiBtn uiBtnWide">SKIP</button>
+      </div>
+
+      <!-- Modal Backdrop -->
+      <div id="modalBackdrop" class="hidden"></div>
+
+      <!-- Modal Panel -->
+      <div id="modalPanel" class="hidden">
+        <div id="modalHeader">
+          <div id="modalTitle">MENU</div>
+          <button id="modalClose" class="uiBtnSmall">×</button>
+        </div>
+
+        <div id="modalBody">
+          <div id="modalContent">
+            <div class="modalText">ここに各画面（チーム編成／大会／ショップ／修行など）を表示します。</div>
           </div>
         </div>
 
-        <!-- 正方形：重要シーン（絵＋演出） -->
-        <div class="mainSquare" id="mainSquare" role="region" aria-label="重要シーン">
-          <div class="sceneHeader">
-            <div class="sceneTitle" id="sceneTitle">メイン画面</div>
-            <div class="sceneBadge" id="sceneBadge">READY</div>
-          </div>
-
-          <!-- 画像を入れる場合：ここに <img> を差し込む（JS側で切替） -->
-          <div class="sceneCanvas" id="sceneCanvas">
-            <div class="sceneText" id="sceneText">
-              左のコマンドから進めてください。
-            </div>
-          </div>
-
-          <div class="sceneFooter">
-            <div class="hint" id="hint">※重要シーンは「絵＋演出」でここに表示</div>
-          </div>
-        </div>
-
-        <div class="hotRow">
-          <div class="hotBar" id="hotBar">READY</div>
-        </div>
-      </section>
-
-      <section class="rightPanel" id="rightPanel">
-        <div class="panelTitle">ログ</div>
-        <div id="log" class="log" aria-label="ログ"></div>
-      </section>
-    </main>
-
-    <!-- 下段：修行（横スライド/スクロール） -->
-    <footer class="bottom" id="bottom">
-      <div class="bottomTitle">修行（横スライド）</div>
-
-      <!-- JSでカードを並べる：中央に来たカードを拡大強調 -->
-      <div class="trainRail" id="trainRail" aria-label="修行一覧">
-        <div class="trainList" id="trainList"></div>
-      </div>
-
-      <div class="bottomActions">
-        <button class="smallBtn" id="btnDoTrain">修行する</button>
-        <button class="smallBtn" id="btnClearLog">ログ消去</button>
-      </div>
-    </footer>
-
-    <!-- モーダル（共通） -->
-    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-hidden="true">
-      <div class="modalInner">
-        <div class="modalHead">
-          <div id="modalTitle" class="modalTitle">TITLE</div>
-          <button id="modalClose" class="modalClose" aria-label="閉じる">×</button>
-        </div>
-        <div id="modalBody" class="modalBody"></div>
-        <div class="modalFoot">
-          <button id="modalOk" class="modalOk">OK</button>
+        <div id="modalFooter">
+          <button id="modalOk" class="uiBtn">OK</button>
         </div>
       </div>
     </div>
-
   </div>
 
-  <!-- ルール：index.html の script は game.js のみ -->
-  <script src="./game.js?v=1"></script>
+  <!-- Only one script: game.js -->
+  <script src="game.js"></script>
 </body>
 </html>
