@@ -1,598 +1,65 @@
-/* =========================================================
-   data_teams_world.js (FULL)
-   - ワールドファイナルに登場するCPUチーム定義
-   - ここでは「ワールドチームの固定メンバー＆パッシブ」を定義する
-   ========================================================= */
+/* =====================================================
+   data_teams_world.js  (FULL)
+   MOB Tournament Simulation
+   ワールド大会：40チーム枠（A/B/C/D グループ）
+   - 今は「枠」を先に用意（後で実データを差し替え可能）
+   - 3人1チーム固定
+   - passive.effects は sim 側で解釈して適用
+   ===================================================== */
 
-(() => {
-  'use strict';
+window.DATA_TEAMS_WORLD = (function () {
 
-  const CONST = window.DATA_CONST;
-  if (!CONST) throw new Error('DATA_CONST not found. Load data_const.js before data_teams_world.js');
+  const TEAMS = [];
 
-  // ---------------------------------------------------------
-  // ワールドチーム一覧（ユーザー指定の完成版を反映）
-  // 形式：
-  // {
-  //   id, name, powerPct, styleText,
-  //   members: [{ name },{ name },{ name }],
-  //   passive: { name, desc, applyTiming, effect }
-  // }
-  // ---------------------------------------------------------
+  function makeTeam(group, index, powerPct) {
+    const n = String(index).padStart(2, '0');
+    const id = `W_${group}_${n}`;
+    const name = `ワールド${group}-${index}`;
+    return {
+      id,
+      tier: "WORLD",
+      group, // "A" / "B" / "C" / "D"
+      name,
+      powerPct,
+      style: "未設定",
+      members: [
+        `${name}メンバー1`,
+        `${name}メンバー2`,
+        `${name}メンバー3`
+      ],
+      passive: {
+        name: "未設定",
+        desc: "後で設定",
+        effects: []
+      }
+    };
+  }
 
-  const TEAMS_WORLD = [
-    {
-      id: 'W_HAWKS',
-      group: 'WORLD',
-      name: 'ホークス',
-      powerPct: 95,
-      styleText: '世界No.1のチーム力',
-      members: [{ name: 'アサモモ' }, { name: 'ヨルモモ' }, { name: 'ネコヤダイ' }],
-      passive: {
-        name: '王者の完成度',
-        desc: '味方全員のAim+3＆Agility+2',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 3, Agility: 2 } },
-      },
-    },
-    {
-      id: 'W_BLACK_ORDER',
-      group: 'WORLD',
-      name: 'ブラックオーダー',
-      powerPct: 92,
-      styleText: 'ホークスのライバル',
-      members: [{ name: 'サノース' }, { name: 'プロキシマン' }, { name: 'マウマウ' }],
-      passive: {
-        name: '黒の圧力',
-        desc: '敵全体の命中率-3%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { hitChance: -3 } },
-      },
-    },
-    {
-      id: 'W_FREEZE_MASTERS',
-      group: 'WORLD',
-      name: 'フリーズマスターズ',
-      powerPct: 90,
-      styleText: '冷酷な最恐集団',
-      members: [{ name: 'フリーザー' }, { name: 'クーラー' }, { name: 'ゴールド' }],
-      passive: {
-        name: '冷酷支配',
-        desc: '敵全体のAgility-2＆回復量-10%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Agility: -2 }, enemyPctAdd: { healItem: -10 } },
-      },
-    },
-    {
-      id: 'W_AKATSUKI',
-      group: 'WORLD',
-      name: 'アカツキ',
-      powerPct: 90,
-      styleText: '企業財力が世界一',
-      members: [{ name: 'イカリーノ' }, { name: 'イカススム' }, { name: 'ヨジョウ' }],
-      passive: {
-        name: '資金力',
-        desc: '戦闘開始時、味方全員Armor+12（最大100）',
-        applyTiming: 'BATTLE_START',
-        effect: { armorHealTeam: 12, armorMax: 100 },
-      },
-    },
-    {
-      id: 'W_ANDROMEDA',
-      group: 'WORLD',
-      name: 'アンドロメダ',
-      powerPct: 90,
-      styleText: 'ロボのごとく正確無比',
-      members: [{ name: 'ジュピター' }, { name: 'ムーン' }, { name: 'アースドン' }],
-      passive: {
-        name: '機械精度',
-        desc: '味方全員の命中率+4%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { hitChance: +4 } },
-      },
-    },
-    {
-      id: 'W_ONIGASHIMA',
-      group: 'WORLD',
-      name: '鬼ヶ島',
-      powerPct: 90,
-      styleText: '圧倒的連携力',
-      members: [{ name: 'カイドウロック' }, { name: 'キングスキー' }, { name: 'クイーンデフ' }],
-      passive: {
-        name: '怪物連携',
-        desc: '味方全員の被ダメージ-7%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damageTaken: -7 } },
-      },
-    },
-    {
-      id: 'W_DAISYOU_ALLSTARS',
-      group: 'WORLD',
-      name: '大将オールスターズ',
-      powerPct: 89,
-      styleText: '個々が強い',
-      members: [{ name: 'アカイノシシ' }, { name: 'キヒヒ' }, { name: 'アオクジャク' }],
-      passive: {
-        name: '個の暴力',
-        desc: '味方全員のダメージ+6%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damage: +6 } },
-      },
-    },
-    {
-      id: 'W_MUGIWARANO',
-      group: 'WORLD',
-      name: 'ムギワラーノ',
-      powerPct: 87,
-      styleText: '主人公的チーム',
-      members: [{ name: 'ルーフ' }, { name: 'ゾーロ' }, { name: 'ダイサンジ' }],
-      passive: {
-        name: '主人公補正',
-        desc: '戦闘中1回だけ被ダメ無効（チームで1回）',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { teamNegateDamageOnce: true } },
-      },
-    },
-    {
-      id: 'W_NINJATAI',
-      group: 'WORLD',
-      name: 'ニンジャタイ',
-      powerPct: 87,
-      styleText: '',
-      members: [{ name: 'ナルトノ' }, { name: 'サラスケ' }, { name: 'サクランド' }],
-      passive: {
-        name: '忍び足',
-        desc: '戦闘1ターン目だけ敵の命中率-5%',
-        applyTiming: 'TURN1_ONLY',
-        effect: { enemyPctAdd: { hitChance: -5 } },
-      },
-    },
-    {
-      id: 'W_WHOLECAKE',
-      group: 'WORLD',
-      name: 'ホールケーキ',
-      powerPct: 86,
-      styleText: '',
-      members: [{ name: 'カタクリコ' }, { name: 'クラッカー' }, { name: 'オーブンレンジ' }],
-      passive: {
-        name: '甘党強化',
-        desc: '戦闘中の回復アイテム効果+15%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { healItem: +15 } },
-      },
-    },
-    {
-      id: 'W_SKYHIGH',
-      group: 'WORLD',
-      name: 'スカイハイ',
-      powerPct: 86,
-      styleText: '',
-      members: [{ name: 'ヴァルキー' }, { name: 'レヴント' }, { name: 'クリップトン' }],
-      passive: {
-        name: '高所優位',
-        desc: '味方全員の弱狙い率+15%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { finishFocus: +15 } },
-      },
-    },
-    {
-      id: 'W_YOMIKAKE_BOOK',
-      group: 'WORLD',
-      name: '読みかけの本',
-      powerPct: 88,
-      styleText: '最高のパフォーマンス',
-      members: [{ name: 'あのヒーロー' }, { name: '見習いビーム' }, { name: 'いつかの巨人' }],
-      passive: {
-        name: '物語補正',
-        desc: 'HP半分以下で味方全員のAim+4',
-        applyTiming: 'TEAM_HP_BELOW_HALF',
-        effect: { statsAddTeam: { Aim: 4 } },
-      },
-    },
-    {
-      id: 'W_LEGENDS',
-      group: 'WORLD',
-      name: 'レジェンズ',
-      powerPct: 88,
-      styleText: 'ファイト力世界一',
-      members: [{ name: 'レイース' }, { name: 'オックタン' }, { name: 'ブラハン' }],
-      passive: {
-        name: '戦闘民族',
-        desc: '味方全員のCrit率+3%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { critChance: +3 } },
-      },
-    },
-    {
-      id: 'W_TEIOU',
-      group: 'WORLD',
-      name: 'テイオウ',
-      powerPct: 84,
-      styleText: '安定感抜群',
-      members: [{ name: 'アカシーマ' }, { name: 'アオミン' }, { name: 'ムラバラ' }],
-      passive: {
-        name: '帝王の安定',
-        desc: '味方全員の被弾率-3%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { hitTaken: -3 } },
-      },
-    },
-    {
-      id: 'W_WOLFKID',
-      group: 'WORLD',
-      name: 'ウルフキッド',
-      powerPct: 84,
-      styleText: '最速移動チーム',
-      members: [{ name: 'ウルフ' }, { name: 'アンドル' }, { name: 'エクシーズ' }],
-      passive: {
-        name: '最速',
-        desc: '味方全員のAgility+3',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Agility: 3 } },
-      },
-    },
-    {
-      id: 'W_DEMONCLAN',
-      group: 'WORLD',
-      name: 'デーモンクラン',
-      powerPct: 84,
-      styleText: '悪知恵の働く強豪',
-      members: [{ name: 'ラプソン' }, { name: 'プチソン' }, { name: 'エッソン' }],
-      passive: {
-        name: '悪知恵',
-        desc: '敵1人を指定して命中率-6%',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { markOneEnemyHitChancePct: -6 } },
-      },
-    },
-    {
-      id: 'W_DEVILBAT',
-      group: 'WORLD',
-      name: 'デビルバット',
-      powerPct: 83,
-      styleText: 'エイム重視',
-      members: [{ name: 'ヒルーマ' }, { name: 'セナシールド' }, { name: 'モンタン' }],
-      passive: {
-        name: '狙撃精度',
-        desc: '味方全員のAim+3',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 3 } },
-      },
-    },
-    {
-      id: 'W_DESTINIES',
-      group: 'WORLD',
-      name: 'ディスティニーズ',
-      powerPct: 84,
-      styleText: '',
-      members: [{ name: 'ミミッキー' }, { name: 'ドーナルド' }, { name: 'プルフート' }],
-      passive: {
-        name: 'ドリーム連携',
-        desc: '味方全員のMove+1＆Armorダメージ-3%',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Move: 1 }, pctAddTeam: { armorDamageTaken: -3 } },
-      },
-    },
-    {
-      id: 'W_DONKIHOTE',
-      group: 'WORLD',
-      name: 'ドンキホーテ',
-      powerPct: 84,
-      styleText: '',
-      members: [{ name: 'ドフラクック' }, { name: 'ディアマール' }, { name: 'ピースケ' }],
-      passive: {
-        name: '支配者',
-        desc: '敵全体のMental-5%扱い',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { mental: -5 } },
-      },
-    },
-    {
-      id: 'W_CP3',
-      group: 'WORLD',
-      name: 'CP3',
-      powerPct: 82,
-      styleText: '',
-      members: [{ name: 'ルーチ' }, { name: 'カック' }, { name: 'カリーファ' }],
-      passive: {
-        name: '諜報',
-        desc: '敵の弱狙い率+10%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { finishFocus: +10 } },
-      },
-    },
-    {
-      id: 'W_ELEVENS',
-      group: 'WORLD',
-      name: 'イレブンズ',
-      powerPct: 81,
-      styleText: '',
-      members: [{ name: 'カーミュ' }, { name: 'レベーカ' }, { name: 'セニャ' }],
-      passive: {
-        name: 'イレブン連携',
-        desc: '味方全員のAim+2＆Agility+1',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 2, Agility: 1 } },
-      },
-    },
-    {
-      id: 'W_RAINBOW_ROAD',
-      group: 'WORLD',
-      name: 'レインボーロード',
-      powerPct: 81,
-      styleText: '',
-      members: [{ name: 'アカスター' }, { name: 'アオアース' }, { name: 'キンミドリ' }],
-      passive: {
-        name: '虹加速',
-        desc: '戦闘開始時、味方全員のAgility+2',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Agility: 2 } },
-      },
-    },
-    {
-      id: 'W_ARTIST',
-      group: 'WORLD',
-      name: 'アーティスト',
-      powerPct: 80,
-      styleText: '',
-      members: [{ name: 'ゴッホチー' }, { name: 'ピカソウ' }, { name: 'ミューシャ' }],
-      passive: {
-        name: '芸術爆発',
-        desc: '味方全員のCrit率+2%＆命中率+1%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { critChance: +2, hitChance: +1 } },
-      },
-    },
-    {
-      id: 'W_MONONOKE',
-      group: 'WORLD',
-      name: 'もののけ',
-      powerPct: 80,
-      styleText: '',
-      members: [{ name: 'ライジングサン' }, { name: 'アシタング' }, { name: 'デイダラ' }],
-      passive: {
-        name: '霊気',
-        desc: '敵全体の被ダメージ+3%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { damageTaken: +3 } },
-      },
-    },
-    {
-      id: 'W_KAMIKAKUSHI',
-      group: 'WORLD',
-      name: 'かみかくし',
-      powerPct: 80,
-      styleText: '',
-      members: [{ name: 'チヒロ' }, { name: 'ユーババ' }, { name: 'カオアリ' }],
-      passive: {
-        name: '神隠し',
-        desc: '戦闘開始時、敵1人の行動順を最後にする確率+50%',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { sendOneEnemyToLastTurnChance: 50 } },
-      },
-    },
-    {
-      id: 'W_13KAIDAN',
-      group: 'WORLD',
-      name: '13階段',
-      powerPct: 80,
-      styleText: '',
-      members: [{ name: 'ぜムンクルス' }, { name: 'マルシャー' }, { name: 'サイクル' }],
-      passive: {
-        name: '階段罠',
-        desc: '戦闘中1回だけ敵の攻撃をミスにする',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { forceEnemyMissOnce: true } },
-      },
-    },
-    {
-      id: 'W_VILLAINS',
-      group: 'WORLD',
-      name: 'ヴィランズ',
-      powerPct: 79,
-      styleText: '',
-      members: [{ name: 'マレフィファント' }, { name: 'ジャーファル' }, { name: 'ハーデス' }],
-      passive: {
-        name: '悪意',
-        desc: '敵全体の回復量-12%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { healItem: -12 } },
-      },
-    },
-    {
-      id: 'W_GLITCH_HUNTERS',
-      group: 'WORLD',
-      name: 'グリッチハンターズ',
-      powerPct: 79,
-      styleText: '',
-      members: [{ name: 'バグズ' }, { name: 'ノイズ' }, { name: 'パッチ' }],
-      passive: {
-        name: 'バグ侵食',
-        desc: '敵全体のAim-2',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Aim: -2 } },
-      },
-    },
-    {
-      id: 'W_SEASALT',
-      group: 'WORLD',
-      name: 'シーソルト',
-      powerPct: 78,
-      styleText: '',
-      members: [{ name: 'ロクス' }, { name: 'シオ' }, { name: 'アクリア' }],
-      passive: {
-        name: '塩耐性',
-        desc: '味方全員の被ダメージ-4%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damageTaken: -4 } },
-      },
-    },
-    {
-      id: 'W_HYPER_CARNIVAL',
-      group: 'WORLD',
-      name: 'ハイパーカーニバル',
-      powerPct: 78,
-      styleText: '',
-      members: [{ name: 'ピエロック' }, { name: 'ショーマン' }, { name: 'ドラムン' }],
-      passive: {
-        name: '盛り上げ',
-        desc: '戦闘中、味方全員のMental+5%扱い',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { mental: +5 } },
-      },
-    },
-    {
-      id: 'W_TENTEN',
-      group: 'WORLD',
-      name: 'テンテン',
-      powerPct: 77,
-      styleText: '',
-      members: [{ name: 'フーラ' }, { name: 'マーユ' }, { name: 'ヒューガ' }],
-      passive: {
-        name: '点取り',
-        desc: '敵が倒れるたび味方全員のAim+1（最大+3）',
-        applyTiming: 'ON_ENEMY_DOWN',
-        effect: { stackAddTeam: { stat: 'Aim', perStack: 1, maxStacks: 3 } },
-      },
-    },
-    {
-      id: 'W_PRINCESS',
-      group: 'WORLD',
-      name: 'プリンセス',
-      powerPct: 77,
-      styleText: '',
-      members: [{ name: 'シンディララ' }, { name: 'シラユキ' }, { name: 'オーロラ' }],
-      passive: {
-        name: '姫の加護',
-        desc: '戦闘中1回だけHPが0になった時HP1で耐える（チームで1回）',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { teamSurviveAt1HPOnce: true } },
-      },
-    },
-    {
-      id: 'W_NIGHTMARE',
-      group: 'WORLD',
-      name: 'ナイトメア',
-      powerPct: 77,
-      styleText: '',
-      members: [{ name: 'ドレッド' }, { name: 'ファントム' }, { name: 'スリープ' }],
-      passive: {
-        name: '悪夢',
-        desc: '敵全体のAgility-1＆命中率-1%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Agility: -1 }, enemyPctAdd: { hitChance: -1 } },
-      },
-    },
-    {
-      id: 'W_ORCHESTRA',
-      group: 'WORLD',
-      name: 'オーケストラ',
-      powerPct: 76,
-      styleText: '',
-      members: [{ name: 'ピッコロ' }, { name: 'チェロ' }, { name: 'パイプ' }],
-      passive: {
-        name: '合奏',
-        desc: '味方全員のAim+1＆Agility+1',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 1, Agility: 1 } },
-      },
-    },
-    {
-      id: 'W_NEON_PULSE',
-      group: 'WORLD',
-      name: 'ネオンパルス',
-      powerPct: 75,
-      styleText: '',
-      members: [{ name: 'グロウ' }, { name: 'フラッシュ' }, { name: 'ビート' }],
-      passive: {
-        name: 'ネオン加速',
-        desc: '戦闘1ターン目だけ味方全員のAgility+4',
-        applyTiming: 'TURN1_ONLY',
-        effect: { statsAddTeam: { Agility: 4 } },
-      },
-    },
-    {
-      id: 'W_CHRONOGEAR',
-      group: 'WORLD',
-      name: 'クロノギア',
-      powerPct: 73,
-      styleText: '',
-      members: [{ name: 'タイム' }, { name: 'ギアード' }, { name: 'リセット' }],
-      passive: {
-        name: '時間操作',
-        desc: '敵1人の行動を1回遅らせる確率+25%',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { delayOneEnemyActionOnceChance: 25 } },
-      },
-    },
-    {
-      id: 'W_METEOR_RUSH',
-      group: 'WORLD',
-      name: 'メテオラッシ',
-      powerPct: 71,
-      styleText: '',
-      members: [{ name: 'メテオ' }, { name: 'ノヴァ' }, { name: 'スターロロ' }],
-      passive: {
-        name: '隕石圧',
-        desc: '敵全体のArmor-5で開始',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyArmorStartDelta: -5 },
-      },
-    },
-    {
-      id: 'W_LAGOON_LEGEND',
-      group: 'WORLD',
-      name: 'ラグーンレジェンド',
-      powerPct: 71,
-      styleText: '',
-      members: [{ name: 'ラグーナ' }, { name: 'コーラル' }, { name: 'シード' }],
-      passive: {
-        name: '海底回復',
-        desc: '毎ターン味方全員Armor+2（最大100）',
-        applyTiming: 'TURN_START',
-        effect: { armorRegenTeam: 2, armorMax: 100 },
-      },
-    },
-    {
-      id: 'W_STORM_CORE',
-      group: 'WORLD',
-      name: 'ストームコア',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'サンダー' }, { name: 'タイフーン' }, { name: '活火山' }],
-      passive: {
-        name: '嵐',
-        desc: '戦闘開始時、敵全体の命中率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { hitChance: -2 } },
-      },
-    },
-    {
-      id: 'W_MAGICIANZ',
-      group: 'WORLD',
-      name: 'マジシャンズ',
-      powerPct: 85,
-      styleText: '何をするか分からない恐ろしさ',
-      members: [{ name: 'カオスブラック' }, { name: 'イリュージョニスト' }, { name: 'サクリファイス' }],
-      passive: {
-        name: '幻惑',
-        desc: '戦闘開始時、敵の弱狙い率を0%にする',
-        applyTiming: 'BATTLE_START',
-        effect: { enemySet: { finishFocus: 0 } },
-      },
-    },
-  ];
+  // 40チーム：各グループ10
+  // powerPct は“仮”で、強弱の並びだけ作ってあります（後で差し替え前提）。
+  // A: 85→67 / B: 84→66 / C: 83→65 / D: 82→64
+  const base = {
+    A: 85,
+    B: 84,
+    C: 83,
+    D: 82
+  };
 
-  // ---------------------------------------------------------
-  // 公開
-  // ---------------------------------------------------------
-  window.DATA_TEAMS_WORLD = Object.freeze({
-    list: Object.freeze(TEAMS_WORLD.slice()),
-    byId: Object.freeze(
-      TEAMS_WORLD.reduce((acc, t) => {
-        acc[t.id] = t;
-        return acc;
-      }, Object.create(null))
-    ),
+  ["A", "B", "C", "D"].forEach((g) => {
+    for (let i = 1; i <= 10; i++) {
+      TEAMS.push(makeTeam(g, i, base[g] - (i - 1) * 2));
+    }
   });
+
+  function getAll() { return TEAMS.slice(); }
+  function getById(id) { return TEAMS.find(t => t.id === id) || null; }
+  function listByGroup(group) { return TEAMS.filter(t => t.group === group); }
+
+  return {
+    teams: TEAMS,
+    getAll,
+    getById,
+    listByGroup
+  };
+
 })();
