@@ -1,332 +1,281 @@
 /* =========================================================
-  ui.js (FULL)
-  - UI描画／右パネル／モーダル／ミニログ／オーバーレイ
-  - game.js から呼び出して使う想定（index.html は game.js 1本だけ）
-========================================================= */
+   ui.js (FULL)
+   UI layer / helpers
+   - game.js から window.UI を呼ぶ前提
+   - index.html 側の要素が不足していても “落ちない” ように保険
+   - ログ/モーダル/フェーズ表示/HUD更新を担当
+   ========================================================= */
 
-(function () {
-  "use strict";
+(() => {
+  'use strict';
 
-  // -------------------------------------------------------
-  // DOM cache
-  // -------------------------------------------------------
-  const UI = {
-    el: null,
-    ctx: null,
-    W: 640,
-    H: 640,
+  const UI = {};
 
-    _miniLogLines: [],
-    _miniLogMax: 6,
+  // ----------------------------
+  // DOM refs (optional)
+  // ----------------------------
+  const $ = (id) => document.getElementById(id);
 
-    _activeCmd: null,
-    _assets: null, // assets.js で差し替え想定
-    _state: null,  // state.js で差し替え想定
+  const dom = {
+    root: null,
+    log: null,
+    hudCompany: null,
+    hudRank: null,
+    hudTeam: null,
+
+    // modal
+    modalWrap: null,
+    modalBox: null,
+    modalTitle: null,
+    modalBody: null,
+    modalClose: null,
+
+    // phase badge (optional)
+    phaseBadge: null,
   };
 
-  function q(id) {
-    return document.getElementById(id);
+  // ----------------------------
+  // Safe element create
+  // ----------------------------
+  function ensureRoot() {
+    dom.root = dom.root || $('ui') || document.body;
   }
 
-  // -------------------------------------------------------
+  function createEl(tag, attrs = {}, parent = null) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'style' && typeof v === 'object') {
+        Object.assign(el.style, v);
+      } else if (k === 'className') {
+        el.className = v;
+      } else if (k === 'text') {
+        el.textContent = v;
+      } else {
+        el.setAttribute(k, v);
+      }
+    }
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  function ensureLog() {
+    dom.log = dom.log || $('logText');
+  }
+
+  function ensureHUD() {
+    dom.hudCompany = dom.hudCompany || $('hud_company');
+    dom.hudRank = dom.hudRank || $('hud_rank');
+    dom.hudTeam = dom.hudTeam || $('hud_team');
+  }
+
+  // ----------------------------
+  // Modal
+  // ----------------------------
+  function ensureModal() {
+    if (dom.modalWrap) return;
+
+    ensureRoot();
+
+    dom.modalWrap = createEl('div', {
+      id: 'ui_modal_wrap',
+      style: {
+        position: 'absolute',
+        left: '0',
+        top: '0',
+        width: '100%',
+        height: '100%',
+        display: 'none',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.55)',
+        zIndex: '9999',
+      }
+    }, dom.root);
+
+    dom.modalBox = createEl('div', {
+      id: 'ui_modal_box',
+      style: {
+        width: 'min(520px, 92%)',
+        maxHeight: '78%',
+        background: 'rgba(20,20,20,0.95)',
+        border: '2px solid rgba(255,255,255,0.18)',
+        borderRadius: '14px',
+        boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+        padding: '14px 14px 12px',
+        overflow: 'hidden',
+      }
+    }, dom.modalWrap);
+
+    dom.modalTitle = createEl('div', {
+      id: 'ui_modal_title',
+      style: {
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '800',
+        fontSize: '16px',
+        color: 'rgba(255,255,255,0.92)',
+        marginBottom: '10px',
+      },
+      text: 'TITLE'
+    }, dom.modalBox);
+
+    dom.modalBody = createEl('div', {
+      id: 'ui_modal_body',
+      style: {
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '700',
+        fontSize: '13px',
+        lineHeight: '1.6',
+        color: 'rgba(255,255,255,0.80)',
+        whiteSpace: 'pre-wrap',
+        overflowY: 'auto',
+        maxHeight: '52vh',
+        paddingRight: '4px',
+      },
+      text: 'BODY'
+    }, dom.modalBox);
+
+    const row = createEl('div', {
+      style: {
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '10px',
+        marginTop: '12px',
+      }
+    }, dom.modalBox);
+
+    dom.modalClose = createEl('button', {
+      id: 'ui_modal_close',
+      style: {
+        appearance: 'none',
+        border: '1px solid rgba(255,255,255,0.22)',
+        background: 'rgba(255,255,255,0.10)',
+        color: 'rgba(255,255,255,0.92)',
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '800',
+        padding: '8px 14px',
+        borderRadius: '10px',
+        cursor: 'pointer',
+      },
+      text: '閉じる'
+    }, row);
+
+    dom.modalClose.addEventListener('click', () => UI.closeModal());
+    dom.modalWrap.addEventListener('click', (e) => {
+      if (e.target === dom.modalWrap) UI.closeModal();
+    });
+
+    // ESC close
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') UI.closeModal();
+    });
+  }
+
+  UI.openModal = function(title, body) {
+    ensureModal();
+    dom.modalTitle.textContent = title || '';
+    dom.modalBody.textContent = body || '';
+    dom.modalWrap.style.display = 'flex';
+  };
+
+  UI.closeModal = function() {
+    if (!dom.modalWrap) return;
+    dom.modalWrap.style.display = 'none';
+  };
+
+  // ----------------------------
+  // Phase badge (optional overlay)
+  // ----------------------------
+  function ensurePhaseBadge() {
+    if (dom.phaseBadge) return;
+
+    ensureRoot();
+
+    // uiRootがposition:relativeでない場合もあるので、absoluteで置けるようにする
+    // rootがbodyの場合は fixed にして視認性を確保
+    const isBody = dom.root === document.body;
+
+    dom.phaseBadge = createEl('div', {
+      id: 'ui_phase_badge',
+      style: {
+        position: isBody ? 'fixed' : 'absolute',
+        right: '10px',
+        top: '10px',
+        padding: '6px 10px',
+        borderRadius: '10px',
+        background: 'rgba(0,0,0,0.45)',
+        border: '1px solid rgba(255,255,255,0.18)',
+        color: 'rgba(255,255,255,0.85)',
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '900',
+        fontSize: '12px',
+        zIndex: '9998',
+        userSelect: 'none',
+        pointerEvents: 'none',
+      },
+      text: 'PHASE'
+    }, dom.root);
+  }
+
+  // ----------------------------
+  // HUD + Log
+  // ----------------------------
+  UI.setHUD = function({ company, rank, team }) {
+    ensureHUD();
+    if (dom.hudCompany && company != null) dom.hudCompany.textContent = String(company);
+    if (dom.hudRank && rank != null) dom.hudRank.textContent = String(rank);
+    if (dom.hudTeam && team != null) dom.hudTeam.textContent = String(team);
+  };
+
+  UI.setLog = function(text) {
+    ensureLog();
+    if (dom.log) dom.log.textContent = String(text ?? '');
+  };
+
+  // ----------------------------
+  // Phase change hook
+  // ----------------------------
+  UI.onPhaseChange = function(phase, game) {
+    ensurePhaseBadge();
+    dom.phaseBadge.textContent = `PHASE: ${phase}`;
+
+    // 必要ならフェーズごとにボタン文言等も変える（index.htmlの構造に依存するので保険のみ）
+    // 例：Skipをフェーズによって無効化、などは game.js で制御する想定
+    // ここではログの補助表示のみ。
+    if (game && typeof game === 'object') {
+      // phaseごとの軽い案内を差し込む（邪魔しない）
+      // ※ログ本文の上書きはしない。末尾に補助を付けたい場合は game.js が行う。
+    }
+  };
+
+  // ----------------------------
   // Init
-  // -------------------------------------------------------
-  function init(opts = {}) {
-    UI.el = {
-      companyName: q("companyName"),
-      companyRank: q("companyRank"),
-      teamName: q("teamName"),
-      weekInfo: q("weekInfo"),
+  // ----------------------------
+  UI.init = function(game) {
+    ensureRoot();
+    ensureHUD();
+    ensureLog();
+    ensureModal();
+    ensurePhaseBadge();
 
-      goldValue: q("goldValue"),
-      nextTournamentValue: q("nextTournamentValue"),
-      statusValue: q("statusValue"),
-      hintText: q("hintText"),
-      versionText: q("versionText"),
-
-      canvas: q("screen"),
-      overlayMessage: q("overlayMessage"),
-      miniLog: q("miniLog"),
-
-      panelTitle: q("panelTitle"),
-      panelBody: q("panelBody"),
-      panelFooter: q("panelFooter"),
-      panelClose: q("panelClose"),
-
-      modal: q("modal"),
-      modalTitle: q("modalTitle"),
-      modalBody: q("modalBody"),
-      modalOk: q("modalOk"),
-    };
-
-    if (!UI.el.canvas) throw new Error("canvas(#screen) not found");
-
-    UI.ctx = UI.el.canvas.getContext("2d");
-
-    UI.W = UI.el.canvas.width || 640;
-    UI.H = UI.el.canvas.height || 640;
-
-    bindBaseEvents();
-    setPanel("詳細", "<div>左のコマンドから選んでください。</div>", false);
-
-    if (opts && typeof opts.version === "string") {
-      setVersion(opts.version);
-    }
-
-    return UI;
-  }
-
-  function bindBaseEvents() {
-    // Right panel close
-    if (UI.el.panelClose) UI.el.panelClose.addEventListener("click", () => {
-      setPanel("詳細", "<div>左のコマンドから選んでください。</div>", false);
-    });
-
-    // Modal OK
-    if (UI.el.modalOk) UI.el.modalOk.addEventListener("click", closeModal);
-
-    // Left menu buttons
-    const cmdBtns = Array.from(document.querySelectorAll(".cmd"));
-    cmdBtns.forEach((b) => {
-      b.addEventListener("click", () => {
-        cmdBtns.forEach((x) => x.classList.remove("is-active"));
-        b.classList.add("is-active");
-        UI._activeCmd = b.dataset.cmd || null;
-        // game.js 側で onCommand を受け取る想定
-        if (typeof UI.onCommand === "function") UI.onCommand(UI._activeCmd);
+    // 初期HUD補完
+    if (game) {
+      UI.setHUD({
+        company: game.companyName ?? 'MOB COMPANY',
+        rank: game.companyRank != null ? `RANK ${game.companyRank}` : 'RANK ?',
+        team: game.teamName ?? 'PLAYER TEAM',
       });
-    });
-    // default active
-    if (cmdBtns[0]) cmdBtns[0].classList.add("is-active");
-    UI._activeCmd = cmdBtns[0] ? (cmdBtns[0].dataset.cmd || null) : null;
-  }
-
-  // -------------------------------------------------------
-  // State / Assets wiring (optional)
-  // -------------------------------------------------------
-  function setStateRef(stateObj) {
-    UI._state = stateObj || null;
-  }
-
-  function setAssetsRef(assetsObj) {
-    UI._assets = assetsObj || null;
-  }
-
-  // -------------------------------------------------------
-  // Header / Bottom
-  // -------------------------------------------------------
-  function setHeader({ companyName, companyRank, teamName, weekText } = {}) {
-    if (UI.el.companyName && companyName != null) UI.el.companyName.textContent = `企業名：${companyName}`;
-    if (UI.el.companyRank && companyRank != null) UI.el.companyRank.textContent = `企業ランク：${companyRank}`;
-    if (UI.el.teamName && teamName != null) UI.el.teamName.textContent = `チーム名：${teamName}`;
-    if (UI.el.weekInfo && weekText != null) UI.el.weekInfo.textContent = weekText;
-  }
-
-  function setBottom({ gold, nextTournament, statusText, hint, version } = {}) {
-    if (UI.el.goldValue && gold != null) UI.el.goldValue.textContent = String(gold);
-    if (UI.el.nextTournamentValue && nextTournament != null) UI.el.nextTournamentValue.textContent = String(nextTournament);
-    if (UI.el.statusValue && statusText != null) UI.el.statusValue.textContent = String(statusText);
-    if (UI.el.hintText && hint != null) UI.el.hintText.textContent = String(hint);
-    if (version != null) setVersion(version);
-  }
-
-  function setVersion(ver) {
-    if (UI.el.versionText) UI.el.versionText.textContent = ver;
-  }
-
-  // -------------------------------------------------------
-  // Panel / Modal
-  // -------------------------------------------------------
-  function setPanel(title, html, closable = true) {
-    if (UI.el.panelTitle) UI.el.panelTitle.textContent = title || "詳細";
-    if (UI.el.panelBody) UI.el.panelBody.innerHTML = html || "";
-    if (UI.el.panelFooter) {
-      if (closable) UI.el.panelFooter.classList.remove("hidden");
-      else UI.el.panelFooter.classList.add("hidden");
     }
-  }
 
-  function openModal(title, html) {
-    if (UI.el.modalTitle) UI.el.modalTitle.textContent = title || "INFO";
-    if (UI.el.modalBody) UI.el.modalBody.innerHTML = html || "";
-    if (UI.el.modal) UI.el.modal.classList.remove("hidden");
-  }
-
-  function closeModal() {
-    if (UI.el.modal) UI.el.modal.classList.add("hidden");
-  }
-
-  // -------------------------------------------------------
-  // Overlay Message
-  // -------------------------------------------------------
-  function showOverlay(msg, ms = 800) {
-    if (!UI.el.overlayMessage) return;
-    UI.el.overlayMessage.textContent = msg || "";
-    UI.el.overlayMessage.classList.remove("hidden");
-    if (ms > 0) {
-      setTimeout(() => {
-        if (UI.el.overlayMessage) UI.el.overlayMessage.classList.add("hidden");
-      }, ms);
+    // rootがbody以外で position が未指定なら relative にして absolute配置を安全化
+    if (dom.root && dom.root !== document.body) {
+      const cs = getComputedStyle(dom.root);
+      if (cs.position === 'static') dom.root.style.position = 'relative';
     }
-  }
 
-  function hideOverlay() {
-    if (!UI.el.overlayMessage) return;
-    UI.el.overlayMessage.classList.add("hidden");
-  }
-
-  // -------------------------------------------------------
-  // Mini Log
-  // -------------------------------------------------------
-  function pushMiniLog(text) {
-    UI._miniLogLines.push({ t: Date.now(), text: String(text || "") });
-    if (UI._miniLogLines.length > UI._miniLogMax) UI._miniLogLines.shift();
-    renderMiniLog();
-  }
-
-  function clearMiniLog() {
-    UI._miniLogLines.length = 0;
-    renderMiniLog();
-  }
-
-  function renderMiniLog() {
-    if (!UI.el.miniLog) return;
-    UI.el.miniLog.innerHTML = "";
-    for (const l of UI._miniLogLines) {
-      const div = document.createElement("div");
-      div.className = "line";
-      div.textContent = l.text;
-      UI.el.miniLog.appendChild(div);
-    }
-  }
-
-  // -------------------------------------------------------
-  // Canvas Drawing
-  // - assets.js が未実装でも見た目が成立する「プレースホルダ」を提供
-  // -------------------------------------------------------
-  function drawPlaceholder(title, sub) {
-    const ctx = UI.ctx;
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, UI.W, UI.H);
-
-    // background
-    ctx.fillStyle = "#0b0f18";
-    ctx.fillRect(0, 0, UI.W, UI.H);
-
-    // frame
-    ctx.strokeStyle = "rgba(255,255,255,.14)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(18, 18, UI.W - 36, UI.H - 36);
-
-    // big title
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.font = "bold 28px sans-serif";
-    ctx.fillText(String(title || "SCREEN"), 42, 92);
-
-    // sub
-    ctx.fillStyle = "rgba(255,255,255,.68)";
-    ctx.font = "16px sans-serif";
-    ctx.fillText(String(sub || ""), 42, 124);
-
-    // hint
-    ctx.fillStyle = "rgba(57,217,138,.85)";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText("※画像が無い場合はプレースホルダ表示", 42, UI.H - 42);
-  }
-
-  function drawImage(img, titleIfMissing) {
-    const ctx = UI.ctx;
-    if (!ctx) return;
-
-    if (!img) {
-      drawPlaceholder(titleIfMissing || "NO IMAGE", "assets未配置 / 未ロード");
-      return;
-    }
-    ctx.clearRect(0, 0, UI.W, UI.H);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, UI.W, UI.H);
-  }
-
-  // 画面キーで描画（assets.js があれば画像、なければプレースホルダ）
-  function drawScreen(key) {
-    const k = String(key || "").toLowerCase();
-    // assets.js 側の想定: assets.images[keyUpper] など
-    const A = UI._assets;
-
-    // 期待キー
-    const titleMap = {
-      main: "MAIN",
-      ido: "移動フェーズ",
-      map: "MAP",
-      shop: "SHOP",
-      heal: "回復フェーズ",
-      battle: "BATTLE",
-      winner: "WINNER",
-      p1: "PLAYER TEAM",
-    };
-
-    const title = titleMap[k] || "SCREEN";
-    const img = A && A.getImage ? A.getImage(k) : null;
-
-    if (img) drawImage(img, title);
-    else drawPlaceholder(title, "（画像が無い/未ロード）");
-  }
-
-  // -------------------------------------------------------
-  // UI builders (small helpers)
-  // -------------------------------------------------------
-  function chip(text, kind) {
-    const cls = kind ? `chip ${kind}` : "chip";
-    return `<span class="${cls}">${escapeHtml(String(text || ""))}</span>`;
-  }
-
-  function table(rows /* array of [k,v] */) {
-    const html = (rows || []).map(([k, v]) =>
-      `<tr><td><b>${escapeHtml(String(k))}</b></td><td>${escapeHtml(String(v))}</td></tr>`
-    ).join("");
-    return `<table>${html}</table>`;
-  }
-
-  function escapeHtml(s) {
-    return s
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
-  // -------------------------------------------------------
-  // Public API (window.MOB_UI)
-  // -------------------------------------------------------
-  window.MOB_UI = {
-    init,
-    setStateRef,
-    setAssetsRef,
-
-    setHeader,
-    setBottom,
-    setVersion,
-
-    setPanel,
-    openModal,
-    closeModal,
-
-    showOverlay,
-    hideOverlay,
-
-    pushMiniLog,
-    clearMiniLog,
-
-    drawPlaceholder,
-    drawImage,
-    drawScreen,
-
-    chip,
-    table,
-
-    // game.js が登録するコールバック
-    onCommand: null,
+    // 初期はモーダル閉
+    UI.closeModal();
   };
+
+  // expose
+  window.UI = UI;
 })();
