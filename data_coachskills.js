@@ -1,338 +1,357 @@
-/* =========================================================
-   data_coachskills.js (FULL)
-   - コーチスキル（消耗品） 全55種（R35 / SR15 / SSR5）
-   - 5つまで装備可能（装備管理は state / ui 側で扱う）
-   - Move補正のコーチスキルは禁止（絶対）
-   ========================================================= */
+/* =====================================================
+   data_coachskills.js  (FULL)
+   MOB Tournament Simulation
+   コーチスキル55種（SSR5 / SR15 / R35）
+   - Move補正は禁止（このデータはMove直接上昇なし）
+   - 効果は battle/sim 側で解釈して適用
+   ===================================================== */
 
-(() => {
-  'use strict';
+window.DATA_COACHSKILLS = (function () {
 
-  const CONST = window.DATA_CONST;
-  if (!CONST) throw new Error('DATA_CONST not found. Load data_const.js before data_coachskills.js');
-
-  // ---------------------------------------------------------
-  // 効果フォーマット（統一）
-  // statsAdd: 直接加算（HP, Mental, Aim, Agility, Technique, Support, Hunt, Synergy）
-  // enemyAdd: 敵側に直接加算（基本マイナスで弱体化）
-  // pctAdd  : %系（命中率 / 被弾率 / 回復量 / ダメージ等） ※シミュ側が解釈
-  // special : 特殊効果フラグ
+  // effectType の方針：
+  // - addStat: ステータス加算（HP/Mental/Aim/Agility/Technique/Support/Hunt/Synergy/Armor）
+  // - addRate: 率の加算（hitRate, critRate, dmgRate, evadeRate, healRate 等）
+  // - enemyDebuff: 敵側への弱体（enemyAim, enemyAgility, enemyHitRate, enemyHealRate 等）
+  // - special: 特殊（abilityExtraUse 等）
   //
-  // NOTE:
-  // - Move補正は絶対に入れない（FORBID）
-  // - 「命中率」など%は、BATTLEの最終キャップに吸収される前提
-  // ---------------------------------------------------------
+  // ※実際の適用は sim_battle.js / sim_rules_* で行う。
 
-  /** @type {Array<any>} */
-  const SKILLS = [
-    // =========================
-    // SSR（5）
-    // =========================
-    {
-      id: 'SSR1',
-      rarity: 'SSR',
-      name: 'チャンピオンロード',
-      desc: '全員を底上げする万能型',
-      statsAdd: { HP: 10, Mental: 6, Aim: 2, Agility: 2, Technique: 2, Support: 6, Hunt: 6, Synergy: 8 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SSR2',
-      rarity: 'SSR',
-      name: '覇王の照準',
-      desc: '撃ち合い特化。命中と技術をまとめて強化',
-      statsAdd: { Aim: 4, Technique: 4, Mental: 4 },
-      enemyAdd: { Aim: -2 },
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SSR3',
-      rarity: 'SSR',
-      name: '鉄壁の統率',
-      desc: '安定特化。HPと連携で崩れにくくする（命中は少し下がる）',
-      statsAdd: { HP: 15, Mental: 8, Support: 8, Synergy: 8, Aim: -1 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SSR4',
-      rarity: 'SSR',
-      name: 'ハンティングウルフ',
-      desc: 'キルチャンス増。狩り性能を強化して攻める',
-      statsAdd: { Hunt: 12, Aim: 2, Technique: 3, Support: 4 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SSR5',
-      rarity: 'SSR',
-      name: 'オール・ゾーン',
-      desc: '連携を超強化。支援と噛み合いを最大化',
-      statsAdd: { Synergy: 12, Support: 10, Mental: 6, Technique: 2 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
+  const SKILLS = [];
 
-    // =========================
-    // SR（15）
-    // =========================
-    {
-      id: 'SR1',
-      rarity: 'SR',
-      name: 'ダブルアビリティ',
-      desc: 'この試合、全員アビリティをもう1回追加で使える',
-      statsAdd: {},
-      enemyAdd: {},
-      pctAdd: {},
-      special: { abilityExtraUses: 1 },
-    },
-    {
-      id: 'SR2',
-      rarity: 'SR',
-      name: '精密射撃指令',
-      desc: '命中と火力を安定強化',
-      statsAdd: { Aim: 3, Technique: 2 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR3',
-      rarity: 'SR',
-      name: 'エイム集中',
-      desc: '集中力で命中を押し上げる',
-      statsAdd: { Aim: 3, Mental: 4 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR4',
-      rarity: 'SR',
-      name: '技術研磨',
-      desc: '技術で撃ち合いを強化',
-      statsAdd: { Technique: 4, Aim: 1 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR5',
-      rarity: 'SR',
-      name: '反射神経ブースト',
-      desc: '反応と回避を強化（機動戦向け）',
-      statsAdd: { Agility: 4, Technique: 1 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR6',
-      rarity: 'SR',
-      name: 'メンタル強化',
-      desc: '終盤に強くなる（粘りが出る）',
-      statsAdd: { Mental: 8, Aim: 1 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR7',
-      rarity: 'SR',
-      name: 'サポート最優先',
-      desc: '支援を強化してチームを立て直しやすくする',
-      statsAdd: { Support: 8, Synergy: 4 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR8',
-      rarity: 'SR',
-      name: '連携最優先',
-      desc: '噛み合いを強化して勝ち筋を作る',
-      statsAdd: { Synergy: 8, Support: 4 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR9',
-      rarity: 'SR',
-      name: '狩りの号令',
-      desc: 'キル狙いの動きが強くなる',
-      statsAdd: { Hunt: 10, Aim: 1, Technique: 1 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR10',
-      rarity: 'SR',
-      name: '弱点解析',
-      desc: '相手の弱点を突いて有利を作る',
-      statsAdd: { Technique: 3 },
-      enemyAdd: { Aim: -2 },
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR11',
-      rarity: 'SR',
-      name: '妨害戦術',
-      desc: '相手を弱体化して撃ち勝ちやすくする',
-      statsAdd: { Mental: 2 },
-      enemyAdd: { Aim: -4, Agility: -2 },
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR12',
-      rarity: 'SR',
-      name: '粘りの指揮',
-      desc: 'HPと精神で崩れにくくする',
-      statsAdd: { HP: 25, Mental: 6, Support: 2 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR13',
-      rarity: 'SR',
-      name: '勝負勘',
-      desc: '命中と噛み合いを少し上げる',
-      statsAdd: { Mental: 6, Aim: 2, Synergy: 3 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR14',
-      rarity: 'SR',
-      name: '一撃必殺プラン',
-      desc: '攻め特化（支援は少し下がる）',
-      statsAdd: { Aim: 2, Technique: 3, Support: -2 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-    {
-      id: 'SR15',
-      rarity: 'SR',
-      name: '全員仕事モード',
-      desc: '全体をバランス良く底上げ',
-      statsAdd: { Aim: 1, Agility: 1, Technique: 1, Mental: 4, Synergy: 4 },
-      enemyAdd: {},
-      pctAdd: {},
-      special: {},
-    },
-
-    // =========================
-    // R（35）
-    // =========================
-    // Aim系（7）
-    { id: 'R1', rarity: 'R', name: 'アイサイト調整', desc: '命中が少し上がる', statsAdd: { Aim: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R2', rarity: 'R', name: '照準安定化', desc: '命中が上がる', statsAdd: { Aim: 2 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R3', rarity: 'R', name: '一点集中', desc: '命中を強化する代わりに精神が少し下がる', statsAdd: { Aim: 3, Mental: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R4', rarity: 'R', name: '援護射撃の合図', desc: '命中と支援を少し強化', statsAdd: { Aim: 2, Support: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R5', rarity: 'R', name: '連携射撃', desc: '命中と連携を少し強化', statsAdd: { Aim: 2, Synergy: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R6', rarity: 'R', name: '撃ち方の型', desc: '命中と技術を少し強化', statsAdd: { Aim: 1, Technique: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R7', rarity: 'R', name: '狙い撃ちスイッチ', desc: '命中を少し上げつつ狩り性能を上げる', statsAdd: { Aim: 1, Hunt: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Agility系（6）
-    { id: 'R8', rarity: 'R', name: '反射強化', desc: '反応が少し上がる', statsAdd: { Agility: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R9', rarity: 'R', name: 'クイックムーブ', desc: '反応が上がる', statsAdd: { Agility: 2 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R10', rarity: 'R', name: '瞬間回避', desc: '反応を強化する代わりに技術が少し下がる', statsAdd: { Agility: 3, Technique: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R11', rarity: 'R', name: '落ち着いて回避', desc: '反応と精神を少し強化', statsAdd: { Agility: 2, Mental: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R12', rarity: 'R', name: '動き撃ち練習', desc: '反応と命中を少し強化', statsAdd: { Agility: 1, Aim: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R13', rarity: 'R', name: '息合わせステップ', desc: '反応を少し上げつつ連携が上がる', statsAdd: { Agility: 1, Synergy: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Technique系（6）
-    { id: 'R14', rarity: 'R', name: '技の基礎', desc: '技術が少し上がる', statsAdd: { Technique: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R15', rarity: 'R', name: '技の積み上げ', desc: '技術が上がる', statsAdd: { Technique: 2 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R16', rarity: 'R', name: '職人モード', desc: '技術を強化する代わりに精神が少し下がる', statsAdd: { Technique: 3, Mental: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R17', rarity: 'R', name: '弾の通し方', desc: '技術と命中を少し強化', statsAdd: { Technique: 2, Aim: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R18', rarity: 'R', name: '支援の作法', desc: '技術を少し上げて支援が伸びる', statsAdd: { Technique: 1, Support: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R19', rarity: 'R', name: '狩りの手順', desc: '技術を少し上げて狩り性能が伸びる', statsAdd: { Technique: 1, Hunt: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Mental系（5）
-    { id: 'R20', rarity: 'R', name: '平常心', desc: '精神が少し上がる', statsAdd: { Mental: 2 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R21', rarity: 'R', name: '気合いの集中', desc: '精神が上がるが命中が少し下がる', statsAdd: { Mental: 3, Aim: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R22', rarity: 'R', name: '声かけ確認', desc: '精神と連携を強化', statsAdd: { Mental: 2, Synergy: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R23', rarity: 'R', name: '切り替え指示', desc: '精神と支援を強化', statsAdd: { Mental: 2, Support: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R24', rarity: 'R', name: '勝負根性', desc: '精神を強化する代わりに技術が少し下がる', statsAdd: { Mental: 4, Technique: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Support系（5）
-    { id: 'R25', rarity: 'R', name: 'カバー優先', desc: '支援が少し上がる', statsAdd: { Support: 3 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R26', rarity: 'R', name: '味方優先指令', desc: '支援が上がるが命中が少し下がる', statsAdd: { Support: 4, Aim: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R27', rarity: 'R', name: 'フォロー連携', desc: '支援と連携を同時に強化', statsAdd: { Support: 3, Synergy: 4 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R28', rarity: 'R', name: '応急サポート', desc: '支援を少し上げつつHPも少し増える', statsAdd: { Support: 2, HP: 10 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R29', rarity: 'R', name: '支援集中', desc: '支援を強化する代わりに技術が少し下がる', statsAdd: { Support: 5, Technique: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Hunt系（3）
-    { id: 'R30', rarity: 'R', name: '索敵強化', desc: '狩り性能が上がる', statsAdd: { Hunt: 6 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R31', rarity: 'R', name: '獲物追跡', desc: '狩り性能が上がるが精神が少し下がる', statsAdd: { Hunt: 8, Mental: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R32', rarity: 'R', name: '狩りの精度', desc: '狩り性能と技術を少し強化', statsAdd: { Hunt: 6, Technique: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-
-    // Synergy系（3）
-    { id: 'R33', rarity: 'R', name: '連携確認', desc: '連携が上がる', statsAdd: { Synergy: 6 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R34', rarity: 'R', name: '噛み合い強化', desc: '連携が上がるが命中が少し下がる', statsAdd: { Synergy: 8, Aim: -1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-    { id: 'R35', rarity: 'R', name: '息合わせコール', desc: '連携を上げつつ支援も少し上がる', statsAdd: { Synergy: 6, Support: 1 }, enemyAdd: {}, pctAdd: {}, special: {} },
-  ];
-
-  // ---------------------------------------------------------
-  // 禁止チェック（Move補正）
-  // ---------------------------------------------------------
-  function validateNoMoveMods(skill) {
-    const ban = CONST.COACH_SKILL_RULES?.FORBID_MOVE_MOD;
-    if (!ban) return;
-
-    const all = [
-      skill.statsAdd || {},
-      skill.enemyAdd || {},
-      skill.pctAdd || {},
-      skill.special || {},
-    ];
-
-    for (const obj of all) {
-      for (const k of Object.keys(obj)) {
-        if (String(k).toLowerCase().includes('move')) {
-          throw new Error(`Forbidden Move modifier found in coach skill: ${skill.id} ${skill.name}`);
-        }
-      }
-    }
+  function push(skill) {
+    SKILLS.push(skill);
   }
 
-  for (const s of SKILLS) validateNoMoveMods(s);
+  /* =========================
+     SSR (5)
+     ========================= */
 
-  // ---------------------------------------------------------
-  // 参照用ユーティリティ
-  // ---------------------------------------------------------
-  const byId = Object.create(null);
-  const pools = { R: [], SR: [], SSR: [] };
-
-  for (const s of SKILLS) {
-    if (byId[s.id]) throw new Error('Duplicate coach skill id: ' + s.id);
-    byId[s.id] = s;
-    if (!pools[s.rarity]) throw new Error('Unknown rarity: ' + s.rarity);
-    pools[s.rarity].push(s.id);
-  }
-
-  // 公開
-  window.DATA_COACHSKILLS = Object.freeze({
-    list: Object.freeze(SKILLS.slice()),
-    byId: Object.freeze(byId),
-    pools: Object.freeze({
-      R: Object.freeze(pools.R.slice()),
-      SR: Object.freeze(pools.SR.slice()),
-      SSR: Object.freeze(pools.SSR.slice()),
-    }),
-    rarityOrder: Object.freeze(['R', 'SR', 'SSR']),
+  push({
+    id: 'SSR1_CHAMPION_ROAD',
+    rarity: 'SSR',
+    name: 'チャンピオンロード',
+    desc: '全員を底上げする万能型',
+    effects: [
+      { type: 'addStat', stat: 'HP', value: 10 },
+      { type: 'addStat', stat: 'Mental', value: 6 },
+      { type: 'addStat', stat: 'Aim', value: 2 },
+      { type: 'addStat', stat: 'Agility', value: 2 },
+      { type: 'addStat', stat: 'Technique', value: 2 },
+      { type: 'addStat', stat: 'Support', value: 6 },
+      { type: 'addStat', stat: 'Hunt', value: 6 },
+      { type: 'addStat', stat: 'Synergy', value: 8 }
+    ]
   });
+
+  push({
+    id: 'SSR2_HAOU_NO_SHOUJUN',
+    rarity: 'SSR',
+    name: '覇王の照準',
+    desc: '撃ち合い特化。命中と技術をまとめて強化',
+    effects: [
+      { type: 'addStat', stat: 'Aim', value: 4 },
+      { type: 'addStat', stat: 'Technique', value: 4 },
+      { type: 'addStat', stat: 'Mental', value: 4 },
+      { type: 'enemyDebuff', stat: 'enemyAim', value: -2 }
+    ]
+  });
+
+  push({
+    id: 'SSR3_TEPPEKI_NO_TOUSOTSU',
+    rarity: 'SSR',
+    name: '鉄壁の統率',
+    desc: '安定特化。HPと連携で崩れにくくする（命中は少し下がる）',
+    effects: [
+      { type: 'addStat', stat: 'HP', value: 15 },
+      { type: 'addStat', stat: 'Mental', value: 8 },
+      { type: 'addStat', stat: 'Support', value: 8 },
+      { type: 'addStat', stat: 'Synergy', value: 8 },
+      { type: 'addStat', stat: 'Aim', value: -1 }
+    ]
+  });
+
+  push({
+    id: 'SSR4_HUNTING_WOLF',
+    rarity: 'SSR',
+    name: 'ハンティングウルフ',
+    desc: 'キルチャンス増。狩り性能を強化して攻める',
+    effects: [
+      { type: 'addStat', stat: 'Hunt', value: 12 },
+      { type: 'addStat', stat: 'Aim', value: 2 },
+      { type: 'addStat', stat: 'Technique', value: 3 },
+      { type: 'addStat', stat: 'Support', value: 4 }
+    ]
+  });
+
+  push({
+    id: 'SSR5_ALL_ZONE',
+    rarity: 'SSR',
+    name: 'オール・ゾーン',
+    desc: '連携を超強化。支援と噛み合いを最大化',
+    effects: [
+      { type: 'addStat', stat: 'Synergy', value: 12 },
+      { type: 'addStat', stat: 'Support', value: 10 },
+      { type: 'addStat', stat: 'Mental', value: 6 },
+      { type: 'addStat', stat: 'Technique', value: 2 }
+    ]
+  });
+
+  /* =========================
+     SR (15)
+     ========================= */
+
+  push({
+    id: 'SR1_DOUBLE_ABILITY',
+    rarity: 'SR',
+    name: 'ダブルアビリティ',
+    desc: 'この試合、全員アビリティをもう1回追加で使える',
+    effects: [
+      { type: 'special', key: 'abilityExtraUse', value: 1 }
+    ]
+  });
+
+  push({
+    id: 'SR2_SEIMITSU_SHAGEKI',
+    rarity: 'SR',
+    name: '精密射撃指令',
+    desc: '命中と火力を安定強化',
+    effects: [
+      { type: 'addStat', stat: 'Aim', value: 3 },
+      { type: 'addStat', stat: 'Technique', value: 2 }
+    ]
+  });
+
+  push({
+    id: 'SR3_AIM_SHUCHU',
+    rarity: 'SR',
+    name: 'エイム集中',
+    desc: '集中力で命中を押し上げる',
+    effects: [
+      { type: 'addStat', stat: 'Aim', value: 3 },
+      { type: 'addStat', stat: 'Mental', value: 4 }
+    ]
+  });
+
+  push({
+    id: 'SR4_GIJUTSU_KENMA',
+    rarity: 'SR',
+    name: '技術研磨',
+    desc: '技術で撃ち合いを強化',
+    effects: [
+      { type: 'addStat', stat: 'Technique', value: 4 },
+      { type: 'addStat', stat: 'Aim', value: 1 }
+    ]
+  });
+
+  push({
+    id: 'SR5_HANSHINKEI_BOOST',
+    rarity: 'SR',
+    name: '反射神経ブースト',
+    desc: '反応と回避を強化（機動戦向け）',
+    effects: [
+      { type: 'addStat', stat: 'Agility', value: 4 },
+      { type: 'addStat', stat: 'Technique', value: 1 }
+    ]
+  });
+
+  push({
+    id: 'SR6_MENTAL_KYOKA',
+    rarity: 'SR',
+    name: 'メンタル強化',
+    desc: '終盤に強くなる（粘りが出る）',
+    effects: [
+      { type: 'addStat', stat: 'Mental', value: 8 },
+      { type: 'addStat', stat: 'Aim', value: 1 }
+    ]
+  });
+
+  push({
+    id: 'SR7_SUPPORT_SAIYUSEN',
+    rarity: 'SR',
+    name: 'サポート最優先',
+    desc: '支援を強化してチームを立て直しやすくする',
+    effects: [
+      { type: 'addStat', stat: 'Support', value: 8 },
+      { type: 'addStat', stat: 'Synergy', value: 4 }
+    ]
+  });
+
+  push({
+    id: 'SR8_SYNERGY_SAIYUSEN',
+    rarity: 'SR',
+    name: '連携最優先',
+    desc: '噛み合いを強化して勝ち筋を作る',
+    effects: [
+      { type: 'addStat', stat: 'Synergy', value: 8 },
+      { type: 'addStat', stat: 'Support', value: 4 }
+    ]
+  });
+
+  push({
+    id: 'SR9_KARI_NO_GOREI',
+    rarity: 'SR',
+    name: '狩りの号令',
+    desc: 'キル狙いの動きが強くなる',
+    effects: [
+      { type: 'addStat', stat: 'Hunt', value: 10 },
+      { type: 'addStat', stat: 'Aim', value: 1 },
+      { type: 'addStat', stat: 'Technique', value: 1 }
+    ]
+  });
+
+  push({
+    id: 'SR10_JAKUTEN_KAISEKI',
+    rarity: 'SR',
+    name: '弱点解析',
+    desc: '相手の弱点を突いて有利を作る',
+    effects: [
+      { type: 'addStat', stat: 'Technique', value: 3 },
+      { type: 'enemyDebuff', stat: 'enemyAim', value: -2 }
+    ]
+  });
+
+  push({
+    id: 'SR11_BOUGAI_SENJUTSU',
+    rarity: 'SR',
+    name: '妨害戦術',
+    desc: '相手を弱体化して撃ち勝ちやすくする',
+    effects: [
+      { type: 'enemyDebuff', stat: 'enemyAim', value: -4 },
+      { type: 'enemyDebuff', stat: 'enemyAgility', value: -2 },
+      { type: 'addStat', stat: 'Mental', value: 2 }
+    ]
+  });
+
+  push({
+    id: 'SR12_NEBARI_NO_SHIKI',
+    rarity: 'SR',
+    name: '粘りの指揮',
+    desc: 'HPと精神で崩れにくくする',
+    effects: [
+      { type: 'addStat', stat: 'HP', value: 25 },
+      { type: 'addStat', stat: 'Mental', value: 6 },
+      { type: 'addStat', stat: 'Support', value: 2 }
+    ]
+  });
+
+  push({
+    id: 'SR13_SHOUBUKAN',
+    rarity: 'SR',
+    name: '勝負勘',
+    desc: '命中と噛み合いを少し上げる',
+    effects: [
+      { type: 'addStat', stat: 'Mental', value: 6 },
+      { type: 'addStat', stat: 'Aim', value: 2 },
+      { type: 'addStat', stat: 'Synergy', value: 3 }
+    ]
+  });
+
+  push({
+    id: 'SR14_ICHIGEKI_HISSATSU_PLAN',
+    rarity: 'SR',
+    name: '一撃必殺プラン',
+    desc: '攻め特化（支援は少し下がる）',
+    effects: [
+      { type: 'addStat', stat: 'Aim', value: 2 },
+      { type: 'addStat', stat: 'Technique', value: 3 },
+      { type: 'addStat', stat: 'Support', value: -2 }
+    ]
+  });
+
+  push({
+    id: 'SR15_ZENIN_SHIGOTO_MODE',
+    rarity: 'SR',
+    name: '全員仕事モード',
+    desc: '全体をバランス良く底上げ',
+    effects: [
+      { type: 'addStat', stat: 'Aim', value: 1 },
+      { type: 'addStat', stat: 'Agility', value: 1 },
+      { type: 'addStat', stat: 'Technique', value: 1 },
+      { type: 'addStat', stat: 'Mental', value: 4 },
+      { type: 'addStat', stat: 'Synergy', value: 4 }
+    ]
+  });
+
+  /* =========================
+     R (35)
+     ========================= */
+
+  // Aim系（7）
+  push({ id:'R1_EYESIGHT', rarity:'R', name:'アイサイト調整', desc:'命中が少し上がる', effects:[{type:'addStat', stat:'Aim', value:1}] });
+  push({ id:'R2_SHOUJUN_ANTEI', rarity:'R', name:'照準安定化', desc:'命中が上がる', effects:[{type:'addStat', stat:'Aim', value:2}] });
+  push({ id:'R3_ITEN_SHUCHU', rarity:'R', name:'一点集中', desc:'命中を強化する代わりに精神が少し下がる', effects:[{type:'addStat', stat:'Aim', value:3},{type:'addStat', stat:'Mental', value:-1}] });
+  push({ id:'R4_ENGO_SHAGEKI', rarity:'R', name:'援護射撃の合図', desc:'命中と支援を少し強化', effects:[{type:'addStat', stat:'Aim', value:2},{type:'addStat', stat:'Support', value:1}] });
+  push({ id:'R5_RENKEI_SHAGEKI', rarity:'R', name:'連携射撃', desc:'命中と連携を少し強化', effects:[{type:'addStat', stat:'Aim', value:2},{type:'addStat', stat:'Synergy', value:1}] });
+  push({ id:'R6_UCHIKATA_NO_KATA', rarity:'R', name:'撃ち方の型', desc:'命中と技術を少し強化', effects:[{type:'addStat', stat:'Aim', value:1},{type:'addStat', stat:'Technique', value:1}] });
+  push({ id:'R7_NERAU_SWITCH', rarity:'R', name:'狙い撃ちスイッチ', desc:'命中を少し上げつつ狩り性能を上げる', effects:[{type:'addStat', stat:'Aim', value:1},{type:'addStat', stat:'Hunt', value:4}] });
+
+  // Agility系（6）
+  push({ id:'R8_HANSHIN', rarity:'R', name:'反射強化', desc:'反応が少し上がる', effects:[{type:'addStat', stat:'Agility', value:1}] });
+  push({ id:'R9_QUICK_MOVE', rarity:'R', name:'クイックムーブ', desc:'反応が上がる', effects:[{type:'addStat', stat:'Agility', value:2}] });
+  push({ id:'R10_SHUNKAN_KAIHI', rarity:'R', name:'瞬間回避', desc:'反応を強化する代わりに技術が少し下がる', effects:[{type:'addStat', stat:'Agility', value:3},{type:'addStat', stat:'Technique', value:-1}] });
+  push({ id:'R11_OCHITSUITE_KAIHI', rarity:'R', name:'落ち着いて回避', desc:'反応と精神を少し強化', effects:[{type:'addStat', stat:'Agility', value:2},{type:'addStat', stat:'Mental', value:1}] });
+  push({ id:'R12_UGOKIUCHI', rarity:'R', name:'動き撃ち練習', desc:'反応と命中を少し強化', effects:[{type:'addStat', stat:'Agility', value:1},{type:'addStat', stat:'Aim', value:1}] });
+  push({ id:'R13_IKIAWASE_STEP', rarity:'R', name:'息合わせステップ', desc:'反応を少し上げつつ連携が上がる', effects:[{type:'addStat', stat:'Agility', value:1},{type:'addStat', stat:'Synergy', value:4}] });
+
+  // Technique系（6）
+  push({ id:'R14_GI_NO_KISO', rarity:'R', name:'技の基礎', desc:'技術が少し上がる', effects:[{type:'addStat', stat:'Technique', value:1}] });
+  push({ id:'R15_GI_NO_TSUMIAGE', rarity:'R', name:'技の積み上げ', desc:'技術が上がる', effects:[{type:'addStat', stat:'Technique', value:2}] });
+  push({ id:'R16_SHOKUNIN_MODE', rarity:'R', name:'職人モード', desc:'技術を強化する代わりに精神が少し下がる', effects:[{type:'addStat', stat:'Technique', value:3},{type:'addStat', stat:'Mental', value:-1}] });
+  push({ id:'R17_TAMA_NO_TOOSHIKATA', rarity:'R', name:'弾の通し方', desc:'技術と命中を少し強化', effects:[{type:'addStat', stat:'Technique', value:2},{type:'addStat', stat:'Aim', value:1}] });
+  push({ id:'R18_SHIEN_NO_SAHOU', rarity:'R', name:'支援の作法', desc:'技術を少し上げて支援が伸びる', effects:[{type:'addStat', stat:'Technique', value:1},{type:'addStat', stat:'Support', value:4}] });
+  push({ id:'R19_KARI_NO_TEUJUN', rarity:'R', name:'狩りの手順', desc:'技術を少し上げて狩り性能が伸びる', effects:[{type:'addStat', stat:'Technique', value:1},{type:'addStat', stat:'Hunt', value:4}] });
+
+  // Mental系（5）
+  push({ id:'R20_HEIJOSHIN', rarity:'R', name:'平常心', desc:'精神が少し上がる', effects:[{type:'addStat', stat:'Mental', value:2}] });
+  push({ id:'R21_KIAI_SHUCHU', rarity:'R', name:'気合いの集中', desc:'精神が上がるが命中が少し下がる', effects:[{type:'addStat', stat:'Mental', value:3},{type:'addStat', stat:'Aim', value:-1}] });
+  push({ id:'R22_KOEKAKE_KAKUNIN', rarity:'R', name:'声かけ確認', desc:'精神と連携を強化', effects:[{type:'addStat', stat:'Mental', value:2},{type:'addStat', stat:'Synergy', value:4}] });
+  push({ id:'R23_KIRIKAE_SHIJI', rarity:'R', name:'切り替え指示', desc:'精神と支援を強化', effects:[{type:'addStat', stat:'Mental', value:2},{type:'addStat', stat:'Support', value:4}] });
+  push({ id:'R24_SHOUBU_KONJOU', rarity:'R', name:'勝負根性', desc:'精神を強化する代わりに技術が少し下がる', effects:[{type:'addStat', stat:'Mental', value:4},{type:'addStat', stat:'Technique', value:-1}] });
+
+  // Support系（5）
+  push({ id:'R25_COVER_YUUSEN', rarity:'R', name:'カバー優先', desc:'支援が少し上がる', effects:[{type:'addStat', stat:'Support', value:3}] });
+  push({ id:'R26_MIKATA_YUUSEN', rarity:'R', name:'味方優先指令', desc:'支援が上がるが命中が少し下がる', effects:[{type:'addStat', stat:'Support', value:4},{type:'addStat', stat:'Aim', value:-1}] });
+  push({ id:'R27_FOLLOW_RENKEI', rarity:'R', name:'フォロー連携', desc:'支援と連携を同時に強化', effects:[{type:'addStat', stat:'Support', value:3},{type:'addStat', stat:'Synergy', value:4}] });
+  push({ id:'R28_OUKYU_SUPPORT', rarity:'R', name:'応急サポート', desc:'支援を少し上げつつHPも少し増える', effects:[{type:'addStat', stat:'Support', value:2},{type:'addStat', stat:'HP', value:10}] });
+  push({ id:'R29_SUPPORT_SHUCHU', rarity:'R', name:'支援集中', desc:'支援を強化する代わりに技術が少し下がる', effects:[{type:'addStat', stat:'Support', value:5},{type:'addStat', stat:'Technique', value:-1}] });
+
+  // Hunt系（3）
+  push({ id:'R30_SAKUTEKI_KYOKA', rarity:'R', name:'索敵強化', desc:'狩り性能が上がる', effects:[{type:'addStat', stat:'Hunt', value:6}] });
+  push({ id:'R31_EMONO_TSUISeki', rarity:'R', name:'獲物追跡', desc:'狩り性能が上がるが精神が少し下がる', effects:[{type:'addStat', stat:'Hunt', value:8},{type:'addStat', stat:'Mental', value:-1}] });
+  push({ id:'R32_KARI_NO_SEIDO', rarity:'R', name:'狩りの精度', desc:'狩り性能と技術を少し強化', effects:[{type:'addStat', stat:'Hunt', value:6},{type:'addStat', stat:'Technique', value:1}] });
+
+  // Synergy系（3）
+  push({ id:'R33_RENKEI_KAKUNIN', rarity:'R', name:'連携確認', desc:'連携が上がる', effects:[{type:'addStat', stat:'Synergy', value:6}] });
+  push({ id:'R34_KAMIAWASE_KYOKA', rarity:'R', name:'噛み合い強化', desc:'連携が上がるが命中が少し下がる', effects:[{type:'addStat', stat:'Synergy', value:8},{type:'addStat', stat:'Aim', value:-1}] });
+  push({ id:'R35_IKIAWASE_CALL', rarity:'R', name:'息合わせコール', desc:'連携を上げつつ支援も少し上がる', effects:[{type:'addStat', stat:'Synergy', value:6},{type:'addStat', stat:'Support', value:1}] });
+
+  /* =========================
+     公開API
+     ========================= */
+
+  function getAll() { return SKILLS.slice(); }
+
+  function getById(id) {
+    return SKILLS.find(s => s.id === id) || null;
+  }
+
+  function listByRarity(rarity) {
+    return SKILLS.filter(s => s.rarity === rarity);
+  }
+
+  function countByRarity() {
+    const c = { SSR: 0, SR: 0, R: 0, ALL: SKILLS.length };
+    for (const s of SKILLS) {
+      if (c[s.rarity] !== undefined) c[s.rarity]++;
+    }
+    return c;
+  }
+
+  return {
+    skills: SKILLS,
+    getAll,
+    getById,
+    listByRarity,
+    countByRarity
+  };
 })();
