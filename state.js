@@ -1,370 +1,234 @@
-/* =========================================================
-   state.js (FULL)
-   - ゲーム進行の状態管理（週/フェーズ/メッセージ/UI選択）
-   - localStorage にセーブ/ロード（任意）
-   - game.js は window.STATE を参照して進行
-   ========================================================= */
+// assets.js (FULL) MOB BR
+// 画像管理＆未画像プレースホルダ描画
+// ルール：未画像はここで「色＋文字」で表示する（勝手に別処理しない）
 
 (() => {
   'use strict';
 
-  const LS_KEY = 'mob_brsim_save_v1';
+  const AS = (window.MOBBR_ASSETS = window.MOBBR_ASSETS || {});
 
-  // ----------------------------
-  // ENUMS
-  // ----------------------------
-  const PHASE = Object.freeze({
-    BOOT: 'BOOT',
-    MAIN: 'MAIN',
-    SHOP: 'SHOP',
-    TRAINING: 'TRAINING',
-    TOURNAMENT_INTRO: 'TOURNAMENT_INTRO',
-    DROP: 'DROP',
-    MOVE: 'MOVE',
-    HEAL: 'HEAL',
-    BATTLE: 'BATTLE',
-    TOURNAMENT_RESULT: 'TOURNAMENT_RESULT',
-  });
+  // =========================
+  // 1) 画像パス定義（固定）
+  // =========================
+  AS.PATHS = {
+    // メイン周り
+    haikeimain: 'haikeimain.png',
+    rogo: 'rogo.png',
+    main1: 'main1.png',
 
-  const TOURNAMENT = Object.freeze({
-    NONE: 'NONE',
-    SP1_LOCAL: 'SP1_LOCAL',
-    SP1_NATIONAL: 'SP1_NATIONAL',
-    SP1_LASTCHANCE: 'SP1_LASTCHANCE',
-    SP1_WORLD: 'SP1_WORLD',
-    SP2_LOCAL: 'SP2_LOCAL',
-    SP2_NATIONAL: 'SP2_NATIONAL',
-    SP2_LASTCHANCE: 'SP2_LASTCHANCE',
-    SP2_WORLD: 'SP2_WORLD',
-    CHAMP_LOCAL: 'CHAMP_LOCAL',
-    CHAMP_NATIONAL: 'CHAMP_NATIONAL',
-    CHAMP_LASTCHANCE: 'CHAMP_LASTCHANCE',
-    CHAMP_WORLD: 'CHAMP_WORLD',
-  });
+    // プレイヤーチーム（衣装で増える想定）
+    P1: 'P1.png',
+    P2: 'P2.png',
+    P3: 'P3.png',
 
-  // ----------------------------
-  // 初期値（※細部は game.js / sim_rules が埋める）
-  // ----------------------------
-  function defaultState() {
-    return {
-      version: 1,
+    // 試合演出
+    map: 'map.png',
+    ido: 'ido.png',
+    shop: 'shop.png',
+    heal: 'heal.png',
+    battle: 'battle.png',
+    winner: 'winner.png',
 
-      // UI/進行
-      phase: PHASE.BOOT,
-      subphase: '',
-      modal: null,          // {title,text,buttons:[{id,label}]} など
-      toast: null,          // {text, t, ms}
-      messageCenter: null,  // {text, ms, important:true}
+    // ボタン画像
+    teamBtn: 'team.png',
+    taikaiBtn: 'taikai.png',
 
-      // 時間（週単位）
-      calendar: {
-        year: 1990,     // 大会スケジュール前提（必要なら game.js で変更）
-        month: 1,       // 1-12
-        weekInMonth: 1, // 1-4（固定運用）
-        weekIndex: 0,   // 通算週（加算用）
-      },
-
-      // 所持金など
-      economy: {
-        gold: 0,
-      },
-
-      // 企業ランク/チーム名（ゲーム起動時に決めてもOK）
-      company: {
-        name: 'PLAYER COMPANY',
-        rank: 10,
-        teamName: 'PLAYER TEAM',
-      },
-
-      // プレイヤーチーム編成（data_players.js 参照で埋める想定）
-      playerTeam: {
-        members: ['unic', 'nekoku', 'doo'], // data_players.js の id を想定
-        imageKey: 'P1',                     // assets.js のキー（P1）
-        synergy: 20,                        // 初期は20固定
-        synergyPairs: {                     // 連携A-Bなど（任意）
-          // 'unic|nekoku': 20,
-        },
-      },
-
-      // 所持品・装備
-      inventory: {
-        items: {},        // { itemId: count }
-        coachSkills: [],  // 装備中コーチスキルID（最大5）
-      },
-
-      // 大会関連（進行中トーナメント）
-      tournament: {
-        active: false,
-        type: TOURNAMENT.NONE,
-        group: 'A',              // A/B/C/D（プレイヤーは基本A）
-        stageLabel: '',          // 表示用
-        canParticipate: true,    // 出場権の有無（ルールで切り替え）
-        matchIndex: 0,           // 進行中試合番号
-        totalMatches: 0,         // その大会での試合数（現状の実装範囲で）
-        standings: null,         // 結果順位配列など（sim_tournament_core が入れる）
-        lastResult: null,        // {rank, qualified:true/false, text}
-      },
-
-      // マッチ/バトル進行（sim）
-      sim: {
-        seed: 0,
-        round: 1,
-        aliveTeams: 20,
-        currentAreaId: null,
-        // battle
-        battle: null, // {teams:[...], log:[...], resolved:true/false ...} を入れる想定
-        // ログ（メイン画面にも流す）
-        log: [],
-      },
-
-      // フラグ（チュートリアル等）
-      flags: {
-        firstBoot: true,
-      },
-    };
-  }
-
-  // ----------------------------
-  // Helper
-  // ----------------------------
-  function deepClone(obj) {
-    return JSON.parse(JSON.stringify(obj));
-  }
-
-  function clamp(v, a, b) {
-    return Math.max(a, Math.min(b, v));
-  }
-
-  // 月4週固定：週送り
-  function advanceWeek(cal) {
-    cal.weekIndex++;
-    cal.weekInMonth++;
-    if (cal.weekInMonth > 4) {
-      cal.weekInMonth = 1;
-      cal.month++;
-      if (cal.month > 12) {
-        cal.month = 1;
-        cal.year++;
-      }
-    }
-  }
-
-  function setCenterMessage(state, text, ms = 1800, important = true) {
-    state.messageCenter = { text, ms, important, t: performance.now() };
-  }
-
-  function pushLog(state, text) {
-    if (!text) return;
-    state.sim.log.push({ t: Date.now(), text: String(text) });
-    // ログ肥大防止（UI用）
-    const MAX = 200;
-    if (state.sim.log.length > MAX) state.sim.log.splice(0, state.sim.log.length - MAX);
-  }
-
-  // ----------------------------
-  // Save / Load
-  // ----------------------------
-  function save(state) {
-    try {
-      const payload = JSON.stringify(state);
-      localStorage.setItem(LS_KEY, payload);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function load() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      return obj;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function clearSave() {
-    try {
-      localStorage.removeItem(LS_KEY);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // ----------------------------
-  // Public API
-  // ----------------------------
-  const STATE = {
-    PHASE,
-    TOURNAMENT,
-
-    _state: defaultState(),
-
-    resetAll() {
-      this._state = defaultState();
-      return this._state;
-    },
-
-    get() {
-      return this._state;
-    },
-
-    // 破壊的更新を避けたい場合に使う
-    snapshot() {
-      return deepClone(this._state);
-    },
-
-    // フェーズ遷移
-    setPhase(phase, subphase = '') {
-      this._state.phase = phase;
-      this._state.subphase = subphase || '';
-    },
-
-    // 中央メッセージ（大会当日など）
-    centerMessage(text, ms, important) {
-      setCenterMessage(this._state, text, ms, important);
-    },
-
-    toast(text, ms = 1200) {
-      this._state.toast = { text: String(text), ms, t: performance.now() };
-    },
-
-    // ログ
-    log(text) {
-      pushLog(this._state, text);
-    },
-
-    // 週を進める（※大会週は game.js 側で制御）
-    nextWeek() {
-      advanceWeek(this._state.calendar);
-    },
-
-    // カレンダーを任意設定
-    setCalendar(year, month, weekInMonth) {
-      const c = this._state.calendar;
-      if (typeof year === 'number') c.year = year | 0;
-      if (typeof month === 'number') c.month = clamp(month | 0, 1, 12);
-      if (typeof weekInMonth === 'number') c.weekInMonth = clamp(weekInMonth | 0, 1, 4);
-    },
-
-    // 大会開始/終了（中身は sim 側が埋める）
-    startTournament(type, opts = {}) {
-      const t = this._state.tournament;
-      t.active = true;
-      t.type = type;
-      t.group = opts.group || 'A';
-      t.stageLabel = opts.stageLabel || '';
-      t.canParticipate = opts.canParticipate !== false;
-      t.matchIndex = 0;
-      t.totalMatches = opts.totalMatches || 0;
-      t.standings = null;
-      t.lastResult = null;
-
-      this._state.sim.round = 1;
-      this._state.sim.aliveTeams = 20;
-      this._state.sim.battle = null;
-
-      // 大会当日メッセージは game.js で呼ぶ想定だが、念のため
-      if (opts.centerMessage) setCenterMessage(this._state, opts.centerMessage, 2200, true);
-    },
-
-    finishTournament(resultObj) {
-      const t = this._state.tournament;
-      t.active = false;
-      t.lastResult = resultObj || null;
-      // 次フェーズは game.js が決める
-    },
-
-    // 戦闘（sim_battle が使う）
-    setBattle(battleObj) {
-      this._state.sim.battle = battleObj || null;
-    },
-
-    clearBattle() {
-      this._state.sim.battle = null;
-    },
-
-    // 所持金
-    addGold(delta) {
-      const e = this._state.economy;
-      e.gold = Math.max(0, (e.gold | 0) + (delta | 0));
-    },
-
-    setGold(v) {
-      this._state.economy.gold = Math.max(0, v | 0);
-    },
-
-    // インベントリ
-    addItem(itemId, count = 1) {
-      const inv = this._state.inventory.items;
-      const k = String(itemId);
-      inv[k] = (inv[k] | 0) + (count | 0);
-      if (inv[k] <= 0) delete inv[k];
-    },
-
-    getItemCount(itemId) {
-      const inv = this._state.inventory.items;
-      return inv[String(itemId)] | 0;
-    },
-
-    // コーチスキル装備（最大5）
-    equipCoachSkill(skillId) {
-      const arr = this._state.inventory.coachSkills;
-      const id = String(skillId);
-      if (arr.includes(id)) return false;
-      if (arr.length >= 5) return false;
-      arr.push(id);
-      return true;
-    },
-
-    unequipCoachSkill(skillId) {
-      const arr = this._state.inventory.coachSkills;
-      const id = String(skillId);
-      const i = arr.indexOf(id);
-      if (i >= 0) arr.splice(i, 1);
-    },
-
-    // セーブ/ロード
-    save() {
-      return save(this._state);
-    },
-
-    load() {
-      const obj = load();
-      if (!obj) return false;
-
-      // 互換性：最低限の形を担保（足りないところは default を補完）
-      const def = defaultState();
-      this._state = merge(def, obj);
-      return true;
-    },
-
-    clearSave() {
-      return clearSave();
-    },
+    // 修行アイコン
+    syageki: 'syageki.png',
+    dash: 'dash.png',
+    paz: 'paz.png',
+    zitugi: 'zitugi.png',
+    taki: 'taki.png',
+    kenq: 'kenq.png',
+    sougou: 'sougou.png',
   };
 
-  // 深いマージ（default を壊さず補完）
-  function merge(base, incoming) {
-    if (incoming === null || incoming === undefined) return base;
-    if (typeof base !== 'object' || base === null) return incoming;
-    if (Array.isArray(base)) return Array.isArray(incoming) ? incoming : base;
+  // =========================
+  // 2) マップエリア画像
+  // =========================
+  AS.MAP_AREAS = {
+    1: { name: 'ネオン噴水', file: 'neonhun.png' },
+    2: { name: 'ネオンジム', file: 'neongym.png' },
+    3: { name: 'ネオンストリート', file: 'neonstreet.png' },
+    4: { name: 'ネオン中心街', file: 'neonmain.png' },
+    5: { name: 'ネオン大橋', file: 'neonbrige.png' },
+    6: { name: 'ネオン工場', file: 'neonfact.png' },
 
-    const out = {};
-    const keys = new Set([...Object.keys(base), ...Object.keys(incoming || {})]);
-    for (const k of keys) {
-      const bv = base[k];
-      const iv = incoming ? incoming[k] : undefined;
-      if (iv === undefined) out[k] = bv;
-      else if (typeof bv === 'object' && bv && !Array.isArray(bv)) out[k] = merge(bv, iv);
-      else out[k] = iv;
+    7: { name: '海辺の駅', file: 'seast.png' },
+    8: { name: '海辺の学校', file: 'seasc.png' },
+    9: { name: '海辺の草原', file: 'seasou.png' },
+    10:{ name: '海辺の牧場', file: 'seausi.png' },
+
+    11:{ name: 'テント', file: 'mtent.png' },
+    12:{ name: '噴水', file: 'mhunsui.png' },
+    13:{ name: 'バトルフロアA', file: 'ma.png' },
+    14:{ name: 'バトルフロアB', file: 'mb.png' },
+    15:{ name: '音大橋', file: 'mhasi.png' },
+    16:{ name: '看板地点', file: 'mkanban.png' },
+
+    17:{ name: '高層ビル中心街', file: 'kosomain.png' },
+    18:{ name: '高層ビルファイトリング', file: 'kosoring.png' },
+    19:{ name: '高層ビルヘリポート', file: 'kosoheri.png' },
+    20:{ name: '高層ビルサーキット', file: 'kososakit.png' },
+
+    21:{ name: 'お土産売り場', file: 'hikouri.png' },
+    22:{ name: '飛行場通路', file: 'hikoroad.png' },
+
+    23:{ name: 'パン売り場', file: 'panuri.png' },
+    24:{ name: 'パン製造工場', file: 'pankou.png' },
+
+    25:{ name: 'メインステージ', file: 'stagemain.png' },
+    26:{ name: 'サブステージ', file: 'stagesub.png' },
+    27:{ name: 'サードステージ', file: 'stage3.png' },
+    28:{ name: '巨大トラック', file: 'stagetrack.png' },
+
+    29:{ name: 'ラストロード', file: 'lastroad.png' },
+    30:{ name: 'ラストキング', file: 'lastking.png' },
+    31:{ name: 'ラストモーム', file: 'lastmomu.png' },
+    32:{ name: 'ラストリング', file: 'lastring.png' },
+  };
+
+  // 初動降下禁止（確定）
+  AS.DROP_FORBIDDEN = new Set([5, 9, 12, 20, 28, 29, 30, 31, 32]);
+
+  // =========================
+  // 3) Image Cache
+  // =========================
+  AS.cache = AS.cache || new Map();
+
+  AS.loadImage = function loadImage(src) {
+    if (!src) return Promise.reject(new Error('src is empty'));
+    if (AS.cache.has(src)) return AS.cache.get(src);
+
+    const p = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ ok: true, img, src });
+      img.onerror = () => resolve({ ok: false, img: null, src });
+      img.src = src;
+    });
+
+    AS.cache.set(src, p);
+    return p;
+  };
+
+  AS.preloadCore = async function preloadCore() {
+    const list = [
+      AS.PATHS.haikeimain,
+      AS.PATHS.rogo,
+      AS.PATHS.main1,
+      AS.PATHS.P1,
+      AS.PATHS.map,
+      AS.PATHS.ido,
+      AS.PATHS.shop,
+      AS.PATHS.heal,
+      AS.PATHS.battle,
+      AS.PATHS.winner,
+      AS.PATHS.teamBtn,
+      AS.PATHS.taikaiBtn,
+      AS.PATHS.syageki,
+      AS.PATHS.dash,
+      AS.PATHS.paz,
+      AS.PATHS.zitugi,
+      AS.PATHS.taki,
+      AS.PATHS.kenq,
+      AS.PATHS.sougou,
+    ].filter(Boolean);
+
+    const results = await Promise.all(list.map((s) => AS.loadImage(s)));
+    return results;
+  };
+
+  // =========================
+  // 4) Placeholder Drawing
+  // =========================
+  function hashCode(str) {
+    str = String(str || '');
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+      h = (h << 5) - h + str.charCodeAt(i);
+      h |= 0;
     }
-    return out;
+    return h >>> 0;
   }
 
-  // expose
-  window.STATE = STATE;
+  function pickColor(key) {
+    const h = hashCode(key);
+    const hue = h % 360;
+    return `hsl(${hue}, 70%, 45%)`;
+  }
+
+  AS.drawPlaceholder = function drawPlaceholder(ctx, x, y, w, h, label, subLabel) {
+    if (!ctx) return;
+    ctx.save();
+
+    const bg = pickColor(label || 'missing');
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, w, h);
+
+    // border
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+
+    // overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
+
+    // text
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label || 'NO IMAGE', x + w / 2, y + h * 0.72);
+
+    if (subLabel) {
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(subLabel, x + w / 2, y + h * 0.86);
+    }
+
+    ctx.restore();
+  };
+
+  // =========================
+  // 5) Draw Image or Placeholder
+  // =========================
+  AS.drawImageOrPlaceholder = async function drawImageOrPlaceholder(
+    ctx,
+    src,
+    x,
+    y,
+    w,
+    h,
+    labelIfMissing
+  ) {
+    if (!ctx) return false;
+
+    const res = await AS.loadImage(src).catch(() => ({ ok: false }));
+    if (res && res.ok && res.img) {
+      ctx.drawImage(res.img, x, y, w, h);
+      return true;
+    } else {
+      AS.drawPlaceholder(ctx, x, y, w, h, labelIfMissing || 'MISSING', src || '');
+      return false;
+    }
+  };
+
+  // =========================
+  // 6) Player Outfit pick
+  // =========================
+  AS.getPlayerImagePath = function getPlayerImagePath(playerOutfitIndex) {
+    // 0=P1, 1=P2, 2=P3...
+    const n = Number(playerOutfitIndex || 0);
+    if (n <= 0) return AS.PATHS.P1;
+    if (n === 1) return AS.PATHS.P2 || AS.PATHS.P1;
+    if (n === 2) return AS.PATHS.P3 || AS.PATHS.P1;
+    return AS.PATHS.P1;
+  };
+
+  // =========================
+  // 7) Export safe
+  // =========================
+  window.ASSETS = AS; // legacy alias (optional)
+
 })();
