@@ -1,180 +1,93 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f14" />
-  <title>MOB Battle Royale Manager (Prototype)</title>
-  <link rel="stylesheet" href="./style.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>MOB Battle Royale Sim (DEMO)</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
   <div id="app">
-    <!-- ===== Top Bar ===== -->
     <header class="topbar">
-      <div class="topbar__left">
-        <div class="brand">
-          <div class="brand__logo" aria-hidden="true">M</div>
-          <div class="brand__texts">
-            <div class="brand__corp" id="ui_corpName">MOB COMPANY</div>
-            <div class="brand__rank">
-              <span class="pill" id="ui_corpRank">RANK: C</span>
-              <span class="pill pill--gold" id="ui_money">G: 1000</span>
-            </div>
-          </div>
+      <div class="top-left">
+        <div class="brand">MOB COMPANY</div>
+        <div class="subinfo">
+          <span id="corpRank">企業ランク: -</span>
+          <span id="teamName">チーム名: -</span>
         </div>
       </div>
 
-      <div class="topbar__right">
-        <div class="teamTitle">
-          <div class="teamTitle__label">TEAM</div>
-          <div class="teamTitle__name" id="ui_teamName">PLAYER TEAM</div>
+      <div class="top-right">
+        <div class="weekline">
+          <span id="yearWeek">1989年 1週</span>
+        </div>
+        <div class="money">
+          <span id="gold">0G</span>
         </div>
       </div>
     </header>
 
-    <!-- ===== Main Layout ===== -->
     <main class="layout">
-      <!-- Left Commands -->
-      <aside class="sidebar">
-        <button class="cmd" data-cmd="team" id="cmd_team">
-          <span class="cmd__icon">👥</span>
-          <span class="cmd__text">チーム編成</span>
-        </button>
+      <aside class="menu">
+        <button class="btn" data-action="TEAM">チーム編成</button>
+        <button class="btn" data-action="OFFER">勧誘</button>
+        <button class="btn" data-action="GACHA">ガチャ</button>
+        <button class="btn" data-action="ENTRY">大会エントリー</button>
+        <button class="btn" data-action="IN_TOUR">参加中の大会</button>
+        <button class="btn" data-action="SAVE">セーブ</button>
+        <button class="btn" data-action="STATS">戦績</button>
+        <button class="btn" data-action="TOUR_RESULT">大会結果</button>
+        <button class="btn" data-action="SCHEDULE">スケジュール</button>
 
-        <button class="cmd" data-cmd="recruit" id="cmd_recruit">
-          <span class="cmd__icon">🤝</span>
-          <span class="cmd__text">勧誘</span>
-        </button>
+        <div class="divider"></div>
 
-        <button class="cmd" data-cmd="gacha" id="cmd_gacha">
-          <span class="cmd__icon">🎲</span>
-          <span class="cmd__text">ガチャ</span>
-        </button>
+        <button class="btn small" data-action="TRAIN_AIM">射撃</button>
+        <button class="btn small" data-action="TRAIN_DASH">ダッシュ</button>
+        <button class="btn small" data-action="TRAIN_PUZZLE">パズル</button>
+        <button class="btn small" data-action="TRAIN_REAL">実戦</button>
+        <button class="btn small" data-action="TRAIN_FALL">滝</button>
+        <button class="btn small" data-action="TRAIN_RESEARCH">研究</button>
+        <button class="btn small" data-action="TRAIN_ALL">総合</button>
 
-        <button class="cmd" data-cmd="shop" id="cmd_shop">
-          <span class="cmd__icon">🛒</span>
-          <span class="cmd__text">ショップ</span>
-        </button>
+        <div class="divider"></div>
 
-        <button class="cmd" data-cmd="heal" id="cmd_heal">
-          <span class="cmd__icon">🩹</span>
-          <span class="cmd__text">回復</span>
-        </button>
-
-        <div class="sidebar__divider"></div>
-
-        <button class="cmd cmd--primary" data-cmd="battle" id="cmd_battle">
-          <span class="cmd__icon">⚔️</span>
-          <span class="cmd__text">試合開始</span>
-        </button>
-
-        <button class="cmd" data-cmd="tournament" id="cmd_tournament">
-          <span class="cmd__icon">🏆</span>
-          <span class="cmd__text">大会</span>
-        </button>
-
-        <button class="cmd" data-cmd="schedule" id="cmd_schedule">
-          <span class="cmd__icon">🗓️</span>
-          <span class="cmd__text">スケジュール</span>
-        </button>
-
-        <button class="cmd" data-cmd="results" id="cmd_results">
-          <span class="cmd__icon">📊</span>
-          <span class="cmd__text">大会の結果</span>
-        </button>
-
-        <button class="cmd" data-cmd="save" id="cmd_save">
-          <span class="cmd__icon">💾</span>
-          <span class="cmd__text">セーブ</span>
-        </button>
+        <button class="btn small" data-action="COLLECTION">コレクション</button>
+        <button class="btn small" data-action="SHOP">ショップ</button>
+        <button class="btn small" data-action="EXPEDITION">遠征</button>
+        <button class="btn small" data-action="NEWS">最近の出来事</button>
       </aside>
 
-      <!-- Center Main Panel -->
-      <section class="mainPanel">
-        <div class="mainPanel__header">
-          <div class="screenTitle" id="ui_screenTitle">メイン</div>
-          <div class="screenSub" id="ui_screenSub">コマンドを選んでください</div>
-        </div>
-
-        <!-- Main Image (Square) -->
-        <div class="mainVisualWrap">
-          <div class="mainVisual">
+      <section class="content">
+        <div class="mainPanel">
+          <div class="mainImageWrap">
             <canvas id="mainCanvas" width="512" height="512"></canvas>
-
-            <!-- Overlay UI for important scenes -->
-            <div class="overlayHud" id="overlayHud" aria-hidden="true">
-              <div class="overlayHud__tag" id="overlayTag">EVENT</div>
-              <div class="overlayHud__text" id="overlayText">---</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Bottom: Logs / Controls -->
-        <div class="bottomArea">
-          <div class="logHeader">
-            <div class="logHeader__title">ログ</div>
-            <div class="logHeader__hint">試合中の出来事を表示</div>
           </div>
 
-          <div class="logBox" id="logBox" role="log" aria-live="polite"></div>
-
-          <div class="bottomButtons">
-            <button class="btn" id="btn_back">戻る</button>
-            <button class="btn btn--accent" id="btn_action">決定</button>
+          <div class="rightPanel">
+            <div class="panelTitle">ログ</div>
+            <div id="log" class="log"></div>
           </div>
         </div>
       </section>
-
-      <!-- Right Side: Info Panel -->
-      <aside class="infoPanel">
-        <div class="card">
-          <div class="card__title">チーム状況</div>
-          <div class="kv">
-            <div class="kv__row">
-              <div class="kv__k">現在地</div>
-              <div class="kv__v" id="ui_areaName">---</div>
-            </div>
-            <div class="kv__row">
-              <div class="kv__k">フェーズ</div>
-              <div class="kv__v" id="ui_phase">待機</div>
-            </div>
-            <div class="kv__row">
-              <div class="kv__k">残りチーム</div>
-              <div class="kv__v" id="ui_aliveTeams">20</div>
-            </div>
-            <div class="kv__row">
-              <div class="kv__k">順位</div>
-              <div class="kv__v" id="ui_rankNow">---</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__title">メンバー</div>
-
-          <div class="memberList" id="ui_members">
-            <!-- game.js で描画 -->
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__title">装備 / コーチ</div>
-          <div class="smallText">
-            コーチスキル：<span id="ui_coachSkills">未装備</span>
-          </div>
-        </div>
-
-        <div class="card card--thin">
-          <div class="smallText dim">
-            VERSION: <span id="ui_version">v0.1-proto</span>
-          </div>
-        </div>
-      </aside>
     </main>
+
+    <div id="modal" class="modal hidden">
+      <div class="modalBox">
+        <div id="modalTitle" class="modalTitle">-</div>
+        <div id="modalBody" class="modalBody">-</div>
+        <div class="modalBtns">
+          <button id="modalYes" class="btn yes">はい</button>
+          <button id="modalNo" class="btn no">いいえ</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <div class="hint">DEMO / 操作：左メニュー → 表示切替（大会や戦闘は次パートで実装）</div>
+    </footer>
   </div>
 
-  <!-- game.js 1本だけ（ルール厳守） -->
-  <script src="./game.js"></script>
+  <!-- ✅固定ルール：scriptは game.js 1本だけ -->
+  <script type="module" src="game.js"></script>
 </body>
 </html>
