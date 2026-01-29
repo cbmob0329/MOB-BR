@@ -1,474 +1,363 @@
-了解。**② style.css（フル）**いきます。
+/* ================================
+   MOB BR - style.css (FULL)
+   - Mobile-first
+   - Canvas 420x560 fixed for now
+   - UI overlays above canvas
+   ================================= */
 
-```css
 :root{
-  --bg:#0b0b0b;
-  --panel:rgba(0,0,0,0.58);
-  --panel2:rgba(0,0,0,0.72);
-  --line:#2b2b2b;
-  --txt:#f2f2f2;
-  --muted:#bdbdbd;
+  --app-w: 420px;
+  --app-h: 560px;
 
-  --gold1:#ffe86a;
-  --gold2:#d4a900;
+  --panel-bg: rgba(0,0,0,0.55);
+  --panel-bd: rgba(255,255,255,0.18);
 
-  --lime:#c7ff2b;
-  --pink:#ff0b6a;
+  --txt: #ffffff;
+  --txt-dim: rgba(255,255,255,0.75);
 
-  --chip:#121212;
-}
+  --btn-bg: rgba(0,0,0,0.65);
+  --btn-bd: rgba(255,210,90,0.75);
+  --btn-txt: #ffd45a;
 
-*{ box-sizing:border-box; }
-html,body{
-  height:100%;
-  margin:0;
-  background:var(--bg);
-  color:var(--txt);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
-}
-button, input, select{ font:inherit; }
+  --btn-bg-hover: rgba(0,0,0,0.78);
 
-.app{
-  width:100%;
-  max-width:980px;
-  margin:0 auto;
-  min-height:100%;
-  padding:10px;
-  position:relative;
+  --log-bg: rgba(190, 255, 60, 0.92); /* 黄緑イメージ */
+  --log-txt: #101010;
+
+  --shadow: 0 6px 18px rgba(0,0,0,0.35);
+  --radius: 10px;
 }
 
-/* 背景 */
-.bg{
-  position:absolute;
-  inset:0;
-  z-index:0;
-  border-radius:14px;
-  background:
-    radial-gradient(1200px 700px at 55% 18%, rgba(255,255,255,0.07), transparent 55%),
-    radial-gradient(900px 500px at 25% 65%, rgba(255,255,255,0.05), transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 55%),
-    #070707;
-}
-.bgImg{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  border-radius:14px;
-  opacity:0.95;
-  pointer-events:none;
+*{
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* 上部情報 */
-.topInfo{
-  position:relative;
-  z-index:1;
-  display:grid;
-  grid-template-columns: 1fr;
-  gap:6px;
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel);
-  backdrop-filter: blur(6px);
+html, body{
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0f0f10;
+  color: var(--txt);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
 }
 
-.infoRow{
-  display:flex;
-  gap:8px;
-  align-items:center;
-}
-.label{
-  width:92px;
-  font-weight:900;
-  color:var(--muted);
-  letter-spacing:0.4px;
-}
-.textInput{
-  flex:1;
-  padding:8px 10px;
-  border-radius:10px;
-  border:1px solid var(--line);
-  background:#0f0f0f;
-  color:var(--txt);
-  outline:none;
-}
-.select{
-  flex:1;
-  padding:8px 10px;
-  border-radius:10px;
-  border:1px solid var(--line);
-  background:#0f0f0f;
-  color:var(--txt);
-  outline:none;
+/* Center the app on desktop, keep it responsive on mobile */
+body{
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 中段 */
-.main{
-  position:relative;
-  z-index:1;
-  display:grid;
-  grid-template-columns: 160px 1fr 260px;
-  gap:10px;
-  margin-top:10px;
+/* App wrapper */
+#app{
+  width: min(100vw, var(--app-w));
+  height: min(100vh, calc(var(--app-h) + 20px));
+  padding: 10px;
 }
 
-/* 左メニュー */
-.leftMenu{
-  min-height:420px;
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel);
-  display:flex;
-  flex-direction:column;
-  gap:10px;
+/* The stage that holds canvas & overlay UI */
+#app{
+  position: relative;
 }
 
-.menuBtn{
-  padding:14px 10px;
-  border-radius:12px;
-  border:1px solid #3a3300;
-  background: linear-gradient(180deg, var(--gold1), var(--gold2));
-  color:#151100;
-  font-weight:1000;
-  letter-spacing:0.4px;
-  cursor:pointer;
-  user-select:none;
-}
-.menuBtn:active{ transform: translateY(1px); }
-
-/* 中央 */
-.center{
-  min-height:420px;
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel);
-  display:flex;
-  flex-direction:column;
-  gap:10px;
+/* Canvas */
+#game{
+  width: var(--app-w);
+  height: var(--app-h);
+  display: block;
+  border-radius: 14px;
+  background: #1a1a1a;
+  box-shadow: var(--shadow);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
-/* 上のブランド行 */
-.brandRow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-.brandBox{
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:var(--panel2);
-}
-.brandTitle{
-  font-weight:1000;
-  letter-spacing:1px;
-  font-size:18px;
-  color:var(--gold1);
-}
-.brandSub{
-  margin-top:2px;
-  color:var(--muted);
-  font-size:12px;
-  font-weight:800;
+/* Overlay container */
+#ui{
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: var(--app-w);
+  height: var(--app-h);
+  pointer-events: none; /* allow clicks only on interactive elements */
 }
 
-.versionBox{
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:var(--panel2);
-  text-align:right;
-}
-.versionLabel{
-  font-size:10px;
-  color:var(--muted);
-  font-weight:900;
-  letter-spacing:0.4px;
-}
-.versionValue{
-  font-size:14px;
-  font-weight:1000;
-  color:var(--txt);
+/* Panels */
+.panel{
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-bd);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px 10px;
+  pointer-events: none;
 }
 
-/* 正方形シーン枠 */
-.mainSquare{
-  flex:1;
-  border-radius:12px;
-  border:2px solid #000;
-  background:#0f0f0f;
-  position:relative;
-  padding:10px;
-  overflow:hidden;
-  min-height:260px;
-  display:flex;
-  flex-direction:column;
+#hudTopLeft{
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 160px;
 }
 
-.sceneHeader{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  margin-bottom:8px;
-}
-.sceneTitle{
-  font-weight:1000;
-  font-size:16px;
-}
-.sceneBadge{
-  padding:6px 10px;
-  border-radius:999px;
-  border:1px solid var(--line);
-  background:#111;
-  font-weight:1000;
-  font-size:12px;
-  color:var(--lime);
+.hudLine{
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--txt);
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sceneCanvas{
-  flex:1;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:#0b0b0b;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:12px;
-}
-.sceneText{
-  width:100%;
-  color:#ddd;
-  font-size:14px;
-  line-height:1.55;
-  white-space:pre-wrap;
+.hudLabel{
+  color: var(--txt-dim);
+  flex: 0 0 auto;
 }
 
-.sceneFooter{
-  margin-top:8px;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:10px;
-}
-.hint{
-  font-size:11px;
-  color:#8b8b8b;
+#hud_company, #hud_rank, #hud_team{
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
 }
 
-/* HOTバー */
-.hotRow{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
-.hotBar{
-  flex:1;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background: var(--pink);
-  color:#111;
-  font-weight:1000;
-  padding:10px 12px;
-  letter-spacing:0.4px;
+/* Left menu buttons column */
+#menuButtons{
+  position: absolute;
+  left: 12px;
+  top: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
 }
 
-/* 右ログ */
-.rightPanel{
-  min-height:420px;
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel);
-  display:flex;
-  flex-direction:column;
-}
-.panelTitle{
-  font-weight:1000;
-  color:var(--muted);
-  margin-bottom:8px;
-}
-.log{
-  flex:1;
-  overflow:auto;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:var(--panel2);
-  padding:10px;
-  font-size:12px;
-  line-height:1.55;
-  white-space:pre-wrap;
+/* Buttons */
+.uiBtn{
+  width: 140px;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border: 2px solid var(--btn-bd);
+  background: var(--btn-bg);
+  color: var(--btn-txt);
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow);
+  cursor: pointer;
 }
 
-/* 下段 修行 */
-.bottom{
-  position:relative;
-  z-index:1;
-  margin-top:10px;
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel);
+.uiBtn:active{
+  transform: translateY(1px);
 }
 
-.bottomTitle{
-  font-weight:1000;
-  color:var(--lime);
-  margin-bottom:8px;
+.uiBtn:hover{
+  background: var(--btn-bg-hover);
 }
 
-/* 横スライドレール */
-.trainRail{
-  border-radius:12px;
-  border:1px solid #2a3a00;
-  background: var(--lime);
-  padding:10px;
-  overflow:hidden;
+/* Wide bottom buttons */
+#bottomControls{
+  position: absolute;
+  left: 170px;
+  bottom: 12px;
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
 }
-.trainList{
-  display:flex;
-  gap:10px;
-  overflow-x:auto;
-  padding-bottom:8px;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+
+.uiBtnWide{
+  width: 110px;
+  font-size: 16px;
+  padding: 10px 0;
 }
-.trainList::-webkit-scrollbar{
-  height:8px;
+
+/* Main Frame (center-right) */
+#mainFrame{
+  position: absolute;
+  left: 168px;
+  top: 110px;
+  width: 242px;
+  height: 260px;
+  border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.06);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  overflow: hidden;
 }
-.trainList::-webkit-scrollbar-thumb{
+
+#mainFrameInner{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+#mainFrameTitle{
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+
+#mainFrameSub{
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+}
+
+/* Log / Message Box (the green area in screenshot)
+   -> Make it scrollable for long content (training items list etc.) */
+#logBox{
+  position: absolute;
+  left: 10px;
+  top: 390px;
+  width: 400px;
+  height: 120px;
+
+  background: var(--log-bg);
+  border: 2px solid rgba(0,0,0,0.45);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+
+  padding: 10px 10px;
+  pointer-events: auto;
+
+  overflow-y: auto;      /* ✅ scroll */
+  overflow-x: hidden;
+}
+
+#logText{
+  color: var(--log-txt);
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.25;
+  white-space: pre-wrap; /* allow \n */
+}
+
+/* Scrollbar (optional, subtle) */
+#logBox::-webkit-scrollbar{
+  width: 10px;
+}
+#logBox::-webkit-scrollbar-thumb{
   background: rgba(0,0,0,0.25);
-  border-radius:999px;
+  border-radius: 10px;
 }
-.trainCard{
-  flex:0 0 auto;
-  width:140px;
-  height:96px;
-  border-radius:12px;
-  border:2px solid rgba(0,0,0,0.35);
-  background: rgba(255,255,255,0.6);
-  color:#111;
-  padding:10px;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  gap:6px;
-  scroll-snap-align:center;
-  user-select:none;
-  transform: scale(0.92);
-  transition: transform 0.12s ease, background 0.12s ease;
-}
-.trainCard .tTitle{
-  font-weight:1000;
-  font-size:14px;
-}
-.trainCard .tSub{
-  font-weight:900;
-  font-size:11px;
-  opacity:0.8;
+#logBox::-webkit-scrollbar-track{
+  background: rgba(0,0,0,0.08);
+  border-radius: 10px;
 }
 
-/* 中央強調（JSで付ける） */
-.trainCard.active{
-  transform: scale(1.06);
-  background: rgba(255,255,255,0.92);
+/* Modal */
+#modalBackdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  pointer-events: auto;
 }
 
-/* 下段ボタン */
-.bottomActions{
-  margin-top:8px;
-  display:flex;
-  gap:8px;
-  justify-content:flex-end;
-}
-.smallBtn{
-  padding:8px 10px;
-  border-radius:10px;
-  border:1px solid var(--line);
-  background:#101010;
-  color:var(--txt);
-  cursor:pointer;
-}
-.smallBtn:active{ transform: translateY(1px); }
+#modalPanel{
+  position: absolute;
+  left: 20px;
+  top: 60px;
+  width: 380px;
+  height: 440px;
 
-/* モーダル */
-.modal{
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,0.65);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  z-index:99;
-  padding:14px;
-}
-.modal.hidden{ display:none; }
-.modalInner{
-  width:min(900px, 96vw);
-  max-height:86vh;
-  overflow:hidden;
-  border-radius:14px;
-  border:1px solid var(--line);
-  background:#0b0b0b;
-  display:flex;
-  flex-direction:column;
-}
-.modalHead{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:10px 12px;
-  border-bottom:1px solid var(--line);
-}
-.modalTitle{
-  font-weight:1000;
-}
-.modalClose{
-  width:38px;
-  height:38px;
-  border-radius:10px;
-  border:1px solid var(--line);
-  background:#121212;
-  color:var(--txt);
-  cursor:pointer;
-}
-.modalBody{
-  padding:12px;
-  overflow:auto;
-  white-space:pre-wrap;
-  line-height:1.55;
-  font-size:13px;
-}
-.modalFoot{
-  padding:10px 12px;
-  border-top:1px solid var(--line);
-  display:flex;
-  justify-content:flex-end;
-}
-.modalOk{
-  padding:10px 14px;
-  border-radius:12px;
-  border:1px solid #3a3300;
-  background: linear-gradient(180deg, var(--gold1), var(--gold2));
-  color:#151100;
-  font-weight:1000;
-  cursor:pointer;
+  background: rgba(20,20,20,0.92);
+  border: 2px solid rgba(255,255,255,0.22);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
 }
 
-/* レスポンシブ */
-@media (max-width: 860px){
-  .main{
-    grid-template-columns: 140px 1fr;
-    grid-template-rows:auto auto;
+#modalHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.16);
+}
+
+#modalTitle{
+  font-weight: 1000;
+  font-size: 16px;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.06em;
+}
+
+.uiBtnSmall{
+  width: 40px;
+  height: 34px;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.25);
+  background: rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.9);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#modalBody{
+  flex: 1;
+  padding: 12px;
+  overflow: auto;
+}
+
+#modalContent{
+  font-size: 14px;
+  color: rgba(255,255,255,0.9);
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.modalText{
+  opacity: 0.9;
+}
+
+#modalFooter{
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,0.16);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Hidden helper */
+.hidden{
+  display: none !important;
+}
+
+/* Small screens */
+@media (max-width: 430px){
+  :root{
+    --app-w: 390px;
+    --app-h: 560px;
   }
-  .rightPanel{
-    grid-column:1 / -1;
-    min-height:220px;
-  }
+  #hudTopLeft{ width: 150px; }
+  #menuButtons .uiBtn{ width: 132px; }
+  #mainFrame{ left: 160px; width: 230px; }
+  #logBox{ width: 370px; }
+  #bottomControls{ left: 160px; }
 }
-```
+
+/* Very small (fallback) */
+@media (max-width: 380px){
+  :root{
+    --app-w: 360px;
+    --app-h: 540px;
+  }
+  #game{
+    border-radius: 12px;
+  }
+  #hudTopLeft{ left: 8px; top: 8px; width: 140px; }
+  #menuButtons{ left: 10px; top: 110px; }
+  #menuButtons .uiBtn{ width: 125px; font-size: 15px; }
+  #mainFrame{ left: 150px; top: 100px; width: 205px; height: 250px; }
+  #logBox{ left: 8px; top: 370px; width: 344px; height: 120px; }
+  #bottomControls{ left: 150px; bottom: 10px; }
+  .uiBtnWide{ width: 98px; font-size: 15px; }
+}
