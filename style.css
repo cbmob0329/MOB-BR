@@ -1,517 +1,277 @@
-/* style.css (FULL)  MOB BR - UI Layout Fix
-   - Main screen layout fixed to match user's layout image
-   - Mobile-first (portrait)
-*/
+/* =========================================
+   style.css  (FULL)
+   MOB Tournament Simulation
+   ========================================= */
 
-:root{
-  --W: 420px;
-  --H: 720px;
+/* --- Reset / Base --- */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  background: #0f1013;
+  color: #f3f4f6;
+  -webkit-tap-highlight-color: transparent;
+}
+img { display: block; max-width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+button { font-family: inherit; }
 
-  --safeTop: env(safe-area-inset-top, 0px);
-  --safeBottom: env(safe-area-inset-bottom, 0px);
-
-  --panelRadius: 14px;
-  --btnRadius: 14px;
-
-  --uiShadow: 0 10px 28px rgba(0,0,0,.35);
-  --uiShadowSoft: 0 8px 18px rgba(0,0,0,.25);
-  --outline: 2px solid rgba(255, 230, 140, .85);
-
-  --glass: rgba(255,255,255,.10);
-  --glass2: rgba(255,255,255,.18);
-
-  --text: #f7f7f7;
-  --textDim: rgba(255,255,255,.78);
-  --black: #0a0a0a;
-
-  --greenPanel: rgba(165, 255, 120, 0.80); /* only for prototype bubble area */
+/* --- Layout --- */
+#header {
+  display: grid;
+  grid-template-columns: 96px 1fr 120px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #151824;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
-*{ box-sizing: border-box; }
-html, body{
-  margin:0;
-  padding:0;
-  background:#000;
-  color:var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+#header-left {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#logo {
+  width: 72px;
+  height: auto;
 }
 
-img{ image-rendering: auto; }
-button{ font-family: inherit; }
-
-#app{
-  width:100vw;
-  min-height:100vh;
-  display:flex;
-  justify-content:center;
-  align-items:flex-start;
-  padding-top: var(--safeTop);
-  padding-bottom: var(--safeBottom);
-  background:#000;
+#header-center {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.1;
+}
+#time-info {
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+#next-tournament {
+  font-size: 12px;
+  opacity: 0.95;
 }
 
-#gameRoot{
-  position:relative;
-  width:min(var(--W), 100vw);
-  height:min(var(--H), 100vh);
-  max-width: var(--W);
-  max-height: var(--H);
-  overflow:hidden;
-  background:#000;
+#header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
-
-/* Main background image */
-#bgMain{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit: cover;
-  z-index:0;
-  filter: none;
-}
-
-/* Top left text info */
-#topInfo{
-  position:absolute;
-  left:14px;
-  top:12px;
-  z-index:10;
-  line-height:1.25;
-  text-shadow: 0 2px 6px rgba(0,0,0,.65);
-  font-weight:800;
-  letter-spacing: .5px;
+#gold-info {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  font-weight: 800;
   font-size: 14px;
 }
-
-#topInfo .row{
-  display:flex;
-  gap:8px;
-  align-items:baseline;
-}
-#topInfo .label{
-  opacity:.92;
-  min-width: 80px;
-}
-#topInfo .value{
-  opacity:1;
+#gold-info #gold-value {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Version */
-#versionText{
-  position:absolute;
-  left:10px;
-  top:2px;
-  z-index:10;
-  font-size: 11px;
-  opacity:.55;
-  text-shadow: 0 2px 6px rgba(0,0,0,.65);
-  pointer-events:none;
+/* --- Main --- */
+#main {
+  height: calc(100% - 56px - 36px);
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 10px;
+  padding: 10px;
 }
 
-/* Right top logo */
-#logoBox{
-  position:absolute;
-  right:8px;
-  top:8px;
-  width: 168px;
-  height: 90px;
-  z-index:10;
-  display:flex;
-  justify-content:flex-end;
-  align-items:flex-start;
-  pointer-events:none;
-}
-
-#logoBox img{
-  width:100%;
-  height:100%;
-  object-fit: contain;
-  filter: drop-shadow(0 6px 10px rgba(0,0,0,.45));
-}
-
-/* Top band (date + next tournament info) */
-#topBand{
-  position:absolute;
-  left: 190px;
-  top: 95px;
-  width: calc(100% - 200px);
-  height: 38px;
-  z-index: 12;
-
-  display:flex;
-  justify-content:flex-start;
-  align-items:center;
-  padding: 0 10px;
-
-  background: rgba(0,0,0,.35);
-  border: 1px solid rgba(255,255,255,.18);
-  border-radius: 10px;
-
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-
-  box-shadow: var(--uiShadowSoft);
-}
-
-#topBand .bandText{
-  font-weight: 900;
-  font-size: 12px;
-  color: rgba(255,255,255,.96);
-  text-shadow: 0 2px 6px rgba(0,0,0,.55);
-  letter-spacing:.3px;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
-
-/* LEFT big buttons (Team/Tournament) */
-#leftButtons{
-  position:absolute;
-  left: 16px;
-  top: 135px;
-  z-index: 12;
-  width: 165px;
-  display:flex;
+/* --- Left Menu --- */
+#left-menu {
+  display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
 }
 
-.bigBtn{
-  width: 165px;
-  height: 74px;
-  border: none;
-  background: transparent;
-  padding:0;
-  cursor:pointer;
-  outline: none;
-  transform: translateZ(0);
-  transition: transform .08s ease;
-  filter: drop-shadow(0 8px 12px rgba(0,0,0,.35));
+.menu-btn {
+  width: 62px;
+  height: 62px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
 }
-
-.bigBtn img{
-  width:100%;
-  height:100%;
-  object-fit: contain;
+.menu-btn:active {
+  transform: scale(1.04); /* 1タップでちょっと膨らむ（仕様） */
 }
-
-.bigBtn:active{
-  transform: scale(1.05);
+.menu-btn:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.14);
 }
-
-/* Square main panel (main1.png) */
-#mainSquare{
-  position:absolute;
-  right: 12px;
-  top: 155px;
-  width: 225px;
-  height: 225px;
-  z-index: 11;
-
-  border-radius: 10px;
-  overflow:hidden;
-  box-shadow: var(--uiShadow);
-  border: 2px solid rgba(255,255,255,.12);
-}
-
-#mainSquare .squareBg{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit: cover;
-  z-index:0;
-}
-
-#mainSquare .teamImg{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit: contain;
-  z-index:1;
-  filter: drop-shadow(0 8px 10px rgba(0,0,0,.35));
-  transform: translateY(2px);
-}
-
-/* Bottom area for Training (scroll icons) */
-#trainingBar{
-  position:absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 120px;
-  height: 108px;
-  z-index: 12;
-
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  /* NOTE: user said the green line is just layout guide (should be invisible),
-     so background is transparent. */
-  background: transparent;
-}
-
-/* carousel wrapper */
-#trainCarousel{
+.menu-btn img {
   width: 100%;
   height: 100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap: 10px;
-}
-
-.trainItem{
-  flex: 0 0 auto;
-  width: 74px;
-  height: 74px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.16);
-  background: rgba(0,0,0,.22);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: var(--uiShadowSoft);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition: transform .12s ease, opacity .12s ease;
-  opacity: .78;
-  overflow:hidden;
-}
-
-.trainItem img{
-  width:100%;
-  height:100%;
   object-fit: contain;
 }
 
-.trainItem.center{
-  transform: scale(1.18);
-  opacity: 1;
-  border: 2px solid rgba(255, 230, 140, .85);
-  box-shadow: 0 14px 28px rgba(0,0,0,.40);
-}
-
-.trainItem:active{
-  transform: scale(1.22);
-}
-
-/* Bottom bar buttons (Shop etc) */
-#bottomBar{
-  position:absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 18px;
-  height: 86px;
-  z-index: 12;
-
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
+/* --- Center View --- */
+#center-view {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
   gap: 10px;
+  min-width: 0;
 }
 
-.smallBtn{
-  flex:1;
-  height: 62px;
+/* Background layer */
+#main-background {
+  position: absolute;
+  inset: 0;
   border-radius: 16px;
-  border: 2px solid rgba(255, 230, 140, .35);
-  background: rgba(0,0,0,.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: var(--uiShadowSoft);
-  color: rgba(255,255,255,.92);
-  font-weight: 900;
-  letter-spacing: .3px;
-  font-size: 16px;
-  cursor:pointer;
-  transition: transform .08s ease;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #0b0c10;
+}
+#main-background img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
 }
 
-.smallBtn:active{
-  transform: scale(1.05);
+/* Main square area */
+#main-square {
+  position: relative;
+  z-index: 2;
+  margin: 14px auto 0 auto;
+  width: min(540px, 96%);
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.35);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
 }
 
-/* Popup / Modal base */
-#overlay{
-  position:absolute;
-  inset:0;
-  z-index: 100;
-  display:none;
-  background: rgba(0,0,0,.58);
+#main-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-#overlay.show{
-  display:block;
+#player-team-image {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  width: 62%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 10px rgba(0,0,0,0.35));
 }
 
-.modal{
-  position:absolute;
+/* Log area */
+#log-area {
+  position: relative;
+  z-index: 2;
+  width: min(540px, 96%);
+  margin: 0 auto 12px auto;
+  height: 160px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(10,12,18,0.70);
+  overflow: auto;
+  padding: 10px 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+.log-line {
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.96;
+  padding: 2px 0;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Overlay / Popup --- */
+.hidden { display: none !important; }
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.62);
+  z-index: 50;
+}
+
+#popup {
+  position: fixed;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(380px, calc(100% - 28px));
-  max-height: calc(100% - 40px);
-  overflow:auto;
+  width: min(680px, 92vw);
+  max-height: 82vh;
+  overflow: auto;
+  z-index: 60;
 
-  background: rgba(10,10,10,.88);
-  border: 1px solid rgba(255,255,255,.14);
   border-radius: 18px;
-  box-shadow: var(--uiShadow);
-  padding: 14px 14px 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(18, 20, 28, 0.96);
+  box-shadow: 0 18px 55px rgba(0,0,0,0.55);
+  padding: 14px;
 }
 
-.modal h2{
-  margin: 2px 0 10px 0;
-  font-size: 18px;
-  font-weight: 1000;
-  letter-spacing: .3px;
+#popup-content {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
-.modal .closeHint{
-  opacity:.65;
-  font-size: 12px;
-  margin-bottom: 10px;
-}
-
-.modal .section{
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 14px;
-  padding: 10px;
-  margin-bottom: 10px;
-}
-
-.table{
-  width:100%;
-  border-collapse: collapse;
-}
-
-.table th, .table td{
-  padding: 6px 6px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  font-size: 12px;
-}
-
-.table th{
-  text-align:left;
-  opacity:.85;
-  font-weight: 900;
-}
-
-.kBtnRow{
-  display:flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.kBtn{
-  flex:1;
+#popup-close {
+  margin-top: 12px;
+  width: 100%;
   height: 44px;
   border-radius: 14px;
-  border: 2px solid rgba(255, 230, 140, .35);
-  background: rgba(0,0,0,.35);
-  color: rgba(255,255,255,.95);
-  font-weight: 900;
-  cursor:pointer;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+  color: #f3f4f6;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+#popup-close:active { transform: scale(1.02); }
+#popup-close:hover { background: rgba(255,255,255,0.12); }
+
+/* --- Footer --- */
+#footer {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  opacity: 0.85;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: #121521;
 }
 
-.kBtn:active{
-  transform: scale(1.03);
-}
-
-/* Center banner message */
-#centerMsg{
-  position:absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(380px, calc(100% - 24px));
-  min-height: 70px;
-  z-index: 200;
-  display:none;
-
-  background: rgba(0,0,0,.55);
-  border: 2px solid rgba(255,255,255,.20);
-  border-radius: 16px;
-  box-shadow: var(--uiShadow);
-  padding: 12px 12px;
-  text-align:center;
-}
-
-#centerMsg.show{
-  display:block;
-}
-
-#centerMsg .msg{
-  font-weight: 1000;
-  letter-spacing: .4px;
-  font-size: 16px;
-  text-shadow: 0 2px 6px rgba(0,0,0,.55);
-}
-
-/* Income popup */
-#incomeToast{
-  position:absolute;
-  left:50%;
-  top: 110px;
-  transform: translateX(-50%);
-  z-index: 150;
-  display:none;
-
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(0,0,0,.55);
-  border: 1px solid rgba(255,255,255,.18);
-  box-shadow: var(--uiShadowSoft);
-  font-weight: 900;
-  font-size: 14px;
-  letter-spacing:.3px;
-}
-
-#incomeToast.show{
-  display:block;
-}
-
-/* Small screen handling */
-@media (max-width: 380px){
-  #leftButtons{
-    left: 10px;
-    width: 152px;
-    gap: 14px;
+/* --- Responsive tweaks --- */
+@media (max-width: 520px) {
+  #header {
+    grid-template-columns: 72px 1fr 92px;
+    padding: 8px 10px;
   }
-  .bigBtn{
-    width:152px;
-    height:68px;
-  }
-  #mainSquare{
-    width: 210px;
-    height: 210px;
-    right: 10px;
-  }
-  #topBand{
-    left: 174px;
-    width: calc(100% - 184px);
-    height: 36px;
-  }
+  #logo { width: 58px; }
+  #main { grid-template-columns: 74px 1fr; padding: 8px; gap: 8px; }
+  .menu-btn { width: 58px; height: 58px; border-radius: 14px; }
+  #log-area { height: 150px; }
 }
 
-@media (max-height: 700px){
-  #trainingBar{
-    bottom: 110px;
-    height: 96px;
-  }
-  #bottomBar{
-    bottom: 14px;
-    height: 80px;
-  }
-}
-
-/* Disable text selection to keep game feel */
-.noselect, #gameRoot{
-  user-select:none;
-  -webkit-user-select:none;
-  -webkit-touch-callout:none;
+@media (max-height: 700px) {
+  #log-area { height: 140px; }
 }
