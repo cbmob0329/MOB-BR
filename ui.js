@@ -1,233 +1,551 @@
-/* ui.js (FULL) MOB BR
-   UI helper library (non-breaking)
-   - Toast / Center message
-   - Overlay modal
-   - Double-tap handler
-   - Basic DOM helpers
-   This file is optional; game.js can run alone.
-*/
-(() => {
-  'use strict';
+/* =====================================================
+   ui.js  (FULL)
+   MOB Tournament Simulation
+   UIポップアップ / メニュー表示 / 確認ダイアログ
+   ===================================================== */
 
-  // Namespace (safe)
-  const NS = (window.MOBBR_UI = window.MOBBR_UI || {});
+const UI = {};
+window.UI = UI;
 
-  // -------------------------
-  // DOM helpers
-  // -------------------------
-  NS.el = function el(tag, props = {}, children = []) {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(props || {})) {
-      if (k === 'class') e.className = v;
-      else if (k === 'style') Object.assign(e.style, v);
-      else if (k === 'text') e.textContent = v;
-      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
-      else e.setAttribute(k, v);
-    }
-    for (const c of children || []) {
-      if (c == null) continue;
-      if (typeof c === 'string') e.appendChild(document.createTextNode(c));
-      else e.appendChild(c);
-    }
-    return e;
-  };
+UI.dom = {
+  overlay: document.getElementById('overlay'),
+  popup: document.getElementById('popup'),
+  popupContent: document.getElementById('popup-content'),
+  popupClose: document.getElementById('popup-close'),
+};
 
-  NS.$ = function $(sel, root) {
-    return (root || document).querySelector(sel);
-  };
+UI.init = function () {
+  // 画面外タップで閉じる（基本ルール）
+  UI.dom.overlay.addEventListener('click', () => UI.closePopup());
+  UI.dom.popupClose.addEventListener('click', () => UI.closePopup());
+};
 
-  NS.$$ = function $$(sel, root) {
-    return Array.from((root || document).querySelectorAll(sel));
-  };
+/* =========================
+   Popup Core
+   ========================= */
 
-  NS.byId = function byId(id) {
-    return document.getElementById(id);
-  };
+UI.openPopup = function (html) {
+  UI.dom.popupContent.innerHTML = html;
+  UI.dom.overlay.classList.remove('hidden');
+  UI.dom.popup.classList.remove('hidden');
+};
 
-  // -------------------------
-  // Double-tap (single/double click)
-  // -------------------------
-  NS.attachDoubleTap = function attachDoubleTap(node, onDoubleTap, onSingleTap, opts = {}) {
-    if (!node) return;
-    const threshold = Number.isFinite(opts.threshold) ? opts.threshold : 320;
-    const singleDelay = Number.isFinite(opts.singleDelay) ? opts.singleDelay : 260;
+UI.closePopup = function () {
+  UI.dom.popupContent.innerHTML = '';
+  UI.dom.overlay.classList.add('hidden');
+  UI.dom.popup.classList.add('hidden');
+};
 
-    let lastTap = 0;
-    let singleTimer = null;
+UI.confirm = function (message, onYes, onNo) {
+  const html = `
+    <div style="font-weight:800; font-size:14px; margin-bottom:10px;">確認</div>
+    <div style="margin-bottom:14px;">${UI.escapeHtml(message)}</div>
+    <div style="display:flex; gap:10px;">
+      <button id="ui_yes" style="${UI.btnStyle('primary')}">はい</button>
+      <button id="ui_no" style="${UI.btnStyle('secondary')}">いいえ</button>
+    </div>
+  `;
+  UI.openPopup(html);
 
-    node.addEventListener(
-      'click',
-      (ev) => {
-        const now = Date.now();
-        const dt = now - lastTap;
-        lastTap = now;
+  const yesBtn = document.getElementById('ui_yes');
+  const noBtn = document.getElementById('ui_no');
 
-        if (dt < threshold) {
-          if (singleTimer) {
-            clearTimeout(singleTimer);
-            singleTimer = null;
-          }
-          if (typeof onDoubleTap === 'function') onDoubleTap(ev);
-        } else {
-          if (singleTimer) clearTimeout(singleTimer);
-          singleTimer = setTimeout(() => {
-            singleTimer = null;
-            if (typeof onSingleTap === 'function') onSingleTap(ev);
-          }, singleDelay);
-        }
-      },
-      { passive: true }
-    );
-  };
+  yesBtn.addEventListener('click', () => {
+    UI.closePopup();
+    if (typeof onYes === 'function') onYes();
+  });
 
-  // -------------------------
-  // Toast / Center message
-  // (Requires #incomeToast, #centerMsg in DOM; if missing, noop)
-  // -------------------------
-  NS.showIncomeToast = function showIncomeToast(text, ms = 1200) {
-    const t = document.getElementById('incomeToast');
-    if (!t) return;
-    t.textContent = String(text ?? '');
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), ms);
-  };
+  noBtn.addEventListener('click', () => {
+    UI.closePopup();
+    if (typeof onNo === 'function') onNo();
+  });
+};
 
-  NS.showCenterMsg = function showCenterMsg(text, ms = 1200) {
-    const box = document.getElementById('centerMsg');
-    if (!box) return;
-    const msg = box.querySelector('.msg');
-    if (msg) msg.textContent = String(text ?? '');
-    box.classList.add('show');
-    if (ms > 0) setTimeout(() => box.classList.remove('show'), ms);
-  };
+UI.toast = function (message) {
+  // 軽量：ログへ流す（本格トーストは後で）
+  if (window.Game && typeof Game.log === 'function') {
+    Game.log(message);
+  }
+};
 
-  // -------------------------
-  // Overlay modal
-  // (Requires #overlay in DOM; if missing, creates a minimal one)
-  // -------------------------
-  function ensureOverlay() {
-    let ov = document.getElementById('overlay');
-    if (!ov) {
-      ov = document.createElement('div');
-      ov.id = 'overlay';
-      // minimal style fallback (style.cssが整うまでの保険)
-      Object.assign(ov.style, {
-        position: 'fixed',
-        inset: '0',
-        background: 'rgba(0,0,0,.55)',
-        display: 'none',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: '9999',
-        padding: '14px',
-      });
-      document.body.appendChild(ov);
-    }
-    return ov;
+/* =========================
+   Menus
+   ========================= */
+
+UI.openTeamMenu = function () {
+  const html = `
+    <div style="font-weight:900; font-size:15px; margin-bottom:10px;">チーム</div>
+
+    <div style="display:grid; gap:10px;">
+      <button class="ui-menu-btn" data-action="members">現在のメンバー</button>
+      <button class="ui-menu-btn" data-action="edit">チーム編成</button>
+      <button class="ui-menu-btn" data-action="record">戦績</button>
+      <button class="ui-menu-btn" data-action="offer">プレイヤーオファー</button>
+      <button class="ui-menu-btn" data-action="save">セーブ</button>
+    </div>
+
+    <style>
+      .ui-menu-btn{
+        width:100%;
+        height:44px;
+        border-radius:14px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.08);
+        color:#f3f4f6;
+        font-weight:900;
+        cursor:pointer;
+      }
+      .ui-menu-btn:active{ transform: scale(1.01); }
+      .ui-subtitle{ font-weight:900; margin:10px 0 6px; }
+      .ui-table{ width:100%; border-collapse:collapse; font-size:12px; }
+      .ui-table th,.ui-table td{ border:1px solid rgba(255,255,255,0.12); padding:6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; }
+    </style>
+  `;
+  UI.openPopup(html);
+
+  UI.bindMenuButtons((action) => {
+    if (action === 'members') UI.openTeamMembers();
+    if (action === 'edit') UI.openTeamEdit();
+    if (action === 'record') UI.openTeamRecord();
+    if (action === 'offer') UI.openTeamOffer();
+    if (action === 'save') UI.openSaveMenu();
+  });
+};
+
+UI.openTournamentMenu = function () {
+  const html = `
+    <div style="font-weight:900; font-size:15px; margin-bottom:10px;">大会</div>
+
+    <div style="display:grid; gap:10px;">
+      <button class="ui-menu-btn" data-action="enter">大会に出場</button>
+      <button class="ui-menu-btn" data-action="ongoing">参加中の大会</button>
+      <button class="ui-menu-btn" data-action="results">大会結果</button>
+      <button class="ui-menu-btn" data-action="schedule">スケジュール</button>
+    </div>
+
+    <div class="ui-muted" style="margin-top:10px;">
+      ※大会期間中は修行ができません（ショップなどは利用可能）
+    </div>
+
+    <style>
+      .ui-menu-btn{
+        width:100%;
+        height:44px;
+        border-radius:14px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.08);
+        color:#f3f4f6;
+        font-weight:900;
+        cursor:pointer;
+      }
+      .ui-menu-btn:active{ transform: scale(1.01); }
+      .ui-muted{ opacity:0.9; font-size:12px; }
+    </style>
+  `;
+  UI.openPopup(html);
+
+  UI.bindMenuButtons((action) => {
+    if (action === 'enter') UI.openTournamentEnter();
+    if (action === 'ongoing') UI.openTournamentOngoing();
+    if (action === 'results') UI.openTournamentResults();
+    if (action === 'schedule') UI.openTournamentSchedule();
+  });
+};
+
+UI.openTrainingMenu = function () {
+  // ここは「横スライドUI」が必要だが、まずは骨組み（後で強化）
+  const html = `
+    <div style="font-weight:900; font-size:15px; margin-bottom:10px;">修行</div>
+
+    <div class="ui-muted" style="margin-bottom:10px;">
+      まずは修行メニューの土台です。後で「横スライド＆中央強調」のUIに拡張します。
+    </div>
+
+    <div style="display:grid; gap:10px;">
+      <button class="ui-menu-btn" data-action="syageki">射撃</button>
+      <button class="ui-menu-btn" data-action="dash">ダッシュ</button>
+      <button class="ui-menu-btn" data-action="paz">パズル</button>
+      <button class="ui-menu-btn" data-action="zitugi">実戦</button>
+      <button class="ui-menu-btn" data-action="taki">滝</button>
+      <button class="ui-menu-btn" data-action="kenq">研究</button>
+      <button class="ui-menu-btn" data-action="sougou">総合</button>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:12px;">
+      <button id="ui_nextweek" style="${UI.btnStyle('secondary')}">次の週へ</button>
+      <button id="ui_close" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-menu-btn{
+        width:100%;
+        height:44px;
+        border-radius:14px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.08);
+        color:#f3f4f6;
+        font-weight:900;
+        cursor:pointer;
+      }
+      .ui-menu-btn:active{ transform: scale(1.01); }
+      .ui-muted{ opacity:0.9; font-size:12px; }
+    </style>
+  `;
+  UI.openPopup(html);
+
+  // 修行選択（後で「誰を派遣」へ繋ぐ）
+  UI.bindMenuButtons((action) => {
+    UI.toast(`修行「${UI.trainingName(action)}」を選択（派遣UIは後で実装）`);
+  });
+
+  document.getElementById('ui_nextweek').addEventListener('click', () => {
+    UI.closePopup();
+    if (window.Game && typeof Game.nextWeek === 'function') Game.nextWeek();
+  });
+  document.getElementById('ui_close').addEventListener('click', () => UI.closePopup());
+};
+
+UI.openShopMenu = function () {
+  // 背景を shop.png に切り替えるのは assets.js 側で制御するが、
+  // ここでは骨組みのみ（後で購入/ガチャ/個数選択を実装）
+  const html = `
+    <div style="font-weight:900; font-size:15px; margin-bottom:10px;">ショップ</div>
+
+    <div class="ui-muted" style="margin-bottom:10px;">
+      「いらっしゃいませ！」（購入処理は後で実装）
+    </div>
+
+    <div style="display:grid; gap:10px;">
+      <button class="ui-menu-btn" data-action="buy">アイテムを購入</button>
+      <button class="ui-menu-btn" data-action="coachgacha">コーチスキルガチャ</button>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:12px;">
+      <button id="ui_shop_close" style="${UI.btnStyle('secondary')}">閉じる</button>
+    </div>
+
+    <style>
+      .ui-menu-btn{
+        width:100%;
+        height:44px;
+        border-radius:14px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.08);
+        color:#f3f4f6;
+        font-weight:900;
+        cursor:pointer;
+      }
+      .ui-menu-btn:active{ transform: scale(1.01); }
+      .ui-muted{ opacity:0.9; font-size:12px; }
+    </style>
+  `;
+  UI.openPopup(html);
+
+  // 背景切替（Assetsが用意されたら実体化）
+  if (window.Assets && typeof Assets.setMainImage === 'function') {
+    Assets.setMainImage('shop.png');
   }
 
-  NS.openOverlay = function openOverlay(title, htmlOrNode) {
-    const ov = ensureOverlay();
-    ov.innerHTML = '';
-    ov.classList.add('show');
-    ov.style.display = 'flex';
+  UI.bindMenuButtons((action) => {
+    if (action === 'buy') UI.toast('アイテム購入（後で実装）');
+    if (action === 'coachgacha') UI.toast('コーチスキルガチャ（後で実装）');
+  });
 
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    Object.assign(modal.style, {
-      width: 'min(520px, 96vw)',
-      maxHeight: '82vh',
-      overflow: 'auto',
-      background: 'rgba(20,20,20,.92)',
-      border: '1px solid rgba(255,255,255,.16)',
-      borderRadius: '16px',
-      padding: '14px',
-      color: '#fff',
-      boxShadow: '0 10px 30px rgba(0,0,0,.4)',
-    });
-
-    const h2 = document.createElement('h2');
-    h2.textContent = String(title ?? '');
-    Object.assign(h2.style, { margin: '0 0 10px', fontSize: '18px', fontWeight: '900' });
-
-    const hint = document.createElement('div');
-    hint.className = 'closeHint';
-    hint.textContent = '画面外タップで閉じます';
-    Object.assign(hint.style, { opacity: '.7', fontSize: '12px', marginBottom: '10px' });
-
-    const content = document.createElement('div');
-    content.className = 'section';
-
-    if (typeof htmlOrNode === 'string') {
-      content.innerHTML = htmlOrNode;
-    } else if (htmlOrNode instanceof Node) {
-      content.appendChild(htmlOrNode);
-    } else {
-      content.textContent = '';
+  document.getElementById('ui_shop_close').addEventListener('click', () => {
+    UI.closePopup();
+    if (window.Assets && typeof Assets.setMainImage === 'function') {
+      Assets.setMainImage('main1.png');
     }
+  });
+};
 
-    modal.appendChild(h2);
-    modal.appendChild(hint);
-    modal.appendChild(content);
-    ov.appendChild(modal);
+/* =========================
+   Team Sub Screens
+   ========================= */
 
-    // close on background tap
-    const onClick = (ev) => {
-      if (ev.target === ov) NS.closeOverlay();
-    };
-    ov.addEventListener('click', onClick, { once: true });
-  };
+UI.openTeamMembers = function () {
+  const team = State.playerTeam;
+  const members = team.members || [];
 
-  NS.closeOverlay = function closeOverlay() {
-    const ov = document.getElementById('overlay');
-    if (!ov) return;
-    ov.classList.remove('show');
-    ov.style.display = 'none';
-    ov.innerHTML = '';
-  };
+  const rows = members.map((m) => {
+    const s = m.stats || {};
+    return `
+      <tr>
+        <td>${UI.escapeHtml(m.name || '???')}</td>
+        <td>${UI.n(s.HP)}</td>
+        <td>${UI.n(s.Mental)}</td>
+        <td>${UI.n(s.Move)}</td>
+        <td>${UI.n(s.Aim)}</td>
+        <td>${UI.n(s.Agility)}</td>
+        <td>${UI.n(s.Technique)}</td>
+        <td>${UI.n(s.Support)}</td>
+        <td>${UI.n(s.Hunt)}</td>
+      </tr>
+    `;
+  }).join('');
 
-  // -------------------------
-  // Image with fallback placeholder
-  // -------------------------
-  NS.imgWithFallback = function imgWithFallback(src, altText, fallbackText, styleObj) {
-    const im = new Image();
-    im.src = src;
-    im.alt = altText || '';
-    im.loading = 'eager';
-    im.decoding = 'async';
-    if (styleObj && typeof styleObj === 'object') Object.assign(im.style, styleObj);
+  const html = `
+    <div class="ui-subtitle">現在のメンバー</div>
+    <div class="ui-muted" style="margin-bottom:8px;">
+      連携（Synergy）はチーム総合にのみ表示（後で拡張）
+    </div>
 
-    im.onerror = () => {
-      const ph = document.createElement('div');
-      Object.assign(ph.style, {
-        width: (im.style.width || '100%'),
-        height: (im.style.height || '100%'),
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0,0,0,.35)',
-        border: '1px solid rgba(255,255,255,.18)',
-        color: 'rgba(255,255,255,.92)',
-        fontWeight: '900',
-        fontSize: '12px',
-        letterSpacing: '.3px',
-        textShadow: '0 2px 6px rgba(0,0,0,.55)',
-        padding: '6px',
-        textAlign: 'center',
-      });
-      ph.textContent = fallbackText || src || 'missing';
-      im.replaceWith(ph);
-    };
+    <table class="ui-table">
+      <thead>
+        <tr>
+          <th>名前</th><th>HP</th><th>Mental</th><th>Move</th><th>Aim</th>
+          <th>Agility</th><th>Technique</th><th>Support</th><th>Hunt</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="9">メンバー未設定</td></tr>`}
+      </tbody>
+    </table>
 
-    return im;
-  };
+    <div style="margin-top:10px;" class="ui-muted">
+      パッシブ／アビリティ／ウルト表示は data_players.js 側の実体に合わせて拡張します。
+    </div>
 
-  // -------------------------
-  // Hook points (future)
-  // -------------------------
-  NS.hooks = NS.hooks || {};
-  // Example:
-  // NS.hooks.onWeekAdvanced = (newYear, newWeek) => {};
-  // NS.hooks.onGoldChanged  = (gold) => {};
+    <div style="display:flex; gap:10px; margin-top:12px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
 
-})();
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-table{ width:100%; border-collapse:collapse; font-size:12px; }
+      .ui-table th,.ui-table td{ border:1px solid rgba(255,255,255,0.12); padding:6px; text-align:center; }
+      .ui-muted{ opacity:0.9; font-size:12px; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTeamMenu());
+};
+
+UI.openTeamEdit = function () {
+  const html = `
+    <div class="ui-subtitle">チーム編成</div>
+    <div class="ui-muted">
+      所属キャラ一覧 → 加える/外す/装備変更 は後で実装します。<br>
+      まずは「3人1チーム」の枠組みを維持します。
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTeamMenu());
+};
+
+UI.openTeamRecord = function () {
+  const html = `
+    <div class="ui-subtitle">戦績</div>
+    <div class="ui-muted">
+      年ごとの大会結果・個人キル/アシスト・年末企業ランク等をここに表示します。<br>
+      まずは State に履歴が溜まる土台を作って、後で表示を増やします。
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTeamMenu());
+};
+
+UI.openTeamOffer = function () {
+  const html = `
+    <div class="ui-subtitle">プレイヤーオファー</div>
+    <div class="ui-muted">
+      オファー可能キャラ一覧 → 詳細表示 → オファー確認 → 成功/失敗<br>
+      ここは data_players.js のデータ確定後に実装を厚くします。
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTeamMenu());
+};
+
+UI.openSaveMenu = function () {
+  const html = `
+    <div class="ui-subtitle">セーブ</div>
+    <div class="ui-muted">
+      セーブ／ロード／削除 を実装します（localStorage予定）。<br>
+      まず State の整合が取れた段階で反映します。
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTeamMenu());
+};
+
+/* =========================
+   Tournament Sub Screens
+   ========================= */
+
+UI.openTournamentEnter = function () {
+  // 現在週に大会があるかをチェック → Game側のトリガーと同様
+  const ev = State.getTournamentAtCurrentTime();
+  if (!ev) {
+    UI.toast('今週は大会がありません');
+    return;
+  }
+
+  UI.confirm(
+    `大会「${ev.name}」に出発しますか？`,
+    () => {
+      UI.closePopup();
+      if (window.Game && typeof Game.startTournament === 'function') Game.startTournament(ev);
+    }
+  );
+};
+
+UI.openTournamentOngoing = function () {
+  const info = State.currentTournament || null;
+  const html = `
+    <div class="ui-subtitle">参加中の大会</div>
+    <div class="ui-muted">
+      ${info ? UI.escapeHtml(`大会名：${info.name}\n進行状況：${info.phase || '進行中'}\n総合順位：${info.rank || '---'}`) : '現在、参加中の大会はありません'}
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; white-space:pre-wrap; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTournamentMenu());
+};
+
+UI.openTournamentResults = function () {
+  const html = `
+    <div class="ui-subtitle">大会結果</div>
+    <div class="ui-muted">
+      終了した大会のみ表示します。<br>
+      ローカル：20チーム総合（1〜20位）<br>
+      ナショナル／ワールド：40チーム総合（1〜40位）※スクロール表示
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTournamentMenu());
+};
+
+UI.openTournamentSchedule = function () {
+  const list = State.getScheduleText();
+  const html = `
+    <div class="ui-subtitle">スケジュール</div>
+    <div class="ui-muted" style="white-space:pre-wrap;">${UI.escapeHtml(list)}</div>
+
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button id="ui_back" style="${UI.btnStyle('secondary')}">戻る</button>
+    </div>
+
+    <style>
+      .ui-subtitle{ font-weight:900; margin:0 0 6px; }
+      .ui-muted{ opacity:0.9; font-size:12px; line-height:1.5; }
+    </style>
+  `;
+  UI.openPopup(html);
+  document.getElementById('ui_back').addEventListener('click', () => UI.openTournamentMenu());
+};
+
+/* =========================
+   Helpers
+   ========================= */
+
+UI.bindMenuButtons = function (onAction) {
+  const btns = UI.dom.popupContent.querySelectorAll('.ui-menu-btn');
+  btns.forEach((b) => {
+    b.addEventListener('click', () => {
+      const action = b.getAttribute('data-action');
+      if (typeof onAction === 'function') onAction(action);
+    });
+  });
+};
+
+UI.btnStyle = function (kind) {
+  const base = `
+    width:100%;
+    height:44px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.12);
+    color:#f3f4f6;
+    font-weight:900;
+    cursor:pointer;
+  `;
+  if (kind === 'primary') {
+    return base + `
+      background: rgba(80,160,255,0.22);
+    `;
+  }
+  return base + `
+    background: rgba(255,255,255,0.08);
+  `;
+};
+
+UI.escapeHtml = function (s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+};
+
+UI.n = function (v) {
+  if (v === undefined || v === null || Number.isNaN(v)) return '-';
+  return String(v);
+};
+
+UI.trainingName = function (key) {
+  switch (key) {
+    case 'syageki': return '射撃';
+    case 'dash': return 'ダッシュ';
+    case 'paz': return 'パズル';
+    case 'zitugi': return '実戦';
+    case 'taki': return '滝';
+    case 'kenq': return '研究';
+    case 'sougou': return '総合';
+    default: return '不明';
+  }
+};
