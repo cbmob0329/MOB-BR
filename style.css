@@ -1,363 +1,517 @@
-/* ================================
-   MOB BR - style.css (FULL)
-   - Mobile-first
-   - Canvas 420x560 fixed for now
-   - UI overlays above canvas
-   ================================= */
+/* style.css (FULL)  MOB BR - UI Layout Fix
+   - Main screen layout fixed to match user's layout image
+   - Mobile-first (portrait)
+*/
 
 :root{
-  --app-w: 420px;
-  --app-h: 560px;
+  --W: 420px;
+  --H: 720px;
 
-  --panel-bg: rgba(0,0,0,0.55);
-  --panel-bd: rgba(255,255,255,0.18);
+  --safeTop: env(safe-area-inset-top, 0px);
+  --safeBottom: env(safe-area-inset-bottom, 0px);
 
-  --txt: #ffffff;
-  --txt-dim: rgba(255,255,255,0.75);
+  --panelRadius: 14px;
+  --btnRadius: 14px;
 
-  --btn-bg: rgba(0,0,0,0.65);
-  --btn-bd: rgba(255,210,90,0.75);
-  --btn-txt: #ffd45a;
+  --uiShadow: 0 10px 28px rgba(0,0,0,.35);
+  --uiShadowSoft: 0 8px 18px rgba(0,0,0,.25);
+  --outline: 2px solid rgba(255, 230, 140, .85);
 
-  --btn-bg-hover: rgba(0,0,0,0.78);
+  --glass: rgba(255,255,255,.10);
+  --glass2: rgba(255,255,255,.18);
 
-  --log-bg: rgba(190, 255, 60, 0.92); /* 黄緑イメージ */
-  --log-txt: #101010;
+  --text: #f7f7f7;
+  --textDim: rgba(255,255,255,.78);
+  --black: #0a0a0a;
 
-  --shadow: 0 6px 18px rgba(0,0,0,0.35);
-  --radius: 10px;
+  --greenPanel: rgba(165, 255, 120, 0.80); /* only for prototype bubble area */
 }
 
-*{
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
-
+*{ box-sizing: border-box; }
 html, body{
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  background: #0f0f10;
-  color: var(--txt);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  margin:0;
+  padding:0;
+  background:#000;
+  color:var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
 }
 
-/* Center the app on desktop, keep it responsive on mobile */
-body{
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+img{ image-rendering: auto; }
+button{ font-family: inherit; }
 
-/* App wrapper */
 #app{
-  width: min(100vw, var(--app-w));
-  height: min(100vh, calc(var(--app-h) + 20px));
-  padding: 10px;
+  width:100vw;
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding-top: var(--safeTop);
+  padding-bottom: var(--safeBottom);
+  background:#000;
 }
 
-/* The stage that holds canvas & overlay UI */
-#app{
-  position: relative;
+#gameRoot{
+  position:relative;
+  width:min(var(--W), 100vw);
+  height:min(var(--H), 100vh);
+  max-width: var(--W);
+  max-height: var(--H);
+  overflow:hidden;
+  background:#000;
 }
 
-/* Canvas */
-#game{
-  width: var(--app-w);
-  height: var(--app-h);
-  display: block;
-  border-radius: 14px;
-  background: #1a1a1a;
-  box-shadow: var(--shadow);
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+/* Main background image */
+#bgMain{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  z-index:0;
+  filter: none;
 }
 
-/* Overlay container */
-#ui{
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  width: var(--app-w);
-  height: var(--app-h);
-  pointer-events: none; /* allow clicks only on interactive elements */
+/* Top left text info */
+#topInfo{
+  position:absolute;
+  left:14px;
+  top:12px;
+  z-index:10;
+  line-height:1.25;
+  text-shadow: 0 2px 6px rgba(0,0,0,.65);
+  font-weight:800;
+  letter-spacing: .5px;
+  font-size: 14px;
 }
 
-/* Panels */
-.panel{
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-bd);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 8px 10px;
-  pointer-events: none;
+#topInfo .row{
+  display:flex;
+  gap:8px;
+  align-items:baseline;
+}
+#topInfo .label{
+  opacity:.92;
+  min-width: 80px;
+}
+#topInfo .value{
+  opacity:1;
 }
 
-#hudTopLeft{
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  width: 160px;
+/* Version */
+#versionText{
+  position:absolute;
+  left:10px;
+  top:2px;
+  z-index:10;
+  font-size: 11px;
+  opacity:.55;
+  text-shadow: 0 2px 6px rgba(0,0,0,.65);
+  pointer-events:none;
 }
 
-.hudLine{
+/* Right top logo */
+#logoBox{
+  position:absolute;
+  right:8px;
+  top:8px;
+  width: 168px;
+  height: 90px;
+  z-index:10;
+  display:flex;
+  justify-content:flex-end;
+  align-items:flex-start;
+  pointer-events:none;
+}
+
+#logoBox img{
+  width:100%;
+  height:100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,.45));
+}
+
+/* Top band (date + next tournament info) */
+#topBand{
+  position:absolute;
+  left: 190px;
+  top: 95px;
+  width: calc(100% - 200px);
+  height: 38px;
+  z-index: 12;
+
+  display:flex;
+  justify-content:flex-start;
+  align-items:center;
+  padding: 0 10px;
+
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 10px;
+
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  box-shadow: var(--uiShadowSoft);
+}
+
+#topBand .bandText{
+  font-weight: 900;
   font-size: 12px;
-  line-height: 1.25;
-  color: var(--txt);
-  display: flex;
-  gap: 6px;
+  color: rgba(255,255,255,.96);
+  text-shadow: 0 2px 6px rgba(0,0,0,.55);
+  letter-spacing:.3px;
   white-space: nowrap;
-  overflow: hidden;
+  overflow:hidden;
   text-overflow: ellipsis;
 }
 
-.hudLabel{
-  color: var(--txt-dim);
-  flex: 0 0 auto;
-}
-
-#hud_company, #hud_rank, #hud_team{
-  flex: 1 1 auto;
-  min-width: 0;
-  font-weight: 700;
-}
-
-/* Left menu buttons column */
-#menuButtons{
-  position: absolute;
-  left: 12px;
-  top: 120px;
-  display: flex;
+/* LEFT big buttons (Team/Tournament) */
+#leftButtons{
+  position:absolute;
+  left: 16px;
+  top: 135px;
+  z-index: 12;
+  width: 165px;
+  display:flex;
   flex-direction: column;
-  gap: 12px;
-  pointer-events: auto;
+  gap: 18px;
 }
 
-/* Buttons */
-.uiBtn{
-  width: 140px;
-  padding: 10px 10px;
-  border-radius: 12px;
-  border: 2px solid var(--btn-bd);
-  background: var(--btn-bg);
-  color: var(--btn-txt);
-  font-weight: 900;
-  font-size: 16px;
-  letter-spacing: 0.02em;
-  box-shadow: var(--shadow);
-  cursor: pointer;
+.bigBtn{
+  width: 165px;
+  height: 74px;
+  border: none;
+  background: transparent;
+  padding:0;
+  cursor:pointer;
+  outline: none;
+  transform: translateZ(0);
+  transition: transform .08s ease;
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,.35));
 }
 
-.uiBtn:active{
-  transform: translateY(1px);
+.bigBtn img{
+  width:100%;
+  height:100%;
+  object-fit: contain;
 }
 
-.uiBtn:hover{
-  background: var(--btn-bg-hover);
+.bigBtn:active{
+  transform: scale(1.05);
 }
 
-/* Wide bottom buttons */
-#bottomControls{
-  position: absolute;
-  left: 170px;
-  bottom: 12px;
-  display: flex;
+/* Square main panel (main1.png) */
+#mainSquare{
+  position:absolute;
+  right: 12px;
+  top: 155px;
+  width: 225px;
+  height: 225px;
+  z-index: 11;
+
+  border-radius: 10px;
+  overflow:hidden;
+  box-shadow: var(--uiShadow);
+  border: 2px solid rgba(255,255,255,.12);
+}
+
+#mainSquare .squareBg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  z-index:0;
+}
+
+#mainSquare .teamImg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: contain;
+  z-index:1;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.35));
+  transform: translateY(2px);
+}
+
+/* Bottom area for Training (scroll icons) */
+#trainingBar{
+  position:absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 120px;
+  height: 108px;
+  z-index: 12;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  /* NOTE: user said the green line is just layout guide (should be invisible),
+     so background is transparent. */
+  background: transparent;
+}
+
+/* carousel wrapper */
+#trainCarousel{
+  width: 100%;
+  height: 100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
   gap: 10px;
-  pointer-events: auto;
 }
 
-.uiBtnWide{
-  width: 110px;
-  font-size: 16px;
-  padding: 10px 0;
-}
-
-/* Main Frame (center-right) */
-#mainFrame{
-  position: absolute;
-  left: 168px;
-  top: 110px;
-  width: 242px;
-  height: 260px;
-  border-radius: 12px;
-  border: 2px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.06);
-  box-shadow: var(--shadow);
-  pointer-events: none;
-  overflow: hidden;
-}
-
-#mainFrameInner{
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  text-align: center;
-}
-
-#mainFrameTitle{
-  font-weight: 1000;
-  letter-spacing: 0.08em;
-  font-size: 20px;
-  color: rgba(255,255,255,0.85);
-  text-shadow: 0 2px 8px rgba(0,0,0,0.35);
-}
-
-#mainFrameSub{
-  margin-top: 6px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.7);
-}
-
-/* Log / Message Box (the green area in screenshot)
-   -> Make it scrollable for long content (training items list etc.) */
-#logBox{
-  position: absolute;
-  left: 10px;
-  top: 390px;
-  width: 400px;
-  height: 120px;
-
-  background: var(--log-bg);
-  border: 2px solid rgba(0,0,0,0.45);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-
-  padding: 10px 10px;
-  pointer-events: auto;
-
-  overflow-y: auto;      /* ✅ scroll */
-  overflow-x: hidden;
-}
-
-#logText{
-  color: var(--log-txt);
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1.25;
-  white-space: pre-wrap; /* allow \n */
-}
-
-/* Scrollbar (optional, subtle) */
-#logBox::-webkit-scrollbar{
-  width: 10px;
-}
-#logBox::-webkit-scrollbar-thumb{
-  background: rgba(0,0,0,0.25);
-  border-radius: 10px;
-}
-#logBox::-webkit-scrollbar-track{
-  background: rgba(0,0,0,0.08);
-  border-radius: 10px;
-}
-
-/* Modal */
-#modalBackdrop{
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  pointer-events: auto;
-}
-
-#modalPanel{
-  position: absolute;
-  left: 20px;
-  top: 60px;
-  width: 380px;
-  height: 440px;
-
-  background: rgba(20,20,20,0.92);
-  border: 2px solid rgba(255,255,255,0.22);
+.trainItem{
+  flex: 0 0 auto;
+  width: 74px;
+  height: 74px;
   border-radius: 14px;
-  box-shadow: var(--shadow);
-
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.22);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: var(--uiShadowSoft);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition: transform .12s ease, opacity .12s ease;
+  opacity: .78;
+  overflow:hidden;
 }
 
-#modalHeader{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.16);
+.trainItem img{
+  width:100%;
+  height:100%;
+  object-fit: contain;
 }
 
-#modalTitle{
-  font-weight: 1000;
-  font-size: 16px;
-  color: rgba(255,255,255,0.9);
-  letter-spacing: 0.06em;
+.trainItem.center{
+  transform: scale(1.18);
+  opacity: 1;
+  border: 2px solid rgba(255, 230, 140, .85);
+  box-shadow: 0 14px 28px rgba(0,0,0,.40);
 }
 
-.uiBtnSmall{
-  width: 40px;
-  height: 34px;
-  border-radius: 10px;
-  border: 2px solid rgba(255,255,255,0.25);
-  background: rgba(0,0,0,0.35);
-  color: rgba(255,255,255,0.9);
+.trainItem:active{
+  transform: scale(1.22);
+}
+
+/* Bottom bar buttons (Shop etc) */
+#bottomBar{
+  position:absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 18px;
+  height: 86px;
+  z-index: 12;
+
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+}
+
+.smallBtn{
+  flex:1;
+  height: 62px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 230, 140, .35);
+  background: rgba(0,0,0,.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: var(--uiShadowSoft);
+  color: rgba(255,255,255,.92);
   font-weight: 900;
-  cursor: pointer;
+  letter-spacing: .3px;
+  font-size: 16px;
+  cursor:pointer;
+  transition: transform .08s ease;
 }
 
-#modalBody{
-  flex: 1;
-  padding: 12px;
-  overflow: auto;
+.smallBtn:active{
+  transform: scale(1.05);
 }
 
-#modalContent{
+/* Popup / Modal base */
+#overlay{
+  position:absolute;
+  inset:0;
+  z-index: 100;
+  display:none;
+  background: rgba(0,0,0,.58);
+}
+
+#overlay.show{
+  display:block;
+}
+
+.modal{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(380px, calc(100% - 28px));
+  max-height: calc(100% - 40px);
+  overflow:auto;
+
+  background: rgba(10,10,10,.88);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 18px;
+  box-shadow: var(--uiShadow);
+  padding: 14px 14px 16px;
+}
+
+.modal h2{
+  margin: 2px 0 10px 0;
+  font-size: 18px;
+  font-weight: 1000;
+  letter-spacing: .3px;
+}
+
+.modal .closeHint{
+  opacity:.65;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.modal .section{
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.table{
+  width:100%;
+  border-collapse: collapse;
+}
+
+.table th, .table td{
+  padding: 6px 6px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  font-size: 12px;
+}
+
+.table th{
+  text-align:left;
+  opacity:.85;
+  font-weight: 900;
+}
+
+.kBtnRow{
+  display:flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.kBtn{
+  flex:1;
+  height: 44px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 230, 140, .35);
+  background: rgba(0,0,0,.35);
+  color: rgba(255,255,255,.95);
+  font-weight: 900;
+  cursor:pointer;
+}
+
+.kBtn:active{
+  transform: scale(1.03);
+}
+
+/* Center banner message */
+#centerMsg{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(380px, calc(100% - 24px));
+  min-height: 70px;
+  z-index: 200;
+  display:none;
+
+  background: rgba(0,0,0,.55);
+  border: 2px solid rgba(255,255,255,.20);
+  border-radius: 16px;
+  box-shadow: var(--uiShadow);
+  padding: 12px 12px;
+  text-align:center;
+}
+
+#centerMsg.show{
+  display:block;
+}
+
+#centerMsg .msg{
+  font-weight: 1000;
+  letter-spacing: .4px;
+  font-size: 16px;
+  text-shadow: 0 2px 6px rgba(0,0,0,.55);
+}
+
+/* Income popup */
+#incomeToast{
+  position:absolute;
+  left:50%;
+  top: 110px;
+  transform: translateX(-50%);
+  z-index: 150;
+  display:none;
+
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: var(--uiShadowSoft);
+  font-weight: 900;
   font-size: 14px;
-  color: rgba(255,255,255,0.9);
-  line-height: 1.35;
-  white-space: pre-wrap;
+  letter-spacing:.3px;
 }
 
-.modalText{
-  opacity: 0.9;
+#incomeToast.show{
+  display:block;
 }
 
-#modalFooter{
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255,255,255,0.16);
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* Hidden helper */
-.hidden{
-  display: none !important;
-}
-
-/* Small screens */
-@media (max-width: 430px){
-  :root{
-    --app-w: 390px;
-    --app-h: 560px;
-  }
-  #hudTopLeft{ width: 150px; }
-  #menuButtons .uiBtn{ width: 132px; }
-  #mainFrame{ left: 160px; width: 230px; }
-  #logBox{ width: 370px; }
-  #bottomControls{ left: 160px; }
-}
-
-/* Very small (fallback) */
+/* Small screen handling */
 @media (max-width: 380px){
-  :root{
-    --app-w: 360px;
-    --app-h: 540px;
+  #leftButtons{
+    left: 10px;
+    width: 152px;
+    gap: 14px;
   }
-  #game{
-    border-radius: 12px;
+  .bigBtn{
+    width:152px;
+    height:68px;
   }
-  #hudTopLeft{ left: 8px; top: 8px; width: 140px; }
-  #menuButtons{ left: 10px; top: 110px; }
-  #menuButtons .uiBtn{ width: 125px; font-size: 15px; }
-  #mainFrame{ left: 150px; top: 100px; width: 205px; height: 250px; }
-  #logBox{ left: 8px; top: 370px; width: 344px; height: 120px; }
-  #bottomControls{ left: 150px; bottom: 10px; }
-  .uiBtnWide{ width: 98px; font-size: 15px; }
+  #mainSquare{
+    width: 210px;
+    height: 210px;
+    right: 10px;
+  }
+  #topBand{
+    left: 174px;
+    width: calc(100% - 184px);
+    height: 36px;
+  }
+}
+
+@media (max-height: 700px){
+  #trainingBar{
+    bottom: 110px;
+    height: 96px;
+  }
+  #bottomBar{
+    bottom: 14px;
+    height: 80px;
+  }
+}
+
+/* Disable text selection to keep game feel */
+.noselect, #gameRoot{
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
 }
