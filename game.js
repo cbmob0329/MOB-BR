@@ -1,546 +1,770 @@
-// game.js (FULL)  MOB BR Demo Controller
-// - Boot diagnostics (shows errors on-screen even if imports fail)
-// - Auto-start SP1 on boot
-// - SP1 -> WAIT -> SP2 -> WAIT -> CHAMP
-// File names MUST match your repo:
-//   ui.js / assets.js / state.js / sim_tournament.js / index.html / style.css
+/* =========================================================
+  MOB APEX SIM  (Prototype)
+  game.js  (FULL)
+  - index.html から読み込む script は game.js 1本のみ
+  - 画像素材は指定ファイル名を使用
+========================================================= */
 
-const WAIT_WEEKS = {
-  SP1_TO_SP2: 2,
-  SP2_TO_CHAMP: 2,
+/* -------------------------
+   Version
+-------------------------- */
+const VERSION = "v0.1";
+
+/* -------------------------
+   Assets (fixed names)
+-------------------------- */
+const ASSETS = {
+  P1: "P1.png",
+  MAIN: "main.png",
+  IDO: "ido.png",
+  MAP: "map.png",
+  SHOP: "shop.png",
+  HEAL: "heal.png",
+  BATTLE: "battle.png",
+  WINNER: "winner.png",
 };
 
-const AUTO_START_SP1_ON_BOOT = true;
-const AUTO_START_ONCE_ONLY = false;
-const AUTO_START_ONCE_KEY = "mobbr_autostart_sp1_done";
+/* -------------------------
+   DOM
+-------------------------- */
+const el = {
+  companyName: document.getElementById("companyName"),
+  companyRank: document.getElementById("companyRank"),
+  teamName: document.getElementById("teamName"),
+  weekInfo: document.getElementById("weekInfo"),
+  goldValue: document.getElementById("goldValue"),
+  nextTournamentValue: document.getElementById("nextTournamentValue"),
+  statusValue: document.getElementById("statusValue"),
+  hintText: document.getElementById("hintText"),
+  versionText: document.getElementById("versionText"),
 
-const LS_KEY = "mobbr_runtime_v1";
+  canvas: document.getElementById("screen"),
+  overlayMessage: document.getElementById("overlayMessage"),
+  miniLog: document.getElementById("miniLog"),
 
-// ---------- ultra-safe on-screen logger (works without ui.js) ----------
-function ensureDebugPanel() {
-  let el = document.getElementById("__boot_debug__");
-  if (el) return el;
+  panelTitle: document.getElementById("panelTitle"),
+  panelBody: document.getElementById("panelBody"),
+  panelFooter: document.getElementById("panelFooter"),
+  panelClose: document.getElementById("panelClose"),
 
-  el = document.createElement("div");
-  el.id = "__boot_debug__";
-  el.style.position = "fixed";
-  el.style.left = "10px";
-  el.style.right = "10px";
-  el.style.bottom = "10px";
-  el.style.zIndex = "99999";
-  el.style.maxHeight = "40vh";
-  el.style.overflow = "auto";
-  el.style.padding = "10px";
-  el.style.borderRadius = "12px";
-  el.style.background = "rgba(0,0,0,0.78)";
-  el.style.color = "#fff";
-  el.style.fontFamily = "ui-monospace, Menlo, Consolas, monospace";
-  el.style.fontSize = "12px";
-  el.style.whiteSpace = "pre-wrap";
-  el.style.display = "none";
-  document.body.appendChild(el);
-  return el;
-}
-function dbg(msg, show = true) {
-  const el = ensureDebugPanel();
-  el.textContent += (el.textContent ? "\n" : "") + msg;
-  if (show) el.style.display = "block";
-  console.log(msg);
-}
-function dbgErr(title, err) {
-  const msg = `${title}\n${String(err?.stack || err?.message || err)}`;
-  dbg("❌ " + msg, true);
+  modal: document.getElementById("modal"),
+  modalTitle: document.getElementById("modalTitle"),
+  modalBody: document.getElementById("modalBody"),
+  modalOk: document.getElementById("modalOk"),
+};
+
+const ctx = el.canvas.getContext("2d");
+
+/* -------------------------
+   Helpers
+-------------------------- */
+function clamp(v, a, b) {
+  return Math.max(a, Math.min(b, v));
 }
 
-// show unhandled errors too
-window.addEventListener("error", (e) => dbgErr("window.error", e?.error || e?.message || e));
-window.addEventListener("unhandledrejection", (e) => dbgErr("unhandledrejection", e?.reason || e));
-
-// ---------- runtime ----------
-function defaultRuntime() {
-  return {
-    year: 1989,
-    week: 1,
-    inProgress: false,
-    phase: "NONE", // NONE | SP1 | WAIT_SP2 | SP2 | WAIT_CHAMP | CHAMP | DONE
-    waitWeeks: 0,
-    nextPhase: null, // "SP2" | "CHAMP"
-    lastResult: null,
-    lastResultByLeague: {},
-    history: [],
-  };
-}
-function normalizeRuntime(r) {
-  const base = defaultRuntime();
-  const out = { ...base, ...(r || {}) };
-  out.year = Number.isFinite(out.year) ? out.year : base.year;
-  out.week = Number.isFinite(out.week) ? out.week : base.week;
-  out.inProgress = !!out.inProgress;
-  out.phase = String(out.phase || base.phase);
-  out.waitWeeks = Number.isFinite(out.waitWeeks) ? out.waitWeeks : 0;
-  out.nextPhase = out.nextPhase ? String(out.nextPhase) : null;
-  if (!out.lastResultByLeague || typeof out.lastResultByLeague !== "object") out.lastResultByLeague = {};
-  if (!Array.isArray(out.history)) out.history = [];
-  return out;
-}
-function loadRuntime() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return normalizeRuntime(JSON.parse(raw));
-  } catch (_) {}
-  return defaultRuntime();
-}
-function saveRuntime(runtime) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(runtime)); } catch (_) {}
+function rand() {
+  return Math.random();
 }
 
-// ---------- ID roles ----------
-const ROLE = Object.freeze({
-  ID1:  "チーム編成",
-  ID2:  "ガチャ",
-  ID3:  "大会エントリー",
-  ID4:  "参加中の大会",
-  ID5:  "セーブ",
-  ID6:  "戦績",
-  ID7:  "大会結果",
-  ID8:  "スケジュール",
-  ID9:  "射撃",
-  ID10: "ダッシュ",
-  ID11: "パズル",
-  ID12: "実戦",
-  ID13: "滝",
-  ID14: "研究",
-  ID15: "総合",
-  ID16: "コレクション",
-  ID17: "ショップ",
-  ID18: "遠征",
-  ID19: "最近の出来事",
+function randi(n) {
+  return Math.floor(Math.random() * n);
+}
+
+function pick(arr) {
+  return arr[randi(arr.length)];
+}
+
+function nowMs() {
+  return performance.now();
+}
+
+function fmtPct(x) {
+  return Math.round(x * 100) + "%";
+}
+
+/* -------------------------
+   Mini Log
+-------------------------- */
+const miniLogLines = [];
+function miniLogPush(text) {
+  miniLogLines.push({ t: Date.now(), text });
+  if (miniLogLines.length > 5) miniLogLines.shift();
+  renderMiniLog();
+}
+
+function renderMiniLog() {
+  el.miniLog.innerHTML = "";
+  for (const l of miniLogLines) {
+    const div = document.createElement("div");
+    div.className = "line";
+    div.textContent = l.text;
+    el.miniLog.appendChild(div);
+  }
+}
+
+/* -------------------------
+   Overlay Message
+-------------------------- */
+function showOverlay(msg, ms = 800) {
+  el.overlayMessage.textContent = msg;
+  el.overlayMessage.classList.remove("hidden");
+  if (ms > 0) {
+    setTimeout(() => {
+      el.overlayMessage.classList.add("hidden");
+    }, ms);
+  }
+}
+
+function hideOverlay() {
+  el.overlayMessage.classList.add("hidden");
+}
+
+/* -------------------------
+   Modal
+-------------------------- */
+function openModal(title, html) {
+  el.modalTitle.textContent = title;
+  el.modalBody.innerHTML = html;
+  el.modal.classList.remove("hidden");
+}
+
+function closeModal() {
+  el.modal.classList.add("hidden");
+}
+
+el.modalOk.addEventListener("click", closeModal);
+
+/* -------------------------
+   Right Panel
+-------------------------- */
+function openPanel(title, html, closable = true) {
+  el.panelTitle.textContent = title;
+  el.panelBody.innerHTML = html;
+  if (closable) el.panelFooter.classList.remove("hidden");
+  else el.panelFooter.classList.add("hidden");
+}
+
+function closePanel() {
+  openPanel("詳細", "<div>左のコマンドから選んでください。</div>", false);
+}
+
+el.panelClose.addEventListener("click", closePanel);
+
+/* -------------------------
+   Buttons
+-------------------------- */
+const cmdBtns = Array.from(document.querySelectorAll(".cmd"));
+cmdBtns.forEach((b) => {
+  b.addEventListener("click", () => {
+    cmdBtns.forEach((x) => x.classList.remove("is-active"));
+    b.classList.add("is-active");
+    handleCommand(b.dataset.cmd);
+  });
 });
 
-// ---------- boot ----------
-let runtime = loadRuntime();
+/* =========================================================
+   DATA (Prototype)
+   - ここは後で data.js / state.js に分離される想定
+========================================================= */
 
-// dynamic module handles (so we can show errors even if import fails)
-let UI = null;
-let Assets = null;
-let State = null;
-let Tournament = null;
+/* -------------------------
+   Company / Team
+-------------------------- */
+const COMPANY_RANKS = [
+  { name: "D", weeklyGold: 80 },
+  { name: "C", weeklyGold: 120 },
+  { name: "B", weeklyGold: 180 },
+  { name: "A", weeklyGold: 260 },
+  { name: "S", weeklyGold: 360 },
+];
 
-(async function boot() {
-  dbg("BOOT: start");
+const STATE = {
+  year: 1,
+  week: 1,
+  gold: 200,
+  companyName: "MOB COMPANY",
+  companyRank: "D",
+  teamName: "PLAYER TEAM",
+  roster: [],
 
-  // 1) Load modules with exact filenames in your repo
-  try {
-    UI = await import("./ui.js");
-    dbg("BOOT: ui.js loaded");
-  } catch (e) {
-    dbgErr("FAILED to import ./ui.js", e);
-    return;
-  }
+  nextTournament: "SP1 ローカルリーグ",
+  statusText: "準備中",
+};
 
-  try {
-    Assets = await import("./assets.js");
-    dbg("BOOT: assets.js loaded");
-  } catch (e) {
-    dbgErr("FAILED to import ./assets.js", e);
-    // continue (assets are optional for boot)
-  }
+const BASE_STATS_KEYS = [
+  "HP",
+  "Armor",
+  "Mental",
+  "Move",
+  "Aim",
+  "Agility",
+  "Technique",
+  "Support",
+  "Hunt",
+  "Synergy",
+];
 
-  try {
-    State = await import("./state.js");
-    dbg("BOOT: state.js loaded");
-  } catch (e) {
-    dbgErr("FAILED to import ./state.js", e);
-    // continue (state optional; we use localStorage anyway)
-  }
+/* -------------------------
+   Player Characters (initial 3)
+---------------------------------------------------------- */
+function makeChar(name, role, passive, ability, ult, stats) {
+  return {
+    name,
+    role,
+    passive,
+    ability,
+    ult,
+    stats: { ...stats },
+    hpNow: stats.HP,
+    armorNow: stats.Armor,
+  };
+}
 
-  try {
-    Tournament = await import("./sim_tournament.js");
-    dbg("BOOT: sim_tournament.js loaded");
-  } catch (e) {
-    dbgErr("FAILED to import ./sim_tournament.js", e);
-    // Without sim, we can still show UI but cannot run leagues
-  }
-
-  // 2) init UI
-  try {
-    UI.init({ rootId: "app" });
-    dbg("BOOT: UI.init ok");
-  } catch (e) {
-    dbgErr("UI.init failed", e);
-    return;
-  }
-
-  // 3) assets load (optional)
-  if (Assets && typeof Assets.loadAll === "function") {
-    try { await Assets.loadAll(); dbg("BOOT: Assets.loadAll ok"); }
-    catch (e) { dbgErr("Assets.loadAll failed (optional)", e); }
-  }
-
-  // 4) ensure images
-  try {
-    const mainImg = document.getElementById("mainImage");
-    const mapImg  = document.getElementById("mapImage");
-    if (mainImg) mainImg.src = mainImg.getAttribute("src") || "./main.png";
-    if (mapImg)  mapImg.src  = mapImg.getAttribute("src")  || "./map.png";
-    dbg("BOOT: image src set");
-  } catch (e) {
-    dbgErr("BOOT: image set failed (optional)", e);
-  }
-
-  // 5) bind buttons
-  bindButtons();
-
-  // 6) HUD + screen
-  refreshHud();
-  UI.showScreen("main");
-  dbg("BOOT: showScreen(main)");
-
-  // 7) auto-start SP1
-  if (AUTO_START_SP1_ON_BOOT) {
-    if (AUTO_START_ONCE_ONLY) {
-      if (!localStorage.getItem(AUTO_START_ONCE_KEY)) {
-        localStorage.setItem(AUTO_START_ONCE_KEY, "1");
-        setTimeout(() => onAction("ID3"), 0);
-        dbg("BOOT: auto-start SP1 (once)");
-      } else {
-        dbg("BOOT: auto-start skipped (once key exists)");
-      }
-    } else {
-      setTimeout(() => onAction("ID3"), 0);
-      dbg("BOOT: auto-start SP1 (always)");
+const PLAYER_START_CHARS = [
+  makeChar(
+    "ウニチー",
+    "アサルト",
+    "常時与ダメ+5%",
+    "攻撃フェーズ中、命中+10%（1回）",
+    "全員与ダメ+10%（1ラウンド）",
+    {
+      HP: 120,
+      Armor: 40,
+      Mental: 60,
+      Move: 50,
+      Aim: 55,
+      Agility: 45,
+      Technique: 50,
+      Support: 40,
+      Hunt: 55,
+      Synergy: 50,
     }
-  }
-})();
+  ),
+  makeChar(
+    "ネコクー",
+    "サポート",
+    "毎ラウンド開始時、HP+5回復",
+    "味方全員HP+15回復（1回）",
+    "味方全員Armor+20回復（1回）",
+    {
+      HP: 110,
+      Armor: 50,
+      Mental: 70,
+      Move: 45,
+      Aim: 45,
+      Agility: 50,
+      Technique: 40,
+      Support: 65,
+      Hunt: 45,
+      Synergy: 60,
+    }
+  ),
+  makeChar(
+    "ドオー",
+    "コントロール",
+    "被ダメ-5%",
+    "敵1人の命中-15%（1回）",
+    "敵全員の命中-10%（1ラウンド）",
+    {
+      HP: 140,
+      Armor: 55,
+      Mental: 55,
+      Move: 40,
+      Aim: 40,
+      Agility: 35,
+      Technique: 55,
+      Support: 45,
+      Hunt: 40,
+      Synergy: 55,
+    }
+  ),
+];
 
-// ---------- buttons ----------
-function bindButtons() {
-  const found = Array.from(document.querySelectorAll("[data-action]"));
-  dbg(`BOOT: found buttons = ${found.length}`);
-  for (const el of found) {
-    el.addEventListener("click", () => onAction(el.getAttribute("data-action")));
-  }
-}
+STATE.roster = PLAYER_START_CHARS;
 
-// ---------- helpers ----------
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+/* =========================================================
+   VISUALS
+========================================================= */
 
-function pushLog(msg) {
-  if (UI && typeof UI.pushLog === "function") UI.pushLog(msg);
-  else dbg("LOG: " + msg, true);
-}
-
-function showModal(title, lines) {
-  if (UI && typeof UI.showModal === "function") UI.showModal(title, lines);
-  else dbg(`MODAL: ${title}\n- ${lines.join("\n- ")}`, true);
-}
-
-function setHud(lines) {
-  if (UI && typeof UI.setHud === "function") UI.setHud(lines);
-}
-
-// ---------- HUD ----------
-function refreshHud() {
-  const lines = [];
-  lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
-  lines.push(`状態: ${runtime.phase}`);
-  lines.push(`参加: ${runtime.inProgress ? "参加中" : "未参加"}`);
-  if (runtime.phase === "WAIT_SP2" || runtime.phase === "WAIT_CHAMP") {
-    lines.push(`次: ${runtime.nextPhase}（あと${runtime.waitWeeks}週）`);
-  }
-  setHud(lines);
-}
-
-// ---------- time ----------
-function advanceWeek(n = 1, reason = "") {
-  const add = Math.max(0, Math.floor(n));
-  if (!add) return;
-
-  for (let i = 0; i < add; i++) {
-    runtime.week += 1;
-    if (runtime.week > 52) { runtime.week = 1; runtime.year += 1; }
-  }
-  if (reason) pushLog(`【${runtime.year}年${runtime.week}週】${reason}`);
-  saveRuntime(runtime);
-  refreshHud();
-}
-
-// ---------- tournament ----------
-function getChampionName(result) {
-  const teamId = result?.championTeamId || "";
-  if (!teamId) return "";
-  const a = result?.finalStandings?.find(x => x.teamId === teamId || x.team?.id === teamId);
-  if (a?.team?.name) return a.team.name;
-  if (a?.name) return a.name;
-  return teamId;
-}
-
-async function runLeagueAndStore(leagueKey) {
-  if (!Tournament || typeof Tournament.runLeague !== "function") {
-    showModal("エラー", [
-      "sim_tournament.js が読み込めていません。",
-      "ファイル名が一致しているか確認してください。",
-      "必要: ./sim_tournament.js",
-    ]);
-    dbg("Tournament missing: cannot runLeague");
-    return null;
-  }
-
-  let result;
-  try {
-    result = Tournament.runLeague(leagueKey, { seed: Date.now() });
-  } catch (e) {
-    dbgErr("Tournament.runLeague failed", e);
-    showModal("エラー", ["シミュレーションが停止しました。", String(e?.message || e)]);
-    return null;
-  }
-
-  runtime.lastResult = result;
-  runtime.lastResultByLeague[leagueKey] = result;
-
-  const champName = getChampionName(result);
-  runtime.history.push({
-    league: leagueKey,
-    championName: champName || "?",
-    at: { year: runtime.year, week: runtime.week },
-    summary: `${leagueKey} 優勝: ${champName || "?"}`,
+const images = {};
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = src;
   });
-
-  saveRuntime(runtime);
-  refreshHud();
-
-  if (UI && typeof UI.renderTournamentResult === "function") {
-    UI.renderTournamentResult(result);
-  } else {
-    showModal(`${leagueKey} 結果`, [
-      `優勝: ${champName || "?"}`,
-      "（ui.js の renderTournamentResult が未実装ならここが簡易表示になります）",
-    ]);
-  }
-
-  return result;
 }
 
-// ---------- main action handler ----------
-async function onAction(action) {
-  const label = ROLE[action] || action || "UNKNOWN";
-  dbg(`ACTION: ${action} (${label})`);
+async function loadAssets() {
+  images.main = await loadImage(ASSETS.MAIN);
+  images.ido = await loadImage(ASSETS.IDO);
+  images.map = await loadImage(ASSETS.MAP);
+  images.shop = await loadImage(ASSETS.SHOP);
+  images.heal = await loadImage(ASSETS.HEAL);
+  images.battle = await loadImage(ASSETS.BATTLE);
+  images.winner = await loadImage(ASSETS.WINNER);
+  images.p1 = await loadImage(ASSETS.P1);
+}
 
-  switch (action) {
-    case "ID3": // 大会エントリー
-      await handleEntry();
-      return;
+function drawFallback(title, sub = "") {
+  ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
+  ctx.fillStyle = "#0b0f18";
+  ctx.fillRect(0, 0, el.canvas.width, el.canvas.height);
 
-    case "ID4": // 参加中の大会
-      await handleContinue();
-      return;
+  ctx.strokeStyle = "rgba(255,255,255,.14)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(18, 18, el.canvas.width - 36, el.canvas.height - 36);
 
-    case "ID7": // 大会結果
-      if (runtime.lastResult) {
-        if (UI && typeof UI.renderTournamentResult === "function") UI.renderTournamentResult(runtime.lastResult);
-        else showModal("大会結果", ["lastResult はあるが UI表示が未実装です。"]);
-      } else if (runtime.history.length) {
-        showModal("大会結果（履歴）", runtime.history.slice(-6).reverse().map(x => `${x.league} 優勝: ${x.championName}`));
-      } else {
-        showModal("大会結果", ["まだ結果がありません。"]);
-      }
-      return;
+  ctx.fillStyle = "rgba(255,255,255,.92)";
+  ctx.font = "bold 28px sans-serif";
+  ctx.fillText(title, 42, 90);
 
-    case "ID8": // スケジュール
-      showModal("スケジュール", buildScheduleLines());
-      return;
+  ctx.fillStyle = "rgba(255,255,255,.68)";
+  ctx.font = "16px sans-serif";
+  ctx.fillText(sub, 42, 122);
 
-    case "ID15": // 総合
-      showModal("総合（デモ）", buildSummaryLines());
-      return;
+  ctx.fillStyle = "rgba(57,217,138,.85)";
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillText("※ assets が未配置の場合はこの画面になります", 42, el.canvas.height - 42);
+}
 
-    case "ID5": // セーブ
-      saveRuntime(runtime);
-      showModal("セーブ", ["保存しました（デモ）"]);
-      return;
+function drawImageOrFallback(im, title) {
+  if (!im) {
+    drawFallback(title, "画像が見つかりません（assetsフォルダに配置してください）");
+    return;
+  }
+  ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(im, 0, 0, el.canvas.width, el.canvas.height);
+}
 
-    case "ID6": // 戦績
-      showModal("戦績", buildRecordLines());
-      return;
+/* =========================================================
+   UI Render
+========================================================= */
+function renderTop() {
+  el.companyName.textContent = `企業名：${STATE.companyName}`;
+  el.companyRank.textContent = `企業ランク：${STATE.companyRank}`;
+  el.teamName.textContent = `チーム名：${STATE.teamName}`;
+  el.weekInfo.textContent = `YEAR ${STATE.year} / WEEK ${STATE.week}`;
+}
 
-    case "ID19": // 最近の出来事
-      showModal("最近の出来事", [
-        `現在: ${runtime.year}年 ${runtime.week}週`,
-        `状態: ${runtime.phase}`,
-        "（デモでは簡易表示。後でイベント抽選と連動）",
-      ]);
-      return;
+function renderBottom() {
+  el.goldValue.textContent = String(STATE.gold);
+  el.nextTournamentValue.textContent = STATE.nextTournament;
+  el.statusValue.textContent = STATE.statusText;
+  el.hintText.textContent = "左のコマンドから選んでください。";
+  el.versionText.textContent = VERSION;
+}
 
-    // demo: week advance
-    case "ID9":
-    case "ID10":
-    case "ID11":
-    case "ID12":
-    case "ID13":
-    case "ID14":
-    case "ID16":
-    case "ID17":
-    case "ID18":
-      advanceWeek(1, `${label}（デモ：1週進行）`);
-      return;
+function renderAll() {
+  renderTop();
+  renderBottom();
+}
 
-    // unimplemented screens
-    case "ID1":
-    case "ID2":
-      showModal(label, ["この画面はデモ版では未実装です。"]);
-      return;
+/* =========================================================
+   COMMANDS
+========================================================= */
+function handleCommand(cmd) {
+  switch (cmd) {
+    case "team":
+      drawImageOrFallback(images.main, "チーム編成");
+      openPanel("チーム編成", renderTeamPanel());
+      miniLogPush("チーム編成を開いた");
+      break;
+
+    case "offer":
+      drawImageOrFallback(images.ido, "勧誘");
+      openPanel("勧誘", renderOfferPanel());
+      miniLogPush("勧誘を開いた");
+      break;
+
+    case "gacha":
+      drawImageOrFallback(images.shop, "ガチャ");
+      openPanel("ガチャ", renderGachaPanel());
+      miniLogPush("ガチャを開いた");
+      break;
+
+    case "tournament":
+      drawImageOrFallback(images.map, "参戦中の大会");
+      openPanel("参戦中の大会", renderTournamentPanel());
+      miniLogPush("参戦中の大会を開いた");
+      break;
+
+    case "results":
+      drawImageOrFallback(images.winner, "大会の結果");
+      openPanel("大会の結果", renderResultsPanel());
+      miniLogPush("大会の結果を開いた");
+      break;
+
+    case "schedule":
+      drawImageOrFallback(images.map, "スケジュール");
+      openPanel("スケジュール", renderSchedulePanel());
+      miniLogPush("スケジュールを開いた");
+      break;
+
+    case "train":
+      drawImageOrFallback(images.heal, "修行");
+      openPanel("修行", renderTrainPanel());
+      miniLogPush("修行を開いた");
+      break;
+
+    case "shop":
+      drawImageOrFallback(images.shop, "ショップ");
+      openPanel("ショップ", renderShopPanel());
+      miniLogPush("ショップを開いた");
+      break;
+
+    case "save":
+      drawImageOrFallback(images.main, "セーブ");
+      doSave();
+      miniLogPush("セーブした");
+      break;
 
     default:
-      showModal("未割当", [`押された: ${action}`, `役割: ${label}`]);
-      return;
+      openPanel("詳細", "<div>未実装</div>");
+      break;
   }
 }
 
-function buildScheduleLines() {
-  const lines = [];
-  lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
-  lines.push(`状態: ${runtime.phase}`);
-  if (!runtime.inProgress && runtime.phase === "NONE") {
-    lines.push("未参加：大会エントリーでSP1開始");
-    return lines;
-  }
-  if (runtime.phase === "WAIT_SP2" || runtime.phase === "WAIT_CHAMP") {
-    lines.push(`次: ${runtime.nextPhase}（あと${runtime.waitWeeks}週）`);
-    lines.push("参加中の大会で進行できます。");
-  }
-  return lines;
+/* =========================================================
+   Panels (Prototype)
+========================================================= */
+function statTable(stats) {
+  const rows = BASE_STATS_KEYS.map(
+    (k) =>
+      `<tr><td><b>${k}</b></td><td>${stats[k]}</td></tr>`
+  ).join("");
+  return `<table>${rows}</table>`;
 }
 
-function buildSummaryLines() {
-  const lines = [];
-  lines.push(`現在: ${runtime.year}年 ${runtime.week}週`);
-  lines.push(`参加: ${runtime.inProgress ? "参加中" : "未参加"}`);
-  lines.push(`状態: ${runtime.phase}`);
-  const sp1 = runtime.lastResultByLeague["SP1"];
-  const sp2 = runtime.lastResultByLeague["SP2"];
-  const ch  = runtime.lastResultByLeague["CHAMPIONSHIP"];
-  if (sp1) lines.push(`SP1 優勝: ${getChampionName(sp1)}`);
-  if (sp2) lines.push(`SP2 優勝: ${getChampionName(sp2)}`);
-  if (ch)  lines.push(`CHAMP 優勝: ${getChampionName(ch)}`);
-  return lines;
-}
+function renderTeamPanel() {
+  let html = "";
+  html += `<div style="margin-bottom:10px;">
+    <span class="chip ok">PLAYER TEAM</span>
+    <span class="chip">3人</span>
+  </div>`;
 
-function buildRecordLines() {
-  if (!runtime.history.length) return ["戦績はまだありません。"];
-  return runtime.history.slice(-8).reverse().map(it => `${it.league} 優勝: ${it.championName}（${it.at.year}年${it.at.week}週）`);
-}
-
-// ---------- entry / continue ----------
-async function handleEntry() {
-  if (runtime.inProgress) {
-    showModal("大会エントリー", ["すでに参加中の大会があります。", "「参加中の大会」から進めます。"]);
-    return;
+  for (const c of STATE.roster) {
+    html += `<div style="margin:10px 0; padding:10px; border:1px solid rgba(255,255,255,.10); border-radius:12px; background: rgba(0,0,0,.12);">
+      <div style="font-weight:900; font-size:14px;">${c.name} <span style="opacity:.65; font-weight:700; font-size:12px;">(${c.role})</span></div>
+      <div style="margin-top:6px; color:rgba(255,255,255,.75); font-size:12px;">
+        <div>Passive：${c.passive}</div>
+        <div>Ability：${c.ability}</div>
+        <div>Ult：${c.ult}</div>
+      </div>
+      <div style="margin-top:8px;">${statTable(c.stats)}</div>
+    </div>`;
   }
 
-  runtime.inProgress = true;
-  runtime.phase = "SP1";
-  runtime.waitWeeks = 0;
-  runtime.nextPhase = null;
-  saveRuntime(runtime);
-  refreshHud();
-
-  // show map briefly then run
-  if (UI && typeof UI.showScreen === "function") UI.showScreen("map");
-  await sleep(600);
-
-  const r = await runLeagueAndStore("SP1");
-  if (!r) return;
-
-  runtime.phase = "WAIT_SP2";
-  runtime.waitWeeks = WAIT_WEEKS.SP1_TO_SP2;
-  runtime.nextPhase = "SP2";
-  saveRuntime(runtime);
-  refreshHud();
-
-  showModal("SP1 終了", [
-    `SP2 開始まで ${runtime.waitWeeks} 週 待機します。`,
-    "「参加中の大会」で進行できます。",
-  ]);
+  html += `<div style="margin-top:10px; color:rgba(255,255,255,.65); font-size:12px;">
+    ※ここは後で「入れ替え・育成・装備」に拡張予定
+  </div>`;
+  return html;
 }
 
-async function handleContinue() {
-  if (!runtime.inProgress) {
-    showModal("参加中の大会", ["参加中の大会はありません。", "「大会エントリー」から開始してください。"]);
-    return;
+function renderOfferPanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip">企業ランク：${STATE.companyRank}</span>
+        <span class="chip">所持G：${STATE.gold}</span>
+      </div>
+      <div style="color:rgba(255,255,255,.75); font-size:13px;">
+        まだ簡易版のため、ここではオファーの演出だけ表示します。
+      </div>
+      <div style="margin-top:10px;">
+        <button class="subBtn" id="btnOfferTry">勧誘してみる</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderGachaPanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip">ガチャ（簡易）</span>
+      </div>
+      <div style="color:rgba(255,255,255,.75); font-size:13px;">
+        防具 / アビリティ / ウルト / アイテム / コーチスキル（予定）
+      </div>
+      <div style="margin-top:10px;">
+        <button class="subBtn" id="btnGachaOnce">1回引く</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTournamentPanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip ok">${STATE.nextTournament}</span>
+      </div>
+      <div style="color:rgba(255,255,255,.78); font-size:13px;">
+        大会の進行は「試合開始」から実行します（簡易版）。
+      </div>
+      <div style="margin-top:12px;">
+        <button class="subBtn" id="btnStartMatch">試合開始（簡易）</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderResultsPanel() {
+  return `
+    <div style="color:rgba(255,255,255,.78); font-size:13px;">
+      まだ結果データがありません。<br/>
+      「参戦中の大会」→「試合開始」で結果を作ります。
+    </div>
+  `;
+}
+
+function renderSchedulePanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip">YEAR ${STATE.year}</span>
+        <span class="chip">WEEK ${STATE.week}</span>
+      </div>
+      <div style="color:rgba(255,255,255,.78); font-size:13px;">
+        週を進めると大会や修行が進みます（簡易版）。
+      </div>
+      <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="subBtn" id="btnNextWeek">次の週へ</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTrainPanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip">修行（簡易）</span>
+      </div>
+      <div style="color:rgba(255,255,255,.78); font-size:13px;">
+        1回の修行で1週消費して、能力が少し上がります。
+      </div>
+      <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="subBtn" id="btnTrain">修行する</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderShopPanel() {
+  return `
+    <div>
+      <div style="margin-bottom:10px;">
+        <span class="chip">ショップ（簡易）</span>
+        <span class="chip">所持G：${STATE.gold}</span>
+      </div>
+      <div style="color:rgba(255,255,255,.78); font-size:13px;">
+        アイテム購入などは後で実装します。
+      </div>
+    </div>
+  `;
+}
+
+/* =========================================================
+   Save / Load
+========================================================= */
+const SAVE_KEY = "mob_apex_sim_save_v1";
+
+function doSave() {
+  const payload = {
+    VERSION,
+    STATE,
+    t: Date.now(),
+  };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+  showOverlay("セーブしました", 700);
+  openModal("セーブ", "セーブしました。");
+}
+
+function tryLoad() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) return false;
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.STATE) return false;
+    // minimal merge
+    Object.assign(STATE, obj.STATE);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* =========================================================
+   Simple simulation (placeholder)
+========================================================= */
+function simulateMatchSimple() {
+  // returns ranking for 20 teams (placeholder)
+  const teams = [];
+  for (let i = 0; i < 20; i++) {
+    teams.push({
+      rank: i + 1,
+      teamName: i === 0 ? STATE.teamName : `CPU TEAM ${i}`,
+      kills: randi(10),
+      point: 0,
+    });
   }
 
-  if (runtime.phase === "WAIT_SP2" || runtime.phase === "WAIT_CHAMP") {
-    if (runtime.waitWeeks > 0) {
-      advanceWeek(1, "大会待機（デモ：1週進行）");
-      runtime.waitWeeks = Math.max(0, runtime.waitWeeks - 1);
-      saveRuntime(runtime);
-      refreshHud();
+  // randomize order
+  teams.sort(() => Math.random() - 0.5);
 
-      if (runtime.waitWeeks > 0) {
-        showModal("大会待機中", [`${runtime.nextPhase} 開始まで あと ${runtime.waitWeeks} 週`]);
-        return;
+  // assign ranks and points
+  for (let i = 0; i < teams.length; i++) {
+    teams[i].rank = i + 1;
+    // simple scoring
+    const placePoint = Math.max(0, 21 - teams[i].rank) * 2;
+    const killPoint = teams[i].kills * 3;
+    teams[i].point = placePoint + killPoint;
+  }
+
+  teams.sort((a, b) => a.rank - b.rank);
+  return teams;
+}
+
+function renderMatchResultTable(list) {
+  let html = `<div style="margin-bottom:10px;"><span class="chip ok">試合結果（簡易）</span></div>`;
+  html += `<table>
+    <tr><th>順位</th><th>チーム</th><th>キル</th><th>pt</th></tr>
+  `;
+  for (const t of list) {
+    html += `<tr>
+      <td><b>${t.rank}</b></td>
+      <td>${t.teamName}</td>
+      <td>${t.kills}</td>
+      <td><b>${t.point}</b></td>
+    </tr>`;
+  }
+  html += `</table>`;
+  return html;
+}
+
+/* =========================================================
+   Bind dynamic panel buttons
+========================================================= */
+function bindPanelButtons() {
+  // Offer
+  const btnOfferTry = document.getElementById("btnOfferTry");
+  if (btnOfferTry) {
+    btnOfferTry.onclick = () => {
+      showOverlay("勧誘中…", 600);
+      const ok = rand() < 0.65;
+      if (ok) {
+        openModal("勧誘", "勧誘に成功しました！（簡易演出）");
+        miniLogPush("勧誘成功！");
+      } else {
+        openModal("勧誘", "勧誘に失敗しました…（簡易演出）");
+        miniLogPush("勧誘失敗…");
       }
-    }
-
-    // ready to start next
-    if (runtime.nextPhase === "SP2") {
-      runtime.phase = "SP2";
-      runtime.nextPhase = null;
-      saveRuntime(runtime);
-      refreshHud();
-
-      showModal("SP2 開始", ["待機期間が終了しました。SP2を開始します。"]);
-      if (UI && typeof UI.showScreen === "function") UI.showScreen("map");
-      await sleep(600);
-
-      const r = await runLeagueAndStore("SP2");
-      if (!r) return;
-
-      runtime.phase = "WAIT_CHAMP";
-      runtime.waitWeeks = WAIT_WEEKS.SP2_TO_CHAMP;
-      runtime.nextPhase = "CHAMP";
-      saveRuntime(runtime);
-      refreshHud();
-
-      showModal("SP2 終了", [
-        `チャンピオンシップ開始まで ${runtime.waitWeeks} 週 待機します。`,
-        "「参加中の大会」で進行できます。",
-      ]);
-      return;
-    }
-
-    if (runtime.nextPhase === "CHAMP") {
-      runtime.phase = "CHAMP";
-      runtime.nextPhase = null;
-      saveRuntime(runtime);
-      refreshHud();
-
-      showModal("チャンピオンシップ開始", ["待機期間が終了しました。チャンピオンシップを開始します。"]);
-      if (UI && typeof UI.showScreen === "function") UI.showScreen("map");
-      await sleep(600);
-
-      const r = await runLeagueAndStore("CHAMPIONSHIP");
-      if (!r) return;
-
-      runtime.phase = "DONE";
-      runtime.inProgress = false;
-      runtime.waitWeeks = 0;
-      runtime.nextPhase = null;
-      saveRuntime(runtime);
-      refreshHud();
-
-      showModal("シーズン完走", ["チャンピオンシップまで完走しました。", "「大会結果」「総合」で確認できます。"]);
-      return;
-    }
-
-    showModal("状態エラー", ["nextPhase が不明です。"]);
-    return;
+    };
   }
 
-  if (runtime.phase === "DONE") {
-    showModal("参加中の大会", ["シーズンは完了しています。", "「大会結果」「総合」で確認できます。"]);
-    return;
+  // Gacha
+  const btnGachaOnce = document.getElementById("btnGachaOnce");
+  if (btnGachaOnce) {
+    btnGachaOnce.onclick = () => {
+      const pool = ["R", "R", "R", "SR", "SSR"];
+      const rarity = pick(pool);
+      openModal("ガチャ結果", `結果：<b>${rarity}</b>（簡易）`);
+      miniLogPush(`ガチャ：${rarity}`);
+    };
   }
 
-  showModal("参加中の大会", [`状態: ${runtime.phase}`, "（デモはリーグ単位で実行します）"]);
+  // Start Match
+  const btnStartMatch = document.getElementById("btnStartMatch");
+  if (btnStartMatch) {
+    btnStartMatch.onclick = () => {
+      showOverlay("試合開始！", 800);
+      setTimeout(() => {
+        drawImageOrFallback(images.battle, "試合中");
+        const result = simulateMatchSimple();
+        openPanel("試合結果", renderMatchResultTable(result));
+        bindPanelButtons();
+        miniLogPush("試合が終了した");
+      }, 900);
+    };
+  }
+
+  // Next Week
+  const btnNextWeek = document.getElementById("btnNextWeek");
+  if (btnNextWeek) {
+    btnNextWeek.onclick = () => {
+      // add weekly gold
+      const rankObj = COMPANY_RANKS.find((x) => x.name === STATE.companyRank) || COMPANY_RANKS[0];
+      STATE.gold += rankObj.weeklyGold;
+
+      STATE.week += 1;
+      if (STATE.week > 52) {
+        STATE.week = 1;
+        STATE.year += 1;
+      }
+      STATE.statusText = "進行中";
+      renderAll();
+      openPanel("スケジュール", renderSchedulePanel());
+      bindPanelButtons();
+      miniLogPush(`週が進んだ +${rankObj.weeklyGold}G`);
+      showOverlay("1週間経過", 800);
+    };
+  }
+
+  // Train
+  const btnTrain = document.getElementById("btnTrain");
+  if (btnTrain) {
+    btnTrain.onclick = () => {
+      // consume week
+      STATE.week += 1;
+      if (STATE.week > 52) {
+        STATE.week = 1;
+        STATE.year += 1;
+      }
+
+      // grow random stats slightly
+      for (const c of STATE.roster) {
+        const k1 = pick(BASE_STATS_KEYS);
+        const k2 = pick(BASE_STATS_KEYS);
+        c.stats[k1] += 1 + randi(2);
+        c.stats[k2] += 1;
+        c.stats.HP = clamp(c.stats.HP, 50, 300);
+      }
+
+      renderAll();
+      openPanel("修行", renderTrainPanel());
+      bindPanelButtons();
+      miniLogPush("修行した（能力UP）");
+      showOverlay("修行！", 800);
+      openModal("修行結果", "能力が少し上がりました（簡易）。");
+    };
+  }
 }
+
+/* =========================================================
+   Main
+========================================================= */
+async function main() {
+  el.versionText.textContent = VERSION;
+  tryLoad();
+  renderAll();
+
+  closePanel();
+  drawFallback("MOB APEX SIM", "画像を assets に置くと表示が切り替わります");
+
+  await loadAssets();
+  // show main screen after load
+  drawImageOrFallback(images.main, "MAIN");
+
+  miniLogPush("起動しました");
+  bindPanelButtons();
+
+  // default active
+  const first = cmdBtns[0];
+  if (first) first.classList.add("is-active");
+}
+
+main();
