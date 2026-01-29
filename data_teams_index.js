@@ -1,157 +1,122 @@
-/* =========================================================
-   data_teams_index.js (FULL)
-   - ローカル/ナショナル/ワールドのチームデータを統合して
-     参照しやすい索引（index）を提供する
-   - 依存：data_teams_local.js / data_teams_national.js / data_teams_world.js
-   ========================================================= */
+/* =====================================================
+   data_teams_index.js  (FULL)
+   MOB Tournament Simulation
+   チームデータ統合インデックス
+   - tier(LOCAL/NATIONAL/WORLD)で取得
+   - group(A/B/C/D 等)で絞り込み
+   ===================================================== */
 
-(() => {
-  'use strict';
+window.DATA_TEAMS = (function () {
 
-  const CONST = window.DATA_CONST;
-  if (!CONST) throw new Error('DATA_CONST not found. Load data_const.js before data_teams_index.js');
+  function assertLoaded() {
+    const okLocal = window.DATA_TEAMS_LOCAL && Array.isArray(window.DATA_TEAMS_LOCAL.teams);
+    const okNat   = window.DATA_TEAMS_NATIONAL && Array.isArray(window.DATA_TEAMS_NATIONAL.teams);
+    const okWorld = window.DATA_TEAMS_WORLD && Array.isArray(window.DATA_TEAMS_WORLD.teams);
 
-  const LOCAL = window.DATA_TEAMS_LOCAL;
-  const NATIONAL = window.DATA_TEAMS_NATIONAL;
-  const WORLD = window.DATA_TEAMS_WORLD;
+    if (!okLocal) console.warn('[DATA_TEAMS] DATA_TEAMS_LOCAL not loaded');
+    if (!okNat)   console.warn('[DATA_TEAMS] DATA_TEAMS_NATIONAL not loaded');
+    if (!okWorld) console.warn('[DATA_TEAMS] DATA_TEAMS_WORLD not loaded');
 
-  if (!LOCAL || !LOCAL.list) throw new Error('DATA_TEAMS_LOCAL not found. Load data_teams_local.js before data_teams_index.js');
-  if (!NATIONAL || !NATIONAL.list) throw new Error('DATA_TEAMS_NATIONAL not found. Load data_teams_national.js before data_teams_index.js');
-  if (!WORLD || !WORLD.list) throw new Error('DATA_TEAMS_WORLD not found. Load data_teams_world.js before data_teams_index.js');
+    return okLocal && okNat && okWorld;
+  }
 
-  // ---------------------------------------------------------
-  // ユーティリティ
-  // ---------------------------------------------------------
-  function deepFreeze(obj) {
-    if (!obj || typeof obj !== 'object') return obj;
-    Object.freeze(obj);
-    for (const k of Object.keys(obj)) {
-      const v = obj[k];
-      if (v && typeof v === 'object' && !Object.isFrozen(v)) deepFreeze(v);
+  function getPoolByTier(tier) {
+    if (!assertLoaded()) {
+      // 最低限：落ちないための返却
+      if (window.DATA_TEAMS_LOCAL && Array.isArray(window.DATA_TEAMS_LOCAL.teams)) {
+        return window.DATA_TEAMS_LOCAL.teams;
+      }
+      return [];
     }
-    return obj;
+
+    if (tier === 'LOCAL') return window.DATA_TEAMS_LOCAL.teams;
+    if (tier === 'NATIONAL') return window.DATA_TEAMS_NATIONAL.teams;
+    if (tier === 'WORLD') return window.DATA_TEAMS_WORLD.teams;
+
+    return [];
   }
 
-  function normalizeGroup(g) {
-    const x = String(g || '').toUpperCase();
-    if (x === 'LOCAL' || x === 'NATIONAL' || x === 'WORLD') return x;
-    return 'LOCAL';
+  function getAll(tier) {
+    return getPoolByTier(tier).slice();
   }
 
-  function teamKey(team) {
-    // 表示/UI用の安定キー（ID優先）
-    return team?.id || `${team?.group || 'X'}_${team?.name || 'NONAME'}`;
-  }
+  function getById(id) {
+    const pools = [];
+    if (window.DATA_TEAMS_LOCAL && Array.isArray(window.DATA_TEAMS_LOCAL.teams)) pools.push(window.DATA_TEAMS_LOCAL.teams);
+    if (window.DATA_TEAMS_NATIONAL && Array.isArray(window.DATA_TEAMS_NATIONAL.teams)) pools.push(window.DATA_TEAMS_NATIONAL.teams);
+    if (window.DATA_TEAMS_WORLD && Array.isArray(window.DATA_TEAMS_WORLD.teams)) pools.push(window.DATA_TEAMS_WORLD.teams);
 
-  // ---------------------------------------------------------
-  // 統合
-  // ---------------------------------------------------------
-  const allTeams = []
-    .concat(LOCAL.list || [])
-    .concat(NATIONAL.list || [])
-    .concat(WORLD.list || []);
-
-  // group を正規化（データ側に group が無い場合も念のため）
-  for (const t of allTeams) {
-    if (!t.group) t.group = 'LOCAL';
-    t.group = normalizeGroup(t.group);
-    if (!t.id) {
-      // id未設定は避けたいが、万一の保険
-      t.id = teamKey(t);
+    for (const p of pools) {
+      const found = p.find(t => t.id === id);
+      if (found) return found;
     }
+    return null;
   }
 
-  // ID衝突チェック（衝突したら末尾に連番を付与して回避）
-  const seen = new Map();
-  for (const t of allTeams) {
-    const base = String(t.id);
-    if (!seen.has(base)) {
-      seen.set(base, 1);
-      continue;
+  function listByGroup(tier, group) {
+    return getPoolByTier(tier).filter(t => t.group === group);
+  }
+
+  function pickTeamsForTournament(tier, options) {
+    // options:
+    // - includePlayerTeam (default true)
+    // - teamCountOverride (number)
+    // - group (A/B/C/D etc) optional
+    const opt = options || {};
+    const includePlayerTeam = opt.includePlayerTeam !== false;
+    const group = opt.group || null;
+
+    let pool = getPoolByTier(tier);
+
+    if (group) pool = pool.filter(t => t.group === group);
+
+    // ローカル：通常20
+    let count = (tier === 'LOCAL')
+      ? (window.DATA_CONST?.CONST?.LOCAL_TEAM_COUNT || 20)
+      : (window.DATA_CONST?.CONST?.MAX_TEAM_COUNT || 40);
+
+    if (typeof opt.teamCountOverride === 'number' && opt.teamCountOverride > 0) {
+      count = opt.teamCountOverride;
     }
-    const n = seen.get(base) + 1;
-    seen.set(base, n);
-    t.id = `${base}__${n}`; // ここは内部用の衝突回避
+
+    // データが少ない場合でも落ちない
+    const selected = pool.slice(0, Math.min(count, pool.length));
+
+    // プレイヤーチーム（State）をチーム一覧に差し込む（先頭固定）
+    if (includePlayerTeam && window.State && State.playerTeam) {
+      const pt = State.playerTeam;
+      // 同名IDを避ける
+      const normalizedPlayerTeam = {
+        id: pt.id || 'PLAYER_TEAM',
+        tier,
+        group: pt.group || 'PLAYER',
+        name: pt.name || 'PLAYER TEAM',
+        powerPct: pt.powerPct || 0,
+        style: pt.style || 'プレイヤーチーム',
+        members: (pt.members || []).map(m => (m.name || m)),
+
+        // プレイヤーチーム側のパッシブ/スキルは data_players.js に依存するためここでは空
+        passive: pt.passive || { name: 'プレイヤー', desc: 'プレイヤーチーム', effects: [] },
+
+        // 参照用に元オブジェクトを保持（battle側で使える）
+        _isPlayer: true,
+        _playerTeamRef: pt
+      };
+
+      // 既存と差し替え（ID一致があれば置換）
+      const idx = selected.findIndex(t => t.id === normalizedPlayerTeam.id);
+      if (idx >= 0) selected[idx] = normalizedPlayerTeam;
+      else selected.unshift(normalizedPlayerTeam);
+    }
+
+    return selected;
   }
 
-  const byId = Object.create(null);
-  const byName = Object.create(null);
-  const byGroup = { LOCAL: [], NATIONAL: [], WORLD: [] };
-
-  for (const t of allTeams) {
-    byId[t.id] = t;
-    (byGroup[t.group] || (byGroup[t.group] = [])).push(t);
-
-    const nm = String(t.name || '');
-    if (!byName[nm]) byName[nm] = [];
-    byName[nm].push(t);
-  }
-
-  // パワー順リスト（降順）
-  const allSortedByPower = allTeams.slice().sort((a, b) => {
-    const ap = Number(a.powerPct || 0);
-    const bp = Number(b.powerPct || 0);
-    if (bp !== ap) return bp - ap;
-    // 同率は名前で安定化
-    return String(a.name || '').localeCompare(String(b.name || ''), 'ja');
-  });
-
-  // group別のパワー順
-  const groupSortedByPower = {
-    LOCAL: (byGroup.LOCAL || []).slice().sort((a, b) => (Number(b.powerPct || 0) - Number(a.powerPct || 0))),
-    NATIONAL: (byGroup.NATIONAL || []).slice().sort((a, b) => (Number(b.powerPct || 0) - Number(a.powerPct || 0))),
-    WORLD: (byGroup.WORLD || []).slice().sort((a, b) => (Number(b.powerPct || 0) - Number(a.powerPct || 0))),
+  return {
+    getAll,
+    getById,
+    listByGroup,
+    pickTeamsForTournament
   };
 
-  // ---------------------------------------------------------
-  // 公開API
-  // ---------------------------------------------------------
-  function getTeamById(id) {
-    return byId[String(id)] || null;
-  }
-
-  function findTeamsByName(name) {
-    const key = String(name || '');
-    return (byName[key] || []).slice();
-  }
-
-  function getTeamsByGroup(group) {
-    const g = normalizeGroup(group);
-    return (byGroup[g] || []).slice();
-  }
-
-  function getAllTeams() {
-    return allTeams.slice();
-  }
-
-  function getAllTeamsSortedByPower() {
-    return allSortedByPower.slice();
-  }
-
-  function getGroupTeamsSortedByPower(group) {
-    const g = normalizeGroup(group);
-    return (groupSortedByPower[g] || []).slice();
-  }
-
-  // ---------------------------------------------------------
-  // Freezeして公開（参照の安全性）
-  // ---------------------------------------------------------
-  const exportObj = {
-    list: allTeams.slice(),
-    byId,
-    byName,
-    byGroup,
-
-    // 参照ヘルパ
-    getTeamById,
-    findTeamsByName,
-    getTeamsByGroup,
-    getAllTeams,
-    getAllTeamsSortedByPower,
-    getGroupTeamsSortedByPower,
-  };
-
-  deepFreeze(exportObj);
-
-  window.DATA_TEAMS_INDEX = exportObj;
 })();
