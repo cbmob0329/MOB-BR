@@ -1,584 +1,65 @@
-/* =========================================================
-   data_teams_national.js (FULL)
-   - ナショナル大会に登場するCPUチーム定義
-   - ここでは「ナショナルチームの固定メンバー＆パッシブ」を定義する
-   ========================================================= */
+/* =====================================================
+   data_teams_national.js  (FULL)
+   MOB Tournament Simulation
+   ナショナル大会：40チーム枠（A/B/C/D グループ）
+   - 今は「枠」を先に用意（後で実データを差し替え可能）
+   - 3人1チーム固定
+   - passive.effects は sim 側で解釈して適用
+   ===================================================== */
 
-(() => {
-  'use strict';
+window.DATA_TEAMS_NATIONAL = (function () {
 
-  const CONST = window.DATA_CONST;
-  if (!CONST) throw new Error('DATA_CONST not found. Load data_const.js before data_teams_national.js');
+  const TEAMS = [];
 
-  // ---------------------------------------------------------
-  // ナショナルチーム一覧（ユーザー指定の完成版を反映）
-  // 形式：
-  // {
-  //   id, name, powerPct, styleText,
-  //   members: [{ name },{ name },{ name }],
-  //   passive: { name, desc, applyTiming, effect }
-  // }
-  // ---------------------------------------------------------
+  function makeTeam(group, index, powerPct) {
+    const n = String(index).padStart(2, '0');
+    const id = `N_${group}_${n}`;
+    const name = `ナショナル${group}-${index}`;
+    return {
+      id,
+      tier: "NATIONAL",
+      group, // "A" / "B" / "C" / "D"
+      name,
+      powerPct,
+      style: "未設定",
+      members: [
+        `${name}メンバー1`,
+        `${name}メンバー2`,
+        `${name}メンバー3`
+      ],
+      passive: {
+        name: "未設定",
+        desc: "後で設定",
+        effects: []
+      }
+    };
+  }
 
-  const TEAMS_NATIONAL = [
-    {
-      id: 'N_SYMBIOTS',
-      group: 'NATIONAL',
-      name: 'シンビオッツ',
-      powerPct: 85,
-      styleText: 'ナショナルNo.1の実力者',
-      members: [{ name: 'ヴェノムン' }, { name: 'カネイジ' }, { name: 'スクリーム' }],
-      passive: {
-        name: '完全支配',
-        desc: '味方全員のAim+3＆被弾率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 3 }, pctAddTeam: { hitTaken: -2 } },
-      },
-    },
-    {
-      id: 'N_KAMINOSHIMA',
-      group: 'NATIONAL',
-      name: 'かみのしま',
-      powerPct: 80,
-      styleText: '天からすべてを見ている',
-      members: [{ name: 'ゴッドエネルギー' }, { name: 'ガンホール' }, { name: 'ワイプ―' }],
-      passive: {
-        name: '天啓',
-        desc: '戦闘開始時、敵全体のAim-2',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Aim: -2 } },
-      },
-    },
-    {
-      id: 'N_THRILLER',
-      group: 'NATIONAL',
-      name: 'スリラー団',
-      powerPct: 79,
-      styleText: '全員トリッキー',
-      members: [{ name: 'モリアン' }, { name: 'ペロナ' }, { name: 'アブサロ' }],
-      passive: {
-        name: '恐怖の空気',
-        desc: '敵全体のMental消費+15%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { mentalCost: +15 } },
-      },
-    },
-    {
-      id: 'N_SETOKAIBER',
-      group: 'NATIONAL',
-      name: 'セトカイバー',
-      powerPct: 78,
-      styleText: '統率力',
-      members: [{ name: 'ミノタウロス' }, { name: 'オベリスク' }, { name: 'アオメドラゴ' }],
-      passive: {
-        name: '統率の号令',
-        desc: '味方全員のAgility+2',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Agility: 2 } },
-      },
-    },
-    {
-      id: 'N_YUGIMUTO',
-      group: 'NATIONAL',
-      name: 'ユーギムト',
-      powerPct: 78,
-      styleText: '結束の力と運命の一枚',
-      members: [{ name: 'ブラマジ' }, { name: 'ガイア' }, { name: 'オシリス' }],
-      passive: {
-        name: '運命の手札',
-        desc: '戦闘開始時、味方全員のAim+2＆Crit率+1%',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Aim: 2 }, pctAddTeam: { critChance: +1 } },
-      },
-    },
-    {
-      id: 'N_BAGONSHIDO',
-      group: 'NATIONAL',
-      name: 'バゴンシド',
-      powerPct: 78,
-      styleText: '勢いが凄くキルを取りに行く',
-      members: [{ name: 'ハゴーン' }, { name: 'シードー' }, { name: 'りゅうのおう' }],
-      passive: {
-        name: '狩りの本能',
-        desc: '敵が1人倒れるたび味方全員のAim+1（最大+4）',
-        applyTiming: 'ON_ENEMY_DOWN',
-        effect: { stackAddTeam: { stat: 'Aim', perStack: 1, maxStacks: 4 } },
-      },
-    },
-    {
-      id: 'N_ISHTAR_MARIK',
-      group: 'NATIONAL',
-      name: 'イシュタルマリーク',
-      powerPct: 78,
-      styleText: '非常に好戦的',
-      members: [{ name: 'マキュラ' }, { name: 'ラー' }, { name: 'ヘルポエム' }],
-      passive: {
-        name: '処刑の刻印',
-        desc: '敵のHPが半分以下の時、味方全員のダメージ+8%',
-        applyTiming: 'ENEMY_HP_BELOW_HALF',
-        effect: { pctAddTeam: { damage: +8 } },
-      },
-    },
-    {
-      id: 'N_GYOGYO',
-      group: 'NATIONAL',
-      name: 'ギョギョカンパニー',
-      powerPct: 77,
-      styleText: '海の王者',
-      members: [{ name: 'アローン' }, { name: 'ハッチ' }, { name: 'ムラサキオビ' }],
-      passive: {
-        name: '海王の圧',
-        desc: '敵全体のAgility-2（戦闘中のみ）',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Agility: -2 } },
-      },
-    },
-    {
-      id: 'N_KAMOGAWA',
-      group: 'NATIONAL',
-      name: '鴨川一家',
-      powerPct: 77,
-      styleText: '根性はナショナルトップ',
-      members: [{ name: '丸ノ内' }, { name: '鷹町' }, { name: '青木村' }],
-      passive: {
-        name: '根性魂',
-        desc: 'HPが半分以下の時、味方全員のArmor回復+3/ターン（最大100）',
-        applyTiming: 'TEAM_HP_BELOW_HALF',
-        effect: { armorRegenTeam: 3, armorMax: 100 },
-      },
-    },
-    {
-      id: 'N_SINISTER3',
-      group: 'NATIONAL',
-      name: 'シニスタースリー',
-      powerPct: 77,
-      styleText: '索敵に優れており着実に上位',
-      members: [{ name: 'オクトパス' }, { name: 'リザドン' }, { name: 'サンド' }],
-      passive: {
-        name: '徹底索敵',
-        desc: '敵の弱ってるキャラを狙う確率+20%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { finishFocus: +20 } },
-      },
-    },
-    {
-      id: 'N_SPIDERS',
-      group: 'NATIONAL',
-      name: 'スパイダーズ',
-      powerPct: 78,
-      styleText: '機動力が高くファイトと連携に自信あり',
-      members: [{ name: 'ピーター' }, { name: 'グウェン' }, { name: 'マイル' }],
-      passive: {
-        name: '高速連携',
-        desc: '味方全員のMove+1＆Agility+1',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Move: 1, Agility: 1 } },
-      },
-    },
-    {
-      id: 'N_ANRUSHIA',
-      group: 'NATIONAL',
-      name: 'アンルーシア',
-      powerPct: 77,
-      styleText: 'お宝でポイントを稼ぐ',
-      members: [{ name: 'ヒュザ' }, { name: 'マユ' }, { name: 'プク' }],
-      passive: {
-        name: 'お宝嗅覚',
-        desc: 'チームのHunt判定+15%',
-        applyTiming: 'ROUND_START',
-        effect: { pctAddTeam: { huntCheck: +15 } },
-      },
-    },
-    {
-      id: 'N_GOBLINS',
-      group: 'NATIONAL',
-      name: 'ゴブリンズ',
-      powerPct: 74,
-      styleText: 'アイテム使用が上手く被弾が少ない',
-      members: [{ name: 'グリーン' }, { name: 'ボブ' }, { name: 'オズ' }],
-      passive: {
-        name: 'アイテム達人',
-        desc: '戦闘中のアイテム使用成功率+10%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { itemUseSuccess: +10 } },
-      },
-    },
-    {
-      id: 'N_KAMEN_FIGHTER',
-      group: 'NATIONAL',
-      name: '仮面ファイター',
-      powerPct: 73,
-      styleText: 'ファイトに自信',
-      members: [{ name: 'ブイスリー' }, { name: 'アマゾン' }, { name: 'デンオウキ' }],
-      passive: {
-        name: 'ファイト魂',
-        desc: '味方全員の攻撃ダメージ+6%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damage: +6 } },
-      },
-    },
-    {
-      id: 'N_DETECTIVE',
-      group: 'NATIONAL',
-      name: '名探偵',
-      powerPct: 73,
-      styleText: '外ムーブの生存チーム',
-      members: [{ name: 'シンイチ' }, { name: 'ヘイジ' }, { name: 'キドキッド' }],
-      passive: {
-        name: '推理回避',
-        desc: '敵の先制バフを無効化する確率+25%',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { negateEnemyOpeningBuffChance: 25 } },
-      },
-    },
-    {
-      id: 'N_BLACK_GUYS',
-      group: 'NATIONAL',
-      name: '黒のやつら',
-      powerPct: 71,
-      styleText: '噛み合えばチャンピオン量産',
-      members: [{ name: 'ジンジン' }, { name: 'ウォーカー' }, { name: 'ベルモット' }],
-      passive: {
-        name: '噛み合い爆発',
-        desc: '戦闘開始時、味方全員のAim+0〜5をランダム付与',
-        applyTiming: 'BATTLE_START',
-        effect: { randomTeamStatAdd: { stat: 'Aim', min: 0, max: 5 } },
-      },
-    },
-    {
-      id: 'N_SUNAKABE',
-      group: 'NATIONAL',
-      name: 'スナカベ',
-      powerPct: 70,
-      styleText: '守り重視の中入りムーブ',
-      members: [{ name: 'ガーラ' }, { name: 'カンクック' }, { name: 'テマ' }],
-      passive: {
-        name: '砂壁防御',
-        desc: '味方全員の被ダメージ-5%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damageTaken: -5 } },
-      },
-    },
-    {
-      id: 'N_DARKS',
-      group: 'NATIONAL',
-      name: 'ダークス',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'レンノ' }, { name: 'ルド' }, { name: 'シス' }],
-      passive: {
-        name: '闇の壁',
-        desc: '戦闘開始時、味方全員Armor+8（最大100）',
-        applyTiming: 'BATTLE_START',
-        effect: { armorHealTeam: 8, armorMax: 100 },
-      },
-    },
-    {
-      id: 'N_CHOCOSTARIO',
-      group: 'NATIONAL',
-      name: 'チョコスタリオ',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'ウミチョ' }, { name: 'ヤマチョ' }, { name: 'ウルチョ' }],
-      passive: {
-        name: '甘い集中',
-        desc: '味方全員のTechnique+2相当（弱狙い率+8%）',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { finishFocus: +8 } },
-      },
-    },
-    {
-      id: 'N_MIRAGE_LAB',
-      group: 'NATIONAL',
-      name: 'ミラージュ研究所',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'ミラーン' }, { name: 'フェイクス' }, { name: 'スモークン' }],
-      passive: {
-        name: '蜃気楼',
-        desc: '敵の命中率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { hitChance: -2 } },
-      },
-    },
-    {
-      id: 'N_MONOCHROME',
-      group: 'NATIONAL',
-      name: 'モノクロ騎士団',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'クロナイト' }, { name: 'シロナイト' }, { name: 'グレイヴ' }],
-      passive: {
-        name: '黒白守護',
-        desc: '味方全員のArmorダメージ-6%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { armorDamageTaken: -6 } },
-      },
-    },
-    {
-      id: 'N_AOGAKU',
-      group: 'NATIONAL',
-      name: 'アオガク',
-      powerPct: 70,
-      styleText: '油断しない',
-      members: [{ name: 'リョーマ' }, { name: 'フジサン' }, { name: 'クニミツ' }],
-      passive: {
-        name: 'ノーミス意識',
-        desc: '味方全員の命中率+2%＆Crit率-1%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { hitChance: +2, critChance: -1 } },
-      },
-    },
-    {
-      id: 'N_KOORITEI',
-      group: 'NATIONAL',
-      name: 'コオリテイ',
-      powerPct: 70,
-      styleText: '氷の帝王',
-      members: [{ name: 'ケイゴ' }, { name: 'ガバ' }, { name: 'ガクト' }],
-      passive: {
-        name: '氷結制圧',
-        desc: '敵全体のAgility-1＆Move-1（戦闘中のみ）',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Agility: -1, Move: -1 } },
-      },
-    },
-    {
-      id: 'N_FULLSWING',
-      group: 'NATIONAL',
-      name: 'フルスイング',
-      powerPct: 70,
-      styleText: 'フルスイングで戦う',
-      members: [{ name: 'アマノクニ' }, { name: 'ピノ' }, { name: 'ウシオ' }],
-      passive: {
-        name: '強振り',
-        desc: '味方全員のダメージ+7% / 命中率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damage: +7, hitChance: -2 } },
-      },
-    },
-    {
-      id: 'N_LEAK',
-      group: 'NATIONAL',
-      name: 'リーク団',
-      powerPct: 70,
-      styleText: '',
-      members: [{ name: 'ドンリーク' }, { name: 'キン' }, { name: 'ハル' }],
-      passive: {
-        name: '情報漏洩',
-        desc: '敵1人を指定してその敵の被ダメージ+10%',
-        applyTiming: 'BATTLE_START',
-        effect: { special: { markOneEnemyDamageTakenPct: +10 } },
-      },
-    },
-    {
-      id: 'N_JONOUCHI',
-      group: 'NATIONAL',
-      name: 'ジョーノウチ',
-      powerPct: 69,
-      styleText: 'ギャンブルムーブ',
-      members: [{ name: 'ベビドラ' }, { name: 'サイコ' }, { name: 'アカメドラゴ' }],
-      passive: {
-        name: '運試し',
-        desc: '戦闘開始時に効果抽選：Aim+4 or Aim-2',
-        applyTiming: 'BATTLE_START',
-        effect: { randomTeamStatAdd: { stat: 'Aim', options: [4, -2] } },
-      },
-    },
-    {
-      id: 'N_SENGOKU',
-      group: 'NATIONAL',
-      name: 'センゴク連合',
-      powerPct: 69,
-      styleText: '',
-      members: [{ name: 'タケノブ' }, { name: 'マサムン' }, { name: 'ユキムラ' }],
-      passive: {
-        name: '戦国の覇気',
-        desc: '味方全員のMental+5%扱い',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { mental: +5 } },
-      },
-    },
-    {
-      id: 'N_KOKOYA',
-      group: 'NATIONAL',
-      name: 'ココヤ',
-      powerPct: 68,
-      styleText: '',
-      members: [{ name: 'ゲンゲン' }, { name: 'ノジッコ' }, { name: 'オオナミ' }],
-      passive: {
-        name: '南国回復',
-        desc: '毎ターン味方全員HP+2',
-        applyTiming: 'TURN_START',
-        effect: { hpRegenTeam: 2 },
-      },
-    },
-    {
-      id: 'N_NEKONOTE',
-      group: 'NATIONAL',
-      name: '猫の手',
-      powerPct: 68,
-      styleText: '',
-      members: [{ name: 'ブラック' }, { name: 'サンゴ' }, { name: 'カヤ' }],
-      passive: {
-        name: '器用さ',
-        desc: '味方全員のTechnique+2相当効果（命中+2%）',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { hitChance: +2 } },
-      },
-    },
-    {
-      id: 'N_WALTZ',
-      group: 'NATIONAL',
-      name: 'ワルツ',
-      powerPct: 68,
-      styleText: '圧倒的な連携',
-      members: [{ name: 'クロイチ' }, { name: 'クロニ' }, { name: 'クロサン' }],
-      passive: {
-        name: '三拍子',
-        desc: '味方全員のAgility+1＆被弾率-1%',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Agility: 1 }, pctAddTeam: { hitTaken: -1 } },
-      },
-    },
-    {
-      id: 'N_GINGASHOKUDO',
-      group: 'NATIONAL',
-      name: '銀河食堂',
-      powerPct: 65,
-      styleText: '',
-      members: [{ name: 'ギンボシ' }, { name: 'コスモン' }, { name: 'オムライス' }],
-      passive: {
-        name: 'フルコース',
-        desc: '戦闘中、味方全員のアイテム回復量+8%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { healItem: +8 } },
-      },
-    },
-    {
-      id: 'N_BAKUHATSU',
-      group: 'NATIONAL',
-      name: 'バクハツ工房',
-      powerPct: 65,
-      styleText: '',
-      members: [{ name: 'ドッカンD' }, { name: 'バチバチー' }, { name: 'チリチリー' }],
-      passive: {
-        name: '爆発癖',
-        desc: '味方全員のCrit率+2% / 被弾率+1%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { critChance: +2, hitTaken: +1 } },
-      },
-    },
-    {
-      id: 'N_HEIWA',
-      group: 'NATIONAL',
-      name: '平和の象徴',
-      powerPct: 65,
-      styleText: '',
-      members: [{ name: 'せんとうもも' }, { name: 'パシフィック' }, { name: 'パシフィック2号' }],
-      passive: {
-        name: '平和主義',
-        desc: '味方全員の被弾率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { hitTaken: -2 } },
-      },
-    },
-    {
-      id: 'N_KAGEFUMI',
-      group: 'NATIONAL',
-      name: '影ふみ隊',
-      powerPct: 63,
-      styleText: '',
-      members: [{ name: 'カゲロウ' }, { name: 'フミフミ' }, { name: 'ヨルスケ' }],
-      passive: {
-        name: '影ふみ',
-        desc: '敵の弱狙い率-15%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { finishFocus: -15 } },
-      },
-    },
-    {
-      id: 'N_TEKKEI_PRESS',
-      group: 'NATIONAL',
-      name: '鉄壁プレス',
-      powerPct: 62,
-      styleText: '',
-      members: [{ name: 'ガンテツ' }, { name: 'クサリマル' }, { name: 'ブロックン' }],
-      passive: {
-        name: '重装プレス',
-        desc: '味方全員の被ダメージ-6% / Agility-1',
-        applyTiming: 'BATTLE_START',
-        effect: { pctAddTeam: { damageTaken: -6 }, statsAddTeam: { Agility: -1 } },
-      },
-    },
-    {
-      id: 'N_SAKURA_BURST',
-      group: 'NATIONAL',
-      name: 'サクラバースト',
-      powerPct: 60,
-      styleText: '',
-      members: [{ name: 'ハナミ' }, { name: 'サクラギ' }, { name: 'ヨザクラ' }],
-      passive: {
-        name: '桜吹雪',
-        desc: '戦闘開始時、敵全体の命中率-2%',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyPctAdd: { hitChance: -2 } },
-      },
-    },
-    {
-      id: 'N_RIMEIDAN',
-      group: 'NATIONAL',
-      name: '雷鳴団（らいめいだん）',
-      powerPct: 60,
-      styleText: '',
-      members: [{ name: 'キッドライジン' }, { name: 'カミナリオ' }, { name: 'イナズマル' }],
-      passive: {
-        name: '雷鳴',
-        desc: '戦闘開始時、敵全体のAgility-2',
-        applyTiming: 'BATTLE_START',
-        effect: { enemyStatsAdd: { Agility: -2 } },
-      },
-    },
-    {
-      id: 'N_UMINOSACHI',
-      group: 'NATIONAL',
-      name: 'ウミノサチ',
-      powerPct: 60,
-      styleText: '',
-      members: [{ name: 'サメサメ' }, { name: 'ターコイズ' }, { name: 'イカラッパ' }],
-      passive: {
-        name: '潮流',
-        desc: '戦闘中、味方全員のMove+1',
-        applyTiming: 'BATTLE_START',
-        effect: { statsAddTeam: { Move: 1 } },
-      },
-    },
-    {
-      id: 'N_DRAGONS_BERRY',
-      group: 'NATIONAL',
-      name: 'ドラゴンズベリー',
-      powerPct: 58,
-      styleText: '',
-      members: [{ name: 'ベリドラ' }, { name: 'コドラ' }, { name: 'リンドラ' }],
-      passive: {
-        name: 'ベリー根性',
-        desc: 'HPが半分以下でダメージ+8%',
-        applyTiming: 'TEAM_HP_BELOW_HALF',
-        effect: { pctAddTeam: { damage: +8 } },
-      },
-    },
-  ];
+  // 40チーム：各グループ10
+  // powerPct は“仮”で、強弱の並びだけ作ってあります（後で差し替え前提）。
+  // A: 80→62 / B: 79→61 / C: 78→60 / D: 77→59
+  const base = {
+    A: 80,
+    B: 79,
+    C: 78,
+    D: 77
+  };
 
-  // ---------------------------------------------------------
-  // 公開
-  // ---------------------------------------------------------
-  window.DATA_TEAMS_NATIONAL = Object.freeze({
-    list: Object.freeze(TEAMS_NATIONAL.slice()),
-    byId: Object.freeze(
-      TEAMS_NATIONAL.reduce((acc, t) => {
-        acc[t.id] = t;
-        return acc;
-      }, Object.create(null))
-    ),
+  ["A", "B", "C", "D"].forEach((g) => {
+    for (let i = 1; i <= 10; i++) {
+      TEAMS.push(makeTeam(g, i, base[g] - (i - 1) * 2));
+    }
   });
+
+  function getAll() { return TEAMS.slice(); }
+  function getById(id) { return TEAMS.find(t => t.id === id) || null; }
+  function listByGroup(group) { return TEAMS.filter(t => t.group === group); }
+
+  return {
+    teams: TEAMS,
+    getAll,
+    getById,
+    listByGroup
+  };
+
 })();
