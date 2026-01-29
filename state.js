@@ -1,462 +1,343 @@
-// state.js (FULL) MOB BR
-// ゲーム全体の状態管理（保存/読込・週進行・所持データの土台）
-// ルール：勝手に仕様を省かない / ファイル名変更しない / ここは状態だけ担当
+/* =====================================================
+   state.js  (FULL)
+   MOB Tournament Simulation
+   ゲーム状態（年週 / 企業ランク / 所持G / チーム / 履歴）
+   ===================================================== */
 
-(() => {
-  'use strict';
+const State = {};
+window.State = State;
 
-  const ST = (window.MOBBR_STATE = window.MOBBR_STATE || {});
-  const LS_KEY = 'MOBBR_SAVE_V1';
+/* =========================
+   初期データ
+   ========================= */
 
-  // =========================
-  // Utils
-  // =========================
-  function clamp(v, a, b) {
-    v = Number(v || 0);
-    return Math.max(a, Math.min(b, v));
+State.init = function () {
+  // 基本状態
+  State.gold = 0;
+
+  // 企業ランク（1が最強…等は後で調整可能。今は初期10想定）
+  State.companyRank = 10;
+
+  // 時間（1989年スタート）
+  State.time = {
+    year: 1989,
+    week: 1,
+    nextTournament: { name: 'SP1 ローカル大会', date: '2月第1週' }
+  };
+
+  // 大会進行中情報（参加中の大会メニュー用）
+  State.currentTournament = null;
+
+  // 履歴（年ごとの大会結果・キル/アシスト集計などの土台）
+  State.history = {
+    tournaments: [], // {year, seasonKey, name, result}
+    yearly: {}       // { [year]: { killsByPlayer:{}, assistsByPlayer:{}, finalCompanyRank } }
+  };
+
+  // プレイヤーチーム（3人）
+  State.playerTeam = State.createInitialPlayerTeam();
+
+  // 所持キャラ（オファーで増える想定）
+  State.ownedPlayers = State.playerTeam.members.slice();
+
+  // 所持アイテム・コーチスキル（後で本格実装）
+  State.inventory = {
+    items: {},        // { itemId: count }
+    coachSkills: []   // [ skillId, ... ]
+  };
+
+  State.refreshNextTournamentInfo();
+};
+
+/* =========================
+   初期チーム生成（P1想定）
+   data_players.js が未確定でも動くように
+   ========================= */
+
+State.createInitialPlayerTeam = function () {
+  // data_players.js が用意される前提だが、無くても落ちない
+  const pool = (window.DATA_PLAYERS && Array.isArray(window.DATA_PLAYERS))
+    ? window.DATA_PLAYERS
+    : null;
+
+  // 3人分
+  const members = [];
+
+  if (pool && pool.length >= 3) {
+    for (let i = 0; i < 3; i++) {
+      members.push(State.normalizePlayer(pool[i]));
+    }
+  } else {
+    // プレースホルダ（後で差し替わる）
+    members.push(State.normalizePlayer({
+      id: 'P-001',
+      name: 'プレイヤー1',
+      stats: State.defaultStats(),
+      passive: { name: '未設定', desc: '後で設定' },
+      ability: { name: '未設定', desc: '後で設定', uses: 1 },
+      ult: { name: '未設定', desc: '後で設定', uses: 1 }
+    }));
+    members.push(State.normalizePlayer({
+      id: 'P-002',
+      name: 'プレイヤー2',
+      stats: State.defaultStats(),
+      passive: { name: '未設定', desc: '後で設定' },
+      ability: { name: '未設定', desc: '後で設定', uses: 1 },
+      ult: { name: '未設定', desc: '後で設定', uses: 1 }
+    }));
+    members.push(State.normalizePlayer({
+      id: 'P-003',
+      name: 'プレイヤー3',
+      stats: State.defaultStats(),
+      passive: { name: '未設定', desc: '後で設定' },
+      ability: { name: '未設定', desc: '後で設定', uses: 1 },
+      ult: { name: '未設定', desc: '後で設定', uses: 1 }
+    }));
   }
-  function deepCopy(obj) {
-    return JSON.parse(JSON.stringify(obj));
+
+  return {
+    id: 'PLAYER_TEAM',
+    name: 'PLAYER TEAM',
+    group: 'A',
+    image: 'P1.png',
+    members,
+    // 連携（Synergy）は今は固定20スタート想定（最大200想定は後で）
+    synergy: 20
+  };
+};
+
+State.defaultStats = function () {
+  return {
+    HP: 60,
+    Armor: 100,       // 仕様：基本100固定前提
+    Mental: 60,
+    Move: 60,
+    Aim: 60,
+    Agility: 60,
+    Technique: 60,
+    Support: 60,
+    Hunt: 60
+  };
+};
+
+State.normalizePlayer = function (p) {
+  const stats = Object.assign(State.defaultStats(), (p.stats || {}));
+  // Armorは基本100（上書きされても最大100で丸めるのは後で battle 側でやる）
+  if (stats.Armor === undefined || stats.Armor === null) stats.Armor = 100;
+
+  return {
+    id: p.id || ('P-' + Math.random().toString(36).slice(2)),
+    name: p.name || '???',
+    stats,
+    passive: p.passive || { name: '未設定', desc: '' },
+    ability: p.ability || { name: '未設定', desc: '', uses: 1 },
+    ult: p.ult || { name: '未設定', desc: '', uses: 1 }
+  };
+};
+
+/* =========================
+   スケジュール関連
+   ========================= */
+
+State.getScheduleText = function () {
+  // data_const.js で提供されるのが本命
+  if (window.DATA_CONST && typeof window.DATA_CONST.scheduleText === 'string') {
+    return window.DATA_CONST.scheduleText;
   }
 
-  // =========================
-  // 初期ステータス（プレイヤー企業）
-  // =========================
-  function createDefaultPlayerMeta() {
-    return {
-      year: 1989,
-      week: 1, // 第1週
-      split: 'SP1', // SP1 / SP2 / CHAMP
-      companyRank: 1,
-      gold: 0,
-      lastWeeklyIncome: 0,
-      lastWeeklyIncomeMsg: '',
+  // fallback（あなたの仕様をそのまま文字化）
+  return [
+    '2月第1週',
+    'SP1 ローカル大会',
+    '',
+    '3月第1週',
+    'SP1 ナショナル大会',
+    'A & B  C & D  A & C',
+    '3月第2週',
+    'B & C',
+    'A & D',
+    'B & D',
+    '3月第3週',
+    'ナショナル大会ラストチャンス',
+    '4月第1週',
+    'SP1 ワールドファイナル',
+    '',
+    '7月第1週',
+    'SP2 ローカル大会',
+    '',
+    '8月第1週',
+    'SP2 ナショナル大会',
+    'A & B  C & D  A & C',
+    '8月第2週',
+    'B & C',
+    'A & D',
+    'B & D',
+    '8月第3週',
+    'SP2 ナショナル大会ラストチャンス',
+    '9月第1週',
+    'SP2 ワールドファイナル',
+    '',
+    '11月第1週',
+    'チャンピオンシップ ローカル大会',
+    '',
+    '12月第1週',
+    'チャンピオンシップ ナショナル大会',
+    'A & B  C & D  A & C',
+    '12月第2週',
+    'B & C',
+    'A & D',
+    'B & D',
+    '12月第3週',
+    'チャンピオンシップ ナショナル大会ラストチャンス',
+    '',
+    '1月第2週',
+    'チャンピオンシップ ワールドファイナル'
+  ].join('\n');
+};
+
+/**
+ * 現在の年週が「大会週」かどうか判定してイベントを返す
+ * 返り値例： { key, name, tier, seasonKey }
+ */
+State.getTournamentAtCurrentTime = function () {
+  // data_const.js がある場合はそれを優先
+  if (window.DATA_CONST && Array.isArray(window.DATA_CONST.tournaments)) {
+    return State.findTournamentFromConst();
+  }
+
+  // fallback：1989年固定＆週番号で仮判定（後で data_const.js に置き換え）
+  // ※「今は動く」を優先。正確な週対応は data_const.js で確定させる。
+  const w = State.time.week;
+
+  // 仮：10週=SP1ローカル、14週=SP1ナショナル、18週=SP1ワールド…のように置く（暫定）
+  if (w === 5)  return { key: 'SP1_LOCAL', name: 'SP1 ローカル大会', tier: 'LOCAL', seasonKey: 'SP1' };
+  if (w === 9)  return { key: 'SP1_NATIONAL', name: 'SP1 ナショナル大会', tier: 'NATIONAL', seasonKey: 'SP1' };
+  if (w === 13) return { key: 'SP1_WORLD', name: 'SP1 ワールドファイナル', tier: 'WORLD', seasonKey: 'SP1' };
+
+  if (w === 25) return { key: 'SP2_LOCAL', name: 'SP2 ローカル大会', tier: 'LOCAL', seasonKey: 'SP2' };
+  if (w === 29) return { key: 'SP2_NATIONAL', name: 'SP2 ナショナル大会', tier: 'NATIONAL', seasonKey: 'SP2' };
+  if (w === 33) return { key: 'SP2_WORLD', name: 'SP2 ワールドファイナル', tier: 'WORLD', seasonKey: 'SP2' };
+
+  if (w === 45) return { key: 'CHAMP_LOCAL', name: 'チャンピオンシップ ローカル大会', tier: 'LOCAL', seasonKey: 'CHAMP' };
+  if (w === 49) return { key: 'CHAMP_NATIONAL', name: 'チャンピオンシップ ナショナル大会', tier: 'NATIONAL', seasonKey: 'CHAMP' };
+  if (w === 2)  return { key: 'CHAMP_WORLD', name: 'チャンピオンシップ ワールドファイナル', tier: 'WORLD', seasonKey: 'CHAMP' };
+
+  return null;
+};
+
+State.findTournamentFromConst = function () {
+  const year = State.time.year;
+  const week = State.time.week;
+
+  // DATA_CONST.tournaments: [{year, week, key, name, tier, seasonKey, dateLabel}, ...]
+  const list = window.DATA_CONST.tournaments;
+  for (const t of list) {
+    if (t.year === year && t.week === week) return t;
+  }
+  return null;
+};
+
+/* =========================
+   次の大会表示更新
+   ========================= */
+
+State.refreshNextTournamentInfo = function () {
+  // data_const.js がある場合：次の大会を検索
+  if (window.DATA_CONST && Array.isArray(window.DATA_CONST.tournaments)) {
+    const next = State.findNextTournamentFromConst();
+    if (next) {
+      State.time.nextTournament = {
+        name: next.name,
+        date: next.dateLabel || State.formatWeekLabel(next.monthLabel, next.weekLabel) || '---'
+      };
+      return;
+    }
+  }
+
+  // fallback：固定表示（暫定）
+  State.time.nextTournament = { name: 'SP1 ローカル大会', date: '2月第1週' };
+};
+
+State.findNextTournamentFromConst = function () {
+  const year = State.time.year;
+  const week = State.time.week;
+  const list = window.DATA_CONST.tournaments;
+
+  // 同年で次、なければ翌年最初
+  let candidate = null;
+  for (const t of list) {
+    if (t.year === year && t.week > week) {
+      if (!candidate || t.week < candidate.week) candidate = t;
+    }
+  }
+  if (candidate) return candidate;
+
+  // 翌年
+  let nextYearCandidate = null;
+  for (const t of list) {
+    if (t.year === year + 1) {
+      if (!nextYearCandidate || t.week < nextYearCandidate.week) nextYearCandidate = t;
+    }
+  }
+  return nextYearCandidate;
+};
+
+State.formatWeekLabel = function (monthLabel, weekLabel) {
+  if (!monthLabel || !weekLabel) return null;
+  return `${monthLabel}第${weekLabel}週`;
+};
+
+/* =========================
+   大会結果適用（履歴に保存）
+   ========================= */
+
+State.applyTournamentResult = function (result) {
+  // result の中身は sim_tournament_core 側で整備される想定
+  // ここでは「履歴に残す」ことを最優先に土台を作る
+
+  const entry = {
+    year: State.time.year,
+    seasonKey: result.seasonKey || 'UNKNOWN',
+    name: result.name || 'UNKNOWN',
+    tier: result.tier || 'UNKNOWN',
+    result
+  };
+
+  State.history.tournaments.push(entry);
+
+  // 年間まとめの器
+  const y = State.time.year;
+  if (!State.history.yearly[y]) {
+    State.history.yearly[y] = {
+      killsByPlayer: {},
+      assistsByPlayer: {},
+      finalCompanyRank: State.companyRank
     };
   }
 
-  // 週収入（確定）
-  function calcWeeklyIncomeByRank(rank) {
-    rank = Number(rank || 1);
-    if (rank >= 31) return 3000;
-    if (rank >= 21) return 2000;
-    if (rank >= 11) return 1000;
-    if (rank >= 6) return 800;
-    return 500; // 1〜5
+  // ここでキル・アシスト集計（結果形式は後で確定）
+  // 例：result.playerStats = [{name,kills,assists},...]
+  if (Array.isArray(result.playerStats)) {
+    for (const ps of result.playerStats) {
+      const n = ps.name || '???';
+      State.history.yearly[y].killsByPlayer[n] = (State.history.yearly[y].killsByPlayer[n] || 0) + (ps.kills || 0);
+      State.history.yearly[y].assistsByPlayer[n] = (State.history.yearly[y].assistsByPlayer[n] || 0) + (ps.assists || 0);
+    }
   }
 
-  // =========================
-  // 初期チームスロット（A/B/C）
-  // =========================
-  function createDefaultTeams() {
-    // 初期はAに3人、B/Cは空でもOK（UIで編成する）
-    // ただし「同じキャラは複数スロットに入れない」ルールはui側で制御
-    return {
-      A: { name: 'PLAYER TEAM', members: ['p_001', 'p_002', 'p_003'] },
-      B: { name: 'PLAYER TEAM', members: [] },
-      C: { name: 'PLAYER TEAM', members: [] },
-    };
-  }
+  // 企業ランク変動は「大会ロジック確定後」に sim_rules 側で扱う
+  State.history.yearly[y].finalCompanyRank = State.companyRank;
 
-  // =========================
-  // 初期所持キャラ（プレイヤー初期3人）
-  // data_players.js 側の定義を参照して埋める前提
-  // stateは「所持と経験値」を管理
-  // =========================
-  function createDefaultRoster() {
-    return {
-      ownedIds: ['p_001', 'p_002', 'p_003'],
-      // 経験値は「能力ごとに0〜19を保持し、20で+1上昇」の土台
-      exp: {
-        p_001: { HP: 0, Mental: 0, Move: 0, Aim: 0, Agility: 0, Technique: 0, Support: 0, Hunt: 0 },
-        p_002: { HP: 0, Mental: 0, Move: 0, Aim: 0, Agility: 0, Technique: 0, Support: 0, Hunt: 0 },
-        p_003: { HP: 0, Mental: 0, Move: 0, Aim: 0, Agility: 0, Technique: 0, Support: 0, Hunt: 0 },
-      },
-      // 装備（各キャラ最大5）
-      equips: {
-        p_001: [],
-        p_002: [],
-        p_003: [],
-      },
-    };
-  }
+  // 次の大会表示更新
+  State.refreshNextTournamentInfo();
+};
 
-  // =========================
-  // 初期所持アイテム
-  // =========================
-  function createDefaultInventory() {
-    return {
-      items: {
-        // itemId: count
-      },
-      coachSkills: {
-        // coachSkillId: count
-      },
-    };
-  }
+/* =========================
+   ユーティリティ
+   ========================= */
 
-  // =========================
-  // 大会結果保存（履歴）
-  // =========================
-  function createDefaultRecords() {
-    return {
-      // 年ごとに保存
-      years: {
-        // 1989: { ... }
-      },
-
-      // 年間個人キル/アシスト合計（簡易：キャラID→数）
-      yearlyStats: {
-        // 1989: { kills:{}, assists:{} }
-      },
-    };
-  }
-
-  // =========================
-  // 現在進行中の大会状況
-  // =========================
-  function createDefaultTournamentProgress() {
-    return {
-      active: null,
-      // 例：
-      // active: {
-      //   type: 'LOCAL'|'NATIONAL'|'WORLD',
-      //   year: 1989,
-      //   split: 'SP1',
-      //   weekTag: '2月第1週',
-      //   teamsCount: 20 or 40,
-      //   matchesDone: 0,
-      //   totalMatches: 5,
-      //   standings: [],
-      // }
-      lastShownMessage: '',
-    };
-  }
-
-  // =========================
-  // UI・表示用（保存してもOK）
-  // =========================
-  function createDefaultUIState() {
-    return {
-      playerOutfitIndex: 0, // 0=P1
-      lastScreen: 'MAIN', // MAIN / TOURNAMENT / RESULT etc.
-      toastQueue: [],
-    };
-  }
-
-  // =========================
-  // 全初期セーブデータ
-  // =========================
-  function createDefaultSave() {
-    return {
-      version: 1,
-      meta: createDefaultPlayerMeta(),
-      teams: createDefaultTeams(),
-      roster: createDefaultRoster(),
-      inventory: createDefaultInventory(),
-      records: createDefaultRecords(),
-      tourney: createDefaultTournamentProgress(),
-      ui: createDefaultUIState(),
-    };
-  }
-
-  // =========================
-  // State Core
-  // =========================
-  ST.saveData = ST.saveData || createDefaultSave();
-
-  ST.get = function get() {
-    return ST.saveData;
-  };
-
-  ST.set = function set(newState) {
-    ST.saveData = deepCopy(newState);
-    return ST.saveData;
-  };
-
-  ST.reset = function reset() {
-    ST.saveData = createDefaultSave();
-    return ST.saveData;
-  };
-
-  // =========================
-  // Save / Load
-  // =========================
-  ST.saveToLocalStorage = function saveToLocalStorage() {
-    try {
-      const json = JSON.stringify(ST.saveData);
-      localStorage.setItem(LS_KEY, json);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, err: String(e) };
-    }
-  };
-
-  ST.loadFromLocalStorage = function loadFromLocalStorage() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return { ok: false, err: 'NO_SAVE' };
-
-      const data = JSON.parse(raw);
-      // 最低限の整合（足りないものを補完）
-      const base = createDefaultSave();
-      ST.saveData = mergeSave(base, data);
-      return { ok: true, data: ST.saveData };
-    } catch (e) {
-      return { ok: false, err: String(e) };
-    }
-  };
-
-  ST.deleteSave = function deleteSave() {
-    try {
-      localStorage.removeItem(LS_KEY);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, err: String(e) };
-    }
-  };
-
-  // baseにincomingを被せる（深めの保険）
-  function mergeSave(base, incoming) {
-    if (!incoming || typeof incoming !== 'object') return base;
-    const out = deepCopy(base);
-
-    // shallow merge + nested merge
-    for (const k of Object.keys(incoming)) {
-      if (incoming[k] && typeof incoming[k] === 'object' && !Array.isArray(incoming[k])) {
-        out[k] = { ...(out[k] || {}), ...(incoming[k] || {}) };
-      } else {
-        out[k] = incoming[k];
-      }
-    }
-
-    // nested required
-    out.meta = { ...base.meta, ...(incoming.meta || {}) };
-    out.teams = { ...base.teams, ...(incoming.teams || {}) };
-    out.roster = { ...base.roster, ...(incoming.roster || {}) };
-    out.inventory = { ...base.inventory, ...(incoming.inventory || {}) };
-    out.records = { ...base.records, ...(incoming.records || {}) };
-    out.tourney = { ...base.tourney, ...(incoming.tourney || {}) };
-    out.ui = { ...base.ui, ...(incoming.ui || {}) };
-
-    return out;
-  }
-
-  // =========================
-  // Week Progress
-  // =========================
-  ST.addWeeklyIncome = function addWeeklyIncome() {
-    const s = ST.saveData;
-    const inc = calcWeeklyIncomeByRank(s.meta.companyRank);
-    s.meta.gold += inc;
-    s.meta.lastWeeklyIncome = inc;
-    s.meta.lastWeeklyIncomeMsg = `${inc}G獲得！`;
-    return inc;
-  };
-
-  ST.advanceWeek = function advanceWeek() {
-    // 1回の行動＝1週消費（修行などの後に呼ばれる前提）
-    const s = ST.saveData;
-
-    // 週収入
-    ST.addWeeklyIncome();
-
-    // 週進行
-    s.meta.week += 1;
-
-    // 1年=12ヶ月、1ヶ月=4週、ただし大会スケジュールは rules側で判定する
-    // ここは単純に「週カウントを進める」だけ
-    if (s.meta.week > 48) {
-      s.meta.week = 1;
-      s.meta.year += 1;
-    }
-
-    return { year: s.meta.year, week: s.meta.week };
-  };
-
-  // =========================
-  // Gold / Rank Helpers
-  // =========================
-  ST.addGold = function addGold(amount) {
-    amount = Math.floor(Number(amount || 0));
-    if (!Number.isFinite(amount)) amount = 0;
-    ST.saveData.meta.gold += amount;
-    if (ST.saveData.meta.gold < 0) ST.saveData.meta.gold = 0;
-    return ST.saveData.meta.gold;
-  };
-
-  ST.spendGold = function spendGold(amount) {
-    amount = Math.floor(Number(amount || 0));
-    if (!Number.isFinite(amount)) amount = 0;
-    if (amount <= 0) return { ok: true };
-
-    if (ST.saveData.meta.gold >= amount) {
-      ST.saveData.meta.gold -= amount;
-      return { ok: true };
-    }
-    return { ok: false, err: 'NOT_ENOUGH_GOLD' };
-  };
-
-  ST.setCompanyRank = function setCompanyRank(rank) {
-    rank = clamp(rank, 1, 999);
-    ST.saveData.meta.companyRank = rank;
-    return rank;
-  };
-
-  // =========================
-  // Inventory Helpers
-  // =========================
-  ST.getItemCount = function getItemCount(itemId) {
-    const inv = ST.saveData.inventory.items;
-    return Number(inv[itemId] || 0);
-  };
-
-  ST.addItem = function addItem(itemId, count) {
-    count = Math.floor(Number(count || 1));
-    if (!itemId) return false;
-    if (count <= 0) return false;
-
-    const inv = ST.saveData.inventory.items;
-    inv[itemId] = Number(inv[itemId] || 0) + count;
-    return true;
-  };
-
-  ST.consumeItem = function consumeItem(itemId, count) {
-    count = Math.floor(Number(count || 1));
-    if (!itemId) return { ok: false, err: 'NO_ITEMID' };
-    if (count <= 0) return { ok: true };
-
-    const inv = ST.saveData.inventory.items;
-    const have = Number(inv[itemId] || 0);
-    if (have >= count) {
-      inv[itemId] = have - count;
-      if (inv[itemId] <= 0) delete inv[itemId];
-      return { ok: true };
-    }
-    return { ok: false, err: 'NOT_ENOUGH_ITEMS' };
-  };
-
-  ST.getCoachSkillCount = function getCoachSkillCount(skillId) {
-    const inv = ST.saveData.inventory.coachSkills;
-    return Number(inv[skillId] || 0);
-  };
-
-  ST.addCoachSkill = function addCoachSkill(skillId, count) {
-    count = Math.floor(Number(count || 1));
-    if (!skillId) return false;
-    if (count <= 0) return false;
-
-    const inv = ST.saveData.inventory.coachSkills;
-    inv[skillId] = Number(inv[skillId] || 0) + count;
-    return true;
-  };
-
-  ST.consumeCoachSkill = function consumeCoachSkill(skillId, count) {
-    count = Math.floor(Number(count || 1));
-    if (!skillId) return { ok: false, err: 'NO_SKILLID' };
-    if (count <= 0) return { ok: true };
-
-    const inv = ST.saveData.inventory.coachSkills;
-    const have = Number(inv[skillId] || 0);
-    if (have >= count) {
-      inv[skillId] = have - count;
-      if (inv[skillId] <= 0) delete inv[skillId];
-      return { ok: true };
-    }
-    return { ok: false, err: 'NOT_ENOUGH_SKILLS' };
-  };
-
-  // =========================
-  // Roster / Equip
-  // =========================
-  ST.isOwned = function isOwned(charId) {
-    return ST.saveData.roster.ownedIds.includes(charId);
-  };
-
-  ST.addCharacter = function addCharacter(charId) {
-    if (!charId) return false;
-    const r = ST.saveData.roster;
-    if (!r.ownedIds.includes(charId)) {
-      r.ownedIds.push(charId);
-    }
-    if (!r.exp[charId]) {
-      r.exp[charId] = { HP: 0, Mental: 0, Move: 0, Aim: 0, Agility: 0, Technique: 0, Support: 0, Hunt: 0 };
-    }
-    if (!r.equips[charId]) {
-      r.equips[charId] = [];
-    }
-    return true;
-  };
-
-  ST.removeCharacter = function removeCharacter(charId) {
-    // 基本使わないが、編成外すなどは可能なのでキャラ削除自体は慎重に
-    const r = ST.saveData.roster;
-    r.ownedIds = r.ownedIds.filter((id) => id !== charId);
-    delete r.exp[charId];
-    delete r.equips[charId];
-    return true;
-  };
-
-  ST.getEquips = function getEquips(charId) {
-    const r = ST.saveData.roster;
-    return r.equips[charId] ? r.equips[charId].slice() : [];
-  };
-
-  ST.setEquips = function setEquips(charId, arr) {
-    const r = ST.saveData.roster;
-    if (!r.equips[charId]) r.equips[charId] = [];
-    const next = Array.isArray(arr) ? arr.slice(0, 5) : [];
-    r.equips[charId] = next;
-    return next;
-  };
-
-  // =========================
-  // Training EXP Apply (土台)
-  // 実際の「能力値上昇」は data_players.js の基礎値と合算するので
-  // ここでは「exp加算→20で+1」をサポートするだけ
-  // =========================
-  ST.addExp = function addExp(charId, key, amount) {
-    const r = ST.saveData.roster;
-    if (!r.exp[charId]) {
-      r.exp[charId] = { HP: 0, Mental: 0, Move: 0, Aim: 0, Agility: 0, Technique: 0, Support: 0, Hunt: 0 };
-    }
-    if (!r.exp[charId][key] && r.exp[charId][key] !== 0) r.exp[charId][key] = 0;
-    amount = Math.floor(Number(amount || 0));
-    if (!Number.isFinite(amount)) amount = 0;
-
-    r.exp[charId][key] += amount;
-    return r.exp[charId][key];
-  };
-
-  ST.consumeExpToLevelUp = function consumeExpToLevelUp(charId, key) {
-    // expが20以上なら、何回でも繰り上げ（育成アイテム連打にも対応）
-    const r = ST.saveData.roster;
-    if (!r.exp[charId]) return 0;
-    if (!Number.isFinite(r.exp[charId][key])) r.exp[charId][key] = 0;
-
-    let up = 0;
-    while (r.exp[charId][key] >= 20) {
-      r.exp[charId][key] -= 20;
-      up += 1;
-    }
-    return up;
-  };
-
-  // =========================
-  // UI Toast
-  // =========================
-  ST.pushToast = function pushToast(text) {
-    const ui = ST.saveData.ui;
-    ui.toastQueue.push({ text: String(text || ''), t: Date.now() });
-  };
-
-  ST.popToast = function popToast() {
-    const ui = ST.saveData.ui;
-    return ui.toastQueue.shift() || null;
-  };
-
-  // =========================
-  // Expose
-  // =========================
-  window.STATE = ST; // legacy alias (optional)
-
-})();
+State.clamp = function (v, min, max) {
+  if (v < min) return min;
+  if (v > max) return max;
+  return v;
+};
