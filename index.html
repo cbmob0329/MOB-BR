@@ -3,99 +3,178 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>MOB BR (Demo)</title>
+  <meta name="theme-color" content="#0b0f14" />
+  <title>MOB Battle Royale Manager (Prototype)</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
-  <!-- game.js / ui.js がここを起点に画面を切り替える -->
   <div id="app">
-    <!-- MAIN SCREEN -->
-    <section id="screen-main" class="screen is-active" aria-label="Main Screen">
-      <div class="stage" id="mainStage">
-        <img id="mainImage" src="./main.png" alt="main" class="stage-img" />
-
-        <!-- 透明ボタン（配置指定IDに対応） -->
-        <!-- 左縦（ID1〜ID6） -->
-        <button class="hit" data-action="ID1" aria-label="ID1 チーム編成"
-          style="left:3.7862%; top:20.2637%; width:22.3460%; height:8.6914%;"></button>
-
-        <button class="hit" data-action="ID2" aria-label="ID2 ガチャ"
-          style="left:3.8604%; top:28.5645%; width:22.6429%; height:6.4941%;"></button>
-
-        <button class="hit" data-action="ID3" aria-label="ID3 大会エントリー"
-          style="left:3.6377%; top:34.5215%; width:25.3155%; height:8.1055%;"></button>
-
-        <button class="hit" data-action="ID4" aria-label="ID4 参加中の大会"
-          style="left:4.0089%; top:42.0898%; width:22.8656%; height:6.1523%;"></button>
-
-        <button class="hit" data-action="ID5" aria-label="ID5 セーブ"
-          style="left:4.3801%; top:47.8516%; width:21.6036%; height:8.5449%;"></button>
-
-        <button class="hit" data-action="ID6" aria-label="ID6 戦績"
-          style="left:4.3059%; top:56.2988%; width:21.7520%; height:7.8125%;"></button>
-
-        <!-- 上（ID7〜ID8） -->
-        <button class="hit" data-action="ID7" aria-label="ID7 大会結果"
-          style="left:53.0809%; top:13.7207%; width:22.4202%; height:8.5938%;"></button>
-
-        <button class="hit" data-action="ID8" aria-label="ID8 スケジュール"
-          style="left:75.2784%; top:14.5508%; width:23.1626%; height:7.6172%;"></button>
-
-        <!-- 下段1（ID9〜ID12） -->
-        <button class="hit" data-action="ID9" aria-label="ID9 射撃"
-          style="left:7.5724%; top:68.7500%; width:15.8872%; height:8.2031%;"></button>
-
-        <button class="hit" data-action="ID10" aria-label="ID10 ダッシュ"
-          style="left:24.1277%; top:68.7500%; width:18.1886%; height:9.9121%;"></button>
-
-        <button class="hit" data-action="ID11" aria-label="ID11 パズル"
-          style="left:40.4603%; top:69.1406%; width:16.7038%; height:7.7637%;"></button>
-
-        <button class="hit" data-action="ID12" aria-label="ID12 実戦"
-          style="left:56.4959%; top:69.0430%; width:16.8523%; height:7.7637%;"></button>
-
-        <!-- 下段2（ID13〜ID15） -->
-        <button class="hit" data-action="ID13" aria-label="ID13 滝"
-          style="left:6.9042%; top:77.3438%; width:16.1099%; height:8.3496%;"></button>
-
-        <button class="hit" data-action="ID14" aria-label="ID14 研究"
-          style="left:23.6080%; top:77.2461%; width:16.4811%; height:8.3984%;"></button>
-
-        <button class="hit" data-action="ID15" aria-label="ID15 総合"
-          style="left:40.3118%; top:77.6855%; width:16.5553%; height:7.9590%;"></button>
-
-        <!-- 下段3（ID16〜ID18） -->
-        <button class="hit" data-action="ID16" aria-label="ID16 コレクション"
-          style="left:1.0393%; top:87.4512%; width:19.9703%; height:10.0586%;"></button>
-
-        <button class="hit" data-action="ID17" aria-label="ID17 ショップ"
-          style="left:20.3415%; top:88.3789%; width:20.3415%; height:8.9844%;"></button>
-
-        <button class="hit" data-action="ID18" aria-label="ID18 遠征"
-          style="left:39.7179%; top:87.3047%; width:20.0445%; height:10.0098%;"></button>
-
-        <!-- 右下（ID19 最近の出来事） -->
-        <button class="hit" data-action="ID19" aria-label="ID19 最近の出来事"
-          style="left:62.1381%; top:77.4414%; width:32.5909%; height:21.3867%;"></button>
+    <!-- ===== Top Bar ===== -->
+    <header class="topbar">
+      <div class="topbar__left">
+        <div class="brand">
+          <div class="brand__logo" aria-hidden="true">M</div>
+          <div class="brand__texts">
+            <div class="brand__corp" id="ui_corpName">MOB COMPANY</div>
+            <div class="brand__rank">
+              <span class="pill" id="ui_corpRank">RANK: C</span>
+              <span class="pill pill--gold" id="ui_money">G: 1000</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
 
-    <!-- MAP SCREEN（クリックはしない：表示だけ） -->
-    <section id="screen-map" class="screen" aria-label="Map Screen">
-      <div class="stage" id="mapStage">
-        <img id="mapImage" src="./map.png" alt="map" class="stage-img" />
+      <div class="topbar__right">
+        <div class="teamTitle">
+          <div class="teamTitle__label">TEAM</div>
+          <div class="teamTitle__name" id="ui_teamName">PLAYER TEAM</div>
+        </div>
       </div>
-    </section>
+    </header>
+
+    <!-- ===== Main Layout ===== -->
+    <main class="layout">
+      <!-- Left Commands -->
+      <aside class="sidebar">
+        <button class="cmd" data-cmd="team" id="cmd_team">
+          <span class="cmd__icon">👥</span>
+          <span class="cmd__text">チーム編成</span>
+        </button>
+
+        <button class="cmd" data-cmd="recruit" id="cmd_recruit">
+          <span class="cmd__icon">🤝</span>
+          <span class="cmd__text">勧誘</span>
+        </button>
+
+        <button class="cmd" data-cmd="gacha" id="cmd_gacha">
+          <span class="cmd__icon">🎲</span>
+          <span class="cmd__text">ガチャ</span>
+        </button>
+
+        <button class="cmd" data-cmd="shop" id="cmd_shop">
+          <span class="cmd__icon">🛒</span>
+          <span class="cmd__text">ショップ</span>
+        </button>
+
+        <button class="cmd" data-cmd="heal" id="cmd_heal">
+          <span class="cmd__icon">🩹</span>
+          <span class="cmd__text">回復</span>
+        </button>
+
+        <div class="sidebar__divider"></div>
+
+        <button class="cmd cmd--primary" data-cmd="battle" id="cmd_battle">
+          <span class="cmd__icon">⚔️</span>
+          <span class="cmd__text">試合開始</span>
+        </button>
+
+        <button class="cmd" data-cmd="tournament" id="cmd_tournament">
+          <span class="cmd__icon">🏆</span>
+          <span class="cmd__text">大会</span>
+        </button>
+
+        <button class="cmd" data-cmd="schedule" id="cmd_schedule">
+          <span class="cmd__icon">🗓️</span>
+          <span class="cmd__text">スケジュール</span>
+        </button>
+
+        <button class="cmd" data-cmd="results" id="cmd_results">
+          <span class="cmd__icon">📊</span>
+          <span class="cmd__text">大会の結果</span>
+        </button>
+
+        <button class="cmd" data-cmd="save" id="cmd_save">
+          <span class="cmd__icon">💾</span>
+          <span class="cmd__text">セーブ</span>
+        </button>
+      </aside>
+
+      <!-- Center Main Panel -->
+      <section class="mainPanel">
+        <div class="mainPanel__header">
+          <div class="screenTitle" id="ui_screenTitle">メイン</div>
+          <div class="screenSub" id="ui_screenSub">コマンドを選んでください</div>
+        </div>
+
+        <!-- Main Image (Square) -->
+        <div class="mainVisualWrap">
+          <div class="mainVisual">
+            <canvas id="mainCanvas" width="512" height="512"></canvas>
+
+            <!-- Overlay UI for important scenes -->
+            <div class="overlayHud" id="overlayHud" aria-hidden="true">
+              <div class="overlayHud__tag" id="overlayTag">EVENT</div>
+              <div class="overlayHud__text" id="overlayText">---</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom: Logs / Controls -->
+        <div class="bottomArea">
+          <div class="logHeader">
+            <div class="logHeader__title">ログ</div>
+            <div class="logHeader__hint">試合中の出来事を表示</div>
+          </div>
+
+          <div class="logBox" id="logBox" role="log" aria-live="polite"></div>
+
+          <div class="bottomButtons">
+            <button class="btn" id="btn_back">戻る</button>
+            <button class="btn btn--accent" id="btn_action">決定</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Side: Info Panel -->
+      <aside class="infoPanel">
+        <div class="card">
+          <div class="card__title">チーム状況</div>
+          <div class="kv">
+            <div class="kv__row">
+              <div class="kv__k">現在地</div>
+              <div class="kv__v" id="ui_areaName">---</div>
+            </div>
+            <div class="kv__row">
+              <div class="kv__k">フェーズ</div>
+              <div class="kv__v" id="ui_phase">待機</div>
+            </div>
+            <div class="kv__row">
+              <div class="kv__k">残りチーム</div>
+              <div class="kv__v" id="ui_aliveTeams">20</div>
+            </div>
+            <div class="kv__row">
+              <div class="kv__k">順位</div>
+              <div class="kv__v" id="ui_rankNow">---</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">メンバー</div>
+
+          <div class="memberList" id="ui_members">
+            <!-- game.js で描画 -->
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">装備 / コーチ</div>
+          <div class="smallText">
+            コーチスキル：<span id="ui_coachSkills">未装備</span>
+          </div>
+        </div>
+
+        <div class="card card--thin">
+          <div class="smallText dim">
+            VERSION: <span id="ui_version">v0.1-proto</span>
+          </div>
+        </div>
+      </aside>
+    </main>
   </div>
 
-  <!-- デバッグ：Hキーで当たり判定を可視化 -->
-  <script>
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('hit-debug');
-    });
-  </script>
-
-  <script type="module" src="./game.js"></script>
+  <!-- game.js 1本だけ（ルール厳守） -->
+  <script src="./game.js"></script>
 </body>
 </html>
