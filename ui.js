@@ -1,403 +1,332 @@
-// ui.js (ES Modules)
-// Display-only module: logs, modal highlights, result tables.
-// - Does NOT run simulation. It only renders what game.js / sim_tournament.js produce.
-//
-// Usage (recommended):
-//   import * as UI from './ui.js';
-//   UI.init();                          // once
-//   UI.showScreen('main'|'map'|'result');
-//   UI.renderTournamentResult(result);  // after sim
-//
-// This module is resilient:
-// - If your index.html doesn't have containers, it auto-creates minimal containers.
-// - If you later create real UI containers, it will use them instead.
+/* =========================================================
+  ui.js (FULL)
+  - UI描画／右パネル／モーダル／ミニログ／オーバーレイ
+  - game.js から呼び出して使う想定（index.html は game.js 1本だけ）
+========================================================= */
 
-const SCREEN = Object.freeze({
-  MAIN: "main",
-  MAP: "map",
-  RESULT: "result",
-});
+(function () {
+  "use strict";
 
-// ---------------------------
-// DOM references (auto-created if missing)
-// ---------------------------
-const dom = {
-  root: null,
+  // -------------------------------------------------------
+  // DOM cache
+  // -------------------------------------------------------
+  const UI = {
+    el: null,
+    ctx: null,
+    W: 640,
+    H: 640,
 
-  // images
-  mainImage: null,
-  mapImage: null,
+    _miniLogLines: [],
+    _miniLogMax: 6,
 
-  // overlays/panels
-  hud: null,
-  logBox: null,
-  modal: null,
-  modalInner: null,
+    _activeCmd: null,
+    _assets: null, // assets.js で差し替え想定
+    _state: null,  // state.js で差し替え想定
+  };
 
-  // result area
-  resultWrap: null,
-  resultTitle: null,
-  matchTableWrap: null,
-  totalTableWrap: null,
-};
-
-let _inited = false;
-
-// ---------------------------
-// Public API
-// ---------------------------
-
-export function init(options = {}) {
-  if (_inited) return;
-  _inited = true;
-
-  dom.root = document.getElementById(options.rootId || "app") || document.body;
-
-  // find or create images
-  dom.mainImage = document.getElementById("mainImage") || createImage("mainImage");
-  dom.mapImage = document.getElementById("mapImage") || createImage("mapImage");
-
-  // ensure basic result containers
-  dom.hud = document.getElementById("hud") || createHud();
-  dom.logBox = document.getElementById("logBox") || createLogBox();
-  dom.modal = document.getElementById("modal") || createModal();
-
-  dom.resultWrap = document.getElementById("resultWrap") || createResultWrap();
-  dom.resultTitle = dom.resultWrap.querySelector("#resultTitle");
-  dom.matchTableWrap = dom.resultWrap.querySelector("#matchTableWrap");
-  dom.totalTableWrap = dom.resultWrap.querySelector("#totalTableWrap");
-
-  // modal click to close
-  dom.modal.addEventListener("click", () => hideModal());
-
-  // default hidden
-  hide(dom.hud);
-  hide(dom.logBox);
-  hide(dom.resultWrap);
-  hideModal();
-}
-
-export function showScreen(screen) {
-  ensureInit();
-
-  const s = screen || SCREEN.MAIN;
-
-  if (s === SCREEN.MAIN) {
-    show(dom.mainImage);
-    hide(dom.mapImage);
-    hide(dom.resultWrap);
-    hide(dom.hud);
-    hide(dom.logBox);
-    hideModal();
-    return;
+  function q(id) {
+    return document.getElementById(id);
   }
 
-  if (s === SCREEN.MAP) {
-    hide(dom.mainImage);
-    show(dom.mapImage);
-    hide(dom.resultWrap);
-    hide(dom.hud);
-    hide(dom.logBox);
-    hideModal();
-    return;
+  // -------------------------------------------------------
+  // Init
+  // -------------------------------------------------------
+  function init(opts = {}) {
+    UI.el = {
+      companyName: q("companyName"),
+      companyRank: q("companyRank"),
+      teamName: q("teamName"),
+      weekInfo: q("weekInfo"),
+
+      goldValue: q("goldValue"),
+      nextTournamentValue: q("nextTournamentValue"),
+      statusValue: q("statusValue"),
+      hintText: q("hintText"),
+      versionText: q("versionText"),
+
+      canvas: q("screen"),
+      overlayMessage: q("overlayMessage"),
+      miniLog: q("miniLog"),
+
+      panelTitle: q("panelTitle"),
+      panelBody: q("panelBody"),
+      panelFooter: q("panelFooter"),
+      panelClose: q("panelClose"),
+
+      modal: q("modal"),
+      modalTitle: q("modalTitle"),
+      modalBody: q("modalBody"),
+      modalOk: q("modalOk"),
+    };
+
+    if (!UI.el.canvas) throw new Error("canvas(#screen) not found");
+
+    UI.ctx = UI.el.canvas.getContext("2d");
+
+    UI.W = UI.el.canvas.width || 640;
+    UI.H = UI.el.canvas.height || 640;
+
+    bindBaseEvents();
+    setPanel("詳細", "<div>左のコマンドから選んでください。</div>", false);
+
+    if (opts && typeof opts.version === "string") {
+      setVersion(opts.version);
+    }
+
+    return UI;
   }
 
-  if (s === SCREEN.RESULT) {
-    hide(dom.mainImage);
-    hide(dom.mapImage);
-    show(dom.resultWrap);
-    show(dom.hud);
-    show(dom.logBox);
-    // modal is optional
-    return;
-  }
-}
+  function bindBaseEvents() {
+    // Right panel close
+    if (UI.el.panelClose) UI.el.panelClose.addEventListener("click", () => {
+      setPanel("詳細", "<div>左のコマンドから選んでください。</div>", false);
+    });
 
-export function clearLog() {
-  ensureInit();
-  dom.logBox.innerHTML = "";
-}
+    // Modal OK
+    if (UI.el.modalOk) UI.el.modalOk.addEventListener("click", closeModal);
 
-export function pushLog(text) {
-  ensureInit();
-  const line = document.createElement("div");
-  line.textContent = String(text ?? "");
-  line.style.padding = "2px 0";
-  dom.logBox.appendChild(line);
-
-  // keep last ~80 lines
-  const max = 80;
-  while (dom.logBox.childNodes.length > max) dom.logBox.removeChild(dom.logBox.firstChild);
-
-  dom.logBox.scrollTop = dom.logBox.scrollHeight;
-}
-
-export function showModal(title, bodyLines = []) {
-  ensureInit();
-  const t = escapeHtml(title || "重要シーン");
-  const body = (bodyLines || []).map(x => `<div style="padding:2px 0;">${escapeHtml(x)}</div>`).join("");
-
-  dom.modalInner.innerHTML = `
-    <div style="font-weight:800;margin-bottom:8px;">${t}</div>
-    <div style="opacity:.95;">${body || "<div>（なし）</div>"}</div>
-    <div style="margin-top:10px;opacity:.75;font-size:12px;">（クリックで閉じる）</div>
-  `;
-  dom.modal.style.display = "flex";
-}
-
-export function hideModal() {
-  ensureInit();
-  dom.modal.style.display = "none";
-  dom.modalInner.innerHTML = "";
-}
-
-export function setHud(lines = []) {
-  ensureInit();
-  dom.hud.innerHTML = (lines || []).map(x => `<div>${escapeHtml(x)}</div>`).join("");
-}
-
-export function renderTournamentResult(result) {
-  ensureInit();
-  showScreen(SCREEN.RESULT);
-
-  // Title
-  const league = result?.league || "UNKNOWN";
-  const championId = result?.championTeamId || "";
-  const championName = resolveTeamName(result, championId) || championId || "?";
-
-  dom.resultTitle.textContent = `【${league}】優勝：${championName}`;
-
-  // Latest match (from last stage last match)
-  const lastStage = result?.stages?.[result.stages.length - 1];
-  const lastMatch = lastStage?.matches?.[lastStage.matches.length - 1];
-
-  const matchRows = (lastMatch?.rows || []).map(r => ({
-    rank: r.rank,
-    name: r.name,
-    kills: r.kills,
-    pts: r.pts,
-    placePts: r.placePts ?? null,
-  }));
-
-  // Total standings (final)
-  const totalRows = (result?.finalStandings || []).map(r => ({
-    rank: r.rank,
-    name: r.team?.name || r.name || r.teamId,
-    kills: r.kills,
-    pts: r.pts,
-  }));
-
-  // Render tables
-  dom.matchTableWrap.innerHTML = renderTable(matchRows, { mode: "match" });
-  dom.totalTableWrap.innerHTML = renderTable(totalRows, { mode: "total" });
-
-  // HUD
-  const stageName = lastStage?.stage || "";
-  const matchIndex = lastMatch ? (lastMatch.index || lastStage?.matches?.length || 1) : 1;
-  const matchTotal = lastStage?.matches?.length || 5;
-
-  setHud([
-    `リーグ: ${league}`,
-    `ステージ: ${stageName}`,
-    `試合: ${matchIndex}/${matchTotal}`,
-    `優勝: ${championName}`,
-  ]);
-
-  // Logs
-  clearLog();
-  const highlights = lastMatch?.highlights || [];
-  if (highlights.length) {
-    pushLog("=== 重要シーン ===");
-    for (const h of highlights) pushLog(h);
-  }
-  pushLog("=== 進行ログ ===");
-  pushLog(`ステージ: ${stageName} / 最終試合: ${matchIndex}/${matchTotal}`);
-  pushLog(`総合チーム数: ${totalRows.length}`);
-
-  // modal (optional): show top 3 highlights
-  if (highlights.length) {
-    showModal("重要シーン", highlights.slice(0, 6));
-  } else {
-    hideModal();
-  }
-}
-
-// ---------------------------
-// DOM creation helpers
-// ---------------------------
-
-function ensureInit() {
-  if (!_inited) init();
-}
-
-function createImage(id) {
-  const img = document.createElement("img");
-  img.id = id;
-  img.alt = id;
-  img.style.display = "none";
-  img.style.maxWidth = "100%";
-  img.style.height = "auto";
-  img.style.margin = "0 auto";
-  img.style.userSelect = "none";
-  img.draggable = false;
-  dom.root.appendChild(img);
-  return img;
-}
-
-function createHud() {
-  const hud = document.createElement("div");
-  hud.id = "hud";
-  hud.style.position = "fixed";
-  hud.style.left = "12px";
-  hud.style.top = "12px";
-  hud.style.zIndex = "9999";
-  hud.style.background = "rgba(0,0,0,0.55)";
-  hud.style.color = "#fff";
-  hud.style.padding = "10px 12px";
-  hud.style.borderRadius = "10px";
-  hud.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-  hud.style.fontSize = "13px";
-  hud.style.pointerEvents = "none";
-  dom.root.appendChild(hud);
-  return hud;
-}
-
-function createLogBox() {
-  const box = document.createElement("div");
-  box.id = "logBox";
-  box.style.position = "fixed";
-  box.style.left = "12px";
-  box.style.bottom = "12px";
-  box.style.zIndex = "9999";
-  box.style.width = "min(560px, calc(100vw - 24px))";
-  box.style.maxHeight = "34vh";
-  box.style.overflow = "auto";
-  box.style.background = "rgba(0,0,0,0.55)";
-  box.style.color = "#fff";
-  box.style.padding = "10px 12px";
-  box.style.borderRadius = "10px";
-  box.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-  box.style.fontSize = "12px";
-  box.style.lineHeight = "1.35";
-  box.style.pointerEvents = "auto";
-  dom.root.appendChild(box);
-  return box;
-}
-
-function createModal() {
-  const modal = document.createElement("div");
-  modal.id = "modal";
-  modal.style.position = "fixed";
-  modal.style.left = "0";
-  modal.style.top = "0";
-  modal.style.width = "100%";
-  modal.style.height = "100%";
-  modal.style.display = "none";
-  modal.style.alignItems = "center";
-  modal.style.justifyContent = "center";
-  modal.style.background = "rgba(0,0,0,0.6)";
-  modal.style.zIndex = "10000";
-  modal.style.pointerEvents = "auto";
-
-  const inner = document.createElement("div");
-  inner.id = "modalInner";
-  inner.style.maxWidth = "min(680px, calc(100vw - 40px))";
-  inner.style.maxHeight = "min(70vh, calc(100vh - 40px))";
-  inner.style.overflow = "auto";
-  inner.style.background = "rgba(20,20,20,0.92)";
-  inner.style.color = "#fff";
-  inner.style.padding = "14px 16px";
-  inner.style.borderRadius = "12px";
-  inner.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-  inner.style.fontSize = "14px";
-  inner.style.pointerEvents = "none"; // click closes anywhere
-  modal.appendChild(inner);
-
-  dom.modalInner = inner;
-  dom.root.appendChild(modal);
-  return modal;
-}
-
-function createResultWrap() {
-  const wrap = document.createElement("div");
-  wrap.id = "resultWrap";
-  wrap.style.position = "relative";
-  wrap.style.margin = "0 auto";
-  wrap.style.padding = "12px";
-  wrap.style.maxWidth = "980px";
-  wrap.style.color = "#111";
-  wrap.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-
-  wrap.innerHTML = `
-    <div id="resultTitle" style="font-weight:900;font-size:18px;margin:8px 0 12px;"></div>
-
-    <div style="font-weight:800;margin:10px 0 6px;">最新試合リザルト</div>
-    <div id="matchTableWrap"></div>
-
-    <div style="font-weight:800;margin:16px 0 6px;">総合順位</div>
-    <div id="totalTableWrap"></div>
-
-    <div style="margin-top:12px;opacity:.7;font-size:12px;">
-      ※ この表示は ui.js の仮実装です。あなたの完成UI（画像ベース）に合わせて最終的に差し替えます。
-    </div>
-  `;
-  dom.root.appendChild(wrap);
-  return wrap;
-}
-
-// ---------------------------
-// Table rendering
-// ---------------------------
-
-function renderTable(rows, opt = {}) {
-  if (!rows || rows.length === 0) {
-    return `<div style="opacity:.8;">（データなし）</div>`;
+    // Left menu buttons
+    const cmdBtns = Array.from(document.querySelectorAll(".cmd"));
+    cmdBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        cmdBtns.forEach((x) => x.classList.remove("is-active"));
+        b.classList.add("is-active");
+        UI._activeCmd = b.dataset.cmd || null;
+        // game.js 側で onCommand を受け取る想定
+        if (typeof UI.onCommand === "function") UI.onCommand(UI._activeCmd);
+      });
+    });
+    // default active
+    if (cmdBtns[0]) cmdBtns[0].classList.add("is-active");
+    UI._activeCmd = cmdBtns[0] ? (cmdBtns[0].dataset.cmd || null) : null;
   }
 
-  const header = ["#", "チーム", "K", "Pts"];
+  // -------------------------------------------------------
+  // State / Assets wiring (optional)
+  // -------------------------------------------------------
+  function setStateRef(stateObj) {
+    UI._state = stateObj || null;
+  }
 
-  const body = rows.map(r => {
-    return `<tr>
-      <td style="padding:6px 8px;text-align:right;opacity:.85;">${escapeHtml(String(r.rank ?? ""))}</td>
-      <td style="padding:6px 8px;">${escapeHtml(String(r.name ?? ""))}</td>
-      <td style="padding:6px 8px;text-align:right;">${escapeHtml(String(r.kills ?? 0))}</td>
-      <td style="padding:6px 8px;text-align:right;">${escapeHtml(String(r.pts ?? 0))}</td>
-    </tr>`;
-  }).join("");
+  function setAssetsRef(assetsObj) {
+    UI._assets = assetsObj || null;
+  }
 
-  return `
-  <div style="overflow:auto;max-height:52vh;border:1px solid rgba(0,0,0,.15);border-radius:12px;background:#fff;">
-    <table style="border-collapse:collapse;width:100%;min-width:560px;">
-      <thead>
-        <tr>
-          ${header.map(h => `<th style="position:sticky;top:0;background:#f4f4f4;padding:8px;text-align:left;border-bottom:1px solid rgba(0,0,0,.12);">${escapeHtml(h)}</th>`).join("")}
-        </tr>
-      </thead>
-      <tbody>${body}</tbody>
-    </table>
-  </div>`;
-}
+  // -------------------------------------------------------
+  // Header / Bottom
+  // -------------------------------------------------------
+  function setHeader({ companyName, companyRank, teamName, weekText } = {}) {
+    if (UI.el.companyName && companyName != null) UI.el.companyName.textContent = `企業名：${companyName}`;
+    if (UI.el.companyRank && companyRank != null) UI.el.companyRank.textContent = `企業ランク：${companyRank}`;
+    if (UI.el.teamName && teamName != null) UI.el.teamName.textContent = `チーム名：${teamName}`;
+    if (UI.el.weekInfo && weekText != null) UI.el.weekInfo.textContent = weekText;
+  }
 
-// ---------------------------
-// Utilities
-// ---------------------------
+  function setBottom({ gold, nextTournament, statusText, hint, version } = {}) {
+    if (UI.el.goldValue && gold != null) UI.el.goldValue.textContent = String(gold);
+    if (UI.el.nextTournamentValue && nextTournament != null) UI.el.nextTournamentValue.textContent = String(nextTournament);
+    if (UI.el.statusValue && statusText != null) UI.el.statusValue.textContent = String(statusText);
+    if (UI.el.hintText && hint != null) UI.el.hintText.textContent = String(hint);
+    if (version != null) setVersion(version);
+  }
 
-function show(el) { el.style.display = ""; }
-function hide(el) { el.style.display = "none"; }
+  function setVersion(ver) {
+    if (UI.el.versionText) UI.el.versionText.textContent = ver;
+  }
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  // -------------------------------------------------------
+  // Panel / Modal
+  // -------------------------------------------------------
+  function setPanel(title, html, closable = true) {
+    if (UI.el.panelTitle) UI.el.panelTitle.textContent = title || "詳細";
+    if (UI.el.panelBody) UI.el.panelBody.innerHTML = html || "";
+    if (UI.el.panelFooter) {
+      if (closable) UI.el.panelFooter.classList.remove("hidden");
+      else UI.el.panelFooter.classList.add("hidden");
+    }
+  }
 
-function resolveTeamName(result, teamId) {
-  if (!teamId) return "";
-  const a = result?.finalStandings?.find(x => x.teamId === teamId || x.team?.id === teamId);
-  if (a?.team?.name) return a.team.name;
-  if (a?.name) return a.name;
-  return "";
-}
+  function openModal(title, html) {
+    if (UI.el.modalTitle) UI.el.modalTitle.textContent = title || "INFO";
+    if (UI.el.modalBody) UI.el.modalBody.innerHTML = html || "";
+    if (UI.el.modal) UI.el.modal.classList.remove("hidden");
+  }
+
+  function closeModal() {
+    if (UI.el.modal) UI.el.modal.classList.add("hidden");
+  }
+
+  // -------------------------------------------------------
+  // Overlay Message
+  // -------------------------------------------------------
+  function showOverlay(msg, ms = 800) {
+    if (!UI.el.overlayMessage) return;
+    UI.el.overlayMessage.textContent = msg || "";
+    UI.el.overlayMessage.classList.remove("hidden");
+    if (ms > 0) {
+      setTimeout(() => {
+        if (UI.el.overlayMessage) UI.el.overlayMessage.classList.add("hidden");
+      }, ms);
+    }
+  }
+
+  function hideOverlay() {
+    if (!UI.el.overlayMessage) return;
+    UI.el.overlayMessage.classList.add("hidden");
+  }
+
+  // -------------------------------------------------------
+  // Mini Log
+  // -------------------------------------------------------
+  function pushMiniLog(text) {
+    UI._miniLogLines.push({ t: Date.now(), text: String(text || "") });
+    if (UI._miniLogLines.length > UI._miniLogMax) UI._miniLogLines.shift();
+    renderMiniLog();
+  }
+
+  function clearMiniLog() {
+    UI._miniLogLines.length = 0;
+    renderMiniLog();
+  }
+
+  function renderMiniLog() {
+    if (!UI.el.miniLog) return;
+    UI.el.miniLog.innerHTML = "";
+    for (const l of UI._miniLogLines) {
+      const div = document.createElement("div");
+      div.className = "line";
+      div.textContent = l.text;
+      UI.el.miniLog.appendChild(div);
+    }
+  }
+
+  // -------------------------------------------------------
+  // Canvas Drawing
+  // - assets.js が未実装でも見た目が成立する「プレースホルダ」を提供
+  // -------------------------------------------------------
+  function drawPlaceholder(title, sub) {
+    const ctx = UI.ctx;
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, UI.W, UI.H);
+
+    // background
+    ctx.fillStyle = "#0b0f18";
+    ctx.fillRect(0, 0, UI.W, UI.H);
+
+    // frame
+    ctx.strokeStyle = "rgba(255,255,255,.14)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(18, 18, UI.W - 36, UI.H - 36);
+
+    // big title
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.font = "bold 28px sans-serif";
+    ctx.fillText(String(title || "SCREEN"), 42, 92);
+
+    // sub
+    ctx.fillStyle = "rgba(255,255,255,.68)";
+    ctx.font = "16px sans-serif";
+    ctx.fillText(String(sub || ""), 42, 124);
+
+    // hint
+    ctx.fillStyle = "rgba(57,217,138,.85)";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText("※画像が無い場合はプレースホルダ表示", 42, UI.H - 42);
+  }
+
+  function drawImage(img, titleIfMissing) {
+    const ctx = UI.ctx;
+    if (!ctx) return;
+
+    if (!img) {
+      drawPlaceholder(titleIfMissing || "NO IMAGE", "assets未配置 / 未ロード");
+      return;
+    }
+    ctx.clearRect(0, 0, UI.W, UI.H);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, UI.W, UI.H);
+  }
+
+  // 画面キーで描画（assets.js があれば画像、なければプレースホルダ）
+  function drawScreen(key) {
+    const k = String(key || "").toLowerCase();
+    // assets.js 側の想定: assets.images[keyUpper] など
+    const A = UI._assets;
+
+    // 期待キー
+    const titleMap = {
+      main: "MAIN",
+      ido: "移動フェーズ",
+      map: "MAP",
+      shop: "SHOP",
+      heal: "回復フェーズ",
+      battle: "BATTLE",
+      winner: "WINNER",
+      p1: "PLAYER TEAM",
+    };
+
+    const title = titleMap[k] || "SCREEN";
+    const img = A && A.getImage ? A.getImage(k) : null;
+
+    if (img) drawImage(img, title);
+    else drawPlaceholder(title, "（画像が無い/未ロード）");
+  }
+
+  // -------------------------------------------------------
+  // UI builders (small helpers)
+  // -------------------------------------------------------
+  function chip(text, kind) {
+    const cls = kind ? `chip ${kind}` : "chip";
+    return `<span class="${cls}">${escapeHtml(String(text || ""))}</span>`;
+  }
+
+  function table(rows /* array of [k,v] */) {
+    const html = (rows || []).map(([k, v]) =>
+      `<tr><td><b>${escapeHtml(String(k))}</b></td><td>${escapeHtml(String(v))}</td></tr>`
+    ).join("");
+    return `<table>${html}</table>`;
+  }
+
+  function escapeHtml(s) {
+    return s
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  // -------------------------------------------------------
+  // Public API (window.MOB_UI)
+  // -------------------------------------------------------
+  window.MOB_UI = {
+    init,
+    setStateRef,
+    setAssetsRef,
+
+    setHeader,
+    setBottom,
+    setVersion,
+
+    setPanel,
+    openModal,
+    closeModal,
+
+    showOverlay,
+    hideOverlay,
+
+    pushMiniLog,
+    clearMiniLog,
+
+    drawPlaceholder,
+    drawImage,
+    drawScreen,
+
+    chip,
+    table,
+
+    // game.js が登録するコールバック
+    onCommand: null,
+  };
+})();
