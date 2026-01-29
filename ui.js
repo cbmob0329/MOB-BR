@@ -1,281 +1,233 @@
-/* =========================================================
-   ui.js (FULL)
-   UI layer / helpers
-   - game.js から window.UI を呼ぶ前提
-   - index.html 側の要素が不足していても “落ちない” ように保険
-   - ログ/モーダル/フェーズ表示/HUD更新を担当
-   ========================================================= */
-
+/* ui.js (FULL) MOB BR
+   UI helper library (non-breaking)
+   - Toast / Center message
+   - Overlay modal
+   - Double-tap handler
+   - Basic DOM helpers
+   This file is optional; game.js can run alone.
+*/
 (() => {
   'use strict';
 
-  const UI = {};
+  // Namespace (safe)
+  const NS = (window.MOBBR_UI = window.MOBBR_UI || {});
 
-  // ----------------------------
-  // DOM refs (optional)
-  // ----------------------------
-  const $ = (id) => document.getElementById(id);
-
-  const dom = {
-    root: null,
-    log: null,
-    hudCompany: null,
-    hudRank: null,
-    hudTeam: null,
-
-    // modal
-    modalWrap: null,
-    modalBox: null,
-    modalTitle: null,
-    modalBody: null,
-    modalClose: null,
-
-    // phase badge (optional)
-    phaseBadge: null,
+  // -------------------------
+  // DOM helpers
+  // -------------------------
+  NS.el = function el(tag, props = {}, children = []) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === 'class') e.className = v;
+      else if (k === 'style') Object.assign(e.style, v);
+      else if (k === 'text') e.textContent = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v);
+    }
+    for (const c of children || []) {
+      if (c == null) continue;
+      if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+      else e.appendChild(c);
+    }
+    return e;
   };
 
-  // ----------------------------
-  // Safe element create
-  // ----------------------------
-  function ensureRoot() {
-    dom.root = dom.root || $('ui') || document.body;
-  }
+  NS.$ = function $(sel, root) {
+    return (root || document).querySelector(sel);
+  };
 
-  function createEl(tag, attrs = {}, parent = null) {
-    const el = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'style' && typeof v === 'object') {
-        Object.assign(el.style, v);
-      } else if (k === 'className') {
-        el.className = v;
-      } else if (k === 'text') {
-        el.textContent = v;
-      } else {
-        el.setAttribute(k, v);
-      }
-    }
-    if (parent) parent.appendChild(el);
-    return el;
-  }
+  NS.$$ = function $$(sel, root) {
+    return Array.from((root || document).querySelectorAll(sel));
+  };
 
-  function ensureLog() {
-    dom.log = dom.log || $('logText');
-  }
+  NS.byId = function byId(id) {
+    return document.getElementById(id);
+  };
 
-  function ensureHUD() {
-    dom.hudCompany = dom.hudCompany || $('hud_company');
-    dom.hudRank = dom.hudRank || $('hud_rank');
-    dom.hudTeam = dom.hudTeam || $('hud_team');
-  }
+  // -------------------------
+  // Double-tap (single/double click)
+  // -------------------------
+  NS.attachDoubleTap = function attachDoubleTap(node, onDoubleTap, onSingleTap, opts = {}) {
+    if (!node) return;
+    const threshold = Number.isFinite(opts.threshold) ? opts.threshold : 320;
+    const singleDelay = Number.isFinite(opts.singleDelay) ? opts.singleDelay : 260;
 
-  // ----------------------------
-  // Modal
-  // ----------------------------
-  function ensureModal() {
-    if (dom.modalWrap) return;
+    let lastTap = 0;
+    let singleTimer = null;
 
-    ensureRoot();
+    node.addEventListener(
+      'click',
+      (ev) => {
+        const now = Date.now();
+        const dt = now - lastTap;
+        lastTap = now;
 
-    dom.modalWrap = createEl('div', {
-      id: 'ui_modal_wrap',
-      style: {
-        position: 'absolute',
-        left: '0',
-        top: '0',
-        width: '100%',
-        height: '100%',
+        if (dt < threshold) {
+          if (singleTimer) {
+            clearTimeout(singleTimer);
+            singleTimer = null;
+          }
+          if (typeof onDoubleTap === 'function') onDoubleTap(ev);
+        } else {
+          if (singleTimer) clearTimeout(singleTimer);
+          singleTimer = setTimeout(() => {
+            singleTimer = null;
+            if (typeof onSingleTap === 'function') onSingleTap(ev);
+          }, singleDelay);
+        }
+      },
+      { passive: true }
+    );
+  };
+
+  // -------------------------
+  // Toast / Center message
+  // (Requires #incomeToast, #centerMsg in DOM; if missing, noop)
+  // -------------------------
+  NS.showIncomeToast = function showIncomeToast(text, ms = 1200) {
+    const t = document.getElementById('incomeToast');
+    if (!t) return;
+    t.textContent = String(text ?? '');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), ms);
+  };
+
+  NS.showCenterMsg = function showCenterMsg(text, ms = 1200) {
+    const box = document.getElementById('centerMsg');
+    if (!box) return;
+    const msg = box.querySelector('.msg');
+    if (msg) msg.textContent = String(text ?? '');
+    box.classList.add('show');
+    if (ms > 0) setTimeout(() => box.classList.remove('show'), ms);
+  };
+
+  // -------------------------
+  // Overlay modal
+  // (Requires #overlay in DOM; if missing, creates a minimal one)
+  // -------------------------
+  function ensureOverlay() {
+    let ov = document.getElementById('overlay');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'overlay';
+      // minimal style fallback (style.cssが整うまでの保険)
+      Object.assign(ov.style, {
+        position: 'fixed',
+        inset: '0',
+        background: 'rgba(0,0,0,.55)',
         display: 'none',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(0,0,0,0.55)',
         zIndex: '9999',
-      }
-    }, dom.root);
-
-    dom.modalBox = createEl('div', {
-      id: 'ui_modal_box',
-      style: {
-        width: 'min(520px, 92%)',
-        maxHeight: '78%',
-        background: 'rgba(20,20,20,0.95)',
-        border: '2px solid rgba(255,255,255,0.18)',
-        borderRadius: '14px',
-        boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
-        padding: '14px 14px 12px',
-        overflow: 'hidden',
-      }
-    }, dom.modalWrap);
-
-    dom.modalTitle = createEl('div', {
-      id: 'ui_modal_title',
-      style: {
-        fontFamily: 'system-ui, sans-serif',
-        fontWeight: '800',
-        fontSize: '16px',
-        color: 'rgba(255,255,255,0.92)',
-        marginBottom: '10px',
-      },
-      text: 'TITLE'
-    }, dom.modalBox);
-
-    dom.modalBody = createEl('div', {
-      id: 'ui_modal_body',
-      style: {
-        fontFamily: 'system-ui, sans-serif',
-        fontWeight: '700',
-        fontSize: '13px',
-        lineHeight: '1.6',
-        color: 'rgba(255,255,255,0.80)',
-        whiteSpace: 'pre-wrap',
-        overflowY: 'auto',
-        maxHeight: '52vh',
-        paddingRight: '4px',
-      },
-      text: 'BODY'
-    }, dom.modalBox);
-
-    const row = createEl('div', {
-      style: {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: '10px',
-        marginTop: '12px',
-      }
-    }, dom.modalBox);
-
-    dom.modalClose = createEl('button', {
-      id: 'ui_modal_close',
-      style: {
-        appearance: 'none',
-        border: '1px solid rgba(255,255,255,0.22)',
-        background: 'rgba(255,255,255,0.10)',
-        color: 'rgba(255,255,255,0.92)',
-        fontFamily: 'system-ui, sans-serif',
-        fontWeight: '800',
-        padding: '8px 14px',
-        borderRadius: '10px',
-        cursor: 'pointer',
-      },
-      text: '閉じる'
-    }, row);
-
-    dom.modalClose.addEventListener('click', () => UI.closeModal());
-    dom.modalWrap.addEventListener('click', (e) => {
-      if (e.target === dom.modalWrap) UI.closeModal();
-    });
-
-    // ESC close
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') UI.closeModal();
-    });
+        padding: '14px',
+      });
+      document.body.appendChild(ov);
+    }
+    return ov;
   }
 
-  UI.openModal = function(title, body) {
-    ensureModal();
-    dom.modalTitle.textContent = title || '';
-    dom.modalBody.textContent = body || '';
-    dom.modalWrap.style.display = 'flex';
+  NS.openOverlay = function openOverlay(title, htmlOrNode) {
+    const ov = ensureOverlay();
+    ov.innerHTML = '';
+    ov.classList.add('show');
+    ov.style.display = 'flex';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    Object.assign(modal.style, {
+      width: 'min(520px, 96vw)',
+      maxHeight: '82vh',
+      overflow: 'auto',
+      background: 'rgba(20,20,20,.92)',
+      border: '1px solid rgba(255,255,255,.16)',
+      borderRadius: '16px',
+      padding: '14px',
+      color: '#fff',
+      boxShadow: '0 10px 30px rgba(0,0,0,.4)',
+    });
+
+    const h2 = document.createElement('h2');
+    h2.textContent = String(title ?? '');
+    Object.assign(h2.style, { margin: '0 0 10px', fontSize: '18px', fontWeight: '900' });
+
+    const hint = document.createElement('div');
+    hint.className = 'closeHint';
+    hint.textContent = '画面外タップで閉じます';
+    Object.assign(hint.style, { opacity: '.7', fontSize: '12px', marginBottom: '10px' });
+
+    const content = document.createElement('div');
+    content.className = 'section';
+
+    if (typeof htmlOrNode === 'string') {
+      content.innerHTML = htmlOrNode;
+    } else if (htmlOrNode instanceof Node) {
+      content.appendChild(htmlOrNode);
+    } else {
+      content.textContent = '';
+    }
+
+    modal.appendChild(h2);
+    modal.appendChild(hint);
+    modal.appendChild(content);
+    ov.appendChild(modal);
+
+    // close on background tap
+    const onClick = (ev) => {
+      if (ev.target === ov) NS.closeOverlay();
+    };
+    ov.addEventListener('click', onClick, { once: true });
   };
 
-  UI.closeModal = function() {
-    if (!dom.modalWrap) return;
-    dom.modalWrap.style.display = 'none';
+  NS.closeOverlay = function closeOverlay() {
+    const ov = document.getElementById('overlay');
+    if (!ov) return;
+    ov.classList.remove('show');
+    ov.style.display = 'none';
+    ov.innerHTML = '';
   };
 
-  // ----------------------------
-  // Phase badge (optional overlay)
-  // ----------------------------
-  function ensurePhaseBadge() {
-    if (dom.phaseBadge) return;
+  // -------------------------
+  // Image with fallback placeholder
+  // -------------------------
+  NS.imgWithFallback = function imgWithFallback(src, altText, fallbackText, styleObj) {
+    const im = new Image();
+    im.src = src;
+    im.alt = altText || '';
+    im.loading = 'eager';
+    im.decoding = 'async';
+    if (styleObj && typeof styleObj === 'object') Object.assign(im.style, styleObj);
 
-    ensureRoot();
-
-    // uiRootがposition:relativeでない場合もあるので、absoluteで置けるようにする
-    // rootがbodyの場合は fixed にして視認性を確保
-    const isBody = dom.root === document.body;
-
-    dom.phaseBadge = createEl('div', {
-      id: 'ui_phase_badge',
-      style: {
-        position: isBody ? 'fixed' : 'absolute',
-        right: '10px',
-        top: '10px',
-        padding: '6px 10px',
-        borderRadius: '10px',
-        background: 'rgba(0,0,0,0.45)',
-        border: '1px solid rgba(255,255,255,0.18)',
-        color: 'rgba(255,255,255,0.85)',
-        fontFamily: 'system-ui, sans-serif',
+    im.onerror = () => {
+      const ph = document.createElement('div');
+      Object.assign(ph.style, {
+        width: (im.style.width || '100%'),
+        height: (im.style.height || '100%'),
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,.35)',
+        border: '1px solid rgba(255,255,255,.18)',
+        color: 'rgba(255,255,255,.92)',
         fontWeight: '900',
         fontSize: '12px',
-        zIndex: '9998',
-        userSelect: 'none',
-        pointerEvents: 'none',
-      },
-      text: 'PHASE'
-    }, dom.root);
-  }
-
-  // ----------------------------
-  // HUD + Log
-  // ----------------------------
-  UI.setHUD = function({ company, rank, team }) {
-    ensureHUD();
-    if (dom.hudCompany && company != null) dom.hudCompany.textContent = String(company);
-    if (dom.hudRank && rank != null) dom.hudRank.textContent = String(rank);
-    if (dom.hudTeam && team != null) dom.hudTeam.textContent = String(team);
-  };
-
-  UI.setLog = function(text) {
-    ensureLog();
-    if (dom.log) dom.log.textContent = String(text ?? '');
-  };
-
-  // ----------------------------
-  // Phase change hook
-  // ----------------------------
-  UI.onPhaseChange = function(phase, game) {
-    ensurePhaseBadge();
-    dom.phaseBadge.textContent = `PHASE: ${phase}`;
-
-    // 必要ならフェーズごとにボタン文言等も変える（index.htmlの構造に依存するので保険のみ）
-    // 例：Skipをフェーズによって無効化、などは game.js で制御する想定
-    // ここではログの補助表示のみ。
-    if (game && typeof game === 'object') {
-      // phaseごとの軽い案内を差し込む（邪魔しない）
-      // ※ログ本文の上書きはしない。末尾に補助を付けたい場合は game.js が行う。
-    }
-  };
-
-  // ----------------------------
-  // Init
-  // ----------------------------
-  UI.init = function(game) {
-    ensureRoot();
-    ensureHUD();
-    ensureLog();
-    ensureModal();
-    ensurePhaseBadge();
-
-    // 初期HUD補完
-    if (game) {
-      UI.setHUD({
-        company: game.companyName ?? 'MOB COMPANY',
-        rank: game.companyRank != null ? `RANK ${game.companyRank}` : 'RANK ?',
-        team: game.teamName ?? 'PLAYER TEAM',
+        letterSpacing: '.3px',
+        textShadow: '0 2px 6px rgba(0,0,0,.55)',
+        padding: '6px',
+        textAlign: 'center',
       });
-    }
+      ph.textContent = fallbackText || src || 'missing';
+      im.replaceWith(ph);
+    };
 
-    // rootがbody以外で position が未指定なら relative にして absolute配置を安全化
-    if (dom.root && dom.root !== document.body) {
-      const cs = getComputedStyle(dom.root);
-      if (cs.position === 'static') dom.root.style.position = 'relative';
-    }
-
-    // 初期はモーダル閉
-    UI.closeModal();
+    return im;
   };
 
-  // expose
-  window.UI = UI;
+  // -------------------------
+  // Hook points (future)
+  // -------------------------
+  NS.hooks = NS.hooks || {};
+  // Example:
+  // NS.hooks.onWeekAdvanced = (newYear, newWeek) => {};
+  // NS.hooks.onGoldChanged  = (gold) => {};
+
 })();
