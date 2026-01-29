@@ -1,93 +1,100 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>MOB Battle Royale Sim (DEMO)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f18" />
+  <title>MOB APEX SIM</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <div id="app">
-    <header class="topbar">
-      <div class="top-left">
-        <div class="brand">MOB COMPANY</div>
-        <div class="subinfo">
-          <span id="corpRank">企業ランク: -</span>
-          <span id="teamName">チーム名: -</span>
-        </div>
-      </div>
 
+    <!-- Header -->
+    <header id="topbar">
+      <div class="top-left">
+        <div id="companyName" class="top-company">企業名：---</div>
+        <div id="companyRank" class="top-rank">企業ランク：---</div>
+      </div>
       <div class="top-right">
-        <div class="weekline">
-          <span id="yearWeek">1989年 1週</span>
-        </div>
-        <div class="money">
-          <span id="gold">0G</span>
-        </div>
+        <div id="teamName" class="top-team">チーム名：---</div>
+        <div id="weekInfo" class="top-week">YEAR --- / WEEK ---</div>
       </div>
     </header>
 
-    <main class="layout">
-      <aside class="menu">
-        <button class="btn" data-action="TEAM">チーム編成</button>
-        <button class="btn" data-action="OFFER">勧誘</button>
-        <button class="btn" data-action="GACHA">ガチャ</button>
-        <button class="btn" data-action="ENTRY">大会エントリー</button>
-        <button class="btn" data-action="IN_TOUR">参加中の大会</button>
-        <button class="btn" data-action="SAVE">セーブ</button>
-        <button class="btn" data-action="STATS">戦績</button>
-        <button class="btn" data-action="TOUR_RESULT">大会結果</button>
-        <button class="btn" data-action="SCHEDULE">スケジュール</button>
+    <!-- Main Layout -->
+    <main id="layout">
 
-        <div class="divider"></div>
-
-        <button class="btn small" data-action="TRAIN_AIM">射撃</button>
-        <button class="btn small" data-action="TRAIN_DASH">ダッシュ</button>
-        <button class="btn small" data-action="TRAIN_PUZZLE">パズル</button>
-        <button class="btn small" data-action="TRAIN_REAL">実戦</button>
-        <button class="btn small" data-action="TRAIN_FALL">滝</button>
-        <button class="btn small" data-action="TRAIN_RESEARCH">研究</button>
-        <button class="btn small" data-action="TRAIN_ALL">総合</button>
-
-        <div class="divider"></div>
-
-        <button class="btn small" data-action="COLLECTION">コレクション</button>
-        <button class="btn small" data-action="SHOP">ショップ</button>
-        <button class="btn small" data-action="EXPEDITION">遠征</button>
-        <button class="btn small" data-action="NEWS">最近の出来事</button>
+      <!-- Left Commands -->
+      <aside id="leftMenu">
+        <button class="cmd" data-cmd="team">チーム編成</button>
+        <button class="cmd" data-cmd="offer">勧誘</button>
+        <button class="cmd" data-cmd="gacha">ガチャ</button>
+        <button class="cmd" data-cmd="tournament">参戦中の大会</button>
+        <button class="cmd" data-cmd="results">大会の結果</button>
+        <button class="cmd" data-cmd="schedule">スケジュール</button>
+        <button class="cmd" data-cmd="train">修行</button>
+        <button class="cmd" data-cmd="shop">ショップ</button>
+        <button class="cmd" data-cmd="save">セーブ</button>
       </aside>
 
-      <section class="content">
-        <div class="mainPanel">
-          <div class="mainImageWrap">
-            <canvas id="mainCanvas" width="512" height="512"></canvas>
+      <!-- Center Stage -->
+      <section id="mainPanel">
+
+        <!-- Main Square Visual -->
+        <div id="mainView" class="squareView">
+          <canvas id="screen" width="640" height="640"></canvas>
+
+          <!-- overlay for messages -->
+          <div id="overlayMessage" class="overlayMessage hidden"></div>
+
+          <!-- bottom small log -->
+          <div id="miniLog" class="miniLog"></div>
+        </div>
+
+        <!-- Main bottom info -->
+        <div id="bottomInfo">
+          <div class="infoRow">
+            <div class="infoBox" id="goldBox">所持G：<span id="goldValue">0</span></div>
+            <div class="infoBox" id="nextTournamentBox">次の大会：<span id="nextTournamentValue">---</span></div>
+            <div class="infoBox" id="statusBox">状態：<span id="statusValue">---</span></div>
           </div>
 
-          <div class="rightPanel">
-            <div class="panelTitle">ログ</div>
-            <div id="log" class="log"></div>
+          <div class="infoRow">
+            <div class="infoHint" id="hintText">左のコマンドから選んでください。</div>
+            <div class="infoVersion" id="versionText">v0.0</div>
           </div>
         </div>
+
       </section>
+
+      <!-- Right Panel (detail / lists) -->
+      <aside id="rightPanel">
+        <div class="panelTitle" id="panelTitle">詳細</div>
+        <div id="panelBody" class="panelBody"></div>
+
+        <div id="panelFooter" class="panelFooter hidden">
+          <button id="panelClose" class="subBtn">閉じる</button>
+        </div>
+      </aside>
+
     </main>
 
+    <!-- Modal -->
     <div id="modal" class="modal hidden">
-      <div class="modalBox">
-        <div id="modalTitle" class="modalTitle">-</div>
-        <div id="modalBody" class="modalBody">-</div>
-        <div class="modalBtns">
-          <button id="modalYes" class="btn yes">はい</button>
-          <button id="modalNo" class="btn no">いいえ</button>
+      <div class="modalInner">
+        <div class="modalTitle" id="modalTitle">TITLE</div>
+        <div class="modalBody" id="modalBody"></div>
+        <div class="modalButtons">
+          <button id="modalOk" class="subBtn">OK</button>
         </div>
       </div>
     </div>
 
-    <footer class="footer">
-      <div class="hint">DEMO / 操作：左メニュー → 表示切替（大会や戦闘は次パートで実装）</div>
-    </footer>
   </div>
 
-  <!-- ✅固定ルール：scriptは game.js 1本だけ -->
-  <script type="module" src="game.js"></script>
+  <!-- scriptは game.js 1本だけ -->
+  <script src="game.js"></script>
 </body>
 </html>
