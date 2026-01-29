@@ -1,245 +1,282 @@
 /* =========================================================
-  assets.js (FULL)
-  - 画像ロード + 未画像プレースホルダ生成
-  - ルール：未画像はプレースホルダで表示
-  - 使い方（想定）：
-      MOB_ASSETS.preload().then(() => {
-        const img = MOB_ASSETS.getImage("main");
-      });
-========================================================= */
+   assets.js (FULL)
+   - 画像アセット管理（ロード/参照/プレースホルダ）
+   - 「無い画像は assets.js のプレースホルダで表示」ルール厳守
+   - game.js / sim 側は ASSETS.get(name) / ASSETS.isReady() を使う想定
+   ========================================================= */
 
-(function () {
-  "use strict";
+(() => {
+  'use strict';
 
-  const FILES = {
-    p1: "P1.png",
-    main: "main.png",
-    ido: "ido.png",
-    map: "map.png",
-    shop: "shop.png",
-    heal: "heal.png",
-    battle: "battle.png",
-    winner: "winner.png",
-  };
-
-  const state = {
-    loaded: false,
-    images: {
-      p1: null,
-      main: null,
-      ido: null,
-      map: null,
-      shop: null,
-      heal: null,
-      battle: null,
-      winner: null,
-    },
-    // 失敗時に使うプレースホルダ（Imageに変換済み）
-    placeholders: {},
-  };
-
-  // -------------------------------------------------------
+  // ----------------------------
   // Utils
-  // -------------------------------------------------------
-  function clamp(v, a, b) {
-    return Math.max(a, Math.min(b, v));
-  }
+  // ----------------------------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   function makeCanvas(w, h) {
-    const c = document.createElement("canvas");
+    const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
     return c;
   }
 
-  function canvasToImage(canvas) {
-    const img = new Image();
-    img.src = canvas.toDataURL("image/png");
-    return img;
-  }
+  // プレースホルダ描画（画像が無い/ロード失敗）
+  function drawPlaceholder(label, w, h, theme = 'dark') {
+    w = Math.max(64, w | 0);
+    h = Math.max(64, h | 0);
 
-  function drawPlaceholderCanvas(title, sub, opt = {}) {
-    const W = opt.w || 640;
-    const H = opt.h || 640;
-    const bg = opt.bg || "#0b0f18";
-    const accent = opt.accent || "rgba(57,217,138,.85)";
+    const c = makeCanvas(w, h);
+    const g = c.getContext('2d');
 
-    const c = makeCanvas(W, H);
-    const ctx = c.getContext("2d");
+    // 背景
+    if (theme === 'light') {
+      g.fillStyle = '#e9e9e9';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#d2d2d2';
+    } else {
+      g.fillStyle = '#1a1a1a';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#2a2a2a';
+    }
 
-    // bg
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
+    // 斜線パターン
+    g.save();
+    g.globalAlpha = 0.35;
+    for (let x = -h; x < w + h; x += 18) {
+      g.fillRect(x, 0, 8, h);
+      g.translate(18, 0);
+    }
+    g.restore();
 
-    // outer frame
-    ctx.strokeStyle = "rgba(255,255,255,.14)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(18, 18, W - 36, H - 36);
+    // 枠
+    g.strokeStyle = theme === 'light' ? '#777' : 'rgba(255,255,255,0.35)';
+    g.lineWidth = 2;
+    g.strokeRect(1, 1, w - 2, h - 2);
 
-    // inner frame
-    ctx.strokeStyle = "rgba(255,255,255,.08)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(36, 36, W - 72, H - 72);
+    // ラベル（文字）
+    const text = String(label ?? 'MISSING');
+    g.fillStyle = theme === 'light' ? '#333' : 'rgba(255,255,255,0.85)';
+    g.font = `bold ${clamp(Math.floor(Math.min(w, h) / 10), 10, 18)}px system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
 
-    // title
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.font = "bold 30px sans-serif";
-    ctx.fillText(String(title || "NO IMAGE"), 54, 104);
+    // 2行に分ける
+    const maxLen = 16;
+    const line1 = text.length > maxLen ? text.slice(0, maxLen) : text;
+    const line2 = text.length > maxLen ? text.slice(maxLen, maxLen * 2) : '';
 
-    // sub
-    ctx.fillStyle = "rgba(255,255,255,.68)";
-    ctx.font = "16px sans-serif";
-    const s = String(sub || "");
-    if (s) ctx.fillText(s, 54, 136);
+    g.fillText(line1, w / 2, h / 2 - (line2 ? 10 : 0));
+    if (line2) g.fillText(line2, w / 2, h / 2 + 10);
 
-    // hint
-    ctx.fillStyle = accent;
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText("PLACEHOLDER", 54, H - 56);
-
-    ctx.fillStyle = "rgba(255,255,255,.55)";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("assets 未配置 / 読み込み失敗", 54, H - 34);
+    // 小さく “PLACEHOLDER”
+    g.globalAlpha = 0.8;
+    g.font = `900 ${clamp(Math.floor(Math.min(w, h) / 16), 9, 12)}px system-ui, sans-serif`;
+    g.fillStyle = theme === 'light' ? '#555' : 'rgba(255,255,255,0.55)';
+    g.fillText('PLACEHOLDER', w / 2, h - 14);
 
     return c;
   }
 
-  function buildPlaceholders() {
-    // 画面ごとに少し雰囲気を変える
-    state.placeholders.p1 = canvasToImage(
-      drawPlaceholderCanvas("P1", "PLAYER TEAM", { bg: "#0b0f18", accent: "rgba(42,168,255,.85)" })
-    );
-    state.placeholders.main = canvasToImage(
-      drawPlaceholderCanvas("MAIN", "main.png", { bg: "#0b0f18", accent: "rgba(57,217,138,.85)" })
-    );
-    state.placeholders.ido = canvasToImage(
-      drawPlaceholderCanvas("IDO", "ido.png", { bg: "#0b1020", accent: "rgba(255,200,64,.85)" })
-    );
-    state.placeholders.map = canvasToImage(
-      drawPlaceholderCanvas("MAP", "map.png", { bg: "#08141a", accent: "rgba(120,220,255,.85)" })
-    );
-    state.placeholders.shop = canvasToImage(
-      drawPlaceholderCanvas("SHOP", "shop.png", { bg: "#120b18", accent: "rgba(255,120,210,.85)" })
-    );
-    state.placeholders.heal = canvasToImage(
-      drawPlaceholderCanvas("HEAL", "heal.png", { bg: "#07140f", accent: "rgba(90,255,170,.85)" })
-    );
-    state.placeholders.battle = canvasToImage(
-      drawPlaceholderCanvas("BATTLE", "battle.png", { bg: "#1a0a0e", accent: "rgba(255,85,102,.85)" })
-    );
-    state.placeholders.winner = canvasToImage(
-      drawPlaceholderCanvas("WINNER", "winner.png", { bg: "#171205", accent: "rgba(255,210,90,.85)" })
-    );
-  }
-
-  function loadImage(src) {
+  // 画像ロード（失敗時は placeholder）
+  function loadImage(src, fallbackLabel, fallbackW = 512, fallbackH = 512) {
     return new Promise((resolve) => {
-      const im = new Image();
-      im.onload = () => resolve(im);
-      im.onerror = () => resolve(null);
-      im.src = src;
+      const img = new Image();
+      img.onload = () => resolve({ ok: true, img, src });
+      img.onerror = () => resolve({ ok: false, img: drawPlaceholder(fallbackLabel, fallbackW, fallbackH), src });
+      img.src = src;
     });
   }
 
-  // -------------------------------------------------------
-  // Public: preload
-  // -------------------------------------------------------
-  async function preload() {
-    if (!state.placeholders.main) buildPlaceholders();
+  // ----------------------------
+  // ASSET TABLE
+  // - “ファイル名は変更禁止”なので、ここは参照専用
+  // - 実ファイルが無い場合でもゲームが動くように placeholder を返す
+  // ----------------------------
+  const MANIFEST = {
+    // ----- 必須UI背景（ユーザー指定） -----
+    P1: { src: 'P1.png', w: 420, h: 560, label: 'P1.png' },
+    main: { src: 'main.png', w: 420, h: 560, label: 'main.png' },
+    ido: { src: 'ido.png', w: 420, h: 560, label: 'ido.png' },
+    map: { src: 'map.png', w: 420, h: 560, label: 'map.png' },
+    shop: { src: 'shop.png', w: 420, h: 560, label: 'shop.png' },
+    heal: { src: 'heal.png', w: 420, h: 560, label: 'heal.png' },
+    battle: { src: 'battle.png', w: 420, h: 560, label: 'battle.png' },
+    winner: { src: 'winner.png', w: 420, h: 560, label: 'winner.png' },
 
-    const keys = Object.keys(FILES);
-    const tasks = keys.map(async (k) => {
-      const file = FILES[k];
-      const img = await loadImage(file);
-      state.images[k] = img || null;
-      return true;
-    });
+    // ----- 修行アイコン（ユーザー指定） -----
+    tr_syageki: { src: 'syageki.png', w: 128, h: 128, label: 'syageki.png' },
+    tr_dash: { src: 'dash.png', w: 128, h: 128, label: 'dash.png' },
+    tr_paz: { src: 'paz.png', w: 128, h: 128, label: 'paz.png' },
+    tr_zitugi: { src: 'zitugi.png', w: 128, h: 128, label: 'zitugi.png' },
+    tr_taki: { src: 'taki.png', w: 128, h: 128, label: 'taki.png' },
+    tr_kenq: { src: 'kenq.png', w: 128, h: 128, label: 'kenq.png' },
+    tr_sougou: { src: 'sougou.png', w: 128, h: 128, label: 'sougou.png' },
 
-    await Promise.all(tasks);
-    state.loaded = true;
-    return true;
-  }
+    // ----- マップエリア画像（ユーザー指定ファイル名） -----
+    // ネオン街
+    neonhun: { src: 'neonhun.png', w: 256, h: 256, label: 'neonhun.png' },
+    neongym: { src: 'neongym.png', w: 256, h: 256, label: 'neongym.png' },
+    neonstreet: { src: 'neonstreet.png', w: 256, h: 256, label: 'neonstreet.png' },
+    neonmain: { src: 'neonmain.png', w: 256, h: 256, label: 'neonmain.png' },
+    neonbrige: { src: 'neonbrige.png', w: 256, h: 256, label: 'neonbrige.png' },
+    neonfact: { src: 'neonfact.png', w: 256, h: 256, label: 'neonfact.png' },
 
-  // -------------------------------------------------------
-  // Public: getImage (fallback -> placeholder)
-  // -------------------------------------------------------
-  function getImage(key) {
-    const k = String(key || "").toLowerCase();
-    const img = state.images[k];
-    if (img) return img;
+    // 海の見える町
+    seast: { src: 'seast.png', w: 256, h: 256, label: 'seast.png' },
+    seasc: { src: 'seasc.png', w: 256, h: 256, label: 'seasc.png' },
+    seasou: { src: 'seasou.png', w: 256, h: 256, label: 'seasou.png' },
+    seausi: { src: 'seausi.png', w: 256, h: 256, label: 'seausi.png' },
 
-    // placeholder fallback
-    if (!state.placeholders.main) buildPlaceholders();
-    return state.placeholders[k] || state.placeholders.main;
-  }
+    // ミュージックマウンテン
+    mtent: { src: 'mtent.png', w: 256, h: 256, label: 'mtent.png' },
+    mhunsui: { src: 'mhunsui.png', w: 256, h: 256, label: 'mhunsui.png' },
+    ma: { src: 'ma.png', w: 256, h: 256, label: 'ma.png' },
+    mb: { src: 'mb.png', w: 256, h: 256, label: 'mb.png' },
+    mhasi: { src: 'mhasi.png', w: 256, h: 256, label: 'mhasi.png' },
+    mkanban: { src: 'mkanban.png', w: 256, h: 256, label: 'mkanban.png' },
 
-  // -------------------------------------------------------
-  // Public: compose (optional helper)
-  //  - 背景の上に前面画像を載せた合成Imageを返す
-  //  - 例：ido背景にP1を載せる等（サイズ自動フィット）
-  // -------------------------------------------------------
-  function compose(bgKey, frontKey, opt = {}) {
-    const W = opt.w || 640;
-    const H = opt.h || 640;
+    // 高層ビルの街
+    kosomain: { src: 'kosomain.png', w: 256, h: 256, label: 'kosomain.png' },
+    kosoring: { src: 'kosoring.png', w: 256, h: 256, label: 'kosoring.png' },
+    kosoheri: { src: 'kosoheri.png', w: 256, h: 256, label: 'kosoheri.png' },
+    kososakit: { src: 'kososakit.png', w: 256, h: 256, label: 'kososakit.png' },
 
-    const bg = getImage(bgKey);
-    const fr = getImage(frontKey);
+    // 飛行場
+    hikouri: { src: 'hikouri.png', w: 256, h: 256, label: 'hikouri.png' },
+    hikoroad: { src: 'hikoroad.png', w: 256, h: 256, label: 'hikoroad.png' },
 
-    const c = makeCanvas(W, H);
-    const ctx = c.getContext("2d");
+    // パン工場
+    panuri: { src: 'panuri.png', w: 256, h: 256, label: 'panuri.png' },
+    pankou: { src: 'pankou.png', w: 256, h: 256, label: 'pankou.png' },
 
-    ctx.imageSmoothingEnabled = false;
+    // ライブイベント
+    stagemain: { src: 'stagemain.png', w: 256, h: 256, label: 'stagemain.png' },
+    stagesub: { src: 'stagesub.png', w: 256, h: 256, label: 'stagesub.png' },
+    stage3: { src: 'stage3.png', w: 256, h: 256, label: 'stage3.png' },
+    stagetrack: { src: 'stagetrack.png', w: 256, h: 256, label: 'stagetrack.png' },
 
-    // bg
-    if (bg) ctx.drawImage(bg, 0, 0, W, H);
-    else {
-      ctx.fillStyle = "#0b0f18";
-      ctx.fillRect(0, 0, W, H);
-    }
-
-    // front (fit)
-    if (fr) {
-      const pad = opt.pad == null ? 30 : opt.pad;
-      const maxW = W - pad * 2;
-      const maxH = H - pad * 2;
-
-      // 画像の自然サイズが取れない時は「正方形扱い」で縮尺
-      const iw = fr.naturalWidth || W;
-      const ih = fr.naturalHeight || H;
-
-      const s = Math.min(maxW / iw, maxH / ih, 1);
-      const dw = Math.floor(iw * s);
-      const dh = Math.floor(ih * s);
-
-      const x = opt.x == null ? Math.floor((W - dw) / 2) : opt.x;
-      const y = opt.y == null ? Math.floor((H - dh) / 2) : opt.y;
-
-      ctx.drawImage(fr, x, y, dw, dh);
-    }
-
-    return canvasToImage(c);
-  }
-
-  // -------------------------------------------------------
-  // Public: info
-  // -------------------------------------------------------
-  function isLoaded() {
-    return !!state.loaded;
-  }
-
-  function listKeys() {
-    return Object.keys(FILES);
-  }
-
-  // -------------------------------------------------------
-  // Export
-  // -------------------------------------------------------
-  window.MOB_ASSETS = {
-    FILES,
-    preload,
-    getImage,
-    compose,
-    isLoaded,
-    listKeys,
+    // ラストモブ（降下不可）
+    lastroad: { src: 'lastroad.png', w: 256, h: 256, label: 'lastroad.png' },
+    lastking: { src: 'lastking.png', w: 256, h: 256, label: 'lastking.png' },
+    lastmomu: { src: 'lastmomu.png', w: 256, h: 256, label: 'lastmomu.png' },
+    lastring: { src: 'lastring.png', w: 256, h: 256, label: 'lastring.png' },
   };
+
+  // ----------------------------
+  // ASSETS singleton
+  // ----------------------------
+  const ASSETS = {
+    _loaded: false,
+    _loading: false,
+    _map: new Map(),     // key -> (HTMLImageElement or Canvas)
+    _ok: new Map(),      // key -> boolean
+    _progress: { total: 0, done: 0 },
+
+    // 初期化（ロード開始）
+    async init() {
+      if (this._loaded || this._loading) return;
+      this._loading = true;
+
+      const keys = Object.keys(MANIFEST);
+      this._progress.total = keys.length;
+      this._progress.done = 0;
+
+      // 先に全部 placeholder を入れて “参照先が必ず存在する” 状態にする
+      for (const k of keys) {
+        const m = MANIFEST[k];
+        this._map.set(k, drawPlaceholder(m.label || k, m.w || 256, m.h || 256));
+        this._ok.set(k, false);
+      }
+
+      // 実ロード
+      for (const k of keys) {
+        const m = MANIFEST[k];
+        const res = await loadImage(m.src, m.label || k, m.w || 256, m.h || 256);
+        this._map.set(k, res.img);
+        this._ok.set(k, !!res.ok);
+        this._progress.done++;
+      }
+
+      this._loaded = true;
+      this._loading = false;
+    },
+
+    isReady() {
+      return this._loaded;
+    },
+
+    isLoading() {
+      return this._loading;
+    },
+
+    progress() {
+      return { ...this._progress };
+    },
+
+    // 取得（必ず何か返る）
+    get(key) {
+      if (!this._map.has(key)) {
+        // 未定義キーでも落とさない
+        return drawPlaceholder(String(key), 256, 256);
+      }
+      return this._map.get(key);
+    },
+
+    // ロード成功したか（無くても動くが、デバッグ用）
+    ok(key) {
+      return !!this._ok.get(key);
+    },
+
+    // 任意のキーで placeholder を生成（sim側で用途別の図を出したい時に使える）
+    makePlaceholder(label, w, h, theme) {
+      return drawPlaceholder(label, w, h, theme);
+    },
+
+    // 画像を描画する時の “適正フィット”（縦横比維持）
+    // ctx.drawImage の前に使う想定
+    fitRect(srcW, srcH, dstX, dstY, dstW, dstH, mode = 'contain') {
+      srcW = Math.max(1, srcW);
+      srcH = Math.max(1, srcH);
+      dstW = Math.max(1, dstW);
+      dstH = Math.max(1, dstH);
+
+      const srcAR = srcW / srcH;
+      const dstAR = dstW / dstH;
+
+      let w, h, x, y;
+      if (mode === 'cover') {
+        // 画面を埋める（切り抜き発生）
+        if (srcAR > dstAR) {
+          h = dstH;
+          w = dstH * srcAR;
+        } else {
+          w = dstW;
+          h = dstW / srcAR;
+        }
+      } else {
+        // contain（全体が入る）
+        if (srcAR > dstAR) {
+          w = dstW;
+          h = dstW / srcAR;
+        } else {
+          h = dstH;
+          w = dstH * srcAR;
+        }
+      }
+      x = dstX + (dstW - w) / 2;
+      y = dstY + (dstH - h) / 2;
+      return { x, y, w, h };
+    },
+
+    // 画像のサイズ取り（CanvasもImageも対応）
+    size(img) {
+      if (!img) return { w: 0, h: 0 };
+      if (img instanceof HTMLImageElement) return { w: img.naturalWidth || img.width || 0, h: img.naturalHeight || img.height || 0 };
+      if (img instanceof HTMLCanvasElement) return { w: img.width || 0, h: img.height || 0 };
+      return { w: img.width || 0, h: img.height || 0 };
+    },
+  };
+
+  // expose
+  window.ASSETS = ASSETS;
 })();
