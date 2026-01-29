@@ -1,296 +1,341 @@
-// data.js (ES Modules)
-// Demo: fixed data store (balance tuning here)
+// data_teams_local.js
+// ローカルチーム定義（CPUチーム確定.txt より）
+// ここでは「ローカル：強豪/中堅/通常」だけを収録
 
-// ===== Version =====
-export const DATA_VERSION = "demo-data-v1";
-
-// ===== Constants =====
-export const MAX_ARMOR = 100;
-
-// 20 teams total (Local CPU set). Player team will be handled separately in your player/team file.
-export const CPU_LOCAL_TEAMS = [
-  // ---- Local: Strong ----
+export const LOCAL_TEAMS = [
+  // --- ローカル：強豪チーム ---
   {
     id: "local_hammers",
-    tier: "local_strong",
     name: "ハンマーズ",
+    category: "local",
+    tier: "strong",
     powerPct: 79,
     style: "勢いのあるムーブ",
     members: ["キスケ", "ヅッチー", "ブラウン"],
     passive: {
       name: "勢い加速",
-      raw: "戦闘開始時、味方全員のAim+2",
-      tags: [{ type: "on_battle_start" }, { type: "aim_add", value: 2, target: "ally_all" }],
+      description: "戦闘開始時、味方全員のAim+2",
+      effects: [
+        { trigger: "battle_start", type: "stat_add", target: "ally_all", stat: "aim", value: 2 },
+      ],
     },
   },
   {
     id: "local_matsuyamers",
-    tier: "local_strong",
     name: "マツヤマーズ",
+    category: "local",
+    tier: "strong",
     powerPct: 78,
     style: "着実なムーブ",
     members: ["トニトニ", "ロジャー", "マルティン"],
     passive: {
       name: "着実進行",
-      raw: "毎ターン、味方全員のArmor+2 ※最大100",
-      tags: [{ type: "per_turn" }, { type: "armor_add", value: 2, target: "ally_all", cap: MAX_ARMOR }],
+      description: "毎ターン、味方全員のArmor+2（最大100）",
+      effects: [
+        { trigger: "turn_start", type: "stat_add", target: "ally_all", stat: "armor", value: 2, cap: 100 },
+      ],
     },
   },
   {
     id: "local_galaxy",
-    tier: "local_strong",
     name: "ギャラクシー",
+    category: "local",
+    tier: "strong",
     powerPct: 73,
     style: "激しいムーブ",
     members: ["スターズ", "ロケッツ", "グルトン"],
     passive: {
       name: "銀河熱量",
-      raw: "戦闘中、味方全員のAgility+2",
-      tags: [{ type: "during_battle" }, { type: "agility_add", value: 2, target: "ally_all" }],
+      description: "戦闘中、味方全員のAgility+2",
+      effects: [
+        { trigger: "battle_active", type: "stat_add", target: "ally_all", stat: "agility", value: 2 },
+      ],
     },
   },
   {
-    id: "local_beadamans",
-    tier: "local_strong",
+    id: "local_beadmans",
     name: "ビーダマンズ",
+    category: "local",
+    tier: "strong",
     powerPct: 72,
     style: "エイムに自信あり",
     members: ["フェニックス", "ワイバーン", "スフィンクス"],
     passive: {
       name: "照準安定",
-      raw: "味方全員の命中率+3%",
-      tags: [{ type: "always" }, { type: "hit_rate_add", valuePct: 3, target: "ally_all" }],
+      description: "味方全員の命中率+3%",
+      effects: [
+        { trigger: "battle_active", type: "rate_add", target: "ally_all", rate: "hit", valuePct: 3 },
+      ],
     },
   },
   {
     id: "local_makaimura",
-    tier: "local_strong",
     name: "マカイムラ",
+    category: "local",
+    tier: "strong",
     powerPct: 71,
     style: "メンタル高め",
     members: ["クサチー", "メタッツ", "グレムリン"],
     passive: {
       name: "鋼メンタル",
-      raw: "戦闘中、味方全員のMental消費-10%",
-      tags: [{ type: "during_battle" }, { type: "mental_cost_mul", valuePct: -10, target: "ally_all" }],
+      description: "戦闘中、味方全員のMental消費-10%",
+      effects: [
+        { trigger: "battle_active", type: "cost_mul", target: "ally_all", resource: "mental", multiplier: 0.9 },
+      ],
     },
   },
   {
-    id: "local_onsen",
-    tier: "local_strong",
+    id: "local_onsen_aikoukai",
     name: "温泉愛好会",
+    category: "local",
+    tier: "strong",
     powerPct: 69,
-    style: "どうごすけ / たかのこぞー / ひめひこっち",
+    style: "（記載なし）",
     members: ["どうごすけ", "たかのこぞー", "ひめひこっち"],
     passive: {
       name: "湯けむり回復",
-      raw: "戦闘開始時、味方全員HP+5",
-      tags: [{ type: "on_battle_start" }, { type: "hp_add", value: 5, target: "ally_all" }],
+      description: "戦闘開始時、味方全員HP+5",
+      effects: [
+        { trigger: "battle_start", type: "stat_add", target: "ally_all", stat: "hp", value: 5 },
+      ],
     },
   },
   {
-    id: "local_sanshoku",
-    tier: "local_strong",
+    id: "local_sanshoku_bocchanz",
     name: "三色坊ちゃんズ",
+    category: "local",
+    tier: "strong",
     powerPct: 68,
-    style: "もちもち / あまあま / まんぷく",
+    style: "（記載なし）",
     members: ["もちもち", "あまあま", "まんぷく"],
     passive: {
       name: "三色バランス",
-      raw: "味方全員のAim+1＆Agility+1",
-      tags: [
-        { type: "always" },
-        { type: "aim_add", value: 1, target: "ally_all" },
-        { type: "agility_add", value: 1, target: "ally_all" },
+      description: "味方全員のAim+1＆Agility+1",
+      effects: [
+        { trigger: "battle_active", type: "stat_add", target: "ally_all", stat: "aim", value: 1 },
+        { trigger: "battle_active", type: "stat_add", target: "ally_all", stat: "agility", value: 1 },
       ],
     },
   },
 
-  // ---- Local: Mid ----
+  // --- ローカル：中堅チーム ---
   {
     id: "local_firefighters",
-    tier: "local_mid",
     name: "ファイアファイターズ",
+    category: "local",
+    tier: "mid",
     powerPct: 68,
     style: "炎の如く攻撃",
     members: ["キャンプ", "マキっち", "トカゲイヌ"],
     passive: {
       name: "火力上等",
-      raw: "味方全員の攻撃ダメージ+5%",
-      tags: [{ type: "always" }, { type: "damage_mul", valuePct: 5, target: "ally_all" }],
+      description: "味方全員の攻撃ダメージ+5%",
+      effects: [
+        { trigger: "battle_active", type: "damage_mul", target: "ally_all", multiplier: 1.05 },
+      ],
     },
   },
   {
-    id: "local_ghostrider",
-    tier: "local_mid",
+    id: "local_ghost_rider",
     name: "ゴーストライダー",
+    category: "local",
+    tier: "mid",
     powerPct: 67,
     style: "お化け集団",
     members: ["ゴーストン", "ゴスクー", "おばけっち"],
     passive: {
       name: "ゴースト回避",
-      raw: "味方全員の被弾率-3%",
-      tags: [{ type: "always" }, { type: "hit_taken_rate_add", valuePct: -3, target: "ally_all" }],
+      description: "味方全員の被弾率-3%",
+      effects: [
+        { trigger: "battle_active", type: "rate_add", target: "ally_all", rate: "hitTaken", valuePct: -3 },
+      ],
     },
   },
   {
     id: "local_hoihoihoim",
-    tier: "local_mid",
     name: "ホイホイホイム",
+    category: "local",
+    tier: "mid",
     powerPct: 66,
     style: "回復チーム",
     members: ["ホイスケ", "ホイミー", "ホームン"],
     passive: {
       name: "回復の輪",
-      raw: "戦闘中、味方全員の回復アイテム効果+10%",
-      tags: [{ type: "during_battle" }, { type: "heal_item_mul", valuePct: 10, target: "ally_all" }],
+      description: "戦闘中、味方全員の回復アイテム効果+10%",
+      effects: [
+        { trigger: "battle_active", type: "heal_item_mul", target: "ally_all", multiplier: 1.1 },
+      ],
     },
   },
   {
-    id: "local_turtlepunch",
-    tier: "local_mid",
+    id: "local_turtle_punch",
     name: "タートルパンチ",
+    category: "local",
+    tier: "mid",
     powerPct: 66,
     style: "カメの如し",
     members: ["クリケット", "ジャックハンマー", "UFO"],
     passive: {
       name: "シェルガード",
-      raw: "味方全員のArmorダメージ-5%",
-      tags: [{ type: "always" }, { type: "armor_damage_mul", valuePct: -5, target: "ally_all" }],
+      description: "味方全員のArmorダメージ-5%",
+      effects: [
+        { trigger: "battle_active", type: "armor_damage_mul", target: "ally_all", multiplier: 0.95 },
+      ],
     },
   },
   {
-    id: "local_koutetsu",
-    tier: "local_mid",
+    id: "local_koutetsu_butai",
     name: "鋼鉄部隊",
+    category: "local",
+    tier: "mid",
     powerPct: 63,
     style: "固い守り",
     members: ["タフネス", "スタミン", "タウリン"],
     passive: {
       name: "鉄壁構え",
-      raw: "戦闘開始時、味方全員Armor+10 ※最大100",
-      tags: [{ type: "on_battle_start" }, { type: "armor_add", value: 10, target: "ally_all", cap: MAX_ARMOR }],
+      description: "戦闘開始時、味方全員Armor+10（最大100）",
+      effects: [
+        { trigger: "battle_start", type: "stat_add", target: "ally_all", stat: "armor", value: 10, cap: 100 },
+      ],
     },
   },
 
-  // ---- Local: Normal ----
+  // --- ローカル：通常チーム ---
   {
     id: "local_yamiuchi",
-    tier: "local_normal",
     name: "ヤミウチ",
+    category: "local",
+    tier: "normal",
     powerPct: 66,
-    style: "ヤンク / ウラウラ / ヤミール",
+    style: "（記載なし）",
     members: ["ヤンク", "ウラウラ", "ヤミール"],
     passive: {
       name: "闇討ち",
-      raw: "戦闘1ターン目だけ味方全員のAim+4",
-      tags: [{ type: "turn_1_only" }, { type: "aim_add", value: 4, target: "ally_all" }],
+      description: "戦闘1ターン目だけ味方全員のAim+4",
+      effects: [
+        { trigger: "turn_1_only", type: "stat_add", target: "ally_all", stat: "aim", value: 4 },
+      ],
     },
   },
   {
-    id: "local_donguritai",
-    tier: "local_normal",
+    id: "local_donguri",
     name: "ドングリ隊",
+    category: "local",
+    tier: "normal",
     powerPct: 58,
-    style: "ドンドン / グリグリ / コロコロ",
+    style: "（記載なし）",
     members: ["ドンドン", "グリグリ", "コロコロ"],
     passive: {
       name: "転がり連携",
-      raw: "味方全員のMove+1 ※戦闘中のみ",
-      tags: [{ type: "during_battle" }, { type: "move_add", value: 1, target: "ally_all" }],
+      description: "味方全員のMove+1（戦闘中のみ）",
+      effects: [
+        { trigger: "battle_active", type: "stat_add", target: "ally_all", stat: "move", value: 1 },
+      ],
     },
   },
   {
-    id: "local_kaminadashi",
-    tier: "local_normal",
+    id: "local_kaminadashi_monad",
     name: "カミナダシモナダ",
+    category: "local",
+    tier: "normal",
     powerPct: 58,
-    style: "うみち / かぜち / なみち",
+    style: "（記載なし）",
     members: ["うみち", "かぜち", "なみち"],
     passive: {
       name: "波風ムーブ",
-      raw: "戦闘中、味方全員のAgility+1＆被弾率-1%",
-      tags: [
-        { type: "during_battle" },
-        { type: "agility_add", value: 1, target: "ally_all" },
-        { type: "hit_taken_rate_add", valuePct: -1, target: "ally_all" },
+      description: "戦闘中、味方全員のAgility+1＆被弾率-1%",
+      effects: [
+        { trigger: "battle_active", type: "stat_add", target: "ally_all", stat: "agility", value: 1 },
+        { trigger: "battle_active", type: "rate_add", target: "ally_all", rate: "hitTaken", valuePct: -1 },
       ],
     },
   },
   {
     id: "local_ichiroku",
-    tier: "local_normal",
     name: "イチロク",
+    category: "local",
+    tier: "normal",
     powerPct: 58,
-    style: "タルト / ミカタル / まっちゃ",
+    style: "（記載なし）",
     members: ["タルト", "ミカタル", "まっちゃ"],
     passive: {
       name: "地味に強い",
-      raw: "HPが半分以下の時、味方全員のAim+2",
-      tags: [{ type: "hp_half_or_less" }, { type: "aim_add", value: 2, target: "ally_all" }],
+      description: "HPが半分以下の時、味方全員のAim+2",
+      effects: [
+        { trigger: "hp_below_half", type: "stat_add", target: "ally_all", stat: "aim", value: 2 },
+      ],
     },
   },
   {
     id: "local_yamanoko",
-    tier: "local_normal",
     name: "ヤマノコ",
+    category: "local",
+    tier: "normal",
     powerPct: 58,
-    style: "ハヤシ / コヤ / テンキ",
+    style: "（記載なし）",
     members: ["ハヤシ", "コヤ", "テンキ"],
     passive: {
       name: "山の勘",
-      raw: "戦闘開始時、敵の弱ってるキャラを狙う確率+10%",
-      tags: [{ type: "on_battle_start" }, { type: "target_weak_bonus_pct", valuePct: 10 }],
+      description: "戦闘開始時、敵の弱ってるキャラを狙う確率+10%",
+      effects: [
+        { trigger: "battle_start", type: "targeting_add", side: "enemy", key: "focus_weak", valuePct: 10 },
+      ],
     },
   },
   {
     id: "local_kirinomori",
-    tier: "local_normal",
     name: "キリノモリ",
+    category: "local",
+    tier: "normal",
     powerPct: 57,
-    style: "だいふく / まんじゅう / こな",
+    style: "（記載なし）",
     members: ["だいふく", "まんじゅう", "こな"],
     passive: {
       name: "霧の迷彩",
-      raw: "味方全員の被弾率-2%",
-      tags: [{ type: "always" }, { type: "hit_taken_rate_add", valuePct: -2, target: "ally_all" }],
+      description: "味方全員の被弾率-2%",
+      effects: [
+        { trigger: "battle_active", type: "rate_add", target: "ally_all", rate: "hitTaken", valuePct: -2 },
+      ],
     },
   },
   {
     id: "local_pokopokopen",
-    tier: "local_normal",
     name: "ポコポコペン",
+    category: "local",
+    tier: "normal",
     powerPct: 57,
-    style: "らむね / さいだー / コロッケ",
+    style: "（記載なし）",
     members: ["らむね", "さいだー", "コロッケ"],
     passive: {
       name: "ポコポコ調子",
-      raw: "戦闘中、味方全員のCrit率+1%",
-      tags: [{ type: "during_battle" }, { type: "crit_rate_add", valuePct: 1, target: "ally_all" }],
+      description: "戦闘中、味方全員のCrit率+1%",
+      effects: [
+        { trigger: "battle_active", type: "rate_add", target: "ally_all", rate: "crit", valuePct: 1 },
+      ],
     },
   },
   {
     id: "local_potesara",
-    tier: "local_normal",
     name: "ポテサラ隊",
+    category: "local",
+    tier: "normal",
     powerPct: 57,
-    style: "ポテト / ハム / きゅうり",
+    style: "（記載なし）",
     members: ["ポテト", "ハム", "きゅうり"],
     passive: {
       name: "腹持ち",
-      raw: "戦闘開始時、味方全員HP+7",
-      tags: [{ type: "on_battle_start" }, { type: "hp_add", value: 7, target: "ally_all" }],
+      description: "戦闘開始時、味方全員HP+7",
+      effects: [
+        { trigger: "battle_start", type: "stat_add", target: "ally_all", stat: "hp", value: 7 },
+      ],
     },
   },
 ];
 
-// ===== Convenience =====
-export const CPU_LOCAL_TEAM_BY_ID = Object.fromEntries(CPU_LOCAL_TEAMS.map(t => [t.id, t]));
-export const CPU_LOCAL_TEAM_NAMES = CPU_LOCAL_TEAMS.map(t => t.name);
+export function getLocalTeamById(id) {
+  return LOCAL_TEAMS.find((t) => t.id === id) || null;
+}
 
-/**
- * Utility: sort teams by power% desc (useful for debug / display)
- */
-export function sortTeamsByPowerDesc(teams) {
-  return [...teams].sort((a, b) => (b.powerPct ?? 0) - (a.powerPct ?? 0));
+export function listLocalTeamsSortedByPowerDesc() {
+  return [...LOCAL_TEAMS].sort((a, b) => (b.powerPct - a.powerPct) || a.name.localeCompare(b.name, "ja"));
 }
