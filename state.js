@@ -1,343 +1,281 @@
 /* =====================================================
-   state.js  (FULL)
-   MOB Tournament Simulation
-   ゲーム状態（年週 / 企業ランク / 所持G / チーム / 履歴）
+   state.js
+   - ゲーム状態（フェーズ／大会／試合／結果）
+   - UI や sim_* から参照される唯一の状態
+   - ここでは「破綻しない骨格」を固定し、
+     大会進行の本実装は sim_tournament_core.js / sim_rules.js に委譲
    ===================================================== */
 
-const State = {};
-window.State = State;
+/* global DATA_CONST, DATA_PLAYERS, TEAMS_INDEX, SimTournament */
 
-/* =========================
-   初期データ
-   ========================= */
+(() => {
 
-State.init = function () {
-  // 基本状態
-  State.gold = 0;
+  const DEFAULTS = {
+    phase: 'main',
+    equippedPlayerImage: 'P1.png',
+    playerTeamName: 'あなたの部隊',
 
-  // 企業ランク（1が最強…等は後で調整可能。今は初期10想定）
-  State.companyRank = 10;
+    // 大会（初期はローカル想定。詳細は sim_rules.js / sim_tournament_core.js で確定）
+    tournament: {
+      kind: 'local',         // 'local'|'national'|'world'|'championship' 等（sim_rulesで使用）
+      title: 'ローカル大会',
+      totalTeams: 20,        // ローカル=20 / ナショナル・ワールド=40
+      matchesPlanned: 5,     // ローカル大会は5試合（確定）
+      matchIndex: 0,
+      finished: false,
+    },
 
-  // 時間（1989年スタート）
-  State.time = {
-    year: 1989,
-    week: 1,
-    nextTournament: { name: 'SP1 ローカル大会', date: '2月第1週' }
+    // 試合
+    match: {
+      running: false,
+      matchNo: 1,
+      // SimBattle が内部で使うチーム配列やラウンド状態はここに保持していく
+      sim: null,
+      // 1試合result（表示用）
+      lastResultTable: null,   // {title, columns, rows}
+      // 大会累積（総合順位用・SimTournamentが使う想定）
+      accum: null,
+    },
+
+    // 大会結果（表示用）
+    tournamentResult: null,
   };
 
-  // 大会進行中情報（参加中の大会メニュー用）
-  State.currentTournament = null;
-
-  // 履歴（年ごとの大会結果・キル/アシスト集計などの土台）
-  State.history = {
-    tournaments: [], // {year, seasonKey, name, result}
-    yearly: {}       // { [year]: { killsByPlayer:{}, assistsByPlayer:{}, finalCompanyRank } }
-  };
-
-  // プレイヤーチーム（3人）
-  State.playerTeam = State.createInitialPlayerTeam();
-
-  // 所持キャラ（オファーで増える想定）
-  State.ownedPlayers = State.playerTeam.members.slice();
-
-  // 所持アイテム・コーチスキル（後で本格実装）
-  State.inventory = {
-    items: {},        // { itemId: count }
-    coachSkills: []   // [ skillId, ... ]
-  };
-
-  State.refreshNextTournamentInfo();
-};
-
-/* =========================
-   初期チーム生成（P1想定）
-   data_players.js が未確定でも動くように
-   ========================= */
-
-State.createInitialPlayerTeam = function () {
-  // data_players.js が用意される前提だが、無くても落ちない
-  const pool = (window.DATA_PLAYERS && Array.isArray(window.DATA_PLAYERS))
-    ? window.DATA_PLAYERS
-    : null;
-
-  // 3人分
-  const members = [];
-
-  if (pool && pool.length >= 3) {
-    for (let i = 0; i < 3; i++) {
-      members.push(State.normalizePlayer(pool[i]));
-    }
-  } else {
-    // プレースホルダ（後で差し替わる）
-    members.push(State.normalizePlayer({
-      id: 'P-001',
-      name: 'プレイヤー1',
-      stats: State.defaultStats(),
-      passive: { name: '未設定', desc: '後で設定' },
-      ability: { name: '未設定', desc: '後で設定', uses: 1 },
-      ult: { name: '未設定', desc: '後で設定', uses: 1 }
-    }));
-    members.push(State.normalizePlayer({
-      id: 'P-002',
-      name: 'プレイヤー2',
-      stats: State.defaultStats(),
-      passive: { name: '未設定', desc: '後で設定' },
-      ability: { name: '未設定', desc: '後で設定', uses: 1 },
-      ult: { name: '未設定', desc: '後で設定', uses: 1 }
-    }));
-    members.push(State.normalizePlayer({
-      id: 'P-003',
-      name: 'プレイヤー3',
-      stats: State.defaultStats(),
-      passive: { name: '未設定', desc: '後で設定' },
-      ability: { name: '未設定', desc: '後で設定', uses: 1 },
-      ult: { name: '未設定', desc: '後で設定', uses: 1 }
-    }));
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
   }
 
-  return {
-    id: 'PLAYER_TEAM',
-    name: 'PLAYER TEAM',
-    group: 'A',
-    image: 'P1.png',
-    members,
-    // 連携（Synergy）は今は固定20スタート想定（最大200想定は後で）
-    synergy: 20
-  };
-};
+  const State = {
+    s: deepClone(DEFAULTS),
 
-State.defaultStats = function () {
-  return {
-    HP: 60,
-    Armor: 100,       // 仕様：基本100固定前提
-    Mental: 60,
-    Move: 60,
-    Aim: 60,
-    Agility: 60,
-    Technique: 60,
-    Support: 60,
-    Hunt: 60
-  };
-};
+    /* =====================================
+       初期化
+       ===================================== */
+    init() {
+      this.s = deepClone(DEFAULTS);
 
-State.normalizePlayer = function (p) {
-  const stats = Object.assign(State.defaultStats(), (p.stats || {}));
-  // Armorは基本100（上書きされても最大100で丸めるのは後で battle 側でやる）
-  if (stats.Armor === undefined || stats.Armor === null) stats.Armor = 100;
+      // ここで将来セーブデータ等に繋げるが、現段階では固定
+      // DATA_PLAYERS 等が存在すれば初期チーム名など反映（無くても破綻しない）
+      try {
+        if (window.DATA_CONST && DATA_CONST.PLAYER_TEAM_NAME) {
+          this.s.playerTeamName = String(DATA_CONST.PLAYER_TEAM_NAME);
+        }
+      } catch (e) { /* noop */ }
 
-  return {
-    id: p.id || ('P-' + Math.random().toString(36).slice(2)),
-    name: p.name || '???',
-    stats,
-    passive: p.passive || { name: '未設定', desc: '' },
-    ability: p.ability || { name: '未設定', desc: '', uses: 1 },
-    ult: p.ult || { name: '未設定', desc: '', uses: 1 }
-  };
-};
+      try {
+        if (window.DATA_CONST && DATA_CONST.DEFAULT_PLAYER_IMAGE) {
+          this.s.equippedPlayerImage = String(DATA_CONST.DEFAULT_PLAYER_IMAGE);
+        }
+      } catch (e) { /* noop */ }
 
-/* =========================
-   スケジュール関連
-   ========================= */
+      this.s.phase = 'main';
+    },
 
-State.getScheduleText = function () {
-  // data_const.js で提供されるのが本命
-  if (window.DATA_CONST && typeof window.DATA_CONST.scheduleText === 'string') {
-    return window.DATA_CONST.scheduleText;
-  }
+    /* =====================================
+       フェーズ
+       ===================================== */
+    getPhase() {
+      return this.s.phase;
+    },
+    setPhase(p) {
+      this.s.phase = String(p);
+    },
 
-  // fallback（あなたの仕様をそのまま文字化）
-  return [
-    '2月第1週',
-    'SP1 ローカル大会',
-    '',
-    '3月第1週',
-    'SP1 ナショナル大会',
-    'A & B  C & D  A & C',
-    '3月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '3月第3週',
-    'ナショナル大会ラストチャンス',
-    '4月第1週',
-    'SP1 ワールドファイナル',
-    '',
-    '7月第1週',
-    'SP2 ローカル大会',
-    '',
-    '8月第1週',
-    'SP2 ナショナル大会',
-    'A & B  C & D  A & C',
-    '8月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '8月第3週',
-    'SP2 ナショナル大会ラストチャンス',
-    '9月第1週',
-    'SP2 ワールドファイナル',
-    '',
-    '11月第1週',
-    'チャンピオンシップ ローカル大会',
-    '',
-    '12月第1週',
-    'チャンピオンシップ ナショナル大会',
-    'A & B  C & D  A & C',
-    '12月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '12月第3週',
-    'チャンピオンシップ ナショナル大会ラストチャンス',
-    '',
-    '1月第2週',
-    'チャンピオンシップ ワールドファイナル'
-  ].join('\n');
-};
+    /* =====================================
+       プレイヤー表示用
+       ===================================== */
+    getEquippedPlayerImageFile() {
+      return this.s.equippedPlayerImage || 'P1.png';
+    },
+    getPlayerTeamName() {
+      return this.s.playerTeamName || 'あなたの部隊';
+    },
 
-/**
- * 現在の年週が「大会週」かどうか判定してイベントを返す
- * 返り値例： { key, name, tier, seasonKey }
- */
-State.getTournamentAtCurrentTime = function () {
-  // data_const.js がある場合はそれを優先
-  if (window.DATA_CONST && Array.isArray(window.DATA_CONST.tournaments)) {
-    return State.findTournamentFromConst();
-  }
+    /* =====================================
+       大会開始
+       ===================================== */
+    startTournament() {
+      // sim_rules / sim_tournament_core が存在すれば、そこに初期化を委譲
+      // 無い場合も破綻しないように、最小の大会枠をここで作る
+      this.s.tournament.matchIndex = 0;
+      this.s.tournament.finished = false;
 
-  // fallback：1989年固定＆週番号で仮判定（後で data_const.js に置き換え）
-  // ※「今は動く」を優先。正確な週対応は data_const.js で確定させる。
-  const w = State.time.week;
-
-  // 仮：10週=SP1ローカル、14週=SP1ナショナル、18週=SP1ワールド…のように置く（暫定）
-  if (w === 5)  return { key: 'SP1_LOCAL', name: 'SP1 ローカル大会', tier: 'LOCAL', seasonKey: 'SP1' };
-  if (w === 9)  return { key: 'SP1_NATIONAL', name: 'SP1 ナショナル大会', tier: 'NATIONAL', seasonKey: 'SP1' };
-  if (w === 13) return { key: 'SP1_WORLD', name: 'SP1 ワールドファイナル', tier: 'WORLD', seasonKey: 'SP1' };
-
-  if (w === 25) return { key: 'SP2_LOCAL', name: 'SP2 ローカル大会', tier: 'LOCAL', seasonKey: 'SP2' };
-  if (w === 29) return { key: 'SP2_NATIONAL', name: 'SP2 ナショナル大会', tier: 'NATIONAL', seasonKey: 'SP2' };
-  if (w === 33) return { key: 'SP2_WORLD', name: 'SP2 ワールドファイナル', tier: 'WORLD', seasonKey: 'SP2' };
-
-  if (w === 45) return { key: 'CHAMP_LOCAL', name: 'チャンピオンシップ ローカル大会', tier: 'LOCAL', seasonKey: 'CHAMP' };
-  if (w === 49) return { key: 'CHAMP_NATIONAL', name: 'チャンピオンシップ ナショナル大会', tier: 'NATIONAL', seasonKey: 'CHAMP' };
-  if (w === 2)  return { key: 'CHAMP_WORLD', name: 'チャンピオンシップ ワールドファイナル', tier: 'WORLD', seasonKey: 'CHAMP' };
-
-  return null;
-};
-
-State.findTournamentFromConst = function () {
-  const year = State.time.year;
-  const week = State.time.week;
-
-  // DATA_CONST.tournaments: [{year, week, key, name, tier, seasonKey, dateLabel}, ...]
-  const list = window.DATA_CONST.tournaments;
-  for (const t of list) {
-    if (t.year === year && t.week === week) return t;
-  }
-  return null;
-};
-
-/* =========================
-   次の大会表示更新
-   ========================= */
-
-State.refreshNextTournamentInfo = function () {
-  // data_const.js がある場合：次の大会を検索
-  if (window.DATA_CONST && Array.isArray(window.DATA_CONST.tournaments)) {
-    const next = State.findNextTournamentFromConst();
-    if (next) {
-      State.time.nextTournament = {
-        name: next.name,
-        date: next.dateLabel || State.formatWeekLabel(next.monthLabel, next.weekLabel) || '---'
+      // 大会累積の初期化
+      this.s.match.accum = {
+        // totalTeams: 20 or 40
+        totalTeams: this.s.tournament.totalTeams,
+        // teamId -> { teamId, teamName, points, placeP, kp, ap, treasure, flag }
+        teamTotals: {},
+        // 各試合のresultを保持（必要なら）
+        matchResults: [],
       };
-      return;
-    }
-  }
 
-  // fallback：固定表示（暫定）
-  State.time.nextTournament = { name: 'SP1 ローカル大会', date: '2月第1週' };
-};
+      // SimTournament があれば初期化して状態に保持（内部仕様は後で確定）
+      try {
+        if (window.SimTournament && typeof SimTournament.initTournament === 'function') {
+          const ctx = SimTournament.initTournament(this);
+          // ctxは任意。返ってきたら保持
+          if (ctx) this.s.tournament.ctx = ctx;
+        }
+      } catch (e) {
+        // ここでは握り潰す（UIが止まらないこと優先）
+      }
 
-State.findNextTournamentFromConst = function () {
-  const year = State.time.year;
-  const week = State.time.week;
-  const list = window.DATA_CONST.tournaments;
+      this.s.match.lastResultTable = null;
+      this.s.tournamentResult = null;
+    },
 
-  // 同年で次、なければ翌年最初
-  let candidate = null;
-  for (const t of list) {
-    if (t.year === year && t.week > week) {
-      if (!candidate || t.week < candidate.week) candidate = t;
-    }
-  }
-  if (candidate) return candidate;
+    /* =====================================
+       試合開始
+       ===================================== */
+    startMatch() {
+      this.s.match.running = true;
+      this.s.match.matchNo = this.s.tournament.matchIndex + 1;
 
-  // 翌年
-  let nextYearCandidate = null;
-  for (const t of list) {
-    if (t.year === year + 1) {
-      if (!nextYearCandidate || t.week < nextYearCandidate.week) nextYearCandidate = t;
-    }
-  }
-  return nextYearCandidate;
-};
+      // SimBattle が使う「試合コンテキスト」を作る
+      // 本格的な配置/ラウンド制御は sim_battle.js で実装していく
+      this.s.match.sim = {
+        matchNo: this.s.match.matchNo,
+        // 20チーム固定（ローカル）。ナショナル/ワールドは 40母数の総合だが
+        // 1試合の母数は常に20（確定）なので、ここは常に20試合枠。
+        maxTeamsInMatch: 20,
+        // R1〜R6
+        round: 0,
+        // チーム状態（sim_battleが埋める）
+        teams: null,
+        // プレイヤー追跡用
+        player: {
+          alive: 3,
+          deathBoxes: 0,
+          eliminated: false,
+          areaId: null,
+          kills_total: 0,
+          assists_total: 0,
+          treasure: 0,
+          flag: 0,
+          members: [],
+          eventBuffs: {},
+        },
+        // 表示・進行用
+        stepQueue: [],
+        done: false,
+        // その試合の最終順位（1〜20）
+        placement: null,
+      };
 
-State.formatWeekLabel = function (monthLabel, weekLabel) {
-  if (!monthLabel || !weekLabel) return null;
-  return `${monthLabel}第${weekLabel}週`;
-};
+      // sim_tournament_core があれば、試合の参加チーム割当などを委譲
+      try {
+        if (window.SimTournament && typeof SimTournament.prepareMatch === 'function') {
+          SimTournament.prepareMatch(this);
+        }
+      } catch (e) {
+        // noop
+      }
+    },
 
-/* =========================
-   大会結果適用（履歴に保存）
-   ========================= */
+    /* =====================================
+       試合終了後：結果テーブル（UI表示用）
+       sim_battle.js が setMatchResult を呼ぶ想定
+       ===================================== */
+    setMatchResultTable(table) {
+      // {title, columns, rows}
+      this.s.match.lastResultTable = table || null;
 
-State.applyTournamentResult = function (result) {
-  // result の中身は sim_tournament_core 側で整備される想定
-  // ここでは「履歴に残す」ことを最優先に土台を作る
+      // 履歴として保存（累積用に SimTournament が参照できる）
+      if (table) {
+        this.s.match.accum.matchResults.push(table);
+      }
+    },
 
-  const entry = {
-    year: State.time.year,
-    seasonKey: result.seasonKey || 'UNKNOWN',
-    name: result.name || 'UNKNOWN',
-    tier: result.tier || 'UNKNOWN',
-    result
+    getMatchSummary() {
+      // UI.showResultTable に渡す形式
+      if (this.s.match.lastResultTable) return this.s.match.lastResultTable;
+
+      // フォールバック
+      return {
+        title: `試合 ${this.getMatchIndex() + 1} result`,
+        columns: ['順位', 'チーム', 'Total'],
+        rows: [],
+      };
+    },
+
+    /* =====================================
+       試合index / 大会進行
+       ===================================== */
+    getMatchIndex() {
+      return this.s.tournament.matchIndex || 0;
+    },
+
+    advanceAfterMatch() {
+      this.s.match.running = false;
+      this.s.match.sim = null;
+
+      // SimTournament があれば「累積加算」「進出判定」等を委譲
+      try {
+        if (window.SimTournament && typeof SimTournament.afterMatch === 'function') {
+          SimTournament.afterMatch(this);
+        }
+      } catch (e) {
+        // noop
+      }
+
+      this.s.tournament.matchIndex += 1;
+
+      // ひとまずローカル大会は5試合で終了（確定）
+      // ナショナル/ワールド等は sim_rules.js / sim_tournament_core.js で上書きしていく
+      const planned = Number(this.s.tournament.matchesPlanned || 0);
+      if (this.s.tournament.matchIndex >= planned) {
+        this.s.tournament.finished = true;
+      }
+    },
+
+    isTournamentFinished() {
+      return !!this.s.tournament.finished;
+    },
+
+    /* =====================================
+       大会結果
+       - 現段階は「表示の箱」を用意。
+         実際の順位表は sim_tournament_core.js で構築してここへ入れる
+       ===================================== */
+    setTournamentResult(res) {
+      // {message, subMessage, title, columns, rows}
+      this.s.tournamentResult = res || null;
+    },
+
+    getTournamentResult() {
+      if (this.s.tournamentResult) return this.s.tournamentResult;
+
+      // フォールバック：最低限の終了メッセージ
+      return {
+        message: '大会が終了しました！',
+        subMessage: '結果はこれから実装されます。',
+      };
+    },
+
+    /* =====================================
+       メインへ戻す
+       ===================================== */
+    resetToMain() {
+      // 大会関連をリセット（装備やプレイヤー設定は維持）
+      const keepPlayerImage = this.s.equippedPlayerImage;
+      const keepTeamName = this.s.playerTeamName;
+
+      this.s = deepClone(DEFAULTS);
+      this.s.equippedPlayerImage = keepPlayerImage;
+      this.s.playerTeamName = keepTeamName;
+
+      this.s.phase = 'main';
+    },
+
+    /* =====================================
+       便利：累積データへのアクセス（SimTournament用）
+       ===================================== */
+    getAccum() {
+      return this.s.match.accum;
+    },
   };
 
-  State.history.tournaments.push(entry);
+  window.State = State;
 
-  // 年間まとめの器
-  const y = State.time.year;
-  if (!State.history.yearly[y]) {
-    State.history.yearly[y] = {
-      killsByPlayer: {},
-      assistsByPlayer: {},
-      finalCompanyRank: State.companyRank
-    };
-  }
-
-  // ここでキル・アシスト集計（結果形式は後で確定）
-  // 例：result.playerStats = [{name,kills,assists},...]
-  if (Array.isArray(result.playerStats)) {
-    for (const ps of result.playerStats) {
-      const n = ps.name || '???';
-      State.history.yearly[y].killsByPlayer[n] = (State.history.yearly[y].killsByPlayer[n] || 0) + (ps.kills || 0);
-      State.history.yearly[y].assistsByPlayer[n] = (State.history.yearly[y].assistsByPlayer[n] || 0) + (ps.assists || 0);
-    }
-  }
-
-  // 企業ランク変動は「大会ロジック確定後」に sim_rules 側で扱う
-  State.history.yearly[y].finalCompanyRank = State.companyRank;
-
-  // 次の大会表示更新
-  State.refreshNextTournamentInfo();
-};
-
-/* =========================
-   ユーティリティ
-   ========================= */
-
-State.clamp = function (v, min, max) {
-  if (v < min) return min;
-  if (v > max) return max;
-  return v;
-};
+})();
