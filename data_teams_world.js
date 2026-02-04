@@ -1,65 +1,494 @@
-/* =====================================================
-   data_teams_world.js  (FULL)
-   MOB Tournament Simulation
-   ワールド大会：40チーム枠（A/B/C/D グループ）
-   - 今は「枠」を先に用意（後で実データを差し替え可能）
-   - 3人1チーム固定
-   - passive.effects は sim 側で解釈して適用
-   ===================================================== */
+/* data_teams_world.js (FULL)
+   Source: CPUチーム確定.txt  / ■ワールド（world01〜world40）
+   NOTE:
+   - 省略なし（world01〜world40 を全件収録）
+   - 数値は「%」表記を整数で保持
+*/
 
-window.DATA_TEAMS_WORLD = (function () {
+export const TEAMS_WORLD = [
+  {
+    id: "world01",
+    tier: "world",
+    name: "ホークス",
+    image: "world01.png",
+    overall: 95,
+    members: [
+      { role: "IGL", name: "アサモモ", min: 92, max: 97 },
+      { role: "ATTACKER", name: "ヨルモモ", min: 82, max: 99 },
+      { role: "SUPPORT", name: "ネコヤダイ", min: 89, max: 97 },
+    ],
+  },
+  {
+    id: "world02",
+    tier: "world",
+    name: "IFブラックオーダー",
+    image: "world02.png",
+    overall: 92,
+    members: [
+      { role: "IGL", name: "サノース", min: 88, max: 94 },
+      { role: "ATTACKER", name: "プロキシマン", min: 78, max: 99 },
+      { role: "SUPPORT", name: "マウマウ", min: 86, max: 98 },
+    ],
+  },
+  {
+    id: "world03",
+    tier: "world",
+    name: "フリーズマスターズ",
+    image: "world03.png",
+    overall: 90,
+    members: [
+      { role: "IGL", name: "フリーザー", min: 85, max: 92 },
+      { role: "ATTACKER", name: "クーラー", min: 76, max: 99 },
+      { role: "SUPPORT", name: "ゴールド", min: 84, max: 96 },
+    ],
+  },
+  {
+    id: "world04",
+    tier: "world",
+    name: "アカツキ",
+    image: "world04.png",
+    overall: 90,
+    members: [
+      { role: "IGL", name: "イカリーノ", min: 86, max: 92 },
+      { role: "ATTACKER", name: "イカススム", min: 77, max: 98 },
+      { role: "SUPPORT", name: "ヨジョウ", min: 85, max: 97 },
+    ],
+  },
+  {
+    id: "world05",
+    tier: "world",
+    name: "アンドロメダ",
+    image: "world05.png",
+    overall: 90,
+    members: [
+      { role: "IGL", name: "ジュピター", min: 88, max: 92 },
+      { role: "ATTACKER", name: "ムーン", min: 80, max: 95 },
+      { role: "SUPPORT", name: "アースドン", min: 86, max: 94 },
+    ],
+  },
+  {
+    id: "world06",
+    tier: "world",
+    name: "鬼ヶ島",
+    image: "world06.png",
+    overall: 90,
+    members: [
+      { role: "IGL", name: "カイドウロック", min: 88, max: 92 },
+      { role: "ATTACKER", name: "キングスキー", min: 80, max: 96 },
+      { role: "SUPPORT", name: "クイーンデフ", min: 86, max: 94 },
+    ],
+  },
+  {
+    id: "world07",
+    tier: "world",
+    name: "マリーンオフィス",
+    image: "world07.png",
+    overall: 89,
+    members: [
+      { role: "IGL", name: "アカイノシシ", min: 84, max: 91 },
+      { role: "ATTACKER", name: "キヒヒ", min: 74, max: 99 },
+      { role: "SUPPORT", name: "アオクジャク", min: 83, max: 95 },
+    ],
+  },
+  {
+    id: "world08",
+    tier: "world",
+    name: "読みかけの本",
+    image: "world08.png",
+    overall: 88,
+    members: [
+      { role: "IGL", name: "あのヒーロー", min: 85, max: 94 },
+      { role: "ATTACKER", name: "見習いビーム", min: 81, max: 96 },
+      { role: "SUPPORT", name: "いつかの巨人", min: 84, max: 94 },
+    ],
+  },
+  {
+    id: "world09",
+    tier: "world",
+    name: "ファーストレジェンズ",
+    image: "world09.png",
+    overall: 88,
+    members: [
+      { role: "IGL", name: "レイース", min: 83, max: 90 },
+      { role: "ATTACKER", name: "オックタン", min: 74, max: 99 },
+      { role: "SUPPORT", name: "ブラハン", min: 82, max: 94 },
+    ],
+  },
+  {
+    id: "world10",
+    tier: "world",
+    name: "ナンバーD",
+    image: "world10.png",
+    overall: 87,
+    members: [
+      { role: "IGL", name: "ルーフ", min: 83, max: 89 },
+      { role: "ATTACKER", name: "ゾーロ", min: 74, max: 98 },
+      { role: "SUPPORT", name: "ダイサンジ", min: 81, max: 93 },
+    ],
+  },
+  {
+    id: "world11",
+    tier: "world",
+    name: "ダブルマレフィセント",
+    image: "world11.png",
+    overall: 87,
+    members: [
+      { role: "IGL", name: "バルログキティ", min: 83, max: 89 },
+      { role: "ATTACKER", name: "サイコケロロン", min: 78, max: 98 },
+      { role: "SUPPORT", name: "シナンモン", min: 81, max: 93 },
+    ],
+  },
+  {
+    id: "world12",
+    tier: "world",
+    name: "ホールケーキファミリーズ",
+    image: "world12.png",
+    overall: 86,
+    members: [
+      { role: "IGL", name: "カタクリコ", min: 82, max: 88 },
+      { role: "ATTACKER", name: "クラッカー", min: 72, max: 98 },
+      { role: "SUPPORT", name: "クイーンママ", min: 80, max: 99 },
+    ],
+  },
+  {
+    id: "world13",
+    tier: "world",
+    name: "スカイハイムーブ",
+    image: "world13.png",
+    overall: 86,
+    members: [
+      { role: "IGL", name: "ヴァルキー", min: 82, max: 88 },
+      { role: "ATTACKER", name: "レヴント", min: 72, max: 98 },
+      { role: "SUPPORT", name: "クリップトン", min: 80, max: 92 },
+    ],
+  },
+  {
+    id: "world14",
+    tier: "world",
+    name: "デストロイネコヤシキ",
+    image: "world14.png",
+    overall: 88,
+    members: [
+      { role: "IGL", name: "ミケロックスキー", min: 85, max: 89 },
+      { role: "ATTACKER", name: "シマスカイ", min: 77, max: 92 },
+      { role: "SUPPORT", name: "ゴールデンキャット", min: 80, max: 90 },
+    ],
+  },
+  {
+    id: "world15",
+    tier: "world",
+    name: "シルバーウルフキッド",
+    image: "world15.png",
+    overall: 84,
+    members: [
+      { role: "IGL", name: "ウルフ", min: 79, max: 86 },
+      { role: "ATTACKER", name: "アンドル", min: 70, max: 96 },
+      { role: "SUPPORT", name: "エクシーズ", min: 78, max: 90 },
+    ],
+  },
+  {
+    id: "world16",
+    tier: "world",
+    name: "デーモンクラン",
+    image: "world16.png",
+    overall: 84,
+    members: [
+      { role: "IGL", name: "ラプソン", min: 79, max: 86 },
+      { role: "ATTACKER", name: "プチソン", min: 70, max: 96 },
+      { role: "SUPPORT", name: "エッソン", min: 78, max: 90 },
+    ],
+  },
+  {
+    id: "world17",
+    tier: "world",
+    name: "ディスティニーズ",
+    image: "world17.png",
+    overall: 84,
+    members: [
+      { role: "IGL", name: "ミミッキー", min: 80, max: 86 },
+      { role: "ATTACKER", name: "ドーナルド", min: 72, max: 94 },
+      { role: "SUPPORT", name: "プルフート", min: 78, max: 90 },
+    ],
+  },
+  {
+    id: "world18",
+    tier: "world",
+    name: "ドレスドンキホーテ",
+    image: "world18.png",
+    overall: 84,
+    members: [
+      { role: "IGL", name: "ドフラクック", min: 80, max: 86 },
+      { role: "ATTACKER", name: "ディアマール", min: 72, max: 94 },
+      { role: "SUPPORT", name: "ピースケ", min: 78, max: 90 },
+    ],
+  },
+  {
+    id: "world19",
+    tier: "world",
+    name: "シールドデビルバット",
+    image: "world19.png",
+    overall: 83,
+    members: [
+      { role: "IGL", name: "ヒルーマ", min: 78, max: 85 },
+      { role: "ATTACKER", name: "セナシールド", min: 68, max: 97 },
+      { role: "SUPPORT", name: "モンタン", min: 77, max: 89 },
+    ],
+  },
+  {
+    id: "world20",
+    tier: "world",
+    name: "CP3",
+    image: "world20.png",
+    overall: 82,
+    members: [
+      { role: "IGL", name: "ルーチ", min: 78, max: 89 },
+      { role: "ATTACKER", name: "カック", min: 68, max: 94 },
+      { role: "SUPPORT", name: "カリーファ", min: 76, max: 88 },
+    ],
+  },
+  {
+    id: "world21",
+    tier: "world",
+    name: "ベロニカイレブンズ",
+    image: "world21.png",
+    overall: 81,
+    members: [
+      { role: "IGL", name: "カーミュ", min: 77, max: 83 },
+      { role: "ATTACKER", name: "ウルトノーガ", min: 77, max: 93 },
+      { role: "SUPPORT", name: "セニャ", min: 75, max: 87 },
+    ],
+  },
+  {
+    id: "world22",
+    tier: "world",
+    name: "レインボーロード",
+    image: "world22.png",
+    overall: 81,
+    members: [
+      { role: "IGL", name: "キラアカスター", min: 77, max: 83 },
+      { role: "ATTACKER", name: "アオアース", min: 67, max: 93 },
+      { role: "SUPPORT", name: "キンミドリ", min: 75, max: 87 },
+    ],
+  },
+  {
+    id: "world23",
+    tier: "world",
+    name: "ワールドアーティスト",
+    image: "world23.png",
+    overall: 81,
+    members: [
+      { role: "IGL", name: "ゴッホチー", min: 76, max: 85 },
+      { role: "ATTACKER", name: "ピカソウ", min: 76, max: 92 },
+      { role: "SUPPORT", name: "ミューシャ", min: 74, max: 86 },
+    ],
+  },
+  {
+    id: "world24",
+    tier: "world",
+    name: "キャンディーもののけ",
+    image: "world24.png",
+    overall: 80,
+    members: [
+      { role: "IGL", name: "ライジングサン", min: 76, max: 89 },
+      { role: "ATTACKER", name: "アシタング", min: 66, max: 92 },
+      { role: "SUPPORT", name: "デイダラ", min: 74, max: 86 },
+    ],
+  },
+  {
+    id: "world25",
+    tier: "world",
+    name: "避雷針とかみかくし",
+    image: "world25.png",
+    overall: 80,
+    members: [
+      { role: "IGL", name: "リン・チヒーロ", min: 76, max: 82 },
+      { role: "ATTACKER", name: "ユーババ", min: 66, max: 92 },
+      { role: "SUPPORT", name: "カオノアリ", min: 74, max: 89 },
+    ],
+  },
+  {
+    id: "world26",
+    tier: "world",
+    name: "13階段",
+    image: "world26.png",
+    overall: 80,
+    members: [
+      { role: "IGL", name: "ぜムンクルス", min: 76, max: 82 },
+      { role: "ATTACKER", name: "マルシャー", min: 66, max: 92 },
+      { role: "SUPPORT", name: "サイクル", min: 74, max: 86 },
+    ],
+  },
+  {
+    id: "world27",
+    tier: "world",
+    name: "ワールドマジシャンズ",
+    image: "world27.png",
+    overall: 85,
+    members: [
+      { role: "IGL", name: "カオスブラック", min: 78, max: 88 },
+      { role: "ATTACKER", name: "イリュージョニスト", min: 70, max: 99 },
+      { role: "SUPPORT", name: "サクリファイス", min: 80, max: 92 },
+    ],
+  },
+  {
+    id: "world28",
+    tier: "world",
+    name: "スペースバーガーズ",
+    image: "world28.png",
+    overall: 79,
+    members: [
+      { role: "IGL", name: "チーズファントム", min: 75, max: 81 },
+      { role: "ATTACKER", name: "ポテトジャーファル", min: 65, max: 91 },
+      { role: "SUPPORT", name: "カフェハーデス", min: 73, max: 85 },
+    ],
+  },
+  {
+    id: "world29",
+    tier: "world",
+    name: "ホワイトタイガークロ―",
+    image: "world29.png",
+    overall: 79,
+    members: [
+      { role: "IGL", name: "バグズ", min: 74, max: 82 },
+      { role: "ATTACKER", name: "ノイズ", min: 64, max: 93 },
+      { role: "SUPPORT", name: "パッチ", min: 73, max: 85 },
+    ],
+  },
+  {
+    id: "world30",
+    tier: "world",
+    name: "コンバット007",
+    image: "world30.png",
+    overall: 78,
+    members: [
+      { role: "IGL", name: "ゴールデンロクス", min: 74, max: 87 },
+      { role: "ATTACKER", name: "シオ", min: 64, max: 90 },
+      { role: "SUPPORT", name: "アクリア", min: 72, max: 84 },
+    ],
+  },
+  {
+    id: "world31",
+    tier: "world",
+    name: "インフェルノモンスターズ",
+    image: "world31.png",
+    overall: 78,
+    members: [
+      { role: "IGL", name: "ピエロック", min: 74, max: 80 },
+      { role: "ATTACKER", name: "ショーマン", min: 64, max: 90 },
+      { role: "SUPPORT", name: "ドラムン", min: 72, max: 84 },
+    ],
+  },
+  {
+    id: "world32",
+    tier: "world",
+    name: "バスターハムスターズ",
+    image: "world32.png",
+    overall: 77,
+    members: [
+      { role: "IGL", name: "ハシルンデス", min: 73, max: 85 },
+      { role: "ATTACKER", name: "トットコ", min: 63, max: 89 },
+      { role: "SUPPORT", name: "ヒューガ", min: 71, max: 83 },
+    ],
+  },
+  {
+    id: "world33",
+    tier: "world",
+    name: "戦場のプリンセス",
+    image: "world33.png",
+    overall: 77,
+    members: [
+      { role: "IGL", name: "シンディララ", min: 73, max: 84 },
+      { role: "ATTACKER", name: "シラユキ", min: 63, max: 89 },
+      { role: "SUPPORT", name: "オーロラ", min: 71, max: 83 },
+    ],
+  },
+  {
+    id: "world34",
+    tier: "world",
+    name: "ナイトメアアイスキング",
+    image: "world34.png",
+    overall: 77,
+    members: [
+      { role: "IGL", name: "ドレッド", min: 72, max: 79 },
+      { role: "ATTACKER", name: "ファントム", min: 61, max: 99 },
+      { role: "SUPPORT", name: "スリープ", min: 71, max: 83 },
+    ],
+  },
+  {
+    id: "world35",
+    tier: "world",
+    name: "オーケストラサムライズ",
+    image: "world35.png",
+    overall: 76,
+    members: [
+      { role: "IGL", name: "ピッコロ", min: 72, max: 86 },
+      { role: "ATTACKER", name: "チェロ", min: 62, max: 88 },
+      { role: "SUPPORT", name: "パイプ", min: 70, max: 82 },
+    ],
+  },
+  {
+    id: "world36",
+    tier: "world",
+    name: "スカイロード31",
+    image: "world36.png",
+    overall: 75,
+    members: [
+      { role: "IGL", name: "グロウ", min: 71, max: 77 },
+      { role: "ATTACKER", name: "フラッシュ", min: 61, max: 87 },
+      { role: "SUPPORT", name: "ビート", min: 69, max: 81 },
+    ],
+  },
+  {
+    id: "world37",
+    tier: "world",
+    name: "クロノギアナイフ",
+    image: "world37.png",
+    overall: 73,
+    members: [
+      { role: "IGL", name: "タイム", min: 69, max: 75 },
+      { role: "ATTACKER", name: "ギアード", min: 59, max: 95 },
+      { role: "SUPPORT", name: "リセット", min: 67, max: 79 },
+    ],
+  },
+  {
+    id: "world38",
+    tier: "world",
+    name: "メテオストライカーズ",
+    image: "world38.png",
+    overall: 71,
+    members: [
+      { role: "IGL", name: "メテオ", min: 67, max: 73 },
+      { role: "ATTACKER", name: "ノヴァ", min: 57, max: 83 },
+      { role: "SUPPORT", name: "スターロロ", min: 65, max: 77 },
+    ],
+  },
+  {
+    id: "world39",
+    tier: "world",
+    name: "ラグーンレジェンド",
+    image: "world39.png",
+    overall: 71,
+    members: [
+      { role: "IGL", name: "ラグーナ", min: 67, max: 73 },
+      { role: "ATTACKER", name: "コーラル", min: 57, max: 83 },
+      { role: "SUPPORT", name: "シード", min: 65, max: 77 },
+    ],
+  },
+  {
+    id: "world40",
+    tier: "world",
+    name: "ジュラシックラプトルズ",
+    image: "world40.png",
+    overall: 75,
+    members: [
+      { role: "IGL", name: "サンダーブルー", min: 66, max: 82 },
+      { role: "ATTACKER", name: "タイフーン", min: 56, max: 89 },
+      { role: "SUPPORT", name: "活火山", min: 64, max: 76 },
+    ],
+  },
+];
 
-  const TEAMS = [];
+export const TEAMS_WORLD_BY_ID = Object.fromEntries(TEAMS_WORLD.map(t => [t.id, t]));
 
-  function makeTeam(group, index, powerPct) {
-    const n = String(index).padStart(2, '0');
-    const id = `W_${group}_${n}`;
-    const name = `ワールド${group}-${index}`;
-    return {
-      id,
-      tier: "WORLD",
-      group, // "A" / "B" / "C" / "D"
-      name,
-      powerPct,
-      style: "未設定",
-      members: [
-        `${name}メンバー1`,
-        `${name}メンバー2`,
-        `${name}メンバー3`
-      ],
-      passive: {
-        name: "未設定",
-        desc: "後で設定",
-        effects: []
-      }
-    };
-  }
-
-  // 40チーム：各グループ10
-  // powerPct は“仮”で、強弱の並びだけ作ってあります（後で差し替え前提）。
-  // A: 85→67 / B: 84→66 / C: 83→65 / D: 82→64
-  const base = {
-    A: 85,
-    B: 84,
-    C: 83,
-    D: 82
-  };
-
-  ["A", "B", "C", "D"].forEach((g) => {
-    for (let i = 1; i <= 10; i++) {
-      TEAMS.push(makeTeam(g, i, base[g] - (i - 1) * 2));
-    }
-  });
-
-  function getAll() { return TEAMS.slice(); }
-  function getById(id) { return TEAMS.find(t => t.id === id) || null; }
-  function listByGroup(group) { return TEAMS.filter(t => t.group === group); }
-
-  return {
-    teams: TEAMS,
-    getAll,
-    getById,
-    listByGroup
-  };
-
-})();
+// 互換用（もし既存コードが default import を使ってても受けられるように）
+export default TEAMS_WORLD;
