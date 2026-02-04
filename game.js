@@ -1,167 +1,219 @@
-/* =====================================================
-   game.js  (FULL)
-   MOB Tournament Simulation
-   中央制御・週進行・基本イベント管理
-   ===================================================== */
+/* game.js (FULL)
+   MOB BR
+   VERSION: v1
+   目的:
+   - 起動 → メイン画面初期化
+   - 修行バー（ダミー）生成
+   - 週進行（ポップ表示）
+   - 「大会へ」→ 紙芝居（map→ido→battle→winner）最小導線
+   ※ 仕様確定前なので“最小で必ず動く”ことだけを保証
+*/
 
-/* ====== Global Access ====== */
-const Game = {};
-window.Game = Game;
+(() => {
+  'use strict';
 
-/* ====== DOM ====== */
-Game.dom = {
-  date: document.getElementById('current-date'),
-  nextTournamentName: document.getElementById('next-tournament-name'),
-  nextTournamentDate: document.getElementById('next-tournament-date'),
-  goldValue: document.getElementById('gold-value'),
+  /* =========================
+     ユーティリティ
+  ========================= */
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-  mainImage: document.getElementById('main-image'),
-  playerTeamImage: document.getElementById('player-team-image'),
-  logArea: document.getElementById('log-area'),
+  /* =========================
+     DOM 参照
+  ========================= */
+  const dom = {
+    // top
+    companyName: $('#companyName'),
+    teamName: $('#teamName'),
+    weekText: $('#weekText'),
+    rankText: $('#rankText'),
+    nextTournamentText: $('#nextTournamentText'),
+    nextTournamentDateText: $('#nextTournamentDateText'),
 
-  btnTeam: document.getElementById('btn-team'),
-  btnTournament: document.getElementById('btn-tournament'),
-  btnTraining: document.getElementById('btn-training'),
-  btnShop: document.getElementById('btn-shop'),
-};
+    // main
+    logo: $('#logo'),
+    mainSquareImg: $('#mainSquareImg'),
+    playerTeamImg: $('#playerTeamImg'),
 
-/* ====== Init ====== */
-Game.init = function () {
-  State.init();
-  UI.init();
-  Assets.init();
+    // buttons
+    btnAdvanceWeek: $('#btnAdvanceWeek'),
+    btnGoMatch: $('#btnGoMatch'),
 
-  Game.updateHeader();
-  Game.log('ゲーム開始');
+    // training
+    trainingScroller: $('#trainingScroller'),
 
-  Game.bindButtons();
-};
+    // log
+    logBody: $('#logBody'),
 
-/* ====== Header Update ====== */
-Game.updateHeader = function () {
-  const time = State.time;
-  Game.dom.date.textContent =
-    `${time.year}年 第${time.week}週`;
+    // overlay
+    overlayRoot: $('#overlayRoot'),
+    weekPopup: $('#weekPopup'),
+    weekPopupTitle: $('#weekPopupTitle'),
+    weekPopupText: $('#weekPopupText'),
+    btnWeekPopupNext: $('#btnWeekPopupNext'),
 
-  Game.dom.nextTournamentName.textContent =
-    time.nextTournament.name;
+    // story
+    storyScreen: $('#storyScreen'),
+    storyImg: $('#storyImg'),
+    storyTeamImg: $('#storyTeamImg'),
+  };
 
-  Game.dom.nextTournamentDate.textContent =
-    time.nextTournament.date;
+  /* =========================
+     状態（最小）
+  ========================= */
+  const state = {
+    year: 1989,
+    month: 1,
+    week: 1,
+    companyRank: '--',
+    nextTournament: 'ローカル大会',
+    nextTournamentDate: '1989/01',
 
-  Game.dom.goldValue.textContent = State.gold;
-};
+    storyIndex: 0,
+    storySeq: ['map', 'ido', 'battle', 'winner'],
+  };
 
-/* ====== Logging ====== */
-Game.log = function (text) {
-  const div = document.createElement('div');
-  div.className = 'log-line';
-  div.textContent = text;
-  Game.dom.logArea.appendChild(div);
-  Game.dom.logArea.scrollTop = Game.dom.logArea.scrollHeight;
-};
+  /* =========================
+     初期アセット設定（存在しなくても落ちない）
+  ========================= */
+  const IMG = {
+    bgMain: './img/haikeimain.png',
+    logo: './img/rogo.png',
+    main: './img/main1.png',
+    team: './img/P1.png',
+    story: {
+      map: './img/map.png',
+      ido: './img/ido.png',
+      battle: './img/battle.png',
+      winner: './img/winner.png',
+    }
+  };
 
-/* ====== Button Bindings ====== */
-Game.bindButtons = function () {
-
-  // TEAM
-  Game.dom.btnTeam.addEventListener('dblclick', () => {
-    UI.openTeamMenu();
-  });
-
-  // TOURNAMENT
-  Game.dom.btnTournament.addEventListener('dblclick', () => {
-    UI.openTournamentMenu();
-  });
-
-  // TRAINING
-  Game.dom.btnTraining.addEventListener('dblclick', () => {
-    UI.openTrainingMenu();
-  });
-
-  // SHOP
-  Game.dom.btnShop.addEventListener('dblclick', () => {
-    UI.openShopMenu();
-  });
-};
-
-/* ====== Weekly Progress ====== */
-Game.nextWeek = function () {
-  State.time.week++;
-
-  // 年送り
-  if (State.time.week > 52) {
-    State.time.week = 1;
-    State.time.year++;
-    Game.log(`${State.time.year - 1}年が終了しました`);
+  function safeImg(el, src){
+    if (!el) return;
+    el.onerror = () => { /* フォールバックはCSS背景に任せる */ };
+    el.src = src;
   }
 
-  Game.log(`第${State.time.week}週 開始`);
+  /* =========================
+     表示更新
+  ========================= */
+  function updateTop(){
+    dom.weekText.textContent = `${state.year}年${state.month}月 第${state.week}週`;
+    dom.rankText.textContent = `企業ランク ${state.companyRank}`;
+    dom.nextTournamentText.textContent = `次の大会：${state.nextTournament}`;
+    dom.nextTournamentDateText.textContent = `日程：${state.nextTournamentDate}`;
+  }
 
-  Game.grantWeeklyGold();
-  Game.checkTournamentTrigger();
-  Game.updateHeader();
-};
+  function log(text, muted=false){
+    const p = document.createElement('div');
+    p.className = 'logLine' + (muted ? ' muted' : '');
+    p.textContent = text;
+    dom.logBody.appendChild(p);
+    dom.logBody.scrollTop = dom.logBody.scrollHeight;
+  }
 
-/* ====== Gold Gain ====== */
-Game.grantWeeklyGold = function () {
-  const rank = State.companyRank;
-  let gain = 0;
+  /* =========================
+     修行バー（ダミー）
+  ========================= */
+  const TRAINING_ITEMS = [
+    { id:'shoot', label:'射撃' },
+    { id:'run',   label:'走力' },
+    { id:'aim',   label:'索敵' },
+    { id:'team',  label:'連携' },
+    { id:'rest',  label:'休養' },
+  ];
 
-  if (rank <= 5) gain = 500;
-  else if (rank <= 10) gain = 800;
-  else if (rank <= 20) gain = 1000;
-  else if (rank <= 30) gain = 2000;
-  else gain = 3000;
+  function buildTraining(){
+    dom.trainingScroller.innerHTML = '';
+    TRAINING_ITEMS.forEach(it => {
+      const d = document.createElement('div');
+      d.className = 'trainingItem';
+      d.dataset.id = it.id;
+      d.innerHTML = `<div class="label">${it.label}</div>`;
+      d.addEventListener('click', () => {
+        log(`修行：${it.label} を実行（仮）`);
+      });
+      dom.trainingScroller.appendChild(d);
+    });
+    requestAnimationFrame(updateTrainingCenter);
+  }
 
-  State.gold += gain;
-  Game.log(`${gain}G 獲得！`);
-};
+  function updateTrainingCenter(){
+    const items = $$('.trainingItem');
+    const rect = dom.trainingScroller.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    items.forEach(it => {
+      const r = it.getBoundingClientRect();
+      const ix = r.left + r.width / 2;
+      const dist = Math.abs(ix - cx);
+      it.classList.toggle('isCenter', dist < r.width * 0.35);
+    });
+    requestAnimationFrame(updateTrainingCenter);
+  }
 
-/* ====== Tournament Trigger ====== */
-Game.checkTournamentTrigger = function () {
-  const event = State.getTournamentAtCurrentTime();
-  if (!event) return;
-
-  Game.log(`大会期間：${event.name}`);
-
-  UI.confirm(
-    `大会「${event.name}」に出場しますか？`,
-    () => {
-      Game.startTournament(event);
+  /* =========================
+     週進行
+  ========================= */
+  function advanceWeek(){
+    state.week++;
+    if (state.week > 4){
+      state.week = 1;
+      state.month++;
     }
-  );
-};
+    dom.weekPopupTitle.textContent = `${state.year}年${state.month}月 第${state.week}週`;
+    dom.weekPopupText.textContent = `企業ランクにより 0G 獲得！（仮）`;
+    dom.overlayRoot.classList.add('isOpen','isWeekPopupOpen');
+  }
 
-/* ====== Tournament Start ====== */
-Game.startTournament = function (event) {
-  Game.log(`${event.name} 開始！`);
-
-  // マップ切替
-  Assets.setMainImage('map.png');
-
-  // シミュレーション開始
-  SimTournament.start(event, (result) => {
-    Game.onTournamentEnd(result);
+  dom.btnWeekPopupNext.addEventListener('click', () => {
+    dom.overlayRoot.classList.remove('isWeekPopupOpen','isOpen');
+    updateTop();
+    log('1週が経過した。', true);
   });
-};
 
-/* ====== Tournament End ====== */
-Game.onTournamentEnd = function (result) {
-  Game.log(`${result.name} 終了`);
+  /* =========================
+     紙芝居（最小）
+  ========================= */
+  function startStory(){
+    state.storyIndex = 0;
+    dom.overlayRoot.classList.add('isOpen','isStoryOpen');
+    nextStory();
+  }
 
-  State.applyTournamentResult(result);
+  function nextStory(){
+    const key = state.storySeq[state.storyIndex];
+    if (!key){
+      dom.overlayRoot.classList.remove('isStoryOpen','isOpen');
+      log('大会が終了した。（仮）');
+      return;
+    }
+    safeImg(dom.storyImg, IMG.story[key]);
+    safeImg(dom.storyTeamImg, IMG.team);
+    log(`シーン：${key}`, true);
+    state.storyIndex++;
+    // AUTO 代替：1.2秒で次
+    setTimeout(nextStory, 1200);
+  }
 
-  Assets.setMainImage('main1.png');
-  Game.updateHeader();
-};
+  /* =========================
+     イベント配線
+  ========================= */
+  dom.btnAdvanceWeek.addEventListener('click', advanceWeek);
+  dom.btnGoMatch.addEventListener('click', startStory);
 
-/* ====== Image Helpers ====== */
-Game.setPlayerImage = function (src) {
-  Game.dom.playerTeamImage.src = src;
-};
+  /* =========================
+     初期化
+  ========================= */
+  function init(){
+    safeImg(dom.logo, IMG.logo);
+    safeImg(dom.mainSquareImg, IMG.main);
+    safeImg(dom.playerTeamImg, IMG.team);
+    updateTop();
+    buildTraining();
+    log('準備完了。');
+  }
 
-/* ====== Boot ====== */
-window.addEventListener('load', () => {
-  Game.init();
-});
+  document.addEventListener('DOMContentLoaded', init);
+})();
