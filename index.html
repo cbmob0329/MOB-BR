@@ -2,186 +2,85 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f17" />
-  <title>MOB BR</title>
+  <title>MOB Battle Royale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-  <!-- CSS -->
-  <link rel="stylesheet" href="./style.css?v=1" />
+  <!-- Reset / Base -->
+  <meta name="theme-color" content="#000000" />
 
-  <!-- iOS PWA-ish -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- Style -->
+  <link rel="stylesheet" href="./style.css" />
 
-  <!-- Preload (存在しない場合でも致命傷にならないようJS側でフォールバック) -->
-  <link rel="preload" as="image" href="./img/haikeimain.png" />
-  <link rel="preload" as="image" href="./img/rogo.png" />
-  <link rel="preload" as="image" href="./img/main1.png" />
-  <link rel="preload" as="image" href="./img/P1.png" />
-  <link rel="preload" as="image" href="./img/map.png" />
-  <link rel="preload" as="image" href="./img/ido.png" />
-  <link rel="preload" as="image" href="./img/battle.png" />
-  <link rel="preload" as="image" href="./img/winner.png" />
-  <link rel="preload" as="image" href="./img/shop.png" />
 </head>
-
 <body>
-  <div id="app" class="app">
-    <!-- 背景（haikeimain.png） -->
-    <div id="bgMain" class="bgMain" aria-hidden="true"></div>
 
-    <!-- 画面全体の安全領域 -->
-    <div class="safe">
-      <!-- 右上ロゴ（rogo.png） -->
-      <img id="logo" class="logo" alt="logo" />
+  <!-- =========================
+       APP ROOT
+  ========================== -->
+  <div id="app">
 
-      <!-- 上部バー（赤帯の位置＝表示領域。実際は赤くしない） -->
-      <div id="topBar" class="topBar">
-        <div class="topBarLeft">
-          <button id="btnEditCompany" class="nameBtn" type="button" title="企業名を変更">
-            <span id="companyName" class="nameText">企業名</span>
-          </button>
-          <span class="sep">/</span>
-          <button id="btnEditTeam" class="nameBtn" type="button" title="チーム名を変更">
-            <span id="teamName" class="nameText">チーム名</span>
-          </button>
-        </div>
+    <!-- =========================
+         HEADER
+    ========================== -->
+    <header id="header">
+      <div id="header-left">
+        <span id="dateText">----</span>
+      </div>
+      <div id="header-right">
+        <img id="logo" src="assets/rogo.png" alt="logo" />
+      </div>
+    </header>
 
-        <div class="topBarRight">
-          <div class="weekLine">
-            <span id="weekText">1989年1月 第1週</span>
-            <span class="dot">・</span>
-            <span id="rankText">企業ランク --</span>
-          </div>
-          <div class="nextLine">
-            <span id="nextTournamentText">次の大会：--</span>
-            <span class="dot">・</span>
-            <span id="nextTournamentDateText">日程：--</span>
-          </div>
-        </div>
+    <!-- =========================
+         MAIN VISUAL AREA
+    ========================== -->
+    <main id="main">
+
+      <!-- 背景（紙芝居） -->
+      <div id="bgLayer">
+        <img id="bgImage" src="assets/main1.png" alt="background" />
       </div>
 
-      <!-- メイン中央（main1.png + チーム画像P1.png） -->
-      <div id="mainSquare" class="mainSquare">
-        <img id="mainSquareImg" class="mainSquareImg" alt="main" />
-        <img id="playerTeamImg" class="playerTeamImg" alt="player team" />
+      <!-- 左：プレイヤー -->
+      <div id="leftCharacter">
+        <img id="playerImage" src="assets/P1.png" alt="player team" />
+        <div class="teamName" id="playerTeamName"></div>
       </div>
 
-      <!-- 左ボタン（team / taikai） -->
-      <div class="leftButtons">
-        <button id="btnTeam" class="imgBtn big" type="button" aria-label="チーム">
-          <img id="imgTeamBtn" alt="team" />
-        </button>
-        <button id="btnTournament" class="imgBtn big" type="button" aria-label="大会">
-          <img id="imgTournamentBtn" alt="tournament" />
-        </button>
+      <!-- 右：敵チーム -->
+      <div id="rightCharacter">
+        <img id="enemyImage" src="" alt="enemy team" />
+        <div class="teamName" id="enemyTeamName"></div>
       </div>
 
-      <!-- 右下/右側補助ボタン（ショップなど：メイン仕様に合わせて拡張） -->
-      <div class="rightButtons">
-        <button id="btnShop" class="imgBtn" type="button" aria-label="ショップ">
-          <span class="txtBtn">SHOP</span>
-        </button>
-        <button id="btnSchedule" class="imgBtn" type="button" aria-label="スケジュール">
-          <span class="txtBtn">SCHEDULE</span>
-        </button>
+      <!-- 中央：セリフ／ログ枠 -->
+      <div id="messageBox">
+        <div id="messageText"></div>
       </div>
 
-      <!-- 修行（横スクロール領域：レイアウトの黄緑部を想定。中身はJSで差し込み） -->
-      <div id="trainingBar" class="trainingBar" aria-label="修行">
-        <div id="trainingScroller" class="trainingScroller">
-          <!-- JSでカード/アイコン要素を生成 -->
-        </div>
-      </div>
+    </main>
 
-      <!-- 下部：ログ枠（紙芝居＋ログの中心UI。表示/非表示・内容はJSで制御） -->
-      <div id="logPanel" class="logPanel" aria-live="polite">
-        <div class="logHeader">
-          <div id="logTitle" class="logTitle">LOG</div>
-          <div class="logControls">
-            <button id="btnAuto" class="smallBtn" type="button">AUTO</button>
-            <button id="btnNext" class="smallBtn" type="button">NEXT</button>
-          </div>
-        </div>
-        <div id="logBody" class="logBody"></div>
-      </div>
+    <!-- =========================
+         FOOTER / CONTROLS
+    ========================== -->
+    <footer id="footer">
+      <button id="autoBtn">AUTO</button>
+      <button id="nextBtn">NEXT</button>
+    </footer>
 
-      <!-- 週送りなどの共通操作（メイン仕様：週変化ポップ/次へボタンはオーバーレイで） -->
-      <div class="bottomBar">
-        <button id="btnAdvanceWeek" class="primaryBtn" type="button">1週進める</button>
-        <button id="btnGoMatch" class="primaryBtn" type="button">大会へ</button>
-      </div>
-    </div>
-
-    <!-- 画面オーバーレイ（ポップアップ / メッセージ / 入力） -->
-    <div id="overlayRoot" class="overlayRoot" aria-hidden="true">
-      <div id="overlayDim" class="overlayDim"></div>
-
-      <!-- 共通モーダル -->
-      <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-        <div class="modalHeader">
-          <div id="modalTitle" class="modalTitle">TITLE</div>
-          <button id="btnCloseModal" class="closeBtn" type="button" aria-label="閉じる">×</button>
-        </div>
-        <div id="modalBody" class="modalBody"></div>
-        <div id="modalFooter" class="modalFooter"></div>
-      </div>
-
-      <!-- 週変化ポップ（中央大きく + NEXT） -->
-      <div id="weekPopup" class="weekPopup" role="dialog" aria-modal="true" aria-labelledby="weekPopupTitle">
-        <div id="weekPopupTitle" class="weekPopupTitle">1989年1月 第1週</div>
-        <div id="weekPopupText" class="weekPopupText">企業ランクにより 0G獲得！</div>
-        <button id="btnWeekPopupNext" class="primaryBtn" type="button">NEXT</button>
-      </div>
-
-      <!-- 初回入力（企業名/チーム名） -->
-      <div id="nameSetup" class="nameSetup" role="dialog" aria-modal="true" aria-labelledby="nameSetupTitle">
-        <div id="nameSetupTitle" class="nameSetupTitle">はじめに入力</div>
-        <label class="field">
-          <span class="fieldLabel">企業名</span>
-          <input id="inputCompany" class="fieldInput" type="text" maxlength="24" autocomplete="off" />
-        </label>
-        <label class="field">
-          <span class="fieldLabel">チーム名</span>
-          <input id="inputTeam" class="fieldInput" type="text" maxlength="24" autocomplete="off" />
-        </label>
-        <div class="nameSetupActions">
-          <button id="btnNameSetupOk" class="primaryBtn" type="button">OK</button>
-        </div>
-      </div>
-
-      <!-- フルスクリーン紙芝居画面（map/ido/battle/winner等の画像を表示。前面にチーム画像） -->
-      <div id="storyScreen" class="storyScreen" aria-hidden="true">
-        <img id="storyImg" class="storyImg" alt="story" />
-        <img id="storyTeamImg" class="storyTeamImg" alt="team" />
-      </div>
-    </div>
-
-    <!-- 画像が読み込めない時の保険（JSで状態管理） -->
-    <noscript>
-      <div class="nojs">
-        JavaScriptが必要です。
-      </div>
-    </noscript>
   </div>
 
-  <!-- Scripts（コンセプト：index.htmlで複数script許可） -->
-  <script defer src="./assets.js?v=1"></script>
-  <script defer src="./state.js?v=1"></script>
+  <!-- =========================
+       SCRIPTS
+       ※9ファイル固定・順序厳守
+  ========================== -->
+  <script src="./data_rules.js"></script>
+  <script src="./data_player.js"></script>
+  <script src="./data_cpu_teams.js"></script>
+  <script src="./storage.js"></script>
+  <script src="./ui.js"></script>
+  <script src="./sim.js"></script>
+  <script src="./app.js"></script>
 
-  <script defer src="./data_const.js?v=1"></script>
-  <script defer src="./data_players.js?v=1"></script>
-  <script defer src="./data_items.js?v=1"></script>
-  <script defer src="./data_coachskills.js?v=1"></script>
-  <script defer src="./data_teams_local.js?v=1"></script>
-  <script defer src="./data_teams_national.js?v=1"></script>
-  <script defer src="./data_teams_world.js?v=1"></script>
-  <script defer src="./data_teams_index.js?v=1"></script>
-
-  <script defer src="./ui.js?v=1"></script>
-  <script defer src="./sim_rules.js?v=1"></script>
-  <script defer src="./sim_battle.js?v=1"></script>
-  <script defer src="./sim_tournament_core.js?v=1"></script>
-  <script defer src="./game.js?v=1"></script>
 </body>
 </html>
