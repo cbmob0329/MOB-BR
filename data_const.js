@@ -1,152 +1,238 @@
 /* =====================================================
-   data_const.js  (FULL)
-   MOB Tournament Simulation
-   固定定数 / スケジュール / 大会定義 / マップID枠
+   data_const.js
+   - ゲーム全体の固定定数（UI/STATE/SIM で参照）
+   - 仕様の“数値固定”をここに集約（参照のみ）
    ===================================================== */
 
-window.DATA_CONST = (function () {
+(() => {
 
-  /* =========================
-     固定ルール（ゲーム根幹）
-     ========================= */
-  const CONST = {
+  const DATA_CONST = {
+    /* -------------------------------------
+       表示／基本
+       ------------------------------------- */
+    GAME_TITLE: 'MOB Battle Royale Simulator',
+
+    // プレイヤー表示（装備中のP?.png で差し替える）
+    DEFAULT_PLAYER_IMAGE: 'P1.png',
+    PLAYER_TEAM_NAME: 'あなたの部隊',
+
+    // 背景（固定ファイル名）
+    BG_MAIN: 'main.png',
+    BG_IDO: 'ido.png',
+    BG_MAP: 'map.png',
+    BG_SHOP: 'shop.png',
+    BG_BATTLE: 'battle.png',
+    BG_WINNER: 'winner.png',
+
+    /* -------------------------------------
+       チーム／試合の大枠
+       ------------------------------------- */
     PARTY_SIZE: 3,
-    LOCAL_TEAM_COUNT: 20,     // ローカル大会：20チーム
-    // ナショナル/ワールドは「別ルールで増える」想定だが、今は土台だけ
-    MAX_TEAM_COUNT: 40,
+    TEAMS_PER_MATCH: 20,
 
-    ARMOR_BASE: 100,          // Armor 基本100固定（上限も100扱い）
-    SYNERGY_BASE: 20,         // 連携（初期）
-    SYNERGY_MAX: 200,
+    // 1試合のラウンド構成（確定）
+    ROUNDS: [1, 2, 3, 4, 5, 6],
 
-    // 仕様：未画像は assets.js プレースホルダ表示（ここでは画像名を列挙）
-    IMAGES: {
-      PLAYER_TEAM_DEFAULT: 'P1.png',
-      MAIN_BG: 'haikeimain.png',   // 既存運用（なければ assets.js がプレースホルダ化）
-      MAIN_SCREEN: 'main.png',     // 仕様ファイル名（あなたのコンセプト）
-      MAIN_SCREEN_ALT: 'main1.png',// 既存運用（今回index/game側が参照）
-      MAP: 'map.png',
-      MOVE: 'ido.png',
-      SHOP: 'shop.png',
-      HEAL: 'heal.png',
-      BATTLE: 'battle.png',
-      WINNER: 'winner.png'
-    }
+    // マップ（確定）
+    // R1-R2: Area1-16 / R3: 17-20 / R4: 21-22 / R5: 23-24 / R6: 25固定
+    AREA_BY_ROUND: {
+      1: { min: 1, max: 16 },
+      2: { min: 1, max: 16 },
+      3: { min: 17, max: 20 },
+      4: { min: 21, max: 22 },
+      5: { min: 23, max: 24 },
+      6: { min: 25, max: 25 },
+    },
+
+    FINAL_AREA_ID: 25,
+
+    // ラウンド終了時点の生存チーム数（確定）
+    // R1:20→16 / R2:16→12 / R3:12→8 / R4:8→4 / R5:4→2 / R6:2→1
+    ALIVE_TEAMS_AFTER_ROUND: {
+      1: 16,
+      2: 12,
+      3: 8,
+      4: 4,
+      5: 2,
+      6: 1,
+    },
+
+    /* -------------------------------------
+       交戦枠（確定）
+       ------------------------------------- */
+    FIGHTS_PER_ROUND: {
+      1: 4,
+      2: 4,
+      3: 4,
+      4: 4,
+      5: 2,
+      6: 1,
+    },
+
+    // プレイヤーが交戦に巻き込まれる確率（確定）
+    PLAYER_FIGHT_CHANCE: {
+      1: 1.00, // 被りなら100%（開始配置で処理）
+      2: 0.70,
+      3: 0.75,
+      4: 0.80,
+      5: 0.85,
+      6: 1.00,
+    },
+
+    /* -------------------------------------
+       リスポーン（確定）
+       ------------------------------------- */
+    RESPAWN: {
+      // R1-R5
+      NORMAL: {
+        // deathBoxes=1 → 100%で1人復活
+        DB1_REVIVE_COUNT: 1,
+        // deathBoxes=2 → 70%で2人復活 / 30%で1人復活
+        DB2_REVIVE_2_RATE: 0.70,
+        DB2_REVIVE_1_RATE: 0.30,
+      },
+      // R6開始時：deathBoxes>=1なら全員復帰（alive=3, deathBoxes=0）
+      FINAL_FORCE_FULL_REVIVE: true,
+    },
+
+    /* -------------------------------------
+       イベント（確定：重み抽選）
+       - R1=1個 / R2-R5=2個（同ラウンド重複なし） / R6基本なし
+       ------------------------------------- */
+    EVENTS: {
+      COUNT_BY_ROUND: { 1: 1, 2: 2, 3: 2, 4: 2, 5: 2, 6: 0 },
+      LIST: [
+        {
+          id: 'meeting',
+          weight: 35,
+          name: '作戦会議',
+          line: '作戦会議！連携力がアップ！',
+          effect: { type: 'buff', aimPct: 0, mentalPct: 0, agilityPct: 1, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'huddle',
+          weight: 35,
+          name: '円陣',
+          line: '円陣を組んだ！ファイト力がアップ！',
+          effect: { type: 'buff', aimPct: 1, mentalPct: 0, agilityPct: 0, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'scan',
+          weight: 35,
+          name: '冷静な索敵',
+          line: '冷静に索敵！先手を取りやすくなる！',
+          effect: { type: 'buff', aimPct: 0, mentalPct: 1, agilityPct: 0, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'rare_weapon',
+          weight: 10,
+          name: 'レア武器ゲット',
+          line: 'レア武器を拾った！全員のエイムが大きくアップ！',
+          effect: { type: 'buff', aimPct: 2, mentalPct: 0, agilityPct: 0, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'mistake',
+          weight: 15,
+          name: '判断ミス',
+          line: '向かう方向が分かれてタイムロス！敏捷性が下がった！',
+          effect: { type: 'buff', aimPct: 0, mentalPct: 0, agilityPct: -1, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'fight',
+          weight: 10,
+          name: '喧嘩',
+          line: 'コールが嚙み合わない！全員のメンタルが減少！',
+          effect: { type: 'buff', aimPct: 0, mentalPct: -1, agilityPct: 0, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'zone',
+          weight: 5,
+          name: 'ゾーンに入る',
+          line: '全員がゾーンに入り覚醒！',
+          effect: { type: 'buff', aimPct: 3, mentalPct: 3, agilityPct: 0, treasure: 0, flag: 0 },
+        },
+        {
+          id: 'treasure',
+          weight: 4,
+          name: 'お宝ゲット',
+          line: 'お宝をゲットした！',
+          effect: { type: 'count', aimPct: 0, mentalPct: 0, agilityPct: 0, treasure: 1, flag: 0 },
+        },
+        {
+          id: 'flag',
+          weight: 2,
+          name: 'フラッグゲット',
+          line: 'フラッグをゲットした！',
+          effect: { type: 'count', aimPct: 0, mentalPct: 0, agilityPct: 0, treasure: 0, flag: 1 },
+        },
+      ],
+    },
+
+    /* -------------------------------------
+       勝率計算（確定）
+       ------------------------------------- */
+    WINRATE: {
+      // A勝率 = clamp(50 + (A-B)*1.8, 22, 78)
+      SCALE: 1.8,
+      MIN: 22,
+      MAX: 78,
+    },
+
+    // 人数補正（確定）
+    // alive=2 の時だけ「総合力 +40%補正」
+    ALIVE2_POWER_BONUS_PCT: 40,
+
+    /* -------------------------------------
+       戦闘結果（勝者側も削れる：DB抽選固定）
+       ------------------------------------- */
+    WINNER_DB_LOSS: {
+      // 0人:55% / 1人:35% / 2人:10%
+      LOSS0: 0.55,
+      LOSS1: 0.35,
+      LOSS2: 0.10,
+    },
+
+    /* -------------------------------------
+       result（確定）
+       ------------------------------------- */
+    PLACEMENT_POINTS: {
+      1: 12,
+      2: 8,
+      3: 5,
+      4: 3,
+      5: 2,
+      // 6〜10は1、11〜20は0（sim側で処理しやすいよう関数化してもOKだがここは定数のみ）
+      6: 1,
+      7: 1,
+      8: 1,
+      9: 1,
+      10: 1,
+    },
+
+    // ボーナス
+    BONUS: {
+      KP_PER_1: 1,
+      AP_PER_1: 1,
+      TREASURE_PER_1: 1,
+      FLAG_PER_1: 2, // Flagは×2
+    },
+
+    /* -------------------------------------
+       キル／アシスト（確定ルール）
+       ------------------------------------- */
+    ASSIST_RULE: {
+      // 1キルにつき最大1アシスト（Assist ≤ Kill を絶対保証）
+      MAX_ASSIST_PER_KILL: 1,
+    },
+
+    // 個人配分重み（確定）
+    ROLE_KILL_WEIGHT: {
+      attacker: 50,
+      igl: 30,
+      support: 20,
+    },
   };
 
-  /* =========================
-     スケジュール表示（UI用）
-     ※あなたが共有してくれた表記をそのまま採用
-     ========================= */
-  const scheduleText = [
-    '2月第1週',
-    'SP1 ローカル大会',
-    '',
-    '3月第1週',
-    'SP1 ナショナル大会',
-    'A & B  C & D  A & C',
-    '3月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '3月第3週',
-    'ナショナル大会ラストチャンス',
-    '4月第1週',
-    'SP1 ワールドファイナル',
-    '',
-    '7月第1週',
-    'SP2 ローカル大会',
-    '',
-    '8月第1週',
-    'SP2 ナショナル大会',
-    'A & B  C & D  A & C',
-    '8月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '8月第3週',
-    'SP2 ナショナル大会ラストチャンス',
-    '9月第1週',
-    'SP2 ワールドファイナル',
-    '',
-    '11月第1週',
-    'チャンピオンシップ ローカル大会',
-    '',
-    '12月第1週',
-    'チャンピオンシップ ナショナル大会',
-    'A & B  C & D  A & C',
-    '12月第2週',
-    'B & C',
-    'A & D',
-    'B & D',
-    '12月第3週',
-    'チャンピオンシップ ナショナル大会ラストチャンス',
-    '',
-    '1月第2週',
-    'チャンピオンシップ ワールドファイナル'
-  ].join('\n');
+  window.DATA_CONST = DATA_CONST;
 
-  /* =========================
-     大会（年週）定義
-     - 「年週」で確定させるため、まずは1989年の標準スケジュールを作る
-     - 月第n週 → だいたい「(月-1)*4 + n」週として扱う（暫定）
-       ※厳密カレンダーではなく“ゲーム内週”として運用
-     - 例：2月第1週 = 5週、3月第1週 = 9週、4月第1週 = 13週、7月第1週 = 25週...
-     - チャンピオンシップ ワールドだけ「翌年1月第2週」として year+1 で定義
-     ========================= */
-
-  function w(month, nthWeek) {
-    return (month - 1) * 4 + nthWeek; // 1月第1週=1, 2月第1週=5 ...
-  }
-
-  function label(month, nthWeek) {
-    return `${month}月第${nthWeek}週`;
-  }
-
-  // tournaments: [{year, week, key, name, tier, seasonKey, dateLabel}]
-  const tournaments = [
-    // ---- SP1 ----
-    { year: 1989, week: w(2,1),  key: 'SP1_LOCAL',     name: 'SP1 ローカル大会',           tier: 'LOCAL',    seasonKey: 'SP1',   dateLabel: label(2,1) },
-    { year: 1989, week: w(3,1),  key: 'SP1_NATIONAL',  name: 'SP1 ナショナル大会',         tier: 'NATIONAL', seasonKey: 'SP1',   dateLabel: label(3,1) },
-    { year: 1989, week: w(4,1),  key: 'SP1_WORLD',     name: 'SP1 ワールドファイナル',     tier: 'WORLD',    seasonKey: 'SP1',   dateLabel: label(4,1) },
-
-    // ---- SP2 ----
-    { year: 1989, week: w(7,1),  key: 'SP2_LOCAL',     name: 'SP2 ローカル大会',           tier: 'LOCAL',    seasonKey: 'SP2',   dateLabel: label(7,1) },
-    { year: 1989, week: w(8,1),  key: 'SP2_NATIONAL',  name: 'SP2 ナショナル大会',         tier: 'NATIONAL', seasonKey: 'SP2',   dateLabel: label(8,1) },
-    { year: 1989, week: w(9,1),  key: 'SP2_WORLD',     name: 'SP2 ワールドファイナル',     tier: 'WORLD',    seasonKey: 'SP2',   dateLabel: label(9,1) },
-
-    // ---- CHAMP ----
-    { year: 1989, week: w(11,1), key: 'CHAMP_LOCAL',   name: 'チャンピオンシップ ローカル大会', tier: 'LOCAL',    seasonKey: 'CHAMP', dateLabel: label(11,1) },
-    { year: 1989, week: w(12,1), key: 'CHAMP_NATIONAL',name: 'チャンピオンシップ ナショナル大会',tier: 'NATIONAL', seasonKey: 'CHAMP', dateLabel: label(12,1) },
-
-    // 翌年：1月第2週（year+1, week=2）
-    { year: 1990, week: w(1,2),  key: 'CHAMP_WORLD',   name: 'チャンピオンシップ ワールドファイナル', tier: 'WORLD', seasonKey: 'CHAMP', dateLabel: label(1,2) }
-  ];
-
-  /* =========================
-     マップID（場所）枠：ID1〜ID32
-     - 現時点では名前が未確定なので仮置き
-     - 後であなたが「ID◯は◯◯」と指定したらここを更新して確定させる
-     ========================= */
-  const mapAreas = [];
-  for (let i = 1; i <= 32; i++) {
-    mapAreas.push({
-      id: i,
-      key: `AREA_${String(i).padStart(2, '0')}`,
-      name: `エリア${i}`,     // 仮名（後で確定）
-      // 後でルート/隣接/危険度/物資などを追加する想定
-      tags: [],
-      note: ''
-    });
-  }
-
-  /* =========================
-     公開
-     ========================= */
-  return {
-    CONST,
-    scheduleText,
-    tournaments,
-    mapAreas
-  };
 })();
