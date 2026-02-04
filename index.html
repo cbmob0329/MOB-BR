@@ -1,116 +1,80 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>MOB TOURNAMENT SIM</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <title>MOB Battle Royale Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="./style.css" />
+
+  <!-- 事前ロード（将来拡張用 / 画像差し替え前提） -->
+  <link rel="preload" href="./assets.js" as="script" />
+  <link rel="preload" href="./ui.js" as="script" />
+  <link rel="preload" href="./state.js" as="script" />
+  <link rel="preload" href="./game.js" as="script" />
 </head>
+
 <body>
+  <!-- ===============================
+       ゲーム全体コンテナ
+       =============================== -->
+  <div id="game-root">
 
-  <!-- ===== HEADER ===== -->
-  <header id="header">
-    <div id="header-left">
-      <img id="logo" src="rogo.png" alt="MOB LOGO">
+    <!-- 背景レイヤー -->
+    <div id="bg-layer">
+      <!-- assets.js から動的に背景画像を差し替える -->
     </div>
-    <div id="header-center">
-      <div id="time-info">
-        <span id="current-date">1989年 第1週</span>
-      </div>
-      <div id="next-tournament">
-        次の大会：<span id="next-tournament-name">SP1 ローカル大会</span>
-        （<span id="next-tournament-date">2月第1週</span>）
+
+    <!-- 左：プレイヤーチーム表示 -->
+    <div id="player-layer" class="side-layer left">
+      <!-- P1.png などを表示 -->
+    </div>
+
+    <!-- 右：敵チーム表示 -->
+    <div id="enemy-layer" class="side-layer right">
+      <!-- 交戦時のみ teamId.png を表示 -->
+    </div>
+
+    <!-- 中央：セリフ／ログ枠 -->
+    <div id="log-layer">
+      <div id="log-box">
+        <div id="log-text">
+          <!-- RPG風セリフがここに表示される -->
+        </div>
       </div>
     </div>
-    <div id="header-right">
-      <div id="gold-info">
-        <span id="gold-value">0</span> G
-      </div>
+
+    <!-- UIレイヤー -->
+    <div id="ui-layer">
+      <!-- ボタン類 -->
+      <button id="btn-next">NEXT</button>
+      <button id="btn-auto">AUTO</button>
     </div>
-  </header>
 
-  <!-- ===== MAIN ===== -->
-  <main id="main">
-
-    <!-- ===== LEFT MENU ===== -->
-    <section id="left-menu">
-      <button class="menu-btn" id="btn-team">
-        <img src="team.png" alt="TEAM">
-      </button>
-      <button class="menu-btn" id="btn-tournament">
-        <img src="taikai.png" alt="TOURNAMENT">
-      </button>
-      <button class="menu-btn" id="btn-training">
-        <img src="syageki.png" alt="TRAINING">
-      </button>
-      <button class="menu-btn" id="btn-shop">
-        <img src="shop.png" alt="SHOP">
-      </button>
-    </section>
-
-    <!-- ===== CENTER VIEW ===== -->
-    <section id="center-view">
-
-      <!-- メイン背景 -->
-      <div id="main-background">
-        <img src="haikeimain.png" alt="MAIN BG">
-      </div>
-
-      <!-- 正方形メイン表示 -->
-      <div id="main-square">
-        <img id="main-image" src="main1.png" alt="MAIN IMAGE">
-        <img id="player-team-image" src="P1.png" alt="PLAYER TEAM">
-      </div>
-
-      <!-- ログ表示 -->
-      <div id="log-area">
-        <div class="log-line">ゲーム開始</div>
-      </div>
-
-    </section>
-
-  </main>
-
-  <!-- ===== POPUP OVERLAY ===== -->
-  <div id="overlay" class="hidden"></div>
-
-  <!-- ===== GENERIC POPUP ===== -->
-  <div id="popup" class="hidden">
-    <div id="popup-content"></div>
-    <button id="popup-close">閉じる</button>
   </div>
 
-  <!-- ===== FOOTER ===== -->
-  <footer id="footer">
-    <span>MOB TOURNAMENT SIMULATION</span>
-  </footer>
+  <!-- ===============================
+       スクリプト読込（順序厳守）
+       =============================== -->
+  <script src="./assets.js"></script>
+  <script src="./state.js"></script>
 
-  <!-- ===== SCRIPTS ===== -->
-  <!-- 基本制御 -->
-  <script src="assets.js"></script>
-  <script src="state.js"></script>
-  <script src="data_const.js"></script>
+  <script src="./data_const.js"></script>
+  <script src="./data_players.js"></script>
+  <script src="./data_items.js"></script>
+  <script src="./data_coachskills.js"></script>
+  <script src="./data_teams_local.js"></script>
+  <script src="./data_teams_national.js"></script>
+  <script src="./data_teams_world.js"></script>
+  <script src="./data_teams_index.js"></script>
 
-  <!-- データ -->
-  <script src="data_coachskills.js"></script>
-  <script src="data_players.js"></script>
-  <script src="data_items.js"></script>
+  <script src="./sim_rules.js"></script>
+  <script src="./sim_battle.js"></script>
+  <script src="./sim_tournament_core.js"></script>
 
-  <script src="data_teams_local.js"></script>
-  <script src="data_teams_national.js"></script>
-  <script src="data_teams_world.js"></script>
-  <script src="data_teams_index.js"></script>
-
-  <!-- シミュレーション -->
-  <script src="sim_battle.js"></script>
-  <script src="sim_tournament_core.js"></script>
-  <script src="sim_rules_sp1.js"></script>
-  <script src="sim_rules_sp2.js"></script>
-  <script src="sim_rules_champ.js"></script>
-
-  <!-- UI / GAME -->
-  <script src="ui.js"></script>
-  <script src="game.js"></script>
+  <script src="./ui.js"></script>
+  <script src="./game.js"></script>
 
 </body>
 </html>
