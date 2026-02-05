@@ -14,9 +14,6 @@
   --popZ: 40;
 }
 
-/* ===============================
-   BASIC
-================================ */
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
@@ -25,7 +22,6 @@
 }
 
 *{ box-sizing: border-box; }
-
 html, body{
   margin:0;
   height:100%;
@@ -46,227 +42,192 @@ html, body{
   gap: var(--gap);
 }
 
-/* ===============================
-   BACKGROUND
-================================ */
+/* background */
 .bg{
   position:absolute;
   inset:0;
-  background: #111 url("haikeimain.png") center/cover no-repeat;
+  background:#111 url("haikeimain.png") center/cover no-repeat;
   z-index:0;
 }
 
-.leftCol, .rightCol{
-  position: relative;
-  z-index: 2;
-}
+.leftCol,.rightCol{ position:relative; z-index:2; }
 
-/* ===============================
-   LEFT MENU
-================================ */
+/* LEFT */
 .leftCol{
   height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
 }
 
 .loopScroll{
-  height: 100%;
-  overflow-y: auto;
+  height:100%;
+  overflow-y:auto;
   overscroll-behavior: contain;
-  scrollbar-width: none;
+  scrollbar-width:none;
 }
 .loopScroll::-webkit-scrollbar{ display:none; }
 
 .loopInner{
   display:flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-direction:column;
+  gap:14px;
 }
 
+/* menu buttons */
 .imgBtn{
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
+  width:100%;
+  border:none;
+  background:none;
+  padding:0;
 }
 .imgBtn img{
-  width: 100%;
+  width:100%;
   display:block;
   filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
 }
 
 .floaty{ animation: floaty var(--floatTime) ease-in-out infinite; }
-.delay1{ animation-delay:.15s }
-.delay2{ animation-delay:.30s }
-.delay3{ animation-delay:.45s }
-.delay4{ animation-delay:.60s }
-.delay5{ animation-delay:.75s }
+.delay1{ animation-delay:.15s; }
+.delay2{ animation-delay:.3s; }
+.delay3{ animation-delay:.45s; }
+.delay4{ animation-delay:.6s; }
+.delay5{ animation-delay:.75s; }
 
 @keyframes floaty{
-  0%{ transform: translateY(0); }
   50%{ transform: translateY(-5px); }
-  100%{ transform: translateY(0); }
 }
 
-/* ===============================
-   RIGHT COLUMN
-================================ */
+/* RIGHT */
 .rightCol{
   max-width: var(--rightMax);
   display:flex;
-  flex-direction: column;
-  gap: var(--gap);
+  flex-direction:column;
+  gap:var(--gap);
 }
 
 .topRow{
   display:grid;
-  grid-template-columns: 1fr 1.25fr;
-  gap: var(--gap);
+  grid-template-columns:1fr 1.25fr;
+  gap:var(--gap);
 }
 
-/* logo */
 .logoWrap img{
-  max-width: 320px;
+  max-width:320px;
   filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
 }
 
-/* job panel */
+/* job */
 .jobWrap{
-  position: relative;
-  height: 140px;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  height:140px;
+  border-radius:14px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  position:relative;
 }
-
 .jobBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
-  object-fit: cover;
+  object-fit:cover;
 }
-
 .jobText{
   position:absolute;
   inset:0;
-  padding: 14px 16px;
+  padding:14px 16px;
   color:#fff;
-  font-weight: 900;
-  text-shadow: var(--textShadow);
+  font-weight:900;
+  text-shadow:var(--textShadow);
   display:flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
+  flex-direction:column;
+  gap:6px;
 }
+.jobLine{ font-size:18px; white-space:nowrap; }
+.jobLine.small{ font-size:14px; }
 
-.jobLine{ font-size: 17px; }
-.jobLine.small{ font-size: 14px; opacity:.9; }
-.tappable{ cursor:pointer; }
-
-/* ===============================
-   MAIN SQUARE
-================================ */
+/* main square */
 .mainSquare{
-  position: relative;
-  width: min(560px, 100%);
-  aspect-ratio: 1 / 1;
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  width:min(560px,100%);
+  aspect-ratio:1/1;
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  position:relative;
+  overflow:hidden;
 }
-
 .mainFrame{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
-  object-fit: contain;
+  object-fit:contain;
 }
-
 .teamImg{
   position:absolute;
-  left: 10%;
-  right: 10%;
-  top: 12%;
-  bottom: 28%;
-  width: 80%;
-  height: 60%;
-  object-fit: contain;
+  left:10%;
+  right:10%;
+  top:12%;
+  bottom:28%;
+  object-fit:contain;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* ===== メンバー名ボタン強調 ===== */
+/* メンバー名ボタン強調 */
 .memberBtn{
   position:absolute;
-  left: 10%;
-  right: 10%;
-  bottom: 10%;
-  z-index: 4;
-  padding: 12px;
-  font-size: 16px;
-  font-weight: 1000;
-  background: rgba(255,255,255,.95);
-  color:#111;
-  border-radius: 14px;
-  border: 3px solid #ffcf3a;
-  box-shadow:
-    0 0 0 3px rgba(255,207,58,.35),
-    0 10px 24px rgba(0,0,0,.45);
+  left:10%;
+  right:10%;
+  bottom:10%;
+  padding:12px;
+  font-size:16px;
+  font-weight:1000;
+  border-radius:14px;
+  background:#fff;
+  border:3px solid #ffcc00;
+  box-shadow:0 0 0 3px rgba(255,204,0,.35), 0 12px 22px rgba(0,0,0,.4);
 }
-.memberBtn:active{ transform: translateY(1px); }
 
-/* ===============================
-   BOTTOM (ROG)
-================================ */
+/* bottom */
 .rogWrap{
-  position: relative;
-  height: 210px;
-  border-radius: 14px;
+  height:210px;
+  border-radius:14px;
   overflow:hidden;
-  box-shadow: var(--shadow);
+  box-shadow:var(--shadow);
+  position:relative;
 }
-
 .rogBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
-  object-fit: cover;
+  object-fit:cover;
 }
-
 .rogText{
   position:absolute;
   inset:0;
-  padding: 16px;
+  padding:16px;
   color:#fff;
-  font-weight: 900;
-  text-shadow: var(--textShadow);
+  font-weight:1000;
+  text-shadow:var(--textShadow);
   display:flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction:column;
+  gap:10px;
 }
 
-/* ★ 日付を小さく */
+/* 日付を小さく */
 .dateLine{
-  font-size: 18px;
-  opacity:.95;
+  font-size:20px;
+  line-height:1;
 }
-
-.nextTourLine{ font-size: 15px; }
+.nextTourLine{ font-size:16px; }
 
 .recentOnly{
-  font-size: 16px;
-  line-height: 1.2;
+  font-size:18px;
+  overflow:hidden;
 }
 
-/* ===============================
-   TEAM SCREEN
-================================ */
+/* ===== チーム画面 ===== */
 .teamScreen{
   position:absolute;
   inset:0;
-  z-index: calc(var(--popZ) + 3);
+  z-index:50;
   display:none;
 }
 .teamScreen.show{ display:block; }
@@ -276,78 +237,71 @@ html, body{
   left:50%;
   top:50%;
   transform:translate(-50%,-50%);
-  width:min(640px,90vw);
+  width:min(620px,90vw);
   background:rgba(0,0,0,.85);
   border-radius:16px;
-  border:2px solid rgba(255,255,255,.35);
-  box-shadow:var(--shadow);
   padding:16px;
   color:#fff;
-  text-shadow:var(--textShadow);
+  box-shadow:var(--shadow);
 }
-
 .teamTitle{
   font-size:22px;
   font-weight:1000;
-  margin-bottom:10px;
+  margin-bottom:12px;
+}
+.teamBlock{ margin-bottom:14px; }
+
+.teamChar{
+  padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,.2);
 }
 
-/* team power */
-.teamPowerLine{
-  font-size:18px;
-  font-weight:1000;
-  margin-bottom:14px;
-}
-
-/* card bonus */
 .cardBonus{
+  color:#ff5555;
   margin-left:6px;
-  font-size:14px;
   font-weight:900;
-  color:#ff4a4a;
 }
 
-/* member blocks */
-.teamMembersBlock{
-  display:flex;
-  flex-direction:column;
-  gap:14px;
+/* modal */
+.modalBack{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.55);
+  display:none;
+  z-index:40;
 }
-
-.memberBlock{
-  border:2px solid rgba(255,255,255,.25);
-  border-radius:12px;
-  padding:10px;
-}
-
-.memberName{
-  font-size:18px;
-  font-weight:1000;
-  margin-bottom:6px;
-}
-
-.stats{
-  font-size:14px;
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:4px 10px;
+.modalCard{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:min(560px,86vw);
+  background:rgba(0,0,0,.8);
+  border-radius:16px;
+  padding:16px;
+  color:#fff;
+  display:none;
 }
 
 .closeBtn{
-  margin-top:14px;
   width:100%;
-  border:none;
-  border-radius:12px;
+  margin-top:14px;
   padding:12px;
   font-size:16px;
   font-weight:1000;
-  background:rgba(255,255,255,.9);
-  color:#111;
+  border-radius:12px;
 }
 
-/* ===============================
-   SAFE AREA
-================================ */
+/* NEXT */
+.nextCorner{
+  position:absolute;
+  right:16px;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  width:150px;
+  display:none;
+}
+.nextCorner.show{ display:block; }
+
 .safePad{
   position:absolute;
   left:0; right:0; bottom:0;
