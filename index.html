@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>MOB BR - Main</title>
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
 </head>
 <body>
   <div id="app" class="no-callout" aria-label="MOB BR メイン画面">
@@ -12,31 +12,36 @@
     <!-- 全体背景：常に haikeimain.png -->
     <div class="bg" aria-hidden="true"></div>
 
-    <!-- 左：メニューボタン（画像） -->
+    <!-- 左：メニューボタン（ループスクロール） -->
     <aside class="leftCol" aria-label="メニュー">
-      <button class="imgBtn floaty" id="btnTeam" type="button" aria-label="チーム">
-        <img src="bteam.png" alt="TEAM" draggable="false">
-      </button>
+      <div class="loopScroll" id="loopScroll" aria-label="メニュー一覧（スクロール）">
+        <div class="loopInner" id="loopInner">
+          <!-- 1セット目（JSで2セット目を複製して無限にする） -->
+          <button class="imgBtn floaty" id="btnTeam" type="button" aria-label="チーム">
+            <img src="bteam.png" alt="TEAM" draggable="false">
+          </button>
 
-      <button class="imgBtn floaty delay1" id="btnBattle" type="button" aria-label="大会">
-        <img src="bbattle.png" alt="BATTLE" draggable="false">
-      </button>
+          <button class="imgBtn floaty delay1" id="btnBattle" type="button" aria-label="大会">
+            <img src="bbattle.png" alt="BATTLE" draggable="false">
+          </button>
 
-      <button class="imgBtn floaty delay2" id="btnTraining" type="button" aria-label="育成">
-        <img src="btra.png" alt="TRAINING" draggable="false">
-      </button>
+          <button class="imgBtn floaty delay2" id="btnTraining" type="button" aria-label="育成">
+            <img src="btra.png" alt="TRAINING" draggable="false">
+          </button>
 
-      <button class="imgBtn floaty delay3" id="btnShop" type="button" aria-label="ショップ">
-        <img src="bshop.png" alt="SHOP" draggable="false">
-      </button>
+          <button class="imgBtn floaty delay3" id="btnShop" type="button" aria-label="ショップ">
+            <img src="bshop.png" alt="SHOP" draggable="false">
+          </button>
 
-      <button class="imgBtn floaty delay4" id="btnSchedule" type="button" aria-label="スケジュール">
-        <img src="bsc.png" alt="SCHEDULE" draggable="false">
-      </button>
+          <button class="imgBtn floaty delay4" id="btnSchedule" type="button" aria-label="スケジュール">
+            <img src="bsc.png" alt="SCHEDULE" draggable="false">
+          </button>
 
-      <button class="imgBtn floaty delay5" id="btnCard" type="button" aria-label="カードコレクション">
-        <img src="bcard.png" alt="CARD COLLECTION" draggable="false">
-      </button>
+          <button class="imgBtn floaty delay5" id="btnCard" type="button" aria-label="カードコレクション">
+            <img src="bcard.png" alt="CARD COLLECTION" draggable="false">
+          </button>
+        </div>
+      </div>
     </aside>
 
     <!-- 右：情報 + ゲーム枠 + 下部情報 -->
@@ -74,11 +79,15 @@
         <div class="mainSquare" aria-label="メイン正方形枠">
           <img class="mainFrame" src="main1.png" alt="メイン枠" draggable="false">
           <img class="teamImg" id="teamImg" src="P1.png" alt="プレイヤーチーム" draggable="false">
+
+          <!-- メンバー名 -->
           <div class="members">
             <div class="membersLabel">メンバー名</div>
             <div class="membersNames">
-              <span class="mName tappable" id="tapM1" title="タップで変更">○○○</span> /
-              <span class="mName tappable" id="tapM2" title="タップで変更">○○○</span> /
+              <span class="mName tappable" id="tapM1" title="タップで変更">○○○</span>
+              <span class="sep">/</span>
+              <span class="mName tappable" id="tapM2" title="タップで変更">○○○</span>
+              <span class="sep">/</span>
               <span class="mName tappable" id="tapM3" title="タップで変更">○○○</span>
             </div>
           </div>
@@ -87,7 +96,7 @@
 
       <!-- 右下：rog情報（年月週／次大会／最近ログ） -->
       <section class="bottomRow" aria-label="下部情報">
-        <div class="rogWrap">
+        <div class="rogWrap" id="rogWrap">
           <img class="rogBg" src="rog.png" alt="" aria-hidden="true" draggable="false">
           <div class="rogText">
             <div class="dateLine">
@@ -101,7 +110,6 @@
               最近の出来事：<span id="uiRecent">未定</span>
             </div>
 
-            <!-- rog右下に「修行」等の補助テキストを置きたい時の枠（今は未使用） -->
             <div class="hintLine" id="uiHint"></div>
           </div>
         </div>
@@ -117,13 +125,13 @@
         <div class="weekPopSub" id="popSub">企業ランクにより 0G 獲得！</div>
       </div>
 
-      <!-- NEXTボタン：小さく、ポップの近くに -->
+      <!-- NEXTボタン：週ポップ時のみ表示 -->
       <button class="nextImgBtn" id="btnPopNext" type="button" aria-label="次へ">
         <img src="bnext.png" alt="NEXT" draggable="false">
       </button>
     </div>
 
-    <!-- 右下常設 NEXT（仕様上「進む時は必ずNEXT」だが、通常時は控えめ表示） -->
+    <!-- NEXT（常時表示しない：rogをタップした時だけ一時表示） -->
     <button class="nextCorner" id="btnWeekNext" type="button" aria-label="次の週へ">
       <img src="bnext.png" alt="NEXT" draggable="false">
     </button>
@@ -133,6 +141,6 @@
 
   </div>
 
-  <script src="app.js?v=10" defer></script>
+  <script src="app.js?v=11" defer></script>
 </body>
 </html>
