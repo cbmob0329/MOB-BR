@@ -1,67 +1,62 @@
 /* =========================================================
-   MOB BR Main Screen (mobile-first)
-   - Prevent iOS long-press text selection/callout ONLY
-   - Prevent double-tap zoom by CSS + viewport + JS (app.js)
-   - Keep bottom visible (safe-area)
-   - Background fixed: haikeimain.png
-   - Game view square matches frame
+   MOB BR - Main Screen (FINAL layout based on your image)
+   - Background: haikeimain.png
+   - Right: logo + job.png panel + square main1.png + rog.png
+   - Left: image buttons (floaty)
+   - Mobile: prevent double-tap zoom (via touch-action + JS)
+   - Mobile: prevent long-press copy/select callout (iOS)
    ========================================================= */
 
-/* ----- long-press selection/callout control (intent: stop copy UI) ----- */
-html, body, #app {
-  -webkit-user-select: none; /* iOS: disable selection UI */
-  user-select: none;
-  -webkit-touch-callout: none; /* iOS: disable callout (copy/save image menu) */
-  -webkit-tap-highlight-color: rgba(0,0,0,0); /* remove blue highlight */
+:root{
+  --pad: 16px;
+  --gap: 14px;
+
+  --leftW: 240px; /* 左ボタン列幅（端末で自動調整） */
+  --rightMax: 720px;
+
+  --shadow: 0 18px 40px rgba(0,0,0,.45);
+  --textShadow: 0 3px 0 rgba(0,0,0,.55);
+
+  --floatAmp: 5px;      /* ふわふわ移動幅（ほんの少し） */
+  --floatTime: 3.2s;
+
+  --popZ: 40;
 }
 
-/* Allow selection if you ever need it later: add .allow-select to an element */
-.allow-select {
+/* ----- long-press copy/select callout suppress (intent: iOS text selection UI) ----- */
+.no-callout, .no-callout *{
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0,0,0,0);
+}
+
+/* If later you want selectable text, add .allow-select to that element */
+.allow-select{
   -webkit-user-select: text !important;
   user-select: text !important;
   -webkit-touch-callout: default !important;
 }
 
-/* ----- base ----- */
 *{ box-sizing: border-box; }
 html, body{
   margin:0;
-  padding:0;
   height:100%;
   background:#000;
-  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
   overflow:hidden;
-}
-
-:root{
-  --pad: 14px;
-  --gap: 12px;
-  --gold: #d4af37;
-  --panel: rgba(0,0,0,.62);
-  --panel2: rgba(0,0,0,.40);
-  --shadow: 0 14px 34px rgba(0,0,0,.45);
-
-  /* ボタンを小さく */
-  --btnH: 72px;
-  --btnFont: 20px;
-
-  --hudFont: 16px;
-  --hudTiny: 14px;
-
-  /* フッター/ログ高さ */
-  --logH: 92px;
-  --footH: 88px;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }
 
 #app{
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100svh; /* iOS Safari対応 */
   overflow:hidden;
-  padding-bottom: calc(env(safe-area-inset-bottom));
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
 }
 
-/* ----- background (ALWAYS haikeimain.png) ----- */
+/* background */
 .bg{
   position:absolute;
   inset:0;
@@ -69,209 +64,360 @@ html, body{
   z-index:0;
 }
 
-/* ----- layout grid ----- */
-.top,
-.middle,
-.bottom,
-.footer{
+/* layout: left + right */
+.leftCol, .rightCol{
   position: relative;
   z-index: 2;
 }
 
-/* ----- top HUD ----- */
-.top{
-  display:flex;
-  justify-content: space-between;
-  align-items: flex-start;
+#app{
+  display:grid;
+  grid-template-columns: var(--leftW) minmax(0, 1fr);
   gap: var(--gap);
-  padding: var(--pad);
+  align-items: start;
 }
 
-.hud{
-  width: min(420px, 60vw);
-  background: var(--panel);
-  border: 2px solid var(--gold);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  padding: 12px 14px;
-}
-
-.hud-row{
-  color:#fff;
-  font-weight: 800;
-  font-size: var(--hudFont);
-  line-height: 1.35;
-  white-space: nowrap;
-  text-shadow: 0 2px 0 rgba(0,0,0,.6);
-}
-.hud-ver{
-  font-size: var(--hudTiny);
-  opacity: .95;
-  margin-bottom: 6px;
-}
-
-.logo{
-  width: min(240px, 34vw);
+/* LEFT buttons */
+.leftCol{
   display:flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 6px;
 }
-.logo img{
+
+.imgBtn{
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation; /* ダブルタップ拡大を誘発しにくい */
+}
+.imgBtn img{
   width: 100%;
   height: auto;
   display:block;
-  filter: drop-shadow(0 12px 22px rgba(0,0,0,.55));
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
   pointer-events: none;
 }
+.imgBtn:active{ transform: translateY(1px); }
 
-/* ----- middle: left menu + game ----- */
-.middle{
-  display: grid;
-  grid-template-columns: 170px 1fr; /* 左をさらにコンパクト */
-  gap: var(--gap);
-  padding: 0 var(--pad);
-  /* 下部ログ/フッター分を確保して切れ防止 */
-  height: calc(100vh - (var(--pad)*2) - 110px - var(--logH) - var(--footH) - env(safe-area-inset-bottom));
-  min-height: 360px;
+/* floaty */
+.floaty{
+  animation: floaty var(--floatTime) ease-in-out infinite;
+}
+.delay1{ animation-delay: .15s; }
+.delay2{ animation-delay: .30s; }
+.delay3{ animation-delay: .45s; }
+.delay4{ animation-delay: .60s; }
+.delay5{ animation-delay: .75s; }
+
+@keyframes floaty{
+  0%{ transform: translateY(0); }
+  50%{ transform: translateY(calc(-1 * var(--floatAmp))); }
+  100%{ transform: translateY(0); }
 }
 
-/* left menu */
-.left{
-  display: grid;
-  grid-auto-rows: var(--btnH);
-  gap: 12px;
-  align-content: start;
-}
-
-.menuBtn{
-  height: var(--btnH);
-  border-radius: 18px;
-  border: 2px solid var(--gold);
-  background: rgba(0,0,0,.66);
-  color:#fff;
-  font-weight: 1000;
-  font-size: var(--btnFont);
-  letter-spacing: .02em;
-  text-shadow: 0 3px 0 rgba(0,0,0,.6);
-  box-shadow: 0 12px 24px rgba(0,0,0,.35);
-  cursor:pointer;
-  touch-action: manipulation; /* ダブルタップ拡大を誘発しにくい */
-}
-.menuBtn:active{ transform: translateY(1px); }
-
-/* game area: square and big */
-.gameWrap{
-  display:flex;
-  align-items: stretch;
-  justify-content: stretch;
-  min-width: 0;
-}
-
-.gameSquare{
+/* RIGHT column */
+.rightCol{
   width: 100%;
-  aspect-ratio: 1 / 1; /* 正方形固定 */
-  max-height: 100%;
-  margin: 0 auto;
-  border-radius: 22px;
-  border: 3px solid var(--gold);
-  background: rgba(0,0,0,.35);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  position: relative;
+  max-width: var(--rightMax);
+  justify-self: start;
+  display:flex;
+  flex-direction: column;
+  gap: var(--gap);
 }
 
-/* game background image (main.png) fills square */
-.gameBg{
+/* top row: logo + job */
+.topRow{
+  display:grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: var(--gap);
+  align-items: start;
+}
+
+.logoWrap{
+  display:flex;
+  justify-content:flex-start;
+  align-items:flex-start;
+}
+.logoWrap img{
+  width: 100%;
+  max-width: 320px;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
+  pointer-events:none;
+}
+
+/* job panel */
+.jobWrap{
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.jobBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: cover;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events:none;
+}
+.jobText{
+  position:absolute;
+  inset:0;
+  padding: 14px 16px;
+  color:#fff;
+  font-weight: 900;
+  text-shadow: var(--textShadow);
+  display:flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.jobLine{
+  font-size: 20px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+.jobLine.small{
+  font-size: 16px;
+  opacity: .95;
 }
 
-/* player overlay in front (P1.png) */
-.playerOverlay{
+/* tappable */
+.tappable{
+  cursor: pointer;
+  text-decoration: none;
+}
+.tappable:active{
+  opacity: .8;
+}
+
+/* main square row */
+.gameRow{
+  display:flex;
+  justify-content:flex-start;
+}
+
+.mainSquare{
+  position: relative;
+  width: min(520px, 100%);
+  aspect-ratio: 1 / 1; /* 正方形固定 */
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+/* frame = main1.png (shape aligned) */
+.mainFrame{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: contain;
-  pointer-events: none;
-  filter: drop-shadow(0 14px 28px rgba(0,0,0,.55));
+  pointer-events:none;
+  z-index: 2;
 }
 
-/* ----- bottom log (undecided) ----- */
-.bottom{
-  padding: var(--pad);
+/* team image front layer inside */
+.teamImg{
+  position:absolute;
+  inset: 8% 8% 18% 8%; /* 枠の内側に収める */
+  width:84%;
+  height:74%;
+  object-fit: contain;
+  z-index: 3;
+  pointer-events:none;
+  filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-.log{
-  height: var(--logH);
-  border-radius: 18px;
-  border: 3px solid rgba(0,255,102,.85);
-  background: rgba(0,0,0,.55);
-  color: rgba(0,255,102,.95);
-  font-weight: 1000;
-  font-size: 20px;
+/* member area (simple) */
+.members{
+  position:absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 9%;
+  z-index: 4;
+  color:#111;
+  font-weight: 900;
+  text-shadow: none;
   display:flex;
-  align-items:center;
-  justify-content:center;
-  box-shadow: 0 16px 34px rgba(0,0,0,.45);
-  text-shadow: 0 2px 0 rgba(0,0,0,.6);
+  flex-direction: column;
+  gap: 4px;
+}
+.membersLabel{
+  font-size: 18px;
+  color:#111;
+}
+.membersNames{
+  font-size: 18px;
+  letter-spacing: .04em;
+  color:#222;
 }
 
-/* ----- footer ----- */
-.footer{
-  padding: 0 var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap);
+/* bottom rog panel */
+.rogWrap{
+  position: relative;
+  width: 100%;
+  height: 210px;
+  border-radius: 14px;
+  overflow:hidden;
+  box-shadow: var(--shadow);
 }
-
-.actionBtn{
-  height: var(--footH);
-  border-radius: 22px;
-  border: 3px solid var(--gold);
-  background: rgba(0,0,0,.72);
+.rogBg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  pointer-events:none;
+}
+.rogText{
+  position:absolute;
+  inset:0;
+  padding: 16px 16px;
   color:#fff;
   font-weight: 1000;
+  text-shadow: var(--textShadow);
+  display:flex;
+  flex-direction: column;
+  justify-content:flex-start;
+  gap: 10px;
+}
+.dateLine{
+  font-size: 32px;
+  line-height: 1;
+}
+.nextTourLine{
+  font-size: 18px;
+  opacity: .95;
+}
+.divider{
+  height: 3px;
+  background: rgba(255,255,255,.75);
+  border-radius: 999px;
+  margin: 2px 0 2px;
+}
+.recentLog{
+  font-size: 24px;
+  line-height: 1.15;
+}
+.hintLine{
+  margin-top: auto;
+  font-size: 16px;
+  opacity: .9;
+}
+
+/* modal (week pop) */
+.modalBack{
+  position:absolute;
+  inset:0;
+  background: rgba(0,0,0,.55);
+  z-index: var(--popZ);
+  display:none;
+}
+.weekPop{
+  position:absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%,-50%);
+  z-index: calc(var(--popZ) + 1);
+  display:none;
+  width: min(560px, 86vw);
+  pointer-events:none;
+}
+.weekPopCard{
+  width:100%;
+  border-radius: 16px;
+  background: rgba(0,0,0,.75);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 18px 18px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+}
+.weekPopTitle{
   font-size: 28px;
-  letter-spacing:.04em;
-  text-shadow: 0 3px 0 rgba(0,0,0,.65);
-  box-shadow: 0 16px 34px rgba(0,0,0,.45);
+  font-weight: 1000;
+}
+.weekPopSub{
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+/* next image button near pop */
+.nextImgBtn{
+  margin-top: 10px;
+  width: 140px;
+  border:none;
+  background: transparent;
+  padding:0;
+  pointer-events:auto;
+  touch-action: manipulation;
+}
+.nextImgBtn img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
+  pointer-events:none;
+}
+.nextImgBtn:active{ transform: translateY(1px); }
+
+/* corner next */
+.nextCorner{
+  position:absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 10;
+  width: 150px;
+  border:none;
+  background: transparent;
+  padding:0;
   cursor:pointer;
   touch-action: manipulation;
 }
-.actionBtn:active{ transform: translateY(1px); }
+.nextCorner img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
+  pointer-events:none;
+}
+.nextCorner:active{ transform: translateY(1px); }
 
-.safeSpacer{
+.safePad{
   position:absolute;
   left:0; right:0; bottom:0;
   height: env(safe-area-inset-bottom);
-  z-index: 30;
+  z-index: 1;
 }
 
-/* small devices */
-@media (max-width: 360px){
-  :root{
-    --btnH: 66px;
-    --btnFont: 18px;
-    --hudFont: 15px;
-    --logH: 86px;
-    --footH: 84px;
-  }
-  .middle{
-    grid-template-columns: 156px 1fr;
-  }
+/* ===== responsive ===== */
+@media (max-width: 860px){
+  :root{ --leftW: 220px; }
+  .jobWrap{ height: 132px; }
+  .jobLine{ font-size: 18px; }
+  .dateLine{ font-size: 28px; }
 }
-
-/* short height devices: keep everything visible */
-@media (max-height: 720px){
-  :root{
-    --pad: 12px;
-    --btnH: 66px;
-    --logH: 80px;
-    --footH: 80px;
-  }
-  .log{ font-size: 18px; }
+@media (max-width: 740px){
+  :root{ --leftW: 200px; }
+  .topRow{ grid-template-columns: 1fr; }
+  .logoWrap img{ max-width: 340px; }
+}
+@media (max-width: 520px){
+  :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
+  .jobWrap{ height: 120px; }
+  .jobLine{ font-size: 16px; }
+  .dateLine{ font-size: 26px; }
+  .recentLog{ font-size: 20px; }
+  .nextCorner{ width: 130px; }
 }
