@@ -26,11 +26,6 @@
   -webkit-touch-callout: default !important;
 }
 
-/* 追加：iOSのダブルタップズーム抑止の補強（JSでも止めるのが確実） */
-html, body, #app{
-  touch-action: manipulation;
-}
-
 *{ box-sizing: border-box; }
 html, body{
   margin:0;
@@ -121,16 +116,11 @@ html, body{
   100%{ transform: translateY(0); }
 }
 
-/* RIGHT column
-   ★ここが肝：右カラムも「画面内に収まる高さ」を持たせて、内部で配分する */
+/* RIGHT column */
 .rightCol{
   width: 100%;
   max-width: var(--rightMax);
   justify-self: start;
-
-  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
-  min-height: 0;
-
   display:flex;
   flex-direction: column;
   gap: var(--gap);
@@ -138,12 +128,10 @@ html, body{
 
 /* top row */
 .topRow{
-  flex: 0 0 auto;
   display:grid;
   grid-template-columns: 1fr 1.25fr;
   gap: var(--gap);
   align-items: start;
-  min-height: 0;
 }
 
 .logoWrap{
@@ -164,7 +152,7 @@ html, body{
 .jobWrap{
   position: relative;
   width: 100%;
-  height: clamp(110px, 18vh, 140px);
+  height: 140px;
   border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -180,7 +168,7 @@ html, body{
 .jobText{
   position:absolute;
   inset:0;
-  padding: 12px 14px;
+  padding: 14px 16px;
   color:#fff;
   font-weight: 900;
   text-shadow: var(--textShadow);
@@ -188,43 +176,28 @@ html, body{
   flex-direction: column;
   justify-content: center;
   gap: 6px;
-  min-width: 0;
 }
-
-/* ★nowrapをやめて「枠内に収める」優先
-   ただし1行で見せたいので ellipsis にする（値が長い時は切る） */
 .jobLine{
-  font-size: clamp(14px, 2.2vw, 20px);
-  line-height: 1.1;
+  font-size: 18px;         /* ↓少し小さく */
+  line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; /* 枠内に収める */
 }
 .jobLine.small{
-  font-size: clamp(12px, 1.8vw, 16px);
+  font-size: 14px;
   opacity: .95;
 }
 .tappable{ cursor:pointer; }
 .tappable:active{ opacity:.85; }
 
 /* main square */
-.gameRow{
-  flex: 1 1 auto;
-  min-height: 0;
-  display:flex;
-  justify-content:flex-start;
-}
+.gameRow{ display:flex; justify-content:flex-start; }
 
-/* ★縦に収めるため「高さ基準」で最大化する（正方形維持） */
 .mainSquare{
   position: relative;
   width: min(560px, 100%);
-  height: auto;
   aspect-ratio: 1 / 1;
-
-  /* 右カラムの残り高さの中で収める */
-  max-height: 52vh;
-  max-height: calc(100% - 4px);
   border-radius: 18px;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -241,13 +214,13 @@ html, body{
   z-index: 2;
 }
 
-/* team image: smaller + higher to fix member area */
+/* team image: slightly lower */
 .teamImg{
   position:absolute;
   left: 10%;
   right: 10%;
-  top: 8%;
-  bottom: 32%;
+  top: 12%;      /* ↓少し下げた */
+  bottom: 28%;
   width: 80%;
   height: 60%;
   object-fit: contain;
@@ -256,60 +229,31 @@ html, body{
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* member text */
-.members{
+/* member button */
+.memberBtn{
   position:absolute;
   left: 10%;
   right: 10%;
-  bottom: 8%;
+  bottom: 10%;
   z-index: 4;
-  display:flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  min-width: 0;
-}
-
-/* ★枠内優先で可変 */
-.membersLabel{
-  font-size: clamp(14px, 2vw, 18px);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
   font-weight: 1000;
-  color:#111;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  font-size: 16px;           /* 小さめ */
+  background: rgba(255,255,255,.88);
+  color: #111;
+  box-shadow: 0 10px 22px rgba(0,0,0,.35);
+  text-shadow: none;
+  touch-action: manipulation;
 }
-.membersNames{
-  font-size: clamp(14px, 2vw, 18px);
-  font-weight: 1000;
-  color:#222;
-  letter-spacing: .03em;
-  display:flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-  max-width: 100%;
-}
-.mName{
-  max-width: 100%;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
-.sep{ opacity:.75; }
+.memberBtn:active{ transform: translateY(1px); opacity:.95; }
 
 /* bottom rog panel */
-.bottomRow{
-  flex: 0 0 auto;
-  min-height: 0;
-}
-
-/* ★下を切らない：高さを可変にして、画面が低い時は縮む */
 .rogWrap{
   position: relative;
   width: 100%;
-  height: clamp(160px, 26vh, 210px);
+  height: 210px;
   border-radius: 14px;
   overflow:hidden;
   box-shadow: var(--shadow);
@@ -325,7 +269,7 @@ html, body{
 .rogText{
   position:absolute;
   inset:0;
-  padding: 14px 14px;
+  padding: 16px 16px;
   color:#fff;
   font-weight: 1000;
   text-shadow: var(--textShadow);
@@ -333,48 +277,31 @@ html, body{
   flex-direction: column;
   justify-content:flex-start;
   gap: 10px;
-  min-width: 0;
-  overflow:hidden; /* ★文字が外に飛ばない */
 }
 
-/* ★全部 clamp + ellipsis で枠内厳守 */
-.dateLine{
-  font-size: clamp(22px, 4.4vw, 32px);
-  line-height: 1;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
-.nextTourLine{
-  font-size: clamp(14px, 2.6vw, 18px);
-  opacity: .95;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
+.dateLine{ font-size: 28px; line-height: 1; }        /* ↓ */
+.nextTourLine{ font-size: 16px; opacity: .95; }      /* ↓ */
+
 .divider{
   height: 3px;
   background: rgba(255,255,255,.75);
   border-radius: 999px;
 }
-.recentLog{
-  font-size: clamp(16px, 3.4vw, 24px);
+
+/* 「最近の出来事：」は消す → 内容だけ */
+.recentOnly{
+  font-size: 18px;           /* ↓かなり小さく */
   line-height: 1.15;
-  overflow:hidden;
+  opacity: .98;
+  overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;        /* ★最大2行で止める */
+  -webkit-line-clamp: 3;     /* はみ出し防止 */
   -webkit-box-orient: vertical;
 }
-.hintLine{
-  margin-top:auto;
-  font-size: clamp(12px, 2.4vw, 16px);
-  opacity:.9;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
 
-/* modal (week pop) */
+.hintLine{ margin-top:auto; font-size: 14px; opacity:.9; }
+
+/* ===== MODALS ===== */
 .modalBack{
   position:absolute;
   inset:0;
@@ -382,6 +309,86 @@ html, body{
   z-index: var(--popZ);
   display:none;
 }
+
+.modalCard{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  z-index: calc(var(--popZ) + 2);
+  width: min(560px, 86vw);
+  border-radius: 16px;
+  background: rgba(0,0,0,.78);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  color: #fff;
+  text-shadow: var(--textShadow);
+  display:none;
+}
+
+.modalTitle{
+  font-size: 22px;
+  font-weight: 1000;
+  margin-bottom: 12px;
+}
+
+.membersList{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nameRow{
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 12px;
+  background: rgba(255,255,255,.12);
+  color:#fff;
+  font-weight: 1000;
+  font-size: 18px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  touch-action: manipulation;
+}
+.nameRow:active{ transform: translateY(1px); opacity:.95; }
+
+.nameLabel{
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.22);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+}
+.nameVal{
+  margin-left: 10px;
+  flex: 1;
+  text-align: right;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.closeBtn{
+  margin-top: 14px;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.9);
+  color:#111;
+  touch-action: manipulation;
+}
+.closeBtn:active{ transform: translateY(1px); opacity:.95; }
+
+/* week pop */
 .weekPop{
   position:absolute;
   left: 50%;
@@ -402,8 +409,8 @@ html, body{
   color:#fff;
   text-shadow: var(--textShadow);
 }
-.weekPopTitle{ font-size: 28px; font-weight: 1000; }
-.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
+.weekPopTitle{ font-size: 26px; font-weight: 1000; }
+.weekPopSub{ margin-top: 8px; font-size: 18px; font-weight: 1000; opacity: .95; }
 
 /* next image button near pop */
 .nextImgBtn{
@@ -436,7 +443,7 @@ html, body{
   padding:0;
   cursor:pointer;
   touch-action: manipulation;
-  display:none; /* 常時表示しない */
+  display:none;
 }
 .nextCorner.show{ display:block; }
 .nextCorner img{
@@ -448,6 +455,44 @@ html, body{
 }
 .nextCorner:active{ transform: translateY(1px); }
 
+/* team screen overlay */
+.teamScreen{
+  position:absolute;
+  inset:0;
+  z-index: calc(var(--popZ) + 3);
+  display:none;
+}
+.teamScreen.show{ display:block; }
+.teamPanel{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: min(620px, 90vw);
+  border-radius: 16px;
+  background: rgba(0,0,0,.82);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+}
+.teamTitle{
+  font-size: 22px;
+  font-weight: 1000;
+  margin-bottom: 12px;
+}
+.teamBody{
+  font-size: 16px;
+  font-weight: 900;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.teamMembers{ display:flex; flex-direction: column; gap: 6px; }
+.teamNote{ font-size: 13px; opacity:.9; }
+
+/* safe-area */
 .safePad{
   position:absolute;
   left:0; right:0; bottom:0;
@@ -458,6 +503,7 @@ html, body{
 /* responsive */
 @media (max-width: 860px){
   :root{ --leftW: 220px; }
+  .jobWrap{ height: 132px; }
 }
 @media (max-width: 740px){
   :root{ --leftW: 200px; }
@@ -466,10 +512,11 @@ html, body{
 }
 @media (max-width: 520px){
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
+  .jobWrap{ height: 120px; }
+  .jobLine{ font-size: 15px; }
+  .dateLine{ font-size: 24px; }
+  .recentOnly{ font-size: 16px; }
   .nextCorner{ width: 130px; }
-
-  /* iPhone縦で詰まる時に備えてさらに圧縮 */
-  .jobWrap{ height: clamp(104px, 17vh, 120px); }
-  .rogWrap{ height: clamp(150px, 24vh, 190px); }
-  .mainSquare{ max-height: 48vh; }
+  .mainSquare{ width: min(520px, 100%); }
+  .memberBtn{ font-size: 15px; }
 }
