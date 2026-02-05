@@ -3,56 +3,89 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>MOB BR</title>
-  <link rel="stylesheet" href="style.css?v=1" />
+
+  <!-- ★キャッシュ完全対策：ここを変えるだけで確実に新CSS/JSへ切替 -->
+  <!-- 例：20260205_02 の数字を上げるだけでiPhoneでも必ず更新が分かる -->
+  <link rel="stylesheet" href="./style.css?v=20260205_02" />
 </head>
 
 <body>
-  <div id="appRoot">
-    <div id="scene">
-      <img id="sceneBg" src="main.png?v=1" alt="" />
+  <!-- ★全体ラッパー（CSSの前提） -->
+  <div id="app" class="app">
+    <div id="gameFrame" class="game-frame">
 
-      <div id="teamPanel">
-        <img id="teamImage" src="P1.png?v=1" alt="" />
-      </div>
+      <!-- ★舞台：背景(main/ido/battle/area)を同一サイズで表示する枠 -->
+      <div id="stage" class="stage">
 
-      <div id="logPanel">
-        <div id="logText">準備中…</div>
-        <div id="logControls">
-          <button id="btnAuto" type="button">AUTO</button>
-          <button id="btnNext" type="button">NEXT</button>
+        <!-- 背景レイヤー（main/ido/battle/area 等をここに差し替える） -->
+        <div id="bgLayer" class="bg-layer">
+          <!-- 初期は main.png（後でsim/ui側が必要に応じて差し替え） -->
+          <img id="bgImage" src="./main.png?v=20260205_02" alt="background" />
         </div>
-      </div>
 
-      <div id="hud">
-        <div id="hudDate">1989 / 1月 / 1週</div>
-        <div id="hudMode">MODE: VIEW</div>
-      </div>
-    </div>
+        <!-- 進行演出レイヤー（暗転・フラッシュ等を置く想定） -->
+        <div id="midLayer" class="mid-layer"></div>
 
-    <div id="resultPanel" style="display:none;">
-      <div id="resultTitle">RESULT</div>
-      <div id="resultTableWrap"></div>
-      <div id="resultControls">
-        <button id="btnResultNext" type="button">NEXT</button>
-      </div>
-    </div>
-  </div>
+        <!-- 前面レイヤー（P1・敵・UI） -->
+        <div id="fgLayer" class="fg-layer">
 
-  <!-- scripts -->
-  <script src="data_rules.js?v=1"></script>
-  <script src="storage.js?v=1"></script>
-  <script src="data_player.js?v=1"></script>
-  <script src="data_cpu_teams.js?v=1"></script>
-  <script src="ui.js?v=1"></script>
+          <!-- プレイヤー側（常時表示） -->
+          <div id="playerSide" class="player-side">
+            <img id="playerImage" class="player-image" src="./P1.png?v=20260205_02" alt="player team" />
+            <div id="playerInfo" class="player-info">
+              <!-- ui.js が縦並びで上書き -->
+              <div class="team-name">PLAYER TEAM</div>
+              <div class="member">Member1</div>
+              <div class="member">Member2</div>
+              <div class="member">Member3</div>
+            </div>
+          </div>
 
-  <!-- sim分割を使っている場合 -->
-  <script src="sim-map.js?v=1"></script>
-  <script src="sim-events.js?v=1"></script>
-  <script src="sim-battle.js?v=1"></script>
-  <script src="sim-result.js?v=1"></script>
-  <script src="sim.js?v=1"></script>
+          <!-- 敵側（交戦時のみ表示：ui.jsがdisplay制御） -->
+          <div id="enemySide" class="enemy-side">
+            <img id="enemyImage" class="enemy-image" alt="enemy team" />
+            <div id="enemyInfo" class="enemy-info"></div>
+          </div>
+        </div>
 
-  <script src="app.js?v=1"></script>
+        <!-- ログ（下部固定・半分はみ出し：CSSで制御） -->
+        <div id="logPanel" class="log-panel">
+          <div class="log-inner">
+            <p id="logText" class="log-text">準備中...</p>
+
+            <!-- 既存UIに合わせてボタンをログ内に常設（必要なければCSSで隠せます） -->
+            <div id="logButtons" style="display:flex; gap:10px; margin-top:8px;">
+              <button id="btnAuto" type="button"
+                style="pointer-events:auto;border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
+                AUTO
+              </button>
+              <button id="btnNext" type="button"
+                style="pointer-events:auto;border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
+                NEXT
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- バージョン表示（反映確認用：最重要） -->
+        <div id="versionBadge"
+             style="position:absolute;right:10px;top:10px;z-index:999;
+                    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);
+                    color:#fff;padding:6px 10px;border-radius:999px;
+                    font-weight:900;font-size:12px;letter-spacing:.02em;
+                    text-shadow:0 2px 0 rgba(0,0,0,.65);">
+          VERSION: 20260205_02
+        </div>
+
+      </div><!-- /stage -->
+
+    </div><!-- /gameFrame -->
+  </div><!-- /app -->
+
+  <!-- ★JS（ESM）キャッシュ完全対策 -->
+  <script type="module" src="./app.js?v=20260205_02"></script>
 </body>
 </html>
