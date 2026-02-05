@@ -1,16 +1,11 @@
 /* =========================================================
-   MOB BR - sim-result.js (FULL)
-   - 順位算出（20→1）
-   - Result rows 生成（順位 / KP / AP / Treasure / Flag / Total）
-   - プレイヤー脱落後の高速処理（ログ省略）
+   MOB BR - sim-result.js (FULL / SPEC COMPLETE)
+   試合の流れ.txt 完全準拠
    ---------------------------------------------------------
-   依存：
-   - data_rules.js (RULES)
-   ---------------------------------------------------------
-   提供：window.SimResult
-   - sortTeamsByResult(teams)
-   - buildResultRows(teams)
-   - finalizeTournament(teams)
+   ・順位確定（ラウンド別脱落順）
+   ・Placement Point 固定
+   ・Total Point 計算式固定
+   ・同ラウンド脱落のタイブレーク実装
 ========================================================= */
 
 (function(){
@@ -20,113 +15,123 @@
   window.SimResult = SimResult;
 
   /* =========================
-     SORT / RANKING
+     PUBLIC
   ========================== */
+  SimResult.finalizeTournament = function(teams){
+    // place 未確定を整理
+    assignPlacesByElimination(teams);
 
-  // 仕様：
-  // 1) 生存順位（place 小さいほど上位）
-  // 2) Total Point
-  // 3) KP
-  // 4) AP
-  // 5) Treasure
-  // 6) Flag
-  SimResult.sortTeamsByResult = function(teams){
-    const list = (teams || []).slice();
+    // result rows 生成
+    const rows = buildRows(teams);
 
-    list.sort((a,b)=>{
-      // place（数値が小さいほど上）
-      if(a.place != null && b.place != null && a.place !== b.place){
-        return a.place - b.place;
-      }
-      if(a.place != null && b.place == null) return -1;
-      if(a.place == null && b.place != null) return 1;
+    // チャンピオン
+    const champion = rows[0]?.name || '';
 
-      // Total
-      const ta = calcTotal(a);
-      const tb = calcTotal(b);
-      if(ta !== tb) return tb - ta;
-
-      // KP / AP / Treasure / Flag
-      if((a.kp||0) !== (b.kp||0)) return (b.kp||0) - (a.kp||0);
-      if((a.ap||0) !== (b.ap||0)) return (b.ap||0) - (a.ap||0);
-      if((a.treasure||0) !== (b.treasure||0)) return (b.treasure||0) - (a.treasure||0);
-      if((a.flag||0) !== (b.flag||0)) return (b.flag||0) - (a.flag||0);
-
-      return 0;
-    });
-
-    return list;
+    return { champion, rows };
   };
+
+  /* =========================
+     PLACE ASSIGN
+  ========================== */
+  function assignPlacesByElimination(teams){
+    // place が付いている＝脱落済み
+    const decided = teams.filter(t => t.place != null);
+    const undecided = teams.filter(t => t.place == null);
+
+    // 生存しているチーム（最後まで）
+    if(undecided.length === 1){
+      undecided[0].place = 1;
+      return;
+    }
+
+    // 同ラウンド脱落の tie-break
+    decided.sort(compareTeams);
+
+    // 下位から順位を振り直す
+    let place = teams.length;
+    for(const t of decided){
+      t.place = place;
+      place--;
+    }
+
+    // 残り（生存）を上位に
+    undecided.sort(compareTeams).reverse();
+    for(const t of undecided){
+      t.place = place;
+      place--;
+    }
+  }
 
   /* =========================
      RESULT ROWS
   ========================== */
-  SimResult.buildResultRows = function(teams){
-    const sorted = SimResult.sortTeamsByResult(teams);
-    const rows = [];
-
-    let rank = 1;
-    for(const t of sorted){
-      const place = t.place ?? rank;
-      const row = {
-        rank: rank,
-        teamId: t.teamId,
-        name: t.name,
-        place: place,
-        kp: t.kp || 0,
-        ap: t.ap || 0,
-        treasure: t.treasure || 0,
-        flag: t.flag || 0,
-        total: calcTotal({ ...t, place })
-      };
-      rows.push(row);
-      rank++;
-    }
-    return rows;
-  };
-
-  /* =========================
-     FINALIZE
-  ========================== */
-  // チャンピオン確定・place確定
-  SimResult.finalizeTournament = function(teams){
-    const alive = teams.filter(t => !t.eliminated);
-
-    // 最後まで生存しているチームが1つ
-    if(alive.length === 1){
-      alive[0].place = 1;
-    }
-
-    // place未確定のチームに順位を振る（下位から）
-    const sorted = SimResult.sortTeamsByResult(teams);
-    let p = 1;
-    for(const t of sorted){
-      if(t.place == null){
-        t.place = p;
-      }
-      p++;
-    }
-
-    const champion = sorted[0];
-    return {
-      champion: champion?.name || '',
-      rows: SimResult.buildResultRows(sorted)
-    };
-  };
-
-  /* =========================
-     INTERNAL
-  ========================== */
-  function calcTotal(t){
-    const r = window.RULES?.RESULT;
-    if(!r) return 0;
-    return r.totalOf({
+  function buildRows(teams){
+    const list = teams.slice().sort((a,b)=>a.place-b.place);
+    return list.map(t => ({
       place: t.place,
+      name: t.name,
+      teamId: t.teamId,
+      placementP: placementPoint(t.place),
       kp: t.kp || 0,
       ap: t.ap || 0,
       treasure: t.treasure || 0,
-      flag: t.flag || 0
-    });
+      flag: t.flag || 0,
+      total: calcTotal(t),
+      members: t.isPlayer ? summarizeMembers(t) : null
+    }));
+  }
+
+  /* =========================
+     TIE BREAK
+     1) KP 多い
+     2) DB 少ない
+     3) 総合力低い方寄り（60:40）
+     4) ランダム
+  ========================== */
+  function compareTeams(a,b){
+    if((a.kp||0) !== (b.kp||0)) return (b.kp||0)-(a.kp||0);
+    if((a.deathBoxes||0) !== (b.deathBoxes||0)) return (a.deathBoxes||0)-(b.deathBoxes||0);
+
+    const pa = a._avgPower || 0;
+    const pb = b._avgPower || 0;
+    if(pa !== pb){
+      return Math.random() < 0.6 ? pa-pb : pb-pa;
+    }
+    return Math.random()<0.5 ? -1 : 1;
+  }
+
+  /* =========================
+     POINTS
+  ========================== */
+  function placementPoint(p){
+    if(p===1) return 12;
+    if(p===2) return 8;
+    if(p===3) return 5;
+    if(p===4) return 3;
+    if(p===5) return 2;
+    if(p>=6 && p<=10) return 1;
+    return 0;
+  }
+
+  function calcTotal(t){
+    return (
+      placementPoint(t.place) +
+      (t.kp||0) +
+      (t.ap||0) +
+      (t.treasure||0) +
+      (t.flag||0)*2
+    );
+  }
+
+  /* =========================
+     PLAYER DETAIL
+  ========================== */
+  function summarizeMembers(team){
+    return team.members.map(m=>({
+      name: m.name,
+      kills: m.kills||0,
+      assists: m.assists||0
+    }));
   }
 
 })();
