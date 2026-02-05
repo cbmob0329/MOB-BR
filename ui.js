@@ -1,354 +1,201 @@
-/* =========================================================
-   MOB BR - ui.js (FULL)
-   - 背景は #scene の固定枠に100%フィット（CSS側で統一）
-   - プレイヤー絵は常に背景の手前
-   - 交戦時のみ右に敵チーム絵を表示（cpu/teamId.png）
-   - 名前プレート（チーム名 / メンバー名）を左右に表示
-========================================================= */
+/* ui.js (FULL)  MOB BR
+   Changes:
+   - ログ枠を下に落とす（CSSが担当）＋文字色を白固定
+   - プレイヤーのメンバー名を「チーム名→メンバー1→2→3」縦並びで表示
+   - ゲーム画面全体の背景に haikeimain.png を強制適用（真っ黒対策）
+   - 交戦時、右側に敵チーム(cpu画像)表示（既存仕様に沿って“見つかった要素だけ”更新）
+*/
 
-(function(){
-  'use strict';
+export const UI = (() => {
 
-  const UI = {};
-  window.UI = UI;
-
-  const DOM = {};
-  const STATE = {
-    auto: false,
-    lastBg: null,
-    player: { name:'プレイヤーチーム', members:'メンバー', img:'P1.png' },
-    enemy: null,
+  // ===== DOM helpers =====
+  const qsFirst = (selectors) => {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
   };
 
-  document.addEventListener('DOMContentLoaded', init);
-
-  function init(){
-    cacheDom();
-    ensureOverlay();
-    bindEvents();
-    syncPlayerPanel();
-    setLog('準備中…');
-  }
-
-  function cacheDom(){
-    DOM.scene   = document.getElementById('scene');
-    DOM.bg      = document.getElementById('sceneBg');
-    DOM.teamImg = document.getElementById('teamImage');
-
-    DOM.logPanel = document.getElementById('logPanel');
-    DOM.logText  = document.getElementById('logText');
-    DOM.btnAuto  = document.getElementById('btnAuto');
-    DOM.btnNext  = document.getElementById('btnNext');
-
-    DOM.resultPanel = document.getElementById('resultPanel');
-    DOM.resultTableWrap = document.getElementById('resultTableWrap');
-    DOM.btnResultNext = document.getElementById('btnResultNext');
-
-    DOM.hudDate = document.getElementById('hudDate');
-    DOM.hudMode = document.getElementById('hudMode');
-  }
-
-  function ensureOverlay(){
-    if(!DOM.scene) return;
-
-    // 敵表示枠（無ければ作る）
-    DOM.enemyWrap = document.getElementById('enemyWrap');
-    if(!DOM.enemyWrap){
-      DOM.enemyWrap = document.createElement('div');
-      DOM.enemyWrap.id = 'enemyWrap';
-      DOM.scene.appendChild(DOM.enemyWrap);
-    }
-
-    DOM.enemyImg = document.getElementById('enemyImg');
-    if(!DOM.enemyImg){
-      DOM.enemyImg = document.createElement('img');
-      DOM.enemyImg.id = 'enemyImg';
-      DOM.enemyImg.alt = '';
-      DOM.enemyWrap.appendChild(DOM.enemyImg);
-    }
-
-    // 左右の名前プレート
-    DOM.playerPlate = document.getElementById('playerNameplate');
-    if(!DOM.playerPlate){
-      DOM.playerPlate = document.createElement('div');
-      DOM.playerPlate.id = 'playerNameplate';
-      DOM.playerPlate.className = 'nameplate';
-      DOM.scene.appendChild(DOM.playerPlate);
-    }
-
-    DOM.enemyPlate = document.getElementById('enemyNameplate');
-    if(!DOM.enemyPlate){
-      DOM.enemyPlate = document.createElement('div');
-      DOM.enemyPlate.id = 'enemyNameplate';
-      DOM.enemyPlate.className = 'nameplate';
-      DOM.scene.appendChild(DOM.enemyPlate);
-    }
-
-    // 初期は敵は非表示
-    hideEnemy();
-  }
-
-  function bindEvents(){
-    if(DOM.btnNext){
-      DOM.btnNext.addEventListener('click', ()=>{
-        if(window.Sim && typeof window.Sim.next === 'function') window.Sim.next();
-      });
-    }
-
-    if(DOM.btnAuto){
-      DOM.btnAuto.addEventListener('click', ()=>{
-        STATE.auto = !STATE.auto;
-        DOM.btnAuto.textContent = STATE.auto ? 'AUTO: ON' : 'AUTO';
-        if(window.Sim && typeof window.Sim.setAuto === 'function') window.Sim.setAuto(STATE.auto);
-      });
-      DOM.btnAuto.textContent = 'AUTO';
-    }
-
-    if(DOM.btnResultNext){
-      DOM.btnResultNext.addEventListener('click', ()=>{
-        if(typeof window.App?.onResultNext === 'function'){
-          window.App.onResultNext();
-          return;
-        }
-        if(DOM.resultPanel) DOM.resultPanel.style.display = 'none';
-        if(DOM.scene) DOM.scene.style.display = '';
-      });
-    }
-  }
-
-  /* =========================
-     Public API from Sim
-  ========================== */
-  UI.showStep = function(step){
-    const msg = String(step?.message ?? '');
-    const bg  = step?.bg || null;
-    const anim = !!step?.bgAnim;
-
-    if(bg) setBackground(bg, anim);
-    setLog(msg);
-
-    if(step?.enemy){
-      UI.setEnemy(step.enemy);
-    }else if(step?.clearEnemy){
-      UI.clearEnemy();
-    }
-
-    if(DOM.hudMode){
-      DOM.hudMode.textContent = STATE.auto ? 'MODE: AUTO' : 'MODE: VIEW';
-    }
-  };
-
-  UI.showResult = function(out){
-    const champion = out?.champion || '';
-    const rows = Array.isArray(out?.rows) ? out.rows : [];
-
-    if(DOM.scene) DOM.scene.style.display = 'none';
-    if(DOM.resultPanel) DOM.resultPanel.style.display = '';
-    renderResult(champion, rows);
-  };
-
-  UI.setEnemy = function(enemy){
-    // enemy: { name, members, img }
-    STATE.enemy = enemy || null;
-    if(!STATE.enemy){ hideEnemy(); return; }
-
-    DOM.enemyWrap.style.display = '';
-    DOM.enemyImg.src = withCacheBuster(STATE.enemy.img || '');
-
-    DOM.enemyPlate.innerHTML =
-      `<div>${escapeHtml(STATE.enemy.name || '敵チーム')}</div>` +
-      `<span class="sub">${escapeHtml(STATE.enemy.members || 'メンバー')}</span>`;
-    DOM.enemyPlate.style.display = '';
-  };
-
-  UI.clearEnemy = function(){
-    STATE.enemy = null;
-    hideEnemy();
-  };
-
-  /* =========================
-     Rendering helpers
-  ========================== */
-  function syncPlayerPanel(){
-    // data_player.js に getTeam があれば使う（無ければ P1.png）
-    try{
-      if(window.DataPlayer?.getTeam){
-        const t = window.DataPlayer.getTeam();
-        STATE.player.name = t?.name || STATE.player.name;
-        // メンバー名は3人まとめて表示（なければ固定）
-        if(Array.isArray(t?.members)){
-          STATE.player.members = t.members.map(m=>m.name).join(' / ');
-        }
-        STATE.player.img = t?.img || STATE.player.img;
-      }
-    }catch(_e){}
-
-    if(DOM.teamImg){
-      DOM.teamImg.src = withCacheBuster(STATE.player.img || 'P1.png');
-    }
-    DOM.playerPlate.innerHTML =
-      `<div>${escapeHtml(STATE.player.name || 'プレイヤーチーム')}</div>` +
-      `<span class="sub">${escapeHtml(STATE.player.members || 'メンバー')}</span>`;
-  }
-
-  function setLog(text){
-    if(DOM.logText) DOM.logText.textContent = text;
-  }
-
-  function setBackground(newBg, slide){
-    if(!DOM.bg) return;
-    if(STATE.lastBg === newBg) return;
-
-    // CSSで常に同枠表示なので、ここはsrc差し替えだけでOK
-    if(!slide){
-      DOM.bg.src = withCacheBuster(newBg);
-      STATE.lastBg = newBg;
+  const setImg = (imgEl, src) => {
+    if (!imgEl) return;
+    if (!src) {
+      imgEl.style.display = "none";
+      imgEl.removeAttribute("src");
       return;
     }
+    imgEl.style.display = "";
+    // キャッシュ対策：既に ?v= が付いているならそのまま。無ければ付与
+    const hasQuery = src.includes("?");
+    imgEl.src = hasQuery ? src : `${src}?v=${Date.now()}`;
+  };
 
-    // スライド演出（任意）
-    const parent = DOM.bg.parentElement;
-    if(!parent){
-      DOM.bg.src = withCacheBuster(newBg);
-      STATE.lastBg = newBg;
-      return;
+  const ensureLogInner = (logPanel) => {
+    if (!logPanel) return null;
+    let inner = logPanel.querySelector(".log-inner");
+    if (!inner) {
+      inner = document.createElement("div");
+      inner.className = "log-inner";
+      logPanel.appendChild(inner);
+    }
+    return inner;
+  };
+
+  // ===== Cached elements (複数候補対応) =====
+  const E = {
+    body: null,
+
+    // stage root (画面内)
+    stage: null,
+
+    // player
+    playerInfo: null,
+    playerImage: null,
+
+    // enemy
+    enemySide: null,
+    enemyInfo: null,
+    enemyImage: null,
+
+    // log
+    logPanel: null,
+    logInner: null,
+    logText: null,
+  };
+
+  const cacheElements = () => {
+    E.body = document.body;
+
+    E.stage = qsFirst(["#stage", ".stage", "#scene", ".scene"]);
+
+    // Player
+    E.playerInfo  = qsFirst(["#playerInfo", ".player-info", "#playerText", ".team-info"]);
+    E.playerImage = qsFirst(["#playerImage", ".player-image", "#playerPic", ".p1-image"]);
+
+    // Enemy
+    E.enemySide  = qsFirst(["#enemySide", ".enemy-side", "#enemyPanel", ".enemy-panel"]);
+    E.enemyInfo  = qsFirst(["#enemyInfo", ".enemy-info"]);
+    E.enemyImage = qsFirst(["#enemyImage", ".enemy-image", "#enemyPic"]);
+
+    // Log
+    E.logPanel = qsFirst(["#logPanel", ".log-panel", "#logBox", ".log-box", "#logArea"]);
+    E.logInner = ensureLogInner(E.logPanel);
+
+    // 既存で logText / logLine があるなら掴む。無ければpを作る
+    E.logText = qsFirst(["#logText", ".log-text", "#logLine", ".log-line"]);
+    if (!E.logText && E.logInner) {
+      const p = document.createElement("p");
+      p.className = "log-text";
+      p.id = "logText";
+      E.logInner.appendChild(p);
+      E.logText = p;
+    }
+  };
+
+  // ===== Global background fix =====
+  const applyMainBackground = () => {
+    // ✅ 真っ黒対策：body背景を強制指定（style.cssでも指定済みだが保険）
+    if (!E.body) return;
+    E.body.style.backgroundImage = `url("./haikeimain.png")`;
+    E.body.style.backgroundSize = "cover";
+    E.body.style.backgroundPosition = "center";
+    E.body.style.backgroundRepeat = "no-repeat";
+    E.body.style.backgroundAttachment = "fixed";
+  };
+
+  // ===== Player info render =====
+  const renderPlayerInfo = (team) => {
+    // team: { teamName, members: [name1,name2,name3] } などを想定
+    if (!E.playerInfo) return;
+
+    const teamName = team?.teamName ?? team?.name ?? "PLAYER TEAM";
+    const members = team?.members ?? team?.memberNames ?? team?.players ?? [];
+
+    // ✅ 指定順：チーム名→メンバー1→2→3（縦並び）
+    const m1 = members[0]?.name ?? members[0] ?? "Member1";
+    const m2 = members[1]?.name ?? members[1] ?? "Member2";
+    const m3 = members[2]?.name ?? members[2] ?? "Member3";
+
+    E.playerInfo.innerHTML = `
+      <div class="team-name">${escapeHtml(teamName)}</div>
+      <div class="member">${escapeHtml(m1)}</div>
+      <div class="member">${escapeHtml(m2)}</div>
+      <div class="member">${escapeHtml(m3)}</div>
+    `;
+  };
+
+  // ===== Enemy display =====
+  const showEnemy = (cpuTeam) => {
+    // cpuTeam: { teamId, teamName } 等
+    if (E.enemySide) E.enemySide.style.display = "block";
+
+    if (E.enemyInfo) {
+      const tn = cpuTeam?.teamName ?? cpuTeam?.name ?? cpuTeam?.teamId ?? "ENEMY";
+      E.enemyInfo.innerHTML = `<div class="team-name">${escapeHtml(tn)}</div>`;
     }
 
-    const oldImg = DOM.bg;
-    const newImg = oldImg.cloneNode(false);
-    newImg.src = withCacheBuster(newBg);
-
-    newImg.style.position = 'absolute';
-    newImg.style.inset = '0';
-    newImg.style.width = '100%';
-    newImg.style.height = '100%';
-    newImg.style.objectFit = 'cover';
-    newImg.style.imageRendering = 'pixelated';
-    newImg.style.transform = 'translateX(100%)';
-    newImg.style.transition = 'transform 420ms ease';
-    newImg.style.zIndex = '1';
-
-    oldImg.style.transition = 'transform 420ms ease';
-    oldImg.style.transform = 'translateX(0%)';
-
-    parent.appendChild(newImg);
-
-    requestAnimationFrame(()=>{
-      oldImg.style.transform = 'translateX(-100%)';
-      newImg.style.transform = 'translateX(0%)';
-    });
-
-    setTimeout(()=>{
-      if(oldImg.parentElement) oldImg.parentElement.removeChild(oldImg);
-      newImg.id = 'sceneBg';
-      newImg.style.position = '';
-      newImg.style.inset = '';
-      newImg.style.transform = '';
-      newImg.style.transition = '';
-      DOM.bg = newImg;
-      STATE.lastBg = newBg;
-    }, 460);
-  }
-
-  function hideEnemy(){
-    if(DOM.enemyWrap) DOM.enemyWrap.style.display = 'none';
-    if(DOM.enemyPlate) DOM.enemyPlate.style.display = 'none';
-  }
-
-  function renderResult(champion, rows){
-    if(!DOM.resultTableWrap) return;
-    DOM.resultTableWrap.innerHTML = '';
-
-    const title = document.createElement('div');
-    title.style.fontWeight = '900';
-    title.style.fontSize = '18px';
-    title.style.margin = '10px 0 8px 0';
-    title.style.textAlign = 'center';
-    title.textContent = champion ? `CHAMPION : ${champion}` : 'RESULT';
-    DOM.resultTableWrap.appendChild(title);
-
-    const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-    table.style.fontSize = '13px';
-
-    const thead = document.createElement('thead');
-    const hr = document.createElement('tr');
-    const headers = ['Place','Squad','KP','AP','Treasure','Flag','PlacementP','Total'];
-    for(const h of headers){
-      const th = document.createElement('th');
-      th.textContent = h;
-      th.style.textAlign = 'center';
-      th.style.padding = '6px 4px';
-      th.style.borderBottom = '1px solid rgba(255,255,255,.25)';
-      th.style.background = 'rgba(0,0,0,.25)';
-      th.style.color = '#fff';
-      hr.appendChild(th);
+    // 画像は cpu/<teamId>.png か、既存仕様に合わせて呼ぶ（ユーザーの現状に合わせ “cpu/” 想定）
+    const id = cpuTeam?.teamId ?? cpuTeam?.id ?? cpuTeam?.key ?? null;
+    if (id && E.enemyImage) {
+      setImg(E.enemyImage, `./cpu/${id}.png`);
+    } else if (E.enemyImage) {
+      setImg(E.enemyImage, null);
     }
-    thead.appendChild(hr);
-    table.appendChild(thead);
+  };
 
-    const tbody = document.createElement('tbody');
-    for(let i=0;i<rows.length;i++){
-      const r = rows[i];
-      const tr = document.createElement('tr');
-      tr.style.background = (i % 2 === 0) ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.10)';
-      tr.style.color = '#fff';
+  const hideEnemy = () => {
+    if (E.enemySide) E.enemySide.style.display = "none";
+    if (E.enemyImage) setImg(E.enemyImage, null);
+    if (E.enemyInfo) E.enemyInfo.innerHTML = "";
+  };
 
-      addCell(tr, r.place);
-      addCell(tr, r.name);
-      addCell(tr, r.kp);
-      addCell(tr, r.ap);
-      addCell(tr, r.treasure);
-      addCell(tr, r.flag);
-      addCell(tr, r.placementP);
-      addCell(tr, r.total);
+  // ===== Log =====
+  const setLog = (text) => {
+    if (!E.logText) return;
+    // ✅ 文字色は白固定（CSS側でも白だが保険）
+    E.logText.style.color = "#ffffff";
+    E.logText.textContent = String(text ?? "");
+  };
 
-      tbody.appendChild(tr);
+  // ===== Public API (既存app.jsから呼びやすい形) =====
+  const init = () => {
+    cacheElements();
+    applyMainBackground();
 
-      if(r.members && Array.isArray(r.members) && r.members.length){
-        const tr2 = document.createElement('tr');
-        tr2.style.background = 'rgba(0,0,0,.22)';
-        tr2.style.color = '#fff';
-        const td = document.createElement('td');
-        td.colSpan = 8;
-        td.style.padding = '6px 8px';
-        td.style.borderBottom = '1px solid rgba(255,255,255,.12)';
-        const parts = r.members.map(m=>`${m.name}: ${m.kills}K/${m.assists}A`);
-        td.textContent = `Player Detail  |  ${parts.join('  /  ')}`;
-        tr2.appendChild(td);
-        tbody.appendChild(tr2);
-      }
+    // 初期表示の保険：ログに何か入っていないと“空”に見える場合がある
+    if (E.logText && !E.logText.textContent) {
+      setLog("準備中...");
     }
-    table.appendChild(tbody);
-    DOM.resultTableWrap.appendChild(table);
-  }
+  };
 
-  function addCell(tr, v){
-    const td = document.createElement('td');
-    td.textContent = String(v ?? '');
-    td.style.textAlign = 'center';
-    td.style.padding = '6px 4px';
-    td.style.borderBottom = '1px solid rgba(255,255,255,.10)';
-    tr.appendChild(td);
-  }
+  // ===== Utilities =====
+  const escapeHtml = (str) => {
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  };
 
-  function withCacheBuster(path){
-    if(!path) return path;
-    if(path.includes('?v=')) return path;
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
-    return `${path}?v=${stamp}`;
-  }
-  function pad2(n){ return (n<10?'0':'')+n; }
+  // app.js / sim-battle.js 等から呼べるように、用途別関数名も用意
+  return {
+    init,
 
-  function escapeHtml(s){
-    return String(s ?? '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
+    // player
+    renderPlayerInfo,
+
+    // enemy
+    showEnemy,
+    hideEnemy,
+
+    // log
+    setLog,
+  };
 
 })();
+
+// DOMContentLoaded 自動初期化（既存app側でUI.init()していても二重にならないよう安全）
+document.addEventListener("DOMContentLoaded", () => {
+  try { UI.init(); } catch(e){ /* noop */ }
+});
