@@ -1,29 +1,22 @@
 :root{
-  --pad: 16px;
-  --gap: 14px;
+  --pad: 14px;
+  --gap: 12px;
 
-  --leftW: 240px;
-  --rightMax: 720px;
+  /* 左のボタン列幅（小さめに） */
+  --leftW: 210px;
 
   --shadow: 0 18px 40px rgba(0,0,0,.45);
   --textShadow: 0 3px 0 rgba(0,0,0,.55);
 
   --floatAmp: 5px;
   --floatTime: 3.2s;
-
-  --popZ: 40;
 }
 
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none;
+  -webkit-touch-callout: none;   /* 長押しのコピーUI抑止 */
   -webkit-tap-highlight-color: rgba(0,0,0,0);
-}
-.allow-select{
-  -webkit-user-select: text !important;
-  user-select: text !important;
-  -webkit-touch-callout: default !important;
 }
 
 *{ box-sizing: border-box; }
@@ -31,7 +24,7 @@ html, body{
   margin:0;
   height:100%;
   background:#000;
-  overflow:hidden;
+  overflow:hidden; /* 画面全体はスクロールさせない */
   font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }
 
@@ -40,13 +33,14 @@ html, body{
   width: 100vw;
   height: 100svh;
   overflow:hidden;
+
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
 
   display:grid;
   grid-template-columns: var(--leftW) minmax(0, 1fr);
   gap: var(--gap);
-  align-items: start;
+  align-items: stretch;
 }
 
 /* background */
@@ -64,7 +58,8 @@ html, body{
 
 /* LEFT: only this area scrolls (loop) */
 .leftCol{
-  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
+  height: 100%;
+  overflow:hidden;
 }
 
 .loopScroll{
@@ -74,7 +69,6 @@ html, body{
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-top: 6px;
-  padding-right: 2px;
   scrollbar-width: none;
 }
 .loopScroll::-webkit-scrollbar{ display:none; }
@@ -82,7 +76,7 @@ html, body{
 .loopInner{
   display:flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* image buttons */
@@ -116,14 +110,17 @@ html, body{
   100%{ transform: translateY(0); }
 }
 
-/* RIGHT column */
+/* RIGHT column layout: 上・中・下を必ず画面内に収める */
 .rightCol{
+  height: 100%;
   width: 100%;
-  max-width: var(--rightMax);
+  max-width: 760px;
   justify-self: start;
-  display:flex;
-  flex-direction: column;
+
+  display:grid;
+  grid-template-rows: auto 1fr auto;
   gap: var(--gap);
+  min-height: 0;
 }
 
 /* top row */
@@ -134,25 +131,25 @@ html, body{
   align-items: start;
 }
 
+/* logo */
 .logoWrap{
   display:flex;
-  justify-content:flex-start;
   align-items:flex-start;
 }
 .logoWrap img{
   width: 100%;
-  max-width: 320px;
+  max-width: 330px;
   height:auto;
   display:block;
   filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
   pointer-events:none;
 }
 
-/* job panel */
+/* job panel: テキストが枠内に必ず収まる */
 .jobWrap{
   position: relative;
   width: 100%;
-  height: 140px;
+  height: clamp(110px, 16svh, 150px);
   border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -168,33 +165,46 @@ html, body{
 .jobText{
   position:absolute;
   inset:0;
-  padding: 14px 16px;
+  padding: 12px 14px;
   color:#fff;
-  font-weight: 900;
+  font-weight: 1000;
   text-shadow: var(--textShadow);
+
   display:flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+
+  min-width: 0;
 }
 .jobLine{
-  font-size: 20px;
-  line-height: 1.05;
-  white-space: nowrap;
+  /* ここが重要：端末幅に合わせて縮む */
+  font-size: clamp(12px, 2.4vw, 18px);
+  line-height: 1.12;
+
+  white-space: normal;            /* 折り返しOK */
+  overflow-wrap: anywhere;        /* 長い名前でもはみ出さない */
+  word-break: break-word;
 }
 .jobLine.small{
-  font-size: 16px;
+  font-size: clamp(11px, 2.1vw, 16px);
   opacity: .95;
 }
 .tappable{ cursor:pointer; }
 .tappable:active{ opacity:.85; }
 
-/* main square */
-.gameRow{ display:flex; justify-content:flex-start; }
+/* middle: main square (枠は大きく、でも下部を潰さない) */
+.gameRow{
+  min-height: 0;
+  display:flex;
+  align-items: center;
+}
 
+/* 画面の縦に合わせて自動調整 */
 .mainSquare{
   position: relative;
-  width: min(560px, 100%);  /* ちょい大きめ */
+  width: min(56svh, 560px);
+  max-width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 18px;
   overflow: hidden;
@@ -212,59 +222,70 @@ html, body{
   z-index: 2;
 }
 
-/* team image: smaller + higher to fix member area */
+/* team image: さらに少し小さくしてメンバー領域確保 */
 .teamImg{
   position:absolute;
-  left: 10%;
-  right: 10%;
+  left: 11%;
+  right: 11%;
   top: 10%;
-  bottom: 30%;            /* 下に文字スペースを確保 */
-  width: 80%;
-  height: 60%;
+  bottom: 34%;  /* 下に文字スペースを確保 */
+  width: 78%;
+  height: 56%;
   object-fit: contain;
   z-index: 3;
   pointer-events:none;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* member text */
+/* member text: 枠内に収める */
 .members{
   position:absolute;
   left: 10%;
   right: 10%;
-  bottom: 9%;
+  bottom: 8%;
   z-index: 4;
+
   display:flex;
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
+
+  min-width: 0;
 }
 .membersLabel{
-  font-size: 18px;
+  font-size: clamp(12px, 2.2vw, 18px);
   font-weight: 1000;
   color:#111;
 }
 .membersNames{
-  font-size: 18px;
+  font-size: clamp(12px, 2.4vw, 18px);
   font-weight: 1000;
   color:#222;
-  letter-spacing: .03em;
+
   display:flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .sep{ opacity:.75; }
 
-/* bottom rog panel */
+/* bottom rog panel: はみ出さないようsvhで制御 */
+.bottomRow{
+  min-height: 0;
+}
+
 .rogWrap{
   position: relative;
   width: 100%;
-  height: 210px;
+  height: clamp(160px, 24svh, 230px);
   border-radius: 14px;
   overflow:hidden;
   box-shadow: var(--shadow);
 }
+
 .rogBg{
   position:absolute;
   inset:0;
@@ -273,83 +294,53 @@ html, body{
   object-fit: cover;
   pointer-events:none;
 }
+
 .rogText{
   position:absolute;
   inset:0;
-  padding: 16px 16px;
+  padding: 14px 14px;
   color:#fff;
   font-weight: 1000;
   text-shadow: var(--textShadow);
+
   display:flex;
   flex-direction: column;
-  justify-content:flex-start;
   gap: 10px;
+
+  min-width: 0;
 }
-.dateLine{ font-size: 32px; line-height: 1; }
-.nextTourLine{ font-size: 18px; opacity: .95; }
+.dateLine{
+  font-size: clamp(20px, 4.6vw, 34px);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+.nextTourLine{
+  font-size: clamp(12px, 2.6vw, 18px);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
 .divider{
   height: 3px;
   background: rgba(255,255,255,.75);
   border-radius: 999px;
 }
-.recentLog{ font-size: 24px; line-height: 1.15; }
-.hintLine{ margin-top:auto; font-size: 16px; opacity:.9; }
+.recentLog{
+  font-size: clamp(14px, 3.2vw, 22px);
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.hintLine{
+  margin-top: auto;
+  font-size: clamp(11px, 2.2vw, 16px);
+  opacity:.95;
+}
 
-/* modal (week pop) */
-.modalBack{
-  position:absolute;
-  inset:0;
-  background: rgba(0,0,0,.55);
-  z-index: var(--popZ);
-  display:none;
-}
-.weekPop{
-  position:absolute;
-  left: 50%;
-  top: 48%;
-  transform: translate(-50%,-50%);
-  z-index: calc(var(--popZ) + 1);
-  display:none;
-  width: min(560px, 86vw);
-  pointer-events:none;
-}
-.weekPopCard{
-  width:100%;
-  border-radius: 16px;
-  background: rgba(0,0,0,.75);
-  border: 2px solid rgba(255,255,255,.35);
-  box-shadow: var(--shadow);
-  padding: 18px 18px;
-  color:#fff;
-  text-shadow: var(--textShadow);
-}
-.weekPopTitle{ font-size: 28px; font-weight: 1000; }
-.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
-
-/* next image button near pop */
-.nextImgBtn{
-  margin-top: 10px;
-  width: 140px;
-  border:none;
-  background: transparent;
-  padding:0;
-  pointer-events:auto;
-  touch-action: manipulation;
-}
-.nextImgBtn img{
-  width:100%;
-  height:auto;
-  display:block;
-  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
-  pointer-events:none;
-}
-.nextImgBtn:active{ transform: translateY(1px); }
-
-/* next (NOT always) */
+/* NEXT: ポップアップ専用（今は非表示が基本） */
 .nextCorner{
   position:absolute;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 10;
   width: 150px;
   border:none;
@@ -357,7 +348,7 @@ html, body{
   padding:0;
   cursor:pointer;
   touch-action: manipulation;
-  display:none; /* 常時表示しない */
+  display:none;
 }
 .nextCorner.show{ display:block; }
 .nextCorner img{
@@ -377,23 +368,13 @@ html, body{
 }
 
 /* responsive */
-@media (max-width: 860px){
-  :root{ --leftW: 220px; }
-  .jobWrap{ height: 132px; }
-  .jobLine{ font-size: 18px; }
-  .dateLine{ font-size: 28px; }
-}
-@media (max-width: 740px){
-  :root{ --leftW: 200px; }
+@media (max-width: 760px){
+  :root{ --leftW: 190px; }
   .topRow{ grid-template-columns: 1fr; }
   .logoWrap img{ max-width: 340px; }
+  .mainSquare{ width: min(52svh, 520px); }
 }
 @media (max-width: 520px){
-  :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
-  .jobWrap{ height: 120px; }
-  .jobLine{ font-size: 16px; }
-  .dateLine{ font-size: 26px; }
-  .recentLog{ font-size: 20px; }
-  .nextCorner{ width: 130px; }
-  .mainSquare{ width: min(520px, 100%); }
+  :root{ --pad: 12px; --gap: 10px; --leftW: 170px; }
+  .mainSquare{ width: min(48svh, 480px); }
 }
