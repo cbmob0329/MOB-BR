@@ -8,8 +8,7 @@
   <title>MOB BR</title>
 
   <!-- ★キャッシュ完全対策：ここを変えるだけで確実に新CSS/JSへ切替 -->
-  <!-- 例：20260205_02 の数字を上げるだけでiPhoneでも必ず更新が分かる -->
-  <link rel="stylesheet" href="./style.css?v=20260205_02" />
+  <link rel="stylesheet" href="./style.css?v=20260205_03" />
 </head>
 
 <body>
@@ -23,7 +22,7 @@
         <!-- 背景レイヤー（main/ido/battle/area 等をここに差し替える） -->
         <div id="bgLayer" class="bg-layer">
           <!-- 初期は main.png（後でsim/ui側が必要に応じて差し替え） -->
-          <img id="bgImage" src="./main.png?v=20260205_02" alt="background" />
+          <img id="bgImage" src="./main.png?v=20260205_03" alt="background" />
         </div>
 
         <!-- 進行演出レイヤー（暗転・フラッシュ等を置く想定） -->
@@ -34,7 +33,7 @@
 
           <!-- プレイヤー側（常時表示） -->
           <div id="playerSide" class="player-side">
-            <img id="playerImage" class="player-image" src="./P1.png?v=20260205_02" alt="player team" />
+            <img id="playerImage" class="player-image" src="./P1.png?v=20260205_03" alt="player team" />
             <div id="playerInfo" class="player-info">
               <!-- ui.js が縦並びで上書き -->
               <div class="team-name">PLAYER TEAM</div>
@@ -49,6 +48,7 @@
             <img id="enemyImage" class="enemy-image" alt="enemy team" />
             <div id="enemyInfo" class="enemy-info"></div>
           </div>
+
         </div>
 
         <!-- ログ（下部固定・半分はみ出し：CSSで制御） -->
@@ -56,28 +56,28 @@
           <div class="log-inner">
             <p id="logText" class="log-text">準備中...</p>
 
-            <!-- 既存UIに合わせてボタンをログ内に常設（必要なければCSSで隠せます） -->
+            <!-- ボタン（ログ内） -->
             <div id="logButtons" style="display:flex; gap:10px; margin-top:8px;">
               <button id="btnAuto" type="button"
-                style="pointer-events:auto;border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
+                style="border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
                 AUTO
               </button>
               <button id="btnNext" type="button"
-                style="pointer-events:auto;border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
+                style="border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
                 NEXT
               </button>
             </div>
           </div>
         </div>
 
-        <!-- バージョン表示（反映確認用：最重要） -->
+        <!-- バージョン表示（反映確認用） -->
         <div id="versionBadge"
              style="position:absolute;right:10px;top:10px;z-index:999;
                     background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);
                     color:#fff;padding:6px 10px;border-radius:999px;
                     font-weight:900;font-size:12px;letter-spacing:.02em;
                     text-shadow:0 2px 0 rgba(0,0,0,.65);">
-          VERSION: 20260205_02
+          VERSION: 20260205_03
         </div>
 
       </div><!-- /stage -->
@@ -86,6 +86,6 @@
   </div><!-- /app -->
 
   <!-- ★JS（ESM）キャッシュ完全対策 -->
-  <script type="module" src="./app.js?v=20260205_02"></script>
+  <script type="module" src="./app.js?v=20260205_03"></script>
 </body>
 </html>
