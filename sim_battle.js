@@ -1,15 +1,6 @@
 /* =========================================================
-   MOB BR - sim-battle.js (FULL / SPEC COMPLETE)
-   試合の流れ.txt 完全準拠
-   ---------------------------------------------------------
-   ・戦闘は必ず決着
-   ・敗者は必ず全滅（alive=0 / eliminated=true）
-   ・勝者もDB抽選で0〜2人ダウン
-   ・alive=2 のときのみ総合力+40%
-   ・勝率式：clamp(50 + 差*1.8, 22, 78)
-   ・パッシブ / ULT を実際に反映
-   ・キル / アシスト破綻ゼロ
-   ・CPU同士も完全同一ロジック
+   MOB BR - sim-battle.js (FULL / SPEC COMPLETE + UI ENEMY)
+   - 交戦時に「敵チーム名＋画像」をUIに渡す（プレイヤー戦のみ）
 ========================================================= */
 
 (function(){
@@ -18,9 +9,6 @@
   const SimBattle = {};
   window.SimBattle = SimBattle;
 
-  /* =========================
-     PUBLIC API
-  ========================== */
   SimBattle.resolveBattle = function(opts){
     const teamA = opts.teamA;
     const teamB = opts.teamB;
@@ -29,7 +17,7 @@
 
     const isPlayerTeam = opts.isPlayerTeamFn || (t=>!!t.isPlayer);
     const pushSteps   = opts.pushStepsFn || (()=>{});
-    const getBg       = opts.getBattleBgFn || (()=>'assets/battle.png');
+    const getBg       = opts.getBattleBgFn || (()=>'battle.png');
 
     if(!teamA || !teamB) return null;
     if(teamA.eliminated || teamB.eliminated) return null;
@@ -37,54 +25,60 @@
     initTeam(teamA);
     initTeam(teamB);
 
-    /* ===== パッシブ適用（戦闘中のみ） ===== */
     applyPassive(teamA);
     applyPassive(teamB);
 
-    /* ===== 総合戦闘力計算 ===== */
     const powerA = calcTeamPower(teamA);
     const powerB = calcTeamPower(teamB);
 
-    /* ===== 勝率計算 ===== */
     const winRateA = calcWinRate(powerA, powerB);
     const aWins = Math.random()*100 < winRateA;
 
     const winner = aWins ? teamA : teamB;
     const loser  = aWins ? teamB : teamA;
 
-    /* ===== ログ：戦闘開始 ===== */
-    if(!isFast && (isPlayerTeam(teamA) || isPlayerTeam(teamB))){
-      pushSteps([{ message:'戦闘開始！', bg:getBg(), bgAnim:false }]);
+    const playerInvolved = isPlayerTeam(teamA) || isPlayerTeam(teamB);
+    const playerTeam = isPlayerTeam(teamA) ? teamA : (isPlayerTeam(teamB) ? teamB : null);
+    const enemyTeam  = playerTeam ? (playerTeam === teamA ? teamB : teamA) : null;
+
+    // ログ：戦闘開始（プレイヤー戦なら敵表示）
+    if(!isFast && playerInvolved){
+      const step = { message:'戦闘開始！', bg:getBg(), bgAnim:false };
+      if(enemyTeam){
+        step.enemy = {
+          name: enemyTeam.name || '敵チーム',
+          members: memberNames(enemyTeam),
+          img: `cpu/${enemyTeam.teamId}.png`
+        };
+      }
+      pushSteps([step]);
     }
 
-    /* ===== ULT（戦闘中1回だけ） ===== */
     applyUlt(winner);
     applyUlt(loser);
-
-    /* ===== 勝敗処理 ===== */
 
     // 敗者：必ず全滅
     loser.deathBoxes += loser.alive;
     loser.alive = 0;
     loser.eliminated = true;
 
-    // 勝者：DB抽選
+    // 勝者：DB抽選（最低1人生存）
     applyWinnerDB(winner);
 
-    /* ===== キル / アシスト ===== */
+    // K/A
     distributeKillsAndAssists(winner, loser);
 
-    /* ===== ログ：結果 ===== */
-    if(!isFast && (isPlayerTeam(teamA) || isPlayerTeam(teamB))){
-      pushSteps([{ message:`${winner.name} が勝利！`, bg:getBg(), bgAnim:false }]);
+    // ログ：結果（交戦終了で敵消す）
+    if(!isFast && playerInvolved){
+      pushSteps([
+        { message:`${winner.name} が勝利！`, bg:getBg(), bgAnim:false },
+        { message:`交戦終了`, bg:getBg(), bgAnim:false, clearEnemy:true }
+      ]);
     }
 
     return { winner, loser, winRateA };
   };
 
-  /* =========================
-     INIT
-  ========================== */
   function initTeam(t){
     if(typeof t.alive !== 'number') t.alive = 3;
     if(typeof t.deathBoxes !== 'number') t.deathBoxes = 0;
@@ -92,40 +86,31 @@
     if(!t.members) t.members = [];
     if(typeof t.kp !== 'number') t.kp = 0;
     if(typeof t.ap !== 'number') t.ap = 0;
-
     for(const m of t.members){
       if(typeof m.kills !== 'number') m.kills = 0;
       if(typeof m.assists !== 'number') m.assists = 0;
     }
   }
 
-  /* =========================
-     PASSIVE / ULT
-  ========================== */
+  function memberNames(t){
+    if(!Array.isArray(t.members) || !t.members.length) return 'メンバー';
+    return t.members.map(m=>m.name).join(' / ');
+  }
+
   function applyPassive(t){
     if(!t.isPlayer) return;
     if(!window.DataPlayer) return;
-
     const p = DataPlayer.calcTeamPassive();
-    t._passiveBuff = {
-      armor: p.armor || 0,
-      agility: p.agility || 0,
-      detect: p.detect || 0
-    };
+    t._passiveBuff = { armor: p.armor||0, agility: p.agility||0, detect: p.detect||0 };
   }
 
   function applyUlt(t){
     if(t._ultUsed) return;
     if(!t.isPlayer) return;
-
-    // FightBoost +2（内部）
     t._ultUsed = true;
     t._ultBoost = 2;
   }
 
-  /* =========================
-     POWER / WINRATE
-  ========================== */
   function calcTeamPower(t){
     let sum = 0;
     for(const m of t.members){
@@ -138,25 +123,16 @@
         (s.support||0) +
         (s.detect||0);
 
-      // イベントバフ
       v *= (1 + (t.eventBuffs.aim||0));
       v *= (1 + (t.eventBuffs.mental||0));
       v *= (1 + (t.eventBuffs.agi||0));
-
       sum += v;
     }
 
-    let avg = sum / t.members.length;
+    let avg = t.members.length ? (sum / t.members.length) : 0;
 
-    // alive=2 のみ +40%
-    if(t.alive === 2){
-      avg *= 1.4;
-    }
-
-    // ULT補正
-    if(t._ultBoost){
-      avg += t._ultBoost;
-    }
+    if(t.alive === 2) avg *= 1.4;
+    if(t._ultBoost) avg += t._ultBoost;
 
     return avg;
   }
@@ -166,9 +142,6 @@
     return clamp(w, 22, 78);
   }
 
-  /* =========================
-     DB（勝者）
-  ========================== */
   function applyWinnerDB(w){
     const r = Math.random()*100;
     let down = 0;
@@ -176,51 +149,34 @@
     else if(r < 90) down = 1;
     else down = 2;
 
-    down = Math.min(down, w.alive - 1); // 最低1人生存保証
-
+    down = Math.min(down, w.alive - 1); // 最低1人生存
     if(down > 0){
       w.alive -= down;
       w.deathBoxes += down;
     }
   }
 
-  /* =========================
-     KILL / ASSIST
-  ========================== */
   function distributeKillsAndAssists(winner, loser){
-    // チームキル数
-    const wKills = randInt(1, Math.min(3, loser.members.length));
-    const lKills = randInt(0, Math.min(2, winner.members.length));
+    const wKills = randInt(1, Math.min(3, loser.members.length || 3));
+    const lKills = randInt(0, Math.min(2, winner.members.length || 3));
 
     addTeamKills(winner, wKills);
     addTeamKills(loser, lKills);
 
-    // Assist：Kill数を超えない
-    const wAssist = randInt(0, wKills);
-    const lAssist = randInt(0, lKills);
-
-    winner.ap += wAssist;
-    loser.ap  += lAssist;
+    // Assist ≤ Kill を保証（チームAPに加算）
+    winner.ap += randInt(0, wKills);
+    loser.ap  += randInt(0, lKills);
   }
 
   function addTeamKills(team, kills){
     team.kp += kills;
-
-    const weights = {
-      ATTACKER:50,
-      IGL:30,
-      SUPPORT:20
-    };
-
+    const weights = { ATTACKER:50, IGL:30, SUPPORT:20 };
     for(let i=0;i<kills;i++){
-      const idx = weightedPick(team.members.map(m=>weights[m.role]||1));
+      const idx = weightedPick(team.members.map(m => weights[m.role] || 1));
       team.members[idx].kills += 1;
     }
   }
 
-  /* =========================
-     UTIL
-  ========================== */
   function weightedPick(weights){
     const sum = weights.reduce((a,b)=>a+b,0);
     let r = Math.random()*sum;
@@ -231,12 +187,7 @@
     return weights.length-1;
   }
 
-  function randInt(a,b){
-    return Math.floor(Math.random()*(b-a+1))+a;
-  }
-
-  function clamp(v,min,max){
-    return Math.max(min, Math.min(max, v));
-  }
+  function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 })();
