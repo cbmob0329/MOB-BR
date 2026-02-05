@@ -3,89 +3,100 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>MOB BR</title>
-
-  <!-- ★キャッシュ完全対策：ここを変えるだけで確実に新CSS/JSへ切替 -->
-  <link rel="stylesheet" href="./style.css?v=20260205_03" />
+  <title>MOB BR - Main</title>
+  <link rel="stylesheet" href="style.css?v=1" />
 </head>
-
 <body>
-  <!-- ★全体ラッパー（CSSの前提） -->
-  <div id="app" class="app">
-    <div id="gameFrame" class="game-frame">
+  <div id="app" class="screen-main" aria-label="MOB BR Main Screen">
+    <!-- 背景（共通） -->
+    <div id="bg" class="bg" aria-hidden="true"></div>
 
-      <!-- ★舞台：背景(main/ido/battle/area)を同一サイズで表示する枠 -->
-      <div id="stage" class="stage">
+    <!-- 上部HUD -->
+    <div class="topHud">
+      <div class="topLeftInfo">
+        <div class="tiny">VER <span id="ver">v0.1-proto</span></div>
+        <div class="row"><span class="label">企業名：</span><span id="companyName">MOB COMPA</span></div>
+        <div class="row"><span class="label">企業ランク：</span><span id="companyRank">RANK 10</span></div>
+        <div class="row"><span class="label">チーム名：</span><span id="teamName">PLAYER TEAM</span></div>
+      </div>
 
-        <!-- 背景レイヤー（main/ido/battle/area 等をここに差し替える） -->
-        <div id="bgLayer" class="bg-layer">
-          <!-- 初期は main.png（後でsim/ui側が必要に応じて差し替え） -->
-          <img id="bgImage" src="./main.png?v=20260205_03" alt="background" />
-        </div>
+      <div class="topRightLogo">
+        <img id="logo" src="rogo.png?v=1" alt="MOB BR Logo" />
+      </div>
+    </div>
 
-        <!-- 進行演出レイヤー（暗転・フラッシュ等を置く想定） -->
-        <div id="midLayer" class="mid-layer"></div>
+    <!-- 上部右寄りの小ボタン -->
+    <div class="topMiniButtons">
+      <button class="miniBtn" id="btnResults" type="button">大会結果</button>
+      <button class="miniBtn" id="btnSchedule" type="button">スケジュール</button>
+    </div>
 
-        <!-- 前面レイヤー（P1・敵・UI） -->
-        <div id="fgLayer" class="fg-layer">
+    <!-- 左メニュー -->
+    <div class="leftMenu">
+      <button class="menuBtn" id="btnTeam" type="button">
+        <span class="menuSub">チーム</span>
+        <span class="menuMain">チーム</span>
+      </button>
 
-          <!-- プレイヤー側（常時表示） -->
-          <div id="playerSide" class="player-side">
-            <img id="playerImage" class="player-image" src="./P1.png?v=20260205_03" alt="player team" />
-            <div id="playerInfo" class="player-info">
-              <!-- ui.js が縦並びで上書き -->
-              <div class="team-name">PLAYER TEAM</div>
-              <div class="member">Member1</div>
-              <div class="member">Member2</div>
-              <div class="member">Member3</div>
+      <button class="menuBtn" id="btnTournament" type="button">
+        <span class="menuSub">ガチャ</span>
+        <span class="menuMain">大会</span>
+      </button>
+
+      <button class="menuBtn" id="btnShop" type="button">
+        <span class="menuSub">やか</span>
+        <span class="menuMain">ショップ</span>
+      </button>
+
+      <button class="menuBtn" id="btnTraining" type="button">
+        <span class="menuSub">セ</span>
+        <span class="menuMain">修行</span>
+      </button>
+
+      <button class="smallBtn" id="btnRecord" type="button">戦績</button>
+      <button class="smallBtn" id="btnCollection" type="button">コレクション</button>
+    </div>
+
+    <!-- メインカード（中央） -->
+    <div class="mainCard">
+      <div class="mainCardInner">
+        <img class="mainCardFrame" src="main1.png?v=1" alt="" aria-hidden="true" />
+        <div class="mainCardContent">
+          <img class="playerTeamImg" id="playerTeamImg" src="P1.png?v=1" alt="プレイヤーチーム" />
+          <div class="mainCardText">
+            <div class="kvRow">
+              <div class="kv"><span class="k">企業名</span><span class="v" id="cardCompany">MOB COMPA</span></div>
+              <div class="kv"><span class="k">チーム名</span><span class="v" id="cardTeam">PLAYER TEAM</span></div>
+            </div>
+            <div class="kvRow">
+              <div class="kv"><span class="k">企業ランク</span><span class="v" id="cardRank">RANK 10</span></div>
+              <div class="kv"><span class="k">所持G</span><span class="v" id="cardGold">0</span></div>
             </div>
           </div>
-
-          <!-- 敵側（交戦時のみ表示：ui.jsがdisplay制御） -->
-          <div id="enemySide" class="enemy-side">
-            <img id="enemyImage" class="enemy-image" alt="enemy team" />
-            <div id="enemyInfo" class="enemy-info"></div>
-          </div>
-
         </div>
+      </div>
+    </div>
 
-        <!-- ログ（下部固定・半分はみ出し：CSSで制御） -->
-        <div id="logPanel" class="log-panel">
-          <div class="log-inner">
-            <p id="logText" class="log-text">準備中...</p>
+    <!-- 下部ログ枠 -->
+    <div class="logPanel" role="region" aria-label="ログ">
+      <div class="logTitle">メイン画面</div>
+      <div class="logBody" id="logBody">
+        「大会」ボタンでプロト開始。<br/>
+        （今は流れだけ、次で実装を詰める）
+      </div>
+      <div class="logWatermark">Check!!</div>
+    </div>
 
-            <!-- ボタン（ログ内） -->
-            <div id="logButtons" style="display:flex; gap:10px; margin-top:8px;">
-              <button id="btnAuto" type="button"
-                style="border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
-                AUTO
-              </button>
-              <button id="btnNext" type="button"
-                style="border:0;border-radius:999px;padding:8px 14px;font-weight:900;">
-                NEXT
-              </button>
-            </div>
-          </div>
-        </div>
+    <!-- 下部操作 -->
+    <div class="bottomControls">
+      <button class="actionBtn" id="btnNext" type="button">NEXT</button>
+      <button class="actionBtn" id="btnSkip" type="button">SKIP</button>
+    </div>
 
-        <!-- バージョン表示（反映確認用） -->
-        <div id="versionBadge"
-             style="position:absolute;right:10px;top:10px;z-index:999;
-                    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);
-                    color:#fff;padding:6px 10px;border-radius:999px;
-                    font-weight:900;font-size:12px;letter-spacing:.02em;
-                    text-shadow:0 2px 0 rgba(0,0,0,.65);">
-          VERSION: 20260205_03
-        </div>
+    <!-- セーフエリア余白 -->
+    <div class="safeSpacer" aria-hidden="true"></div>
+  </div>
 
-      </div><!-- /stage -->
-
-    </div><!-- /gameFrame -->
-  </div><!-- /app -->
-
-  <!-- ★JS（ESM）キャッシュ完全対策 -->
-  <script type="module" src="./app.js?v=20260205_03"></script>
+  <script src="main.js?v=1"></script>
 </body>
 </html>
