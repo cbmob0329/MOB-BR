@@ -14,20 +14,18 @@
   --popZ: 40;
 }
 
-/* 長押しコールアウト抑止（コピー選択UIを出しにくく） */
+/* ===============================
+   BASIC
+================================ */
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
-.allow-select{
-  -webkit-user-select: text !important;
-  user-select: text !important;
-  -webkit-touch-callout: default !important;
-}
 
 *{ box-sizing: border-box; }
+
 html, body{
   margin:0;
   height:100%;
@@ -43,14 +41,14 @@ html, body{
   overflow:hidden;
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-
   display:grid;
   grid-template-columns: var(--leftW) minmax(0, 1fr);
   gap: var(--gap);
-  align-items: start;
 }
 
-/* background */
+/* ===============================
+   BACKGROUND
+================================ */
 .bg{
   position:absolute;
   inset:0;
@@ -63,7 +61,9 @@ html, body{
   z-index: 2;
 }
 
-/* LEFT: only this area scrolls (loop) */
+/* ===============================
+   LEFT MENU
+================================ */
 .leftCol{
   height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
 }
@@ -71,14 +71,8 @@ html, body{
 .loopScroll{
   height: 100%;
   overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-top: 6px;
-  padding-right: 2px;
   scrollbar-width: none;
-  /* iOSのバウンスを抑える（端での変な挙動対策） */
-  touch-action: pan-y;
 }
 .loopScroll::-webkit-scrollbar{ display:none; }
 
@@ -88,86 +82,71 @@ html, body{
   gap: 14px;
 }
 
-/* image buttons */
 .imgBtn{
   width: 100%;
   border: none;
   background: transparent;
   padding: 0;
   cursor: pointer;
-  touch-action: manipulation;
 }
 .imgBtn img{
   width: 100%;
-  height: auto;
   display:block;
   filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
-  pointer-events: none;
 }
-.imgBtn:active{ transform: translateY(1px); }
 
-/* floaty */
 .floaty{ animation: floaty var(--floatTime) ease-in-out infinite; }
-.delay1{ animation-delay: .15s; }
-.delay2{ animation-delay: .30s; }
-.delay3{ animation-delay: .45s; }
-.delay4{ animation-delay: .60s; }
-.delay5{ animation-delay: .75s; }
+.delay1{ animation-delay:.15s }
+.delay2{ animation-delay:.30s }
+.delay3{ animation-delay:.45s }
+.delay4{ animation-delay:.60s }
+.delay5{ animation-delay:.75s }
+
 @keyframes floaty{
   0%{ transform: translateY(0); }
-  50%{ transform: translateY(calc(-1 * var(--floatAmp))); }
+  50%{ transform: translateY(-5px); }
   100%{ transform: translateY(0); }
 }
 
-/* RIGHT column */
+/* ===============================
+   RIGHT COLUMN
+================================ */
 .rightCol{
-  width: 100%;
   max-width: var(--rightMax);
-  justify-self: start;
   display:flex;
   flex-direction: column;
   gap: var(--gap);
 }
 
-/* top row */
 .topRow{
   display:grid;
   grid-template-columns: 1fr 1.25fr;
   gap: var(--gap);
-  align-items: start;
 }
 
-.logoWrap{
-  display:flex;
-  justify-content:flex-start;
-  align-items:flex-start;
-}
+/* logo */
 .logoWrap img{
-  width: 100%;
   max-width: 320px;
-  height:auto;
-  display:block;
   filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
-  pointer-events:none;
 }
 
 /* job panel */
 .jobWrap{
   position: relative;
-  width: 100%;
   height: 140px;
   border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
+
 .jobBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: cover;
-  pointer-events:none;
 }
+
 .jobText{
   position:absolute;
   inset:0;
@@ -180,21 +159,14 @@ html, body{
   justify-content: center;
   gap: 6px;
 }
-.jobLine{
-  font-size: 20px;
-  line-height: 1.05;
-  white-space: nowrap;
-}
-.jobLine.small{
-  font-size: 16px;
-  opacity: .95;
-}
+
+.jobLine{ font-size: 17px; }
+.jobLine.small{ font-size: 14px; opacity:.9; }
 .tappable{ cursor:pointer; }
-.tappable:active{ opacity:.85; }
 
-/* main square */
-.gameRow{ display:flex; justify-content:flex-start; }
-
+/* ===============================
+   MAIN SQUARE
+================================ */
 .mainSquare{
   position: relative;
   width: min(560px, 100%);
@@ -204,18 +176,14 @@ html, body{
   box-shadow: var(--shadow);
 }
 
-/* frame */
 .mainFrame{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: contain;
-  pointer-events:none;
-  z-index: 2;
 }
 
-/* team image: ほんの少し下へ（足元スペース確保しつつバナーの余白も） */
 .teamImg{
   position:absolute;
   left: 10%;
@@ -225,213 +193,163 @@ html, body{
   width: 80%;
   height: 60%;
   object-fit: contain;
-  z-index: 3;
-  pointer-events:none;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* ===== メンバー名：ボタン（バナー風） ===== */
-.members{
+/* ===== メンバー名ボタン強調 ===== */
+.memberBtn{
   position:absolute;
   left: 10%;
   right: 10%;
   bottom: 10%;
   z-index: 4;
-  display:flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-}
-
-/* ここが「ボタン」本体（JS側でクリックを拾う想定） */
-.membersBtn{
-  width: min(320px, 92%);
-  border: none;
-  border-radius: 999px;
-  padding: 10px 14px;
-  background: rgba(0,0,0,.55);
-  box-shadow: 0 10px 22px rgba(0,0,0,.45);
-  border: 2px solid rgba(255,255,255,.35);
-  color:#fff;
-  text-shadow: var(--textShadow);
-  font-weight: 1000;
+  padding: 12px;
   font-size: 16px;
-  letter-spacing: .04em;
-  cursor: pointer;
-  touch-action: manipulation;
+  font-weight: 1000;
+  background: rgba(255,255,255,.95);
+  color:#111;
+  border-radius: 14px;
+  border: 3px solid #ffcf3a;
+  box-shadow:
+    0 0 0 3px rgba(255,207,58,.35),
+    0 10px 24px rgba(0,0,0,.45);
 }
-.membersBtn:active{ transform: translateY(1px); opacity:.92; }
+.memberBtn:active{ transform: translateY(1px); }
 
-/* 既存の membersLabel / membersNames は今後ポップに移すので、小さく残しても良い（非表示寄り） */
-.membersLabel{
-  display:none; /* もうラベルは出さない（ボタン化したため） */
-}
-.membersNames{
-  display:none; /* ここはポップ側で出す（JSで実装） */
-}
-
-/* bottom rog panel */
+/* ===============================
+   BOTTOM (ROG)
+================================ */
 .rogWrap{
   position: relative;
-  width: 100%;
   height: 210px;
   border-radius: 14px;
   overflow:hidden;
   box-shadow: var(--shadow);
 }
+
 .rogBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: cover;
-  pointer-events:none;
 }
+
 .rogText{
   position:absolute;
   inset:0;
-  padding: 16px 16px;
+  padding: 16px;
   color:#fff;
-  font-weight: 1000;
+  font-weight: 900;
   text-shadow: var(--textShadow);
   display:flex;
   flex-direction: column;
-  justify-content:flex-start;
   gap: 10px;
 }
 
-/* ★ここを小さく：日付がデカすぎ問題を解消 */
+/* ★ 日付を小さく */
 .dateLine{
-  font-size: 24px;
-  line-height: 1.05;
-}
-
-/* 次の大会も少し控えめ */
-.nextTourLine{
-  font-size: 16px;
-  opacity: .95;
-}
-
-.divider{
-  height: 3px;
-  background: rgba(255,255,255,.75);
-  border-radius: 999px;
-}
-
-/* 「最近の出来事：」のラベルは消すので、本文用のスタイルだけ */
-.recentLog{
   font-size: 18px;
+  opacity:.95;
+}
+
+.nextTourLine{ font-size: 15px; }
+
+.recentOnly{
+  font-size: 16px;
   line-height: 1.2;
 }
 
-/* 「※ログを入れるかは未定」等の注記 */
-.hintLine{
-  margin-top:auto;
-  font-size: 14px;
-  opacity:.9;
-}
-
-/* modal (week pop) */
-.modalBack{
+/* ===============================
+   TEAM SCREEN
+================================ */
+.teamScreen{
   position:absolute;
   inset:0;
-  background: rgba(0,0,0,.55);
-  z-index: var(--popZ);
+  z-index: calc(var(--popZ) + 3);
   display:none;
 }
-.weekPop{
+.teamScreen.show{ display:block; }
+
+.teamPanel{
   position:absolute;
-  left: 50%;
-  top: 48%;
-  transform: translate(-50%,-50%);
-  z-index: calc(var(--popZ) + 1);
-  display:none;
-  width: min(560px, 86vw);
-  pointer-events:none;
-}
-.weekPopCard{
-  width:100%;
-  border-radius: 16px;
-  background: rgba(0,0,0,.75);
-  border: 2px solid rgba(255,255,255,.35);
-  box-shadow: var(--shadow);
-  padding: 18px 18px;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:min(640px,90vw);
+  background:rgba(0,0,0,.85);
+  border-radius:16px;
+  border:2px solid rgba(255,255,255,.35);
+  box-shadow:var(--shadow);
+  padding:16px;
   color:#fff;
-  text-shadow: var(--textShadow);
+  text-shadow:var(--textShadow);
 }
-.weekPopTitle{ font-size: 28px; font-weight: 1000; }
-.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
 
-/* next image button near pop */
-.nextImgBtn{
-  margin-top: 10px;
-  width: 140px;
-  border:none;
-  background: transparent;
-  padding:0;
-  pointer-events:auto;
-  touch-action: manipulation;
+.teamTitle{
+  font-size:22px;
+  font-weight:1000;
+  margin-bottom:10px;
 }
-.nextImgBtn img{
+
+/* team power */
+.teamPowerLine{
+  font-size:18px;
+  font-weight:1000;
+  margin-bottom:14px;
+}
+
+/* card bonus */
+.cardBonus{
+  margin-left:6px;
+  font-size:14px;
+  font-weight:900;
+  color:#ff4a4a;
+}
+
+/* member blocks */
+.teamMembersBlock{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.memberBlock{
+  border:2px solid rgba(255,255,255,.25);
+  border-radius:12px;
+  padding:10px;
+}
+
+.memberName{
+  font-size:18px;
+  font-weight:1000;
+  margin-bottom:6px;
+}
+
+.stats{
+  font-size:14px;
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:4px 10px;
+}
+
+.closeBtn{
+  margin-top:14px;
   width:100%;
-  height:auto;
-  display:block;
-  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
-  pointer-events:none;
-}
-.nextImgBtn:active{ transform: translateY(1px); }
-
-/* next (NOT always) */
-.nextCorner{
-  position:absolute;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  z-index: 10;
-  width: 150px;
   border:none;
-  background: transparent;
-  padding:0;
-  cursor:pointer;
-  touch-action: manipulation;
-  display:none;
+  border-radius:12px;
+  padding:12px;
+  font-size:16px;
+  font-weight:1000;
+  background:rgba(255,255,255,.9);
+  color:#111;
 }
-.nextCorner.show{ display:block; }
-.nextCorner img{
-  width:100%;
-  height:auto;
-  display:block;
-  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
-  pointer-events:none;
-}
-.nextCorner:active{ transform: translateY(1px); }
 
+/* ===============================
+   SAFE AREA
+================================ */
 .safePad{
   position:absolute;
   left:0; right:0; bottom:0;
   height: env(safe-area-inset-bottom);
-  z-index: 1;
-}
-
-/* responsive */
-@media (max-width: 860px){
-  :root{ --leftW: 220px; }
-  .jobWrap{ height: 132px; }
-  .jobLine{ font-size: 18px; }
-  .dateLine{ font-size: 22px; }
-}
-@media (max-width: 740px){
-  :root{ --leftW: 200px; }
-  .topRow{ grid-template-columns: 1fr; }
-  .logoWrap img{ max-width: 340px; }
-}
-@media (max-width: 520px){
-  :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
-  .jobWrap{ height: 120px; }
-  .jobLine{ font-size: 16px; }
-  .dateLine{ font-size: 20px; }
-  .recentLog{ font-size: 16px; }
-  .hintLine{ font-size: 13px; }
-  .nextCorner{ width: 130px; }
-  .mainSquare{ width: min(520px, 100%); }
-  .membersBtn{ font-size: 15px; padding: 9px 12px; }
 }
