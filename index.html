@@ -2,111 +2,160 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="viewport"
+    content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>MOB BR - Main</title>
   <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
-  <div id="app" class="no-callout">
+  <div id="app" class="no-callout" aria-label="MOB BR メイン画面">
 
-    <div class="bg"></div>
+    <!-- 全体背景 -->
+    <div class="bg" aria-hidden="true"></div>
 
-    <!-- LEFT MENU -->
+    <!-- 左メニュー -->
     <aside class="leftCol">
       <div class="loopScroll" id="loopScroll">
         <div class="loopInner" id="loopInner">
-          <button class="imgBtn floaty" id="btnTeam"><img src="bteam.png"></button>
-          <button class="imgBtn floaty delay1" id="btnBattle"><img src="bbattle.png"></button>
-          <button class="imgBtn floaty delay2" id="btnTraining"><img src="btra.png"></button>
-          <button class="imgBtn floaty delay3" id="btnShop"><img src="bshop.png"></button>
-          <button class="imgBtn floaty delay4" id="btnSchedule"><img src="bsc.png"></button>
-          <button class="imgBtn floaty delay5" id="btnCard"><img src="bcard.png"></button>
+
+          <button class="imgBtn floaty" id="btnTeam" type="button">
+            <img src="bteam.png" alt="TEAM" draggable="false">
+          </button>
+          <button class="imgBtn floaty delay1" id="btnBattle" type="button">
+            <img src="bbattle.png" alt="BATTLE" draggable="false">
+          </button>
+          <button class="imgBtn floaty delay2" id="btnTraining" type="button">
+            <img src="btra.png" alt="TRAINING" draggable="false">
+          </button>
+          <button class="imgBtn floaty delay3" id="btnShop" type="button">
+            <img src="bshop.png" alt="SHOP" draggable="false">
+          </button>
+          <button class="imgBtn floaty delay4" id="btnSchedule" type="button">
+            <img src="bsc.png" alt="SCHEDULE" draggable="false">
+          </button>
+          <button class="imgBtn floaty delay5" id="btnCard" type="button">
+            <img src="bcard.png" alt="CARD" draggable="false">
+          </button>
+
         </div>
       </div>
     </aside>
 
-    <!-- RIGHT -->
+    <!-- 右カラム -->
     <main class="rightCol">
 
+      <!-- 上 -->
       <section class="topRow">
         <div class="logoWrap">
-          <img src="rogo.png">
+          <img src="rogo.png" alt="MOB BR" draggable="false">
         </div>
 
         <div class="jobWrap">
-          <img class="jobBg" src="job.png">
+          <img class="jobBg" src="job.png" alt="">
           <div class="jobText">
             <div class="jobLine small">VER v0.1-main</div>
-            <div class="jobLine tappable" id="tapCompany">企業名：<span id="uiCompany"></span></div>
-            <div class="jobLine tappable" id="tapTeamName">チーム名：<span id="uiTeam"></span></div>
-            <div class="jobLine">所持G：<span id="uiGold"></span>G</div>
-            <div class="jobLine">企業ランク：<span id="uiRank"></span></div>
+            <div class="jobLine tappable" id="tapCompany">
+              企業名：<span id="uiCompany"></span>
+            </div>
+            <div class="jobLine tappable" id="tapTeamName">
+              チーム名：<span id="uiTeam"></span>
+            </div>
+            <div class="jobLine">
+              所持G：<span id="uiGold"></span>G
+            </div>
+            <div class="jobLine">
+              企業ランク：<span id="uiRank"></span>
+            </div>
           </div>
         </div>
       </section>
 
+      <!-- メイン枠 -->
       <section class="gameRow">
         <div class="mainSquare">
-          <img class="mainFrame" src="main1.png">
-          <img class="teamImg" id="teamImg" src="P1.png">
+          <img class="mainFrame" src="main1.png" alt="">
+          <img class="teamImg" src="P1.png" alt="">
           <button class="memberBtn" id="btnMembers">メンバー名</button>
         </div>
       </section>
 
-      <!-- BOTTOM -->
+      <!-- 下部 -->
       <section class="bottomRow">
         <div class="rogWrap" id="rogWrap">
-          <img class="rogBg" src="rog.png">
+          <img class="rogBg" src="rog.png" alt="">
           <div class="rogText">
-            <div class="dateLine smallDate">
+            <div class="dateLine">
               <span id="uiY"></span>年
               <span id="uiM"></span>月
               <span id="uiW"></span>週
             </div>
             <div class="nextTourLine">
-              次の大会：<span id="uiNextTour"></span>（<span id="uiNextTourW"></span>）
+              次の大会：
+              <span id="uiNextTour"></span>
+              （<span id="uiNextTourW"></span>）
             </div>
             <div class="divider"></div>
-            <div class="recentOnly"><span id="uiRecent"></span></div>
+            <div class="recentOnly" id="uiRecent"></div>
+            <div class="hintLine">※ログ表示</div>
           </div>
         </div>
       </section>
 
     </main>
 
-    <!-- TEAM SCREEN -->
+    <!-- 共通モーダル背景 -->
+    <div class="modalBack" id="modalBack"></div>
+
+    <!-- メンバー名 -->
+    <div class="modalCard" id="membersPop">
+      <div class="modalTitle">メンバー名</div>
+      <div class="membersList">
+        <button class="nameRow" id="rowM1"><span>1</span><span id="uiM1"></span></button>
+        <button class="nameRow" id="rowM2"><span>2</span><span id="uiM2"></span></button>
+        <button class="nameRow" id="rowM3"><span>3</span><span id="uiM3"></span></button>
+      </div>
+      <button class="closeBtn" id="btnCloseMembers">閉じる</button>
+    </div>
+
+    <!-- チーム画面 -->
     <div class="teamScreen" id="teamScreen">
       <div class="teamPanel">
-        <div class="teamTitle">チーム詳細</div>
+        <div class="teamTitle">チーム情報</div>
 
-        <!-- TEAM POWER -->
-        <div class="teamPowerLine">
-          チーム戦闘力：
-          <span id="uiTeamPower">--%</span>
-          <span class="cardBonus" id="uiTeamPowerBonus">+0%</span>
+        <div class="teamBlock">
+          <div class="teamLine">
+            チーム戦闘力：
+            <strong><span id="teamPower">0</span>%</strong>
+            <span class="cardBonus">+0.0%</span>
+          </div>
         </div>
 
-        <!-- MEMBERS -->
-        <div class="teamMembersBlock">
-
-          <div class="memberBlock">
-            <div class="memberName" id="tM1"></div>
-            <div class="stats">
-              <div>エイム <span id="s1_aim"></span> <span class="cardBonus" id="s1_aim_b"></span></div>
-              <div>メンタル <span id="s1_men"></span> <span class="cardBonus" id="s1_men_b"></span></div>
-              <div>敏捷性 <span id="s1_agi"></span> <span class="cardBonus" id="s1_agi_b"></span></div>
-              <div>技術 <span id="s1_tec"></span> <span class="cardBonus" id="s1_tec_b"></span></div>
-              <div>サポート <span id="s1_sup"></span> <span class="cardBonus" id="s1_sup_b"></span></div>
-              <div>探知 <span id="s1_det"></span> <span class="cardBonus" id="s1_det_b"></span></div>
-            </div>
+        <div class="teamBlock">
+          <div class="teamChar">
+            <div class="charName" id="tM1"></div>
+            戦闘力 <span class="stat">70%</span>
+            <span class="cardBonus">+0.5%</span>
           </div>
-
-          <!-- ※2人目・3人目は style / app.js 側でクローン生成 -->
+          <div class="teamChar">
+            <div class="charName" id="tM2"></div>
+            戦闘力 <span class="stat">70%</span>
+            <span class="cardBonus">+0.5%</span>
+          </div>
+          <div class="teamChar">
+            <div class="charName" id="tM3"></div>
+            戦闘力 <span class="stat">70%</span>
+            <span class="cardBonus">+0.5%</span>
+          </div>
         </div>
 
         <button class="closeBtn" id="btnCloseTeam">閉じる</button>
       </div>
     </div>
+
+    <!-- NEXT -->
+    <button class="nextCorner" id="btnWeekNext">
+      <img src="bnext.png" alt="NEXT">
+    </button>
 
     <div class="safePad"></div>
   </div>
