@@ -2,58 +2,63 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <!-- スマホ最適化：ダブルタップズーム抑止（iOS対策含む） -->
+  <meta name="viewport"
+        content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>MOB BR - Main</title>
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
-  <div id="app">
-
-    <!-- 全体背景 -->
-    <div class="bg"></div>
+  <div id="app" aria-label="MOB BR メイン画面">
+    <!-- 全体背景（固定） -->
+    <div class="bg" aria-hidden="true"></div>
 
     <!-- 上部HUD -->
-    <header class="top">
-      <div class="hud">
-        <div class="hud-row">VER v0.1-main</div>
-        <div class="hud-row">企業名：CB Memory</div>
-        <div class="hud-row">企業ランク：RANK 10</div>
-        <div class="hud-row">チーム名：PLAYER TEAM</div>
+    <header class="top" aria-label="上部情報">
+      <div class="hud" aria-label="企業情報">
+        <div class="hud-row hud-ver">VER <span id="uiVer">v0.1-main</span></div>
+        <div class="hud-row">企業名：<span id="uiCompany">CB Memory</span></div>
+        <div class="hud-row">企業ランク：<span id="uiRank">RANK 10</span></div>
+        <div class="hud-row">チーム名：<span id="uiTeam">PLAYER TEAM</span></div>
       </div>
-      <div class="logo">
+
+      <div class="logo" aria-label="ロゴ">
         <img src="rogo.png" alt="MOB BR" />
       </div>
     </header>
 
-    <!-- メイン領域 -->
-    <div class="middle">
-      <!-- 左メニュー -->
-      <nav class="left">
-        <button>チーム</button>
-        <button>大会</button>
-        <button>ショップ</button>
-        <button>修行</button>
+    <!-- 中央：左メニュー + ゲーム画面 -->
+    <div class="middle" aria-label="メイン領域">
+      <nav class="left" aria-label="メニュー">
+        <button id="btnTeam" type="button" class="menuBtn">チーム</button>
+        <button id="btnTournament" type="button" class="menuBtn">大会</button>
+        <button id="btnShop" type="button" class="menuBtn">ショップ</button>
+        <button id="btnTraining" type="button" class="menuBtn">修行</button>
       </nav>
 
-      <!-- 中央：ゲーム画面 -->
-      <main class="center">
-        <img src="main.png" alt="メインゲーム画面" />
+      <!-- ゲーム画面（正方形）：main.png + P1.png前面 -->
+      <main class="gameWrap" aria-label="ゲーム画面">
+        <div class="gameSquare">
+          <img class="gameBg" src="main.png" alt="メインゲーム画面" draggable="false" />
+          <img class="playerOverlay" src="P1.png" alt="プレイヤーチーム" draggable="false" />
+        </div>
       </main>
     </div>
 
-    <!-- 下部ログ（今は空けておく） -->
-    <section class="bottom">
-      <div class="log">
-        ここは今は空けておく（ログ）
-      </div>
+    <!-- 下部ログ（未定） -->
+    <section class="bottom" aria-label="ログ">
+      <div id="logBox" class="log">ログ：未定</div>
     </section>
 
     <!-- 下部操作 -->
-    <footer class="footer">
-      <button class="next">NEXT</button>
-      <button class="auto">AUTO</button>
+    <footer class="footer" aria-label="操作">
+      <button id="btnNext" class="actionBtn" type="button">NEXT</button>
+      <button id="btnAuto" class="actionBtn" type="button">AUTO</button>
     </footer>
 
+    <div class="safeSpacer" aria-hidden="true"></div>
   </div>
+
+  <script src="app.js?v=4" defer></script>
 </body>
 </html>
