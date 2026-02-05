@@ -3,16 +3,17 @@
 /*
   MOB BR - Main Screen v12
   - Left menu: loop scroll (only inside the button column)
-  - NEXT usage:
-      * ONLY inside popup flows (week popup / training / shop etc.)
-      * NOT used as "advance week" button on main screen
-  - Week progression:
-      * Tap rog panel to advance week (shows week popup)
-      * Confirm/close by popup NEXT
-  - Mobile hardening (iOS):
-      * prevent double-tap zoom
-      * prevent pinch zoom (gesture events)
-      * suppress long-press callout via CSS (-webkit-touch-callout/user-select)
+  - NEXT not always visible:
+      * Week popup shows NEXT
+      * Rog panel tap shows NEXT temporarily (3 sec)
+  - Mobile:
+      * prevent double-tap zoom (iOS)
+      * long-press callout suppression is CSS (-webkit-touch-callout/user-select)
+  - Member names:
+      * "メンバー名" button opens popup
+      * tap row to rename
+  - Team button:
+      * opens team screen (intro)
 */
 
 const K = {
@@ -46,10 +47,7 @@ const ui = {
   recent: $('uiRecent'),
 
   tapCompany: $('tapCompany'),
-  tapTeam: $('tapTeam'),
-  tapM1: $('tapM1'),
-  tapM2: $('tapM2'),
-  tapM3: $('tapM3'),
+  tapTeamName: $('tapTeamName'),
 
   popBack: $('modalBack'),
   weekPop: $('weekPop'),
@@ -57,10 +55,7 @@ const ui = {
   popSub: $('popSub'),
   btnPopNext: $('btnPopNext'),
 
-  // NOTE: btnWeekNext は “週進行用に使わない”
-  // HTMLに残っていても、ここでは一切使わない（表示もさせない）
   btnWeekNext: $('btnWeekNext'),
-
   rogWrap: $('rogWrap'),
 
   btnTeam: $('btnTeam'),
@@ -72,35 +67,37 @@ const ui = {
 
   loopScroll: $('loopScroll'),
   loopInner: $('loopInner'),
+
+  // member popup
+  btnMembers: $('btnMembers'),
+  membersPop: $('membersPop'),
+  rowM1: $('rowM1'),
+  rowM2: $('rowM2'),
+  rowM3: $('rowM3'),
+  uiM1: $('uiM1'),
+  uiM2: $('uiM2'),
+  uiM3: $('uiM3'),
+  btnCloseMembers: $('btnCloseMembers'),
+
+  // team screen
+  teamScreen: $('teamScreen'),
+  btnCloseTeam: $('btnCloseTeam'),
+  tCompany: $('tCompany'),
+  tTeam: $('tTeam'),
+  tM1: $('tM1'),
+  tM2: $('tM2'),
+  tM3: $('tM3')
 };
 
-/* ===== iOS zoom hardening ===== */
-(function hardPreventZoom(){
-  // 1) pinch (iOS Safari)
-  const stop = (e) => { e.preventDefault(); };
-
-  document.addEventListener('gesturestart', stop, { passive:false });
-  document.addEventListener('gesturechange', stop, { passive:false });
-  document.addEventListener('gestureend', stop, { passive:false });
-
-  // 2) dblclick zoom (some browsers)
-  document.addEventListener('dblclick', stop, { passive:false });
-
-  // 3) double-tap zoom fallback
+(function preventDoubleTapZoom(){
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
-  }, { passive:false });
-
-  // 4) multi-touch move (extra safety)
-  document.addEventListener('touchmove', (e) => {
-    if (e.touches && e.touches.length > 1) e.preventDefault();
-  }, { passive:false });
+  }, { passive: false });
 })();
 
-/* ===== storage helpers ===== */
 function getNum(key, def){
   const v = Number(localStorage.getItem(key));
   return Number.isFinite(v) ? v : def;
@@ -121,10 +118,15 @@ function weeklyGoldByRank(rank){
 }
 function formatRank(rank){ return `RANK ${rank}`; }
 
-/* ===== render ===== */
 function render(){
-  ui.company.textContent = getStr(K.company, 'CB Memory');
-  ui.team.textContent = getStr(K.team, 'PLAYER TEAM');
+  const company = getStr(K.company, 'CB Memory');
+  const team = getStr(K.team, 'PLAYER TEAM');
+  const m1 = getStr(K.m1, '○○○');
+  const m2 = getStr(K.m2, '○○○');
+  const m3 = getStr(K.m3, '○○○');
+
+  ui.company.textContent = company;
+  ui.team.textContent = team;
 
   ui.gold.textContent = String(getNum(K.gold, 0));
   ui.rank.textContent = formatRank(getNum(K.rank, 10));
@@ -135,31 +137,63 @@ function render(){
 
   ui.nextTour.textContent = getStr(K.nextTour, '未定');
   ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
+
+  // 「最近の出来事」ラベルは消し、本文だけ
   ui.recent.textContent = getStr(K.recent, '未定');
 
-  ui.tapM1.textContent = getStr(K.m1, '○○○');
-  ui.tapM2.textContent = getStr(K.m2, '○○○');
-  ui.tapM3.textContent = getStr(K.m3, '○○○');
+  // member popup values
+  ui.uiM1.textContent = m1;
+  ui.uiM2.textContent = m2;
+  ui.uiM3.textContent = m3;
 
-  // 週進行用NEXTは出さない（安全に常に非表示）
-  if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
+  // team screen values
+  ui.tCompany.textContent = company;
+  ui.tTeam.textContent = team;
+  ui.tM1.textContent = m1;
+  ui.tM2.textContent = m2;
+  ui.tM3.textContent = m3;
 }
 
-/* ===== modal ===== */
-function showWeekPop(title, sub){
-  ui.popTitle.textContent = title;
-  ui.popSub.textContent = sub;
+function showBack(){
   ui.popBack.style.display = 'block';
-  ui.weekPop.style.display = 'block';
   ui.popBack.setAttribute('aria-hidden', 'false');
 }
-function hideWeekPop(){
+function hideBack(){
   ui.popBack.style.display = 'none';
-  ui.weekPop.style.display = 'none';
   ui.popBack.setAttribute('aria-hidden', 'true');
 }
 
-/* ===== initial ===== */
+function showWeekPop(title, sub){
+  ui.popTitle.textContent = title;
+  ui.popSub.textContent = sub;
+  showBack();
+  ui.weekPop.style.display = 'block';
+}
+function hideWeekPop(){
+  ui.weekPop.style.display = 'none';
+  hideBack();
+}
+
+function showMembersPop(){
+  showBack();
+  ui.membersPop.style.display = 'block';
+}
+function hideMembersPop(){
+  ui.membersPop.style.display = 'none';
+  hideBack();
+}
+
+function showTeamScreen(){
+  ui.teamScreen.classList.add('show');
+  ui.teamScreen.setAttribute('aria-hidden', 'false');
+  // 背景タップで閉じる誤爆防止のため、teamScreen自体は閉じない。ボタンで閉じる。
+}
+function hideTeamScreen(){
+  ui.teamScreen.classList.remove('show');
+  ui.teamScreen.setAttribute('aria-hidden', 'true');
+}
+
+// ===== initial =====
 function ensureInitialInput(){
   if (!localStorage.getItem(K.y)) setNum(K.y, 1989);
   if (!localStorage.getItem(K.m)) setNum(K.m, 1);
@@ -192,20 +226,35 @@ function ensureInitialInput(){
   }
 }
 
-function bindRename(el, key, label, defVal){
-  el.addEventListener('click', () => {
-    const cur = getStr(key, defVal);
-    const v = prompt(`${label}を変更`, cur);
-    if (v === null) return;
-    const nv = v.trim();
-    if (nv === '') return;
-    setStr(key, nv);
-    render();
+function bindRenamePrompt(key, label, defVal){
+  const cur = getStr(key, defVal);
+  const v = prompt(`${label}を変更`, cur);
+  if (v === null) return;
+  const nv = v.trim();
+  if (nv === '') return;
+  setStr(key, nv);
+  render();
+}
+
+// ===== NEXT (not always) =====
+let nextHideTimer = null;
+function showNextTemporarily(ms=3000){
+  ui.btnWeekNext.classList.add('show');
+  if (nextHideTimer) clearTimeout(nextHideTimer);
+  nextHideTimer = setTimeout(() => ui.btnWeekNext.classList.remove('show'), ms);
+}
+function bindRogNextReveal(){
+  ui.rogWrap.addEventListener('click', () => {
+    showNextTemporarily(3200);
   });
 }
 
-/* ===== week progression (NO main NEXT button) ===== */
-function computeNextWeek(y, m, w){
+// ===== Week progression =====
+function advanceWeek(){
+  const y = getNum(K.y, 1989);
+  const m = getNum(K.m, 1);
+  const w = getNum(K.w, 1);
+
   let ny = y, nm = m, nw = w + 1;
   if (nw >= 5){
     nw = 1;
@@ -215,23 +264,12 @@ function computeNextWeek(y, m, w){
       ny = y + 1;
     }
   }
-  return { ny, nm, nw };
-}
-
-function advanceWeekByTap(){
-  const y = getNum(K.y, 1989);
-  const m = getNum(K.m, 1);
-  const w = getNum(K.w, 1);
-
-  const { ny, nm, nw } = computeNextWeek(y, m, w);
 
   const rank = getNum(K.rank, 10);
   const gain = weeklyGoldByRank(rank);
 
-  // 週ポップ表示（確定＆閉じるのはポップ内NEXTのみ）
   showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
 
-  // ここが「NEXTの正しい役割」：ポップ内で次へ
   ui.btnPopNext.onclick = () => {
     setNum(K.y, ny);
     setNum(K.m, nm);
@@ -244,46 +282,61 @@ function advanceWeekByTap(){
 
     hideWeekPop();
     render();
+    ui.btnWeekNext.classList.remove('show');
   };
 }
 
-/* rogをタップしたら週進行（ただしポップ内NEXTで確定） */
-function bindWeekByRogTap(){
-  ui.rogWrap.addEventListener('click', () => {
-    // ポップ表示中に連打で重ならないようにガード
-    if (ui.weekPop && ui.weekPop.style.display === 'block') return;
-    advanceWeekByTap();
+// ===== Members popup =====
+function bindMembers(){
+  ui.btnMembers.addEventListener('click', () => {
+    render();
+    showMembersPop();
   });
+
+  ui.btnCloseMembers.addEventListener('click', hideMembersPop);
+
+  // 背景押しは閉じない（誤爆防止）→ closeボタンのみ
+  ui.popBack.addEventListener('click', (e) => e.preventDefault());
+
+  ui.rowM1.addEventListener('click', () => bindRenamePrompt(K.m1, 'メンバー名（1人目）', '○○○'));
+  ui.rowM2.addEventListener('click', () => bindRenamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
+  ui.rowM3.addEventListener('click', () => bindRenamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
 }
 
-/* ===== Left menu placeholders ===== */
+// ===== Top rename =====
+function bindTopRename(){
+  ui.tapCompany.addEventListener('click', () => bindRenamePrompt(K.company, '企業名', 'CB Memory'));
+  ui.tapTeamName.addEventListener('click', () => bindRenamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
+}
+
+// ===== Left menu placeholders + TEAM screen =====
 function setRecent(text){
   setStr(K.recent, text);
   render();
 }
 
 function bindMenus(){
-  ui.btnTeam.addEventListener('click', () => setRecent('チーム：未実装（次フェーズ）'));
+  ui.btnTeam.addEventListener('click', () => {
+    render();
+    showTeamScreen();
+  });
   ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
   ui.btnTraining.addEventListener('click', () => setRecent('育成：未実装（次フェーズ）'));
   ui.btnShop.addEventListener('click', () => setRecent('ショップ：未実装（次フェーズ）'));
   ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
   ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
 
-  // ポップ背景押下は閉じない（誤操作防止）
-  ui.popBack.addEventListener('click', (e) => e.preventDefault());
+  ui.btnWeekNext.addEventListener('click', advanceWeek);
+
+  ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
 }
 
-/* ===== Loop scroll (infinite) for left menu ===== */
+// ===== Loop scroll (infinite) for left menu =====
 function setupLoopScroll(){
   const scroller = ui.loopScroll;
   const inner = ui.loopInner;
 
   const originalButtons = Array.from(inner.querySelectorAll('button.imgBtn'));
-
-  // already duplicated? (hot reload safety)
-  if (inner.dataset.loopReady === '1') return;
-  inner.dataset.loopReady = '1';
 
   const spacer = document.createElement('div');
   spacer.style.height = '2px';
@@ -315,8 +368,8 @@ function setupLoopScroll(){
 
   let oneSetHeight = 0;
   const calcHeights = () => {
-    const gap = 14;
     oneSetHeight = originalButtons.reduce((sum, b) => sum + b.getBoundingClientRect().height, 0);
+    const gap = 14;
     oneSetHeight += gap * (originalButtons.length - 1);
   };
 
@@ -331,29 +384,18 @@ function setupLoopScroll(){
 
   scroller.addEventListener('scroll', () => {
     if (oneSetHeight <= 0) return;
-
-    if (scroller.scrollTop >= oneSetHeight) {
-      scroller.scrollTop -= oneSetHeight;
-    }
-    if (scroller.scrollTop <= 0) {
-      scroller.scrollTop += oneSetHeight;
-    }
+    if (scroller.scrollTop >= oneSetHeight) scroller.scrollTop -= oneSetHeight;
+    if (scroller.scrollTop <= 0) scroller.scrollTop += oneSetHeight;
   }, { passive: true });
 }
 
-/* ===== boot ===== */
+// ===== boot =====
 document.addEventListener('DOMContentLoaded', () => {
   ensureInitialInput();
-
-  bindRename(ui.tapCompany, K.company, '企業名', 'CB Memory');
-  bindRename(ui.tapTeam, K.team, 'チーム名', 'PLAYER TEAM');
-  bindRename(ui.tapM1, K.m1, 'メンバー名（1人目）', '○○○');
-  bindRename(ui.tapM2, K.m2, 'メンバー名（2人目）', '○○○');
-  bindRename(ui.tapM3, K.m3, 'メンバー名（3人目）', '○○○');
-
+  bindTopRename();
   bindMenus();
-  bindWeekByRogTap();
+  bindRogNextReveal();
+  bindMembers();
   setupLoopScroll();
-
   render();
 });
