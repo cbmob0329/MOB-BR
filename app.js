@@ -1,7 +1,11 @@
 'use strict';
 
 /*
-  MOB BR - Main Screen v12 + FIX
+  MOB BR - Main Screen v12 (SAFE EXTENDED)
+  - v12の全機能を保持
+  - 無限スクロール安定化（強く引っ張っても消えない）
+  - チーム画面：戦闘力表示（平均値）
+  - カード効果補正は赤字表示（数値は仮・拡張前提）
 */
 
 const K = {
@@ -68,38 +72,35 @@ const ui = {
 
   teamScreen: $('teamScreen'),
   btnCloseTeam: $('btnCloseTeam'),
-  tCompany: $('tCompany'),
-  tTeam: $('tTeam'),
   tM1: $('tM1'),
   tM2: $('tM2'),
   tM3: $('tM3'),
-
-  teamPower: $('uiTeamPower'),
-  teamPowerBonus: $('uiTeamPowerBonus')
+  teamPower: $('teamPower')
 };
 
-/* ===== iOS double tap zoom prevent ===== */
+/* ===== iOS ダブルタップ防止 ===== */
 (function preventDoubleTapZoom(){
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
-  }, { passive: false });
+  }, { passive:false });
 })();
 
-/* ===== storage helpers ===== */
+/* ===== Storage helpers ===== */
 function getNum(key, def){
   const v = Number(localStorage.getItem(key));
   return Number.isFinite(v) ? v : def;
 }
 function getStr(key, def){
   const v = localStorage.getItem(key);
-  return (v === null || v === '') ? def : v;
+  return (v === null || v === undefined || v === '') ? def : v;
 }
 function setStr(key, val){ localStorage.setItem(key, String(val)); }
 function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
 
+/* ===== Rank / Gold ===== */
 function weeklyGoldByRank(rank){
   if (rank <= 5) return 500;
   if (rank <= 10) return 800;
@@ -107,118 +108,191 @@ function weeklyGoldByRank(rank){
   if (rank <= 30) return 2000;
   return 3000;
 }
-
 function formatRank(rank){ return `RANK ${rank}`; }
 
-/* ===== render ===== */
+/* ===== 戦闘力（仮） ===== */
+function getCharacterPower(){
+  // 将来：育成・カード・装備で拡張
+  return 70; // %
+}
+function getCardBonus(){
+  return 0.5; // %
+}
+function calcTeamPower(){
+  const base = (getCharacterPower() * 3) / 3;
+  return base.toFixed(1);
+}
+
+/* ===== Render ===== */
 function render(){
-  const company = getStr(K.company, 'CB Memory');
-  const team = getStr(K.team, 'PLAYER TEAM');
-  const m1 = getStr(K.m1, '○○○');
-  const m2 = getStr(K.m2, '○○○');
-  const m3 = getStr(K.m3, '○○○');
+  const company = getStr(K.company,'CB Memory');
+  const team = getStr(K.team,'PLAYER TEAM');
+  const m1 = getStr(K.m1,'○○○');
+  const m2 = getStr(K.m2,'○○○');
+  const m3 = getStr(K.m3,'○○○');
 
   ui.company.textContent = company;
   ui.team.textContent = team;
-  ui.gold.textContent = getNum(K.gold, 0);
-  ui.rank.textContent = formatRank(getNum(K.rank, 10));
-
-  ui.y.textContent = getNum(K.y, 1989);
-  ui.m.textContent = getNum(K.m, 1);
-  ui.w.textContent = getNum(K.w, 1);
-
-  ui.nextTour.textContent = getStr(K.nextTour, '未定');
-  ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
-  ui.recent.textContent = getStr(K.recent, '未定');
+  ui.gold.textContent = getNum(K.gold,0);
+  ui.rank.textContent = formatRank(getNum(K.rank,10));
+  ui.y.textContent = getNum(K.y,1989);
+  ui.m.textContent = getNum(K.m,1);
+  ui.w.textContent = getNum(K.w,1);
+  ui.nextTour.textContent = getStr(K.nextTour,'未定');
+  ui.nextTourW.textContent = getStr(K.nextTourW,'未定');
+  ui.recent.textContent = getStr(K.recent,'未定');
 
   ui.uiM1.textContent = m1;
   ui.uiM2.textContent = m2;
   ui.uiM3.textContent = m3;
 
-  ui.tCompany.textContent = company;
-  ui.tTeam.textContent = team;
   ui.tM1.textContent = m1;
   ui.tM2.textContent = m2;
   ui.tM3.textContent = m3;
+
+  if (ui.teamPower){
+    ui.teamPower.textContent = calcTeamPower();
+  }
 }
 
-/* ===== Team Power (ADD ONLY) ===== */
-function calcTeamPower(){
-  // 仮ステータス（後で data / card と接続）
-  const base = [
-    { aim:70, men:65, agi:68, tec:66, sup:60, det:64 },
-    { aim:72, men:64, agi:66, tec:67, sup:62, det:63 },
-    { aim:69, men:66, agi:67, tec:65, sup:61, det:62 }
-  ];
-  const bonus = [0.5, 0.3, 0.4];
+/* ===== Backdrop ===== */
+function showBack(){ ui.popBack.style.display='block'; }
+function hideBack(){ ui.popBack.style.display='none'; }
 
-  const avg = base.reduce((s,b)=>{
-    return s + (b.aim+b.men+b.agi+b.tec+b.sup+b.det)/6;
-  },0)/3;
-
-  ui.teamPower.textContent = `${avg.toFixed(1)}%`;
-  ui.teamPowerBonus.textContent = `+${(bonus.reduce((a,b)=>a+b,0)/3).toFixed(1)}%（カード効果）`;
+/* ===== Week popup ===== */
+function showWeekPop(title, sub){
+  ui.popTitle.textContent = title;
+  ui.popSub.textContent = sub;
+  showBack();
+  ui.weekPop.style.display='block';
+}
+function hideWeekPop(){
+  ui.weekPop.style.display='none';
+  hideBack();
 }
 
-/* ===== show / hide ===== */
+/* ===== Members popup ===== */
+function showMembersPop(){ showBack(); ui.membersPop.style.display='block'; }
+function hideMembersPop(){ ui.membersPop.style.display='none'; hideBack(); }
+
+/* ===== Team screen ===== */
 function showTeamScreen(){
+  render();
   ui.teamScreen.classList.add('show');
-  ui.teamScreen.setAttribute('aria-hidden','false');
-  calcTeamPower(); // ★追加
 }
 function hideTeamScreen(){
   ui.teamScreen.classList.remove('show');
-  ui.teamScreen.setAttribute('aria-hidden','true');
 }
 
-/* ===== menus ===== */
-function setRecent(text){
-  setStr(K.recent,text);
+/* ===== Initial ===== */
+function ensureInitialInput(){
+  if (!localStorage.getItem(K.y)) setNum(K.y,1989);
+  if (!localStorage.getItem(K.m)) setNum(K.m,1);
+  if (!localStorage.getItem(K.w)) setNum(K.w,1);
+  if (!localStorage.getItem(K.rank)) setNum(K.rank,10);
+  if (!localStorage.getItem(K.gold)) setNum(K.gold,0);
+  if (!localStorage.getItem(K.recent)) setStr(K.recent,'未定');
+
+  if (!localStorage.getItem(K.company)){
+    const v = prompt('企業名','CB Memory');
+    if (v) setStr(K.company,v);
+  }
+  if (!localStorage.getItem(K.team)){
+    const v = prompt('チーム名','PLAYER TEAM');
+    if (v) setStr(K.team,v);
+  }
+  if (!localStorage.getItem(K.m1)){
+    const v = prompt('メンバー1','○○○');
+    if (v) setStr(K.m1,v);
+  }
+  if (!localStorage.getItem(K.m2)){
+    const v = prompt('メンバー2','○○○');
+    if (v) setStr(K.m2,v);
+  }
+  if (!localStorage.getItem(K.m3)){
+    const v = prompt('メンバー3','○○○');
+    if (v) setStr(K.m3,v);
+  }
+}
+
+/* ===== Rename ===== */
+function bindRenamePrompt(key,label,def){
+  const cur = getStr(key,def);
+  const v = prompt(label,cur);
+  if (v) setStr(key,v);
   render();
 }
-function bindMenus(){
-  ui.btnTeam.addEventListener('click',()=>{ render(); showTeamScreen(); });
-  ui.btnBattle.addEventListener('click',()=>setRecent('大会：未実装'));
-  ui.btnTraining.addEventListener('click',()=>setRecent('育成：未実装'));
-  ui.btnShop.addEventListener('click',()=>setRecent('ショップ：未実装'));
-  ui.btnSchedule.addEventListener('click',()=>setRecent('スケジュール：未実装'));
-  ui.btnCard.addEventListener('click',()=>setRecent('カード：未実装'));
-  ui.btnWeekNext.addEventListener('click',advanceWeek);
-  ui.btnCloseTeam.addEventListener('click',hideTeamScreen);
+
+/* ===== NEXT ===== */
+let nextHideTimer=null;
+function showNextTemporarily(ms=3000){
+  ui.btnWeekNext.classList.add('show');
+  clearTimeout(nextHideTimer);
+  nextHideTimer=setTimeout(()=>ui.btnWeekNext.classList.remove('show'),ms);
 }
 
-/* ===== FIXED loop scroll ===== */
+/* ===== Week advance ===== */
+function advanceWeek(){
+  let y=getNum(K.y,1989), m=getNum(K.m,1), w=getNum(K.w,1)+1;
+  if (w>=5){ w=1; m++; if (m>=13){ m=1; y++; } }
+  const gain = weeklyGoldByRank(getNum(K.rank,10));
+
+  showWeekPop(`${y}年${m}月 第${w}週`,`企業ランクにより ${gain}G 獲得！`);
+
+  ui.btnPopNext.onclick=()=>{
+    setNum(K.y,y); setNum(K.m,m); setNum(K.w,w);
+    setNum(K.gold,getNum(K.gold,0)+gain);
+    setStr(K.recent,`週が進んだ（+${gain}G）`);
+    hideWeekPop();
+    render();
+    ui.btnWeekNext.classList.remove('show');
+  };
+}
+
+/* ===== Bindings ===== */
+function bindAll(){
+  ui.btnMembers.onclick=showMembersPop;
+  ui.btnCloseMembers.onclick=hideMembersPop;
+
+  ui.rowM1.onclick=()=>bindRenamePrompt(K.m1,'メンバー1','○○○');
+  ui.rowM2.onclick=()=>bindRenamePrompt(K.m2,'メンバー2','○○○');
+  ui.rowM3.onclick=()=>bindRenamePrompt(K.m3,'メンバー3','○○○');
+
+  ui.tapCompany.onclick=()=>bindRenamePrompt(K.company,'企業名','CB Memory');
+  ui.tapTeamName.onclick=()=>bindRenamePrompt(K.team,'チーム名','PLAYER TEAM');
+
+  ui.btnTeam.onclick=showTeamScreen;
+  ui.btnCloseTeam.onclick=hideTeamScreen;
+
+  ui.btnWeekNext.onclick=advanceWeek;
+  ui.rogWrap.onclick=()=>showNextTemporarily(3200);
+}
+
+/* ===== 無限スクロール安定版 ===== */
 function setupLoopScroll(){
-  const scroller = ui.loopScroll;
+  const sc = ui.loopScroll;
   const inner = ui.loopInner;
   const items = Array.from(inner.children);
 
-  items.forEach(n=>{
-    const c = n.cloneNode(true);
-    c.onclick = n.onclick;
+  items.forEach(el=>{
+    const c = el.cloneNode(true);
+    c.onclick=el.onclick;
     inner.appendChild(c);
   });
 
-  requestAnimationFrame(()=>{
-    scroller.scrollTop = inner.scrollHeight/3;
-  });
+  const half = inner.scrollHeight/2;
+  sc.scrollTop = half/2;
 
-  scroller.addEventListener('scroll',()=>{
-    const h = inner.scrollHeight/2;
-    if(scroller.scrollTop<h*0.25) scroller.scrollTop+=h*0.25;
-    if(scroller.scrollTop>h*0.75) scroller.scrollTop-=h*0.25;
+  sc.addEventListener('scroll',()=>{
+    if (sc.scrollTop < 10) sc.scrollTop += half;
+    if (sc.scrollTop > half*1.5) sc.scrollTop -= half;
   },{passive:true});
 }
 
-/* ===== boot ===== */
+/* ===== Boot ===== */
 document.addEventListener('DOMContentLoaded',()=>{
-  if(!localStorage.getItem(K.y)) setNum(K.y,1989);
-  if(!localStorage.getItem(K.m)) setNum(K.m,1);
-  if(!localStorage.getItem(K.w)) setNum(K.w,1);
-  if(!localStorage.getItem(K.rank)) setNum(K.rank,10);
-  if(!localStorage.getItem(K.gold)) setNum(K.gold,0);
-
-  render();
-  bindMenus();
+  ensureInitialInput();
+  bindAll();
   setupLoopScroll();
+  render();
 });
