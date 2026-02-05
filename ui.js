@@ -1,5 +1,9 @@
 /* =========================================================
    MOB BR - ui.js (FULL)
+   - 背景は #scene の固定枠に100%フィット（CSS側で統一）
+   - プレイヤー絵は常に背景の手前
+   - 交戦時のみ右に敵チーム絵を表示（cpu/teamId.png）
+   - 名前プレート（チーム名 / メンバー名）を左右に表示
 ========================================================= */
 
 (function(){
@@ -12,111 +16,92 @@
   const STATE = {
     auto: false,
     lastBg: null,
-    battleEnemy: null,
-    playerTeam: null,
+    player: { name:'プレイヤーチーム', members:'メンバー', img:'P1.png' },
+    enemy: null,
   };
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init(){
     cacheDom();
-    ensureExtraLayers();
+    ensureOverlay();
     bindEvents();
     syncPlayerPanel();
     setLog('準備中…');
   }
 
   function cacheDom(){
-    DOM.scene      = document.getElementById('scene');
-    DOM.sceneBg    = document.getElementById('sceneBg');
-    DOM.teamPanel  = document.getElementById('teamPanel');
-    DOM.teamImage  = document.getElementById('teamImage');
-    DOM.logPanel   = document.getElementById('logPanel');
-    DOM.logText    = document.getElementById('logText');
-    DOM.btnAuto    = document.getElementById('btnAuto');
-    DOM.btnNext    = document.getElementById('btnNext');
-    DOM.resultPanel     = document.getElementById('resultPanel');
+    DOM.scene   = document.getElementById('scene');
+    DOM.bg      = document.getElementById('sceneBg');
+    DOM.teamImg = document.getElementById('teamImage');
+
+    DOM.logPanel = document.getElementById('logPanel');
+    DOM.logText  = document.getElementById('logText');
+    DOM.btnAuto  = document.getElementById('btnAuto');
+    DOM.btnNext  = document.getElementById('btnNext');
+
+    DOM.resultPanel = document.getElementById('resultPanel');
     DOM.resultTableWrap = document.getElementById('resultTableWrap');
-    DOM.btnResultNext   = document.getElementById('btnResultNext');
+    DOM.btnResultNext = document.getElementById('btnResultNext');
+
     DOM.hudDate = document.getElementById('hudDate');
     DOM.hudMode = document.getElementById('hudMode');
   }
 
-  function ensureExtraLayers(){
+  function ensureOverlay(){
     if(!DOM.scene) return;
 
-    DOM.playerName = document.getElementById('playerName');
-    if(!DOM.playerName){
-      DOM.playerName = document.createElement('div');
-      DOM.playerName.id = 'playerName';
-      DOM.playerName.style.position = 'absolute';
-      DOM.playerName.style.left = '14px';
-      DOM.playerName.style.top  = '12px';
-      DOM.playerName.style.padding = '6px 10px';
-      DOM.playerName.style.borderRadius = '10px';
-      DOM.playerName.style.background = 'rgba(0,0,0,.55)';
-      DOM.playerName.style.color = '#fff';
-      DOM.playerName.style.fontWeight = '700';
-      DOM.playerName.style.fontSize = '14px';
-      DOM.playerName.style.pointerEvents = 'none';
-      DOM.playerName.style.zIndex = 5;
-      DOM.scene.appendChild(DOM.playerName);
-    }
-
+    // 敵表示枠（無ければ作る）
     DOM.enemyWrap = document.getElementById('enemyWrap');
     if(!DOM.enemyWrap){
       DOM.enemyWrap = document.createElement('div');
       DOM.enemyWrap.id = 'enemyWrap';
-      DOM.enemyWrap.style.position = 'absolute';
-      DOM.enemyWrap.style.right = '14px';
-      DOM.enemyWrap.style.top = '12px';
-      DOM.enemyWrap.style.width = '150px';
-      DOM.enemyWrap.style.display = 'none';
-      DOM.enemyWrap.style.zIndex = 6;
+      DOM.scene.appendChild(DOM.enemyWrap);
+    }
 
-      DOM.enemyName = document.createElement('div');
-      DOM.enemyName.id = 'enemyName';
-      DOM.enemyName.style.padding = '6px 10px';
-      DOM.enemyName.style.borderRadius = '10px';
-      DOM.enemyName.style.background = 'rgba(0,0,0,.55)';
-      DOM.enemyName.style.color = '#fff';
-      DOM.enemyName.style.fontWeight = '700';
-      DOM.enemyName.style.fontSize = '14px';
-      DOM.enemyName.style.textAlign = 'center';
-      DOM.enemyName.style.marginBottom = '6px';
-
+    DOM.enemyImg = document.getElementById('enemyImg');
+    if(!DOM.enemyImg){
       DOM.enemyImg = document.createElement('img');
       DOM.enemyImg.id = 'enemyImg';
       DOM.enemyImg.alt = '';
-      DOM.enemyImg.style.width = '150px';
-      DOM.enemyImg.style.height = 'auto';
-      DOM.enemyImg.style.imageRendering = 'pixelated';
-      DOM.enemyImg.style.filter = 'drop-shadow(0 6px 10px rgba(0,0,0,.35))';
-
-      DOM.enemyWrap.appendChild(DOM.enemyName);
       DOM.enemyWrap.appendChild(DOM.enemyImg);
-      DOM.scene.appendChild(DOM.enemyWrap);
     }
+
+    // 左右の名前プレート
+    DOM.playerPlate = document.getElementById('playerNameplate');
+    if(!DOM.playerPlate){
+      DOM.playerPlate = document.createElement('div');
+      DOM.playerPlate.id = 'playerNameplate';
+      DOM.playerPlate.className = 'nameplate';
+      DOM.scene.appendChild(DOM.playerPlate);
+    }
+
+    DOM.enemyPlate = document.getElementById('enemyNameplate');
+    if(!DOM.enemyPlate){
+      DOM.enemyPlate = document.createElement('div');
+      DOM.enemyPlate.id = 'enemyNameplate';
+      DOM.enemyPlate.className = 'nameplate';
+      DOM.scene.appendChild(DOM.enemyPlate);
+    }
+
+    // 初期は敵は非表示
+    hideEnemy();
   }
 
   function bindEvents(){
     if(DOM.btnNext){
       DOM.btnNext.addEventListener('click', ()=>{
-        if(window.Sim && typeof window.Sim.next === 'function'){
-          window.Sim.next();
-        }
+        if(window.Sim && typeof window.Sim.next === 'function') window.Sim.next();
       });
     }
 
     if(DOM.btnAuto){
       DOM.btnAuto.addEventListener('click', ()=>{
         STATE.auto = !STATE.auto;
-        updateAutoBtn();
-        if(window.Sim && typeof window.Sim.setAuto === 'function'){
-          window.Sim.setAuto(STATE.auto);
-        }
+        DOM.btnAuto.textContent = STATE.auto ? 'AUTO: ON' : 'AUTO';
+        if(window.Sim && typeof window.Sim.setAuto === 'function') window.Sim.setAuto(STATE.auto);
       });
-      updateAutoBtn();
+      DOM.btnAuto.textContent = 'AUTO';
     }
 
     if(DOM.btnResultNext){
@@ -131,11 +116,9 @@
     }
   }
 
-  function updateAutoBtn(){
-    if(!DOM.btnAuto) return;
-    DOM.btnAuto.textContent = STATE.auto ? 'AUTO: ON' : 'AUTO';
-  }
-
+  /* =========================
+     Public API from Sim
+  ========================== */
   UI.showStep = function(step){
     const msg = String(step?.message ?? '');
     const bg  = step?.bg || null;
@@ -144,7 +127,11 @@
     if(bg) setBackground(bg, anim);
     setLog(msg);
 
-    if(step?.enemy) UI.setEnemy(step.enemy);
+    if(step?.enemy){
+      UI.setEnemy(step.enemy);
+    }else if(step?.clearEnemy){
+      UI.clearEnemy();
+    }
 
     if(DOM.hudMode){
       DOM.hudMode.textContent = STATE.auto ? 'MODE: AUTO' : 'MODE: VIEW';
@@ -157,65 +144,93 @@
 
     if(DOM.scene) DOM.scene.style.display = 'none';
     if(DOM.resultPanel) DOM.resultPanel.style.display = '';
-
     renderResult(champion, rows);
   };
 
   UI.setEnemy = function(enemy){
-    STATE.battleEnemy = enemy || null;
-    if(!STATE.battleEnemy){
-      hideEnemy(); return;
-    }
-    if(DOM.enemyWrap){
-      DOM.enemyWrap.style.display = '';
-      DOM.enemyName.textContent = STATE.battleEnemy.name || '';
-      DOM.enemyImg.src = withCacheBuster(STATE.battleEnemy.img || '');
-    }
+    // enemy: { name, members, img }
+    STATE.enemy = enemy || null;
+    if(!STATE.enemy){ hideEnemy(); return; }
+
+    DOM.enemyWrap.style.display = '';
+    DOM.enemyImg.src = withCacheBuster(STATE.enemy.img || '');
+
+    DOM.enemyPlate.innerHTML =
+      `<div>${escapeHtml(STATE.enemy.name || '敵チーム')}</div>` +
+      `<span class="sub">${escapeHtml(STATE.enemy.members || 'メンバー')}</span>`;
+    DOM.enemyPlate.style.display = '';
   };
 
   UI.clearEnemy = function(){
-    STATE.battleEnemy = null;
+    STATE.enemy = null;
     hideEnemy();
   };
+
+  /* =========================
+     Rendering helpers
+  ========================== */
+  function syncPlayerPanel(){
+    // data_player.js に getTeam があれば使う（無ければ P1.png）
+    try{
+      if(window.DataPlayer?.getTeam){
+        const t = window.DataPlayer.getTeam();
+        STATE.player.name = t?.name || STATE.player.name;
+        // メンバー名は3人まとめて表示（なければ固定）
+        if(Array.isArray(t?.members)){
+          STATE.player.members = t.members.map(m=>m.name).join(' / ');
+        }
+        STATE.player.img = t?.img || STATE.player.img;
+      }
+    }catch(_e){}
+
+    if(DOM.teamImg){
+      DOM.teamImg.src = withCacheBuster(STATE.player.img || 'P1.png');
+    }
+    DOM.playerPlate.innerHTML =
+      `<div>${escapeHtml(STATE.player.name || 'プレイヤーチーム')}</div>` +
+      `<span class="sub">${escapeHtml(STATE.player.members || 'メンバー')}</span>`;
+  }
 
   function setLog(text){
     if(DOM.logText) DOM.logText.textContent = text;
   }
 
   function setBackground(newBg, slide){
-    if(!DOM.sceneBg) return;
+    if(!DOM.bg) return;
     if(STATE.lastBg === newBg) return;
 
+    // CSSで常に同枠表示なので、ここはsrc差し替えだけでOK
     if(!slide){
-      DOM.sceneBg.src = withCacheBuster(newBg);
+      DOM.bg.src = withCacheBuster(newBg);
       STATE.lastBg = newBg;
       return;
     }
 
-    const parent = DOM.sceneBg.parentElement;
+    // スライド演出（任意）
+    const parent = DOM.bg.parentElement;
     if(!parent){
-      DOM.sceneBg.src = withCacheBuster(newBg);
+      DOM.bg.src = withCacheBuster(newBg);
       STATE.lastBg = newBg;
       return;
     }
 
-    const oldImg = DOM.sceneBg;
+    const oldImg = DOM.bg;
     const newImg = oldImg.cloneNode(false);
     newImg.src = withCacheBuster(newBg);
 
     newImg.style.position = 'absolute';
-    newImg.style.left = '0';
-    newImg.style.top = '0';
+    newImg.style.inset = '0';
+    newImg.style.width = '100%';
+    newImg.style.height = '100%';
+    newImg.style.objectFit = 'cover';
+    newImg.style.imageRendering = 'pixelated';
     newImg.style.transform = 'translateX(100%)';
     newImg.style.transition = 'transform 420ms ease';
+    newImg.style.zIndex = '1';
 
-    oldImg.style.position = 'absolute';
-    oldImg.style.left = '0';
-    oldImg.style.top = '0';
     oldImg.style.transition = 'transform 420ms ease';
     oldImg.style.transform = 'translateX(0%)';
 
-    parent.style.position = 'relative';
     parent.appendChild(newImg);
 
     requestAnimationFrame(()=>{
@@ -227,13 +242,17 @@
       if(oldImg.parentElement) oldImg.parentElement.removeChild(oldImg);
       newImg.id = 'sceneBg';
       newImg.style.position = '';
-      newImg.style.left = '';
-      newImg.style.top = '';
+      newImg.style.inset = '';
       newImg.style.transform = '';
       newImg.style.transition = '';
-      DOM.sceneBg = newImg;
+      DOM.bg = newImg;
       STATE.lastBg = newBg;
     }, 460);
+  }
+
+  function hideEnemy(){
+    if(DOM.enemyWrap) DOM.enemyWrap.style.display = 'none';
+    if(DOM.enemyPlate) DOM.enemyPlate.style.display = 'none';
   }
 
   function renderResult(champion, rows){
@@ -301,7 +320,6 @@
         tbody.appendChild(tr2);
       }
     }
-
     table.appendChild(tbody);
     DOM.resultTableWrap.appendChild(table);
   }
@@ -315,42 +333,6 @@
     tr.appendChild(td);
   }
 
-  function hideEnemy(){
-    if(DOM.enemyWrap) DOM.enemyWrap.style.display = 'none';
-  }
-
-  function syncPlayerPanel(){
-    const player = getPlayerTeamGuess();
-    STATE.playerTeam = player;
-
-    if(DOM.playerName){
-      DOM.playerName.textContent = player?.name || 'PLAYER';
-    }
-    if(player?.img && DOM.teamImage){
-      DOM.teamImage.src = withCacheBuster(player.img);
-    }
-    if(DOM.teamImage){
-      DOM.teamImage.style.imageRendering = 'pixelated';
-    }
-  }
-
-  function getPlayerTeamGuess(){
-    try{
-      if(window.DataPlayer?.getTeam){
-        const t = window.DataPlayer.getTeam();
-        return { name: t?.name || 'PLAYER', img: t?.img || null };
-      }
-      if(window.PLAYER_TEAM){
-        return { name: window.PLAYER_TEAM.name || 'PLAYER', img: window.PLAYER_TEAM.img || null };
-      }
-      const img = DOM.teamImage?.getAttribute('src') || 'P1.png';
-      return { name: 'PLAYER', img };
-    }catch(_e){
-      const img = DOM.teamImage?.getAttribute('src') || 'P1.png';
-      return { name: 'PLAYER', img };
-    }
-  }
-
   function withCacheBuster(path){
     if(!path) return path;
     if(path.includes('?v=')) return path;
@@ -359,5 +341,14 @@
     return `${path}?v=${stamp}`;
   }
   function pad2(n){ return (n<10?'0':'')+n; }
+
+  function escapeHtml(s){
+    return String(s ?? '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#39;");
+  }
 
 })();
