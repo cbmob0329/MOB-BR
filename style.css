@@ -1,320 +1,363 @@
-/* style.css (FULL)  MOB BR
-   v=20260205_03
-   Fix:
-   - ゲーム枠が上に寄る → #app を縦中央寄せ（スマホでも中央に）
-   - 画面全体が白い → body背景に「画像 + 黒フォールバック」を強制
-   - ログ文字は白固定
-   - ログ枠は下部固定＆半分はみ出し
-   - P1は常時前面、チーム名/メンバー名は縦並び
-*/
-
 :root{
-  --ui-max-w: 980px;
-  --ui-pad: 14px;
-
-  /* 進行背景を表示する舞台比率 */
-  --stage-aspect: 16 / 9;
-
-  /* ログ枠 */
-  --log-h: 160px;
-  --log-half-out: 90px;  /* ←「半分はみ出す」を強めに（好みに応じて 80〜120） */
-  --log-radius: 18px;
-
-  /* z-index */
-  --z-bg: 1;
-  --z-stage: 10;
-  --z-enemy: 25;
-  --z-log: 20;
-  --z-fg: 30;
-  --z-overlay: 60;
-
-  /* 色 */
-  --text: #f5f5f5;
-  --muted: rgba(255,255,255,.78);
+  --w: 720px;      /* 基準画面（CSSで縮小してフィット） */
+  --h: 1280px;
+  --uiShadow: 0 12px 30px rgba(0,0,0,.45);
+  --gold: rgba(255, 204, 77, .9);
+  --gold2: rgba(255, 180, 0, .65);
   --panel: rgba(0,0,0,.55);
-  --panel2: rgba(0,0,0,.38);
-  --stroke: rgba(255,255,255,.16);
-  --shadow: 0 10px 30px rgba(0,0,0,.45);
-
-  /* 背景フォールバック（画像が読めなくても白にならない） */
-  --bg-fallback: #0b0f17;
+  --text: #f3f4f6;
+  --muted: rgba(255,255,255,.75);
+  --stroke: rgba(0,0,0,.55);
 }
 
-*{ box-sizing:border-box; }
-html, body{
-  height:100%;
-  margin:0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-  color: var(--text);
-}
-
-/* ✅ ページ全体背景：画像 + 黒フォールバック（ここが白対策の本丸） */
+*{ box-sizing: border-box; }
+html,body{ height:100%; }
 body{
-  background-color: var(--bg-fallback);
-  background-image: url("./haikeimain.png");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-
-  /* iPhoneの余白対策 */
-  min-height: 100vh;
+  margin:0;
+  background:#000;
+  color:var(--text);
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  overflow:hidden;
 }
 
-/* 画像はドット寄りに */
-img{ image-rendering: pixelated; }
-button{ font-family: inherit; }
+#app{
+  position:relative;
+  width: min(100vw, calc(var(--w) * 100vh / var(--h)));
+  height: min(100vh, calc(var(--h) * 100vw / var(--w)));
+  margin:auto;
+  top:50%;
+  transform: translateY(-50%);
+  border-radius: 18px;
+  overflow:hidden;
+  box-shadow: var(--uiShadow);
+}
 
-/* ===== App Root ===== */
-/* ✅ ここが「上に寄る」原因だったので、縦中央寄せにする */
-#app, .app, #root{
-  min-height: 100vh;
+/* 背景：haikeimain.png 固定 */
+.bg{
+  position:absolute;
+  inset:0;
+  background: #111 url("haikeimain.png?v=1") center/cover no-repeat;
+  filter: saturate(1.05) contrast(1.02);
+}
+
+/* 上HUD */
+.topHud{
+  position:absolute;
+  top: 22px;
+  left: 22px;
+  right: 22px;
   display:flex;
-  justify-content:center;     /* 横中央 */
-  align-items:center;         /* 縦中央 ←重要 */
-  padding:
-    calc(var(--ui-pad) + env(safe-area-inset-top))
-    var(--ui-pad)
-    calc(var(--ui-pad) + env(safe-area-inset-bottom))
-    var(--ui-pad);
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 16px;
+  z-index: 5;
 }
 
-/* ===== Main Frame ===== */
-#gameFrame, .game-frame, .frame{
-  width: min(var(--ui-max-w), calc(100vw - var(--ui-pad)*2));
-  position: relative;
-}
-
-/* ===== Stage ===== */
-#stage, .stage, .scene, #scene{
-  position: relative;
-  width: 100%;
-  aspect-ratio: var(--stage-aspect);
-  overflow: hidden;
-  border-radius: 22px;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--stroke);
-  background: rgba(0,0,0,.25);
-}
-
-/* 背景レイヤー */
-#bgLayer, .bg-layer, .layer-bg, .stage-bg{
-  position:absolute;
-  inset:0;
-  z-index: var(--z-bg);
-}
-#bgLayer img, .bg-layer img, .layer-bg img, .stage-bg img{
-  width:100%;
-  height:100%;
-  object-fit: cover;
-  display:block;
-}
-
-/* 演出レイヤー */
-#midLayer, .mid-layer, .layer-mid{
-  position:absolute;
-  inset:0;
-  z-index: var(--z-stage);
-  pointer-events:none;
-}
-
-/* 前面レイヤー */
-#fgLayer, .fg-layer, .layer-fg{
-  position:absolute;
-  inset:0;
-  z-index: var(--z-fg);
-  pointer-events:none;
-}
-
-/* ===== Player Side ===== */
-#playerSide, .player-side, .player-panel, #playerPanel{
-  position:absolute;
-  left: 3.2%;
-  top: 8%;
-  width: 46%;
-  height: 78%;
-  z-index: var(--z-fg);
-  pointer-events:none;
-}
-
-/* ✅ 1枚目イメージ：P1を少し小さくして情報が見えるように */
-#playerImage, .player-image, #playerPic, .p1-image{
-  position:absolute;
-  left: 0;
-  top: 10%;
-  width: 52%;         /* ←58%→52%（少し小さく） */
-  height: auto;
-  max-height: 78%;
-  object-fit: contain;
-  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
-}
-
-/* チーム情報パネル（縦並び：チーム名→メンバー1→2→3） */
-#playerInfo, .player-info, #playerText, .team-info{
-  position:absolute;
-  left: 54%;          /* ←画像の右に確実に入る */
-  top: 10%;
-  width: 46%;
-  padding: 10px 10px;
-  background: var(--panel2);
-  border: 1px solid var(--stroke);
+.topLeftInfo{
+  padding: 14px 14px;
   border-radius: 14px;
-  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  background: rgba(0,0,0,.35);
   backdrop-filter: blur(2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  min-width: 280px;
 }
 
-.player-info .team-name,
-#playerInfo .team-name,
-.team-info .team-name{
-  font-weight: 900;
-  font-size: 18px;
-  line-height: 1.15;
-  letter-spacing: .02em;
-  text-shadow: 0 2px 0 rgba(0,0,0,.65);
+.topLeftInfo .tiny{
+  font-weight: 800;
+  letter-spacing: .04em;
+  opacity: .9;
+  font-size: 14px;
   margin-bottom: 8px;
 }
 
-.player-info .member,
-#playerInfo .member,
-.team-info .member{
-  font-weight: 800;
-  font-size: 15px;
+.topLeftInfo .row{
+  display:flex;
+  gap: 6px;
+  font-size: 18px;
   line-height: 1.35;
-  color: #fff;
-  text-shadow: 0 2px 0 rgba(0,0,0,.65);
-  margin: 2px 0;
+  text-shadow: 0 2px 0 var(--stroke);
+}
+.topLeftInfo .label{
+  color: var(--muted);
+  font-weight: 700;
+}
+.topLeftInfo span{
+  white-space: nowrap;
 }
 
-/* ===== Enemy Side ===== */
-#enemySide, .enemy-side, .enemy-panel, #enemyPanel{
-  position:absolute;
-  right: 3.2%;
-  top: 12%;
-  width: 42%;
-  height: 70%;
-  z-index: var(--z-enemy);
-  pointer-events:none;
-  display:none;
+.topRightLogo{
+  width: 240px;
+  max-width: 35%;
+  display:flex;
+  justify-content:flex-end;
 }
-
-#enemyImage, .enemy-image, #enemyPic{
-  position:absolute;
-  right: 0;
-  top: 8%;
-  width: 66%;
+.topRightLogo img{
+  width: 100%;
   height: auto;
-  max-height: 84%;
-  object-fit: contain;
-  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
+  display:block;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,.55));
 }
 
-#enemyInfo, .enemy-info{
+/* 上部小ボタン */
+.topMiniButtons{
   position:absolute;
-  right: 68%;
-  top: 12%;
-  width: 32%;
-  padding: 10px 10px;
-  background: var(--panel2);
-  border: 1px solid var(--stroke);
-  border-radius: 14px;
-  box-shadow: 0 6px 18px rgba(0,0,0,.35);
-  backdrop-filter: blur(2px);
-  text-align:left;
+  top: 220px;
+  right: 28px;
+  display:flex;
+  gap: 14px;
+  z-index: 6;
 }
-
-.enemy-info .team-name{
+.miniBtn{
+  border: 2px solid rgba(0,0,0,.65);
+  background: linear-gradient(180deg, rgba(255,215,120,.95), rgba(170,110,0,.85));
+  color: #1b1200;
   font-weight: 900;
-  font-size: 16px;
-  line-height: 1.15;
-  text-shadow: 0 2px 0 rgba(0,0,0,.65);
+  font-size: 18px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  box-shadow: 0 10px 22px rgba(0,0,0,.35);
+  cursor:pointer;
 }
+.miniBtn:active{ transform: translateY(1px); }
 
-/* ===== Log ===== */
-#logPanel, .log-panel, #logBox, .log-box, #logArea{
+/* 左メニュー */
+.leftMenu{
   position:absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 94%;
-  height: var(--log-h);
-
-  /* ✅ 下に下げる（半分はみ出し） */
-  bottom: calc(-1 * var(--log-half-out));
-
-  z-index: var(--z-log);
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: var(--log-radius);
-  box-shadow: 0 16px 30px rgba(0,0,0,.55);
-  backdrop-filter: blur(3px);
-  overflow:hidden;
-
-  /* ボタンは押せる必要があるので logPanel だけ pointer-events ON */
-  pointer-events:auto;
-}
-
-#logPanel .log-inner,
-.log-panel .log-inner,
-#logBox .log-inner,
-.log-box .log-inner,
-#logArea .log-inner{
-  padding: 14px 16px;
-  height: 100%;
+  left: 20px;
+  top: 300px;
+  width: 250px;
   display:flex;
   flex-direction:column;
-  justify-content:flex-start;
-  gap: 8px;
+  gap: 18px;
+  z-index: 6;
 }
 
-/* ✅ ログ文字は白固定（赤禁止） */
-#logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
-  margin:0;
-  color: #ffffff !important;
-  font-weight: 800;
+.menuBtn{
+  position:relative;
+  height: 90px;
+  border-radius: 18px;
+  border: 3px solid rgba(255, 220, 140, .75);
+  background: rgba(0,0,0,.35);
+  box-shadow: 0 10px 24px rgba(0,0,0,.35);
+  cursor:pointer;
+  overflow:hidden;
+  padding: 10px 16px;
+  text-align:left;
+}
+.menuBtn::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: linear-gradient(135deg, rgba(255,220,120,.20), rgba(255,140,0,.08));
+  opacity:.9;
+}
+.menuBtn .menuSub{
+  position:relative;
+  display:block;
   font-size: 16px;
-  line-height: 1.35;
-  text-shadow: 0 2px 0 rgba(0,0,0,.70);
-  word-break: break-word;
-  white-space: pre-wrap;
+  font-weight: 800;
+  opacity:.85;
+  text-shadow: 0 2px 0 var(--stroke);
+}
+.menuBtn .menuMain{
+  position:relative;
+  display:block;
+  font-size: 34px;
+  font-weight: 1000;
+  letter-spacing:.02em;
+  margin-top: 6px;
+  text-shadow: 0 3px 0 var(--stroke);
+}
+.menuBtn:active{ transform: translateY(1px); }
+
+.smallBtn{
+  height: 64px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 220, 140, .7);
+  background: rgba(0,0,0,.30);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 18px;
+  box-shadow: 0 10px 22px rgba(0,0,0,.30);
+  cursor:pointer;
+}
+.smallBtn:active{ transform: translateY(1px); }
+
+/* 中央メインカード */
+.mainCard{
+  position:absolute;
+  left: 300px;
+  right: 28px;
+  top: 300px;
+  height: 560px;
+  z-index: 5;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
-/* 保険：赤系クラスがあっても白に潰す */
-.log-red, .danger, .warn, .critical{
-  color: #ffffff !important;
+.mainCardInner{
+  position:relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+  overflow:hidden;
+  box-shadow: 0 14px 36px rgba(0,0,0,.45);
+  background: rgba(255,255,255,.06);
 }
 
-/* ===== Responsive ===== */
-@media (max-width: 520px){
-  :root{
-    --log-h: 150px;
-    --log-half-out: 96px;
-  }
+.mainCardFrame{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  filter: drop-shadow(0 10px 22px rgba(0,0,0,.25));
+  opacity:.98;
+}
 
-  #playerImage, .player-image, #playerPic, .p1-image{
-    width: 50%;
-  }
+.mainCardContent{
+  position:absolute;
+  inset:0;
+  padding: 28px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap: 18px;
+}
 
-  #playerInfo, .player-info, #playerText, .team-info{
-    padding: 8px 8px;
-    left: 52%;
-    width: 48%;
-  }
+.playerTeamImg{
+  width: 78%;
+  max-height: 58%;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 26px rgba(0,0,0,.50));
+}
 
-  .player-info .team-name,
-  #playerInfo .team-name,
-  .team-info .team-name{
-    font-size: 16px;
-  }
-  .player-info .member,
-  #playerInfo .member,
-  .team-info .member{
-    font-size: 14px;
-  }
+.mainCardText{
+  width: 92%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(0,0,0,.28);
+  backdrop-filter: blur(2px);
+  border: 1px solid rgba(255,255,255,.12);
+}
 
-  #logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
-    font-size: 15px;
+.kvRow{
+  display:flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+.kvRow:first-child{ margin-top: 0; }
+
+.kv{
+  flex:1;
+  display:flex;
+  justify-content:space-between;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 var(--stroke);
+}
+.kv .k{
+  color: rgba(255,255,255,.85);
+  font-weight: 800;
+}
+.kv .v{
+  color: #fff;
+}
+
+/* ログ枠（下部） */
+.logPanel{
+  position:absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 160px;
+  height: 220px;
+  border-radius: 24px;
+  background: rgba(82, 255, 68, .55);
+  border: 4px solid rgba(0,0,0,.50);
+  box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  padding: 20px 22px;
+  z-index: 7;
+  overflow:hidden;
+}
+
+.logTitle{
+  font-size: 26px;
+  font-weight: 1000;
+  color: #0b1306;
+  text-shadow: 0 2px 0 rgba(255,255,255,.25);
+  margin-bottom: 10px;
+}
+
+.logBody{
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.25;
+  color: #0b1306;
+  padding-right: 120px;
+}
+
+.logWatermark{
+  position:absolute;
+  right: 22px;
+  bottom: 22px;
+  font-size: 52px;
+  font-weight: 1000;
+  opacity: .22;
+  color:#0b1306;
+  transform: rotate(-8deg);
+}
+
+/* NEXT / SKIP */
+.bottomControls{
+  position:absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 52px;
+  display:flex;
+  gap: 18px;
+  z-index: 8;
+}
+
+.actionBtn{
+  flex:1;
+  height: 92px;
+  border-radius: 22px;
+  border: 3px solid rgba(255, 220, 140, .75);
+  background: rgba(0,0,0,.40);
+  color: #fff;
+  font-weight: 1000;
+  font-size: 34px;
+  letter-spacing:.04em;
+  text-shadow: 0 3px 0 rgba(0,0,0,.55);
+  box-shadow: 0 14px 34px rgba(0,0,0,.40);
+  cursor:pointer;
+}
+.actionBtn:active{ transform: translateY(1px); }
+
+.safeSpacer{
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height: env(safe-area-inset-bottom);
+  background: transparent;
+  z-index: 20;
+}
+
+/* 小さめ端末最適化 */
+@media (max-width: 420px){
+  #app{
+    border-radius: 0;
+    width: 100vw;
+    height: 100vh;
+    top:0;
+    transform:none;
   }
 }
 
-/* Utility */
-.hidden{ display:none !important; }
-.show{ display:block !important; }
+/* 画面比が極端に細い/太いときの軽い調整 */
+@media (max-aspect-ratio: 9/19){
+  .topMiniButtons{ top: 200px; }
+  .mainCard{ top: 285px; height: 540px; }
+}
