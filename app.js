@@ -1,14 +1,15 @@
 'use strict';
 
 /*
-  MOB BR - Main Screen v11
-  - Left menu: loop scroll (only inside the button column)
-  - NEXT not always visible:
-      * Week popup shows NEXT
-      * Rog panel tap shows NEXT temporarily (3 sec)
-  - Mobile:
-      * prevent double-tap zoom (iOS)
-      * long-press callout suppression is CSS (-webkit-touch-callout/user-select)
+  MOB BR - Main Screen v12
+  FIX:
+  - Text always stays inside frames (handled mainly by CSS clamp/wrap)
+  - Bottom panel never goes off-screen (rightCol grid rows + rog svh height)
+  - NEXT is NOT for week progression -> week-advance logic removed
+  - Mobile zoom suppression:
+      * user-scalable=no in meta viewport
+      * iOS gesture events prevented
+      * double-tap zoom prevented
 */
 
 const K = {
@@ -47,15 +48,6 @@ const ui = {
   tapM2: $('tapM2'),
   tapM3: $('tapM3'),
 
-  popBack: $('modalBack'),
-  weekPop: $('weekPop'),
-  popTitle: $('popTitle'),
-  popSub: $('popSub'),
-  btnPopNext: $('btnPopNext'),
-
-  btnWeekNext: $('btnWeekNext'),
-  rogWrap: $('rogWrap'),
-
   btnTeam: $('btnTeam'),
   btnBattle: $('btnBattle'),
   btnTraining: $('btnTraining'),
@@ -65,9 +57,18 @@ const ui = {
 
   loopScroll: $('loopScroll'),
   loopInner: $('loopInner'),
+
+  btnPopupNext: $('btnPopupNext'),
 };
 
-(function preventDoubleTapZoom(){
+(function suppressZoomIOS(){
+  // iOS pinch zoom gesture suppression
+  const prevent = (e) => { e.preventDefault(); };
+  document.addEventListener('gesturestart', prevent, { passive:false });
+  document.addEventListener('gesturechange', prevent, { passive:false });
+  document.addEventListener('gestureend', prevent, { passive:false });
+
+  // double-tap zoom suppression (iOS Safari)
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
@@ -87,19 +88,11 @@ function getStr(key, def){
 function setStr(key, val){ localStorage.setItem(key, String(val)); }
 function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
 
-function weeklyGoldByRank(rank){
-  if (rank >= 1 && rank <= 5) return 500;
-  if (rank >= 6 && rank <= 10) return 800;
-  if (rank >= 11 && rank <= 20) return 1000;
-  if (rank >= 21 && rank <= 30) return 2000;
-  return 3000;
-}
 function formatRank(rank){ return `RANK ${rank}`; }
 
 function render(){
   ui.company.textContent = getStr(K.company, 'CB Memory');
   ui.team.textContent = getStr(K.team, 'PLAYER TEAM');
-
   ui.gold.textContent = String(getNum(K.gold, 0));
   ui.rank.textContent = formatRank(getNum(K.rank, 10));
 
@@ -116,20 +109,6 @@ function render(){
   ui.tapM3.textContent = getStr(K.m3, '○○○');
 }
 
-function showWeekPop(title, sub){
-  ui.popTitle.textContent = title;
-  ui.popSub.textContent = sub;
-  ui.popBack.style.display = 'block';
-  ui.weekPop.style.display = 'block';
-  ui.popBack.setAttribute('aria-hidden', 'false');
-}
-function hideWeekPop(){
-  ui.popBack.style.display = 'none';
-  ui.weekPop.style.display = 'none';
-  ui.popBack.setAttribute('aria-hidden', 'true');
-}
-
-// ===== initial =====
 function ensureInitialInput(){
   if (!localStorage.getItem(K.y)) setNum(K.y, 1989);
   if (!localStorage.getItem(K.m)) setNum(K.m, 1);
@@ -174,61 +153,7 @@ function bindRename(el, key, label, defVal){
   });
 }
 
-// ===== NEXT (not always) =====
-let nextHideTimer = null;
-function showNextTemporarily(ms=3000){
-  ui.btnWeekNext.classList.add('show');
-  if (nextHideTimer) clearTimeout(nextHideTimer);
-  nextHideTimer = setTimeout(() => ui.btnWeekNext.classList.remove('show'), ms);
-}
-
-// rogをタップしたときだけNEXT表示（常時は出さない）
-function bindRogNextReveal(){
-  ui.rogWrap.addEventListener('click', () => {
-    showNextTemporarily(3200);
-  });
-}
-
-// ===== Week progression =====
-function advanceWeek(){
-  const y = getNum(K.y, 1989);
-  const m = getNum(K.m, 1);
-  const w = getNum(K.w, 1);
-
-  let ny = y, nm = m, nw = w + 1;
-  if (nw >= 5){
-    nw = 1;
-    nm = m + 1;
-    if (nm >= 13){
-      nm = 1;
-      ny = y + 1;
-    }
-  }
-
-  const rank = getNum(K.rank, 10);
-  const gain = weeklyGoldByRank(rank);
-
-  showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
-
-  ui.btnPopNext.onclick = () => {
-    setNum(K.y, ny);
-    setNum(K.m, nm);
-    setNum(K.w, nw);
-
-    const gold = getNum(K.gold, 0);
-    setNum(K.gold, gold + gain);
-
-    setStr(K.recent, `週が進んだ（+${gain}G）`);
-
-    hideWeekPop();
-    render();
-
-    // 次へ押した直後にNEXTは消す（常時表示しない）
-    ui.btnWeekNext.classList.remove('show');
-  };
-}
-
-// ===== Left menu placeholders =====
+// ===== Left menu placeholders (導線のみ) =====
 function setRecent(text){
   setStr(K.recent, text);
   render();
@@ -242,11 +167,8 @@ function bindMenus(){
   ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
   ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
 
-  // NEXT（rogタップで出現中のみ押せる想定だが、押したら週進行）
-  ui.btnWeekNext.addEventListener('click', advanceWeek);
-
-  // ポップ背景押下は閉じない（誤操作防止）
-  ui.popBack.addEventListener('click', (e) => e.preventDefault());
+  // NEXTはポップアップ専用（今は未実装）。誤タップ防止で基本非表示。
+  ui.btnPopupNext.classList.remove('show');
 }
 
 // ===== Loop scroll (infinite) for left menu =====
@@ -254,18 +176,13 @@ function setupLoopScroll(){
   const scroller = ui.loopScroll;
   const inner = ui.loopInner;
 
-  // 2セット目を複製（ボタン自体のIDは複製しないように「外側HTML」を複製）
-  // → ID重複を避けるため、複製は「各ボタンのclone」ではなく「imgだけのボタン」を作る
   const originalButtons = Array.from(inner.querySelectorAll('button.imgBtn'));
-  const spacer = document.createElement('div');
-  spacer.style.height = '2px';
-  inner.appendChild(spacer);
 
-  // 複製セット（クリックは同じ動作にするため、datasetで元ID参照）
+  // clones set (avoid duplicated IDs)
   const clones = originalButtons.map((btn) => {
     const clone = document.createElement('button');
     clone.type = 'button';
-    clone.className = btn.className; // floaty含む
+    clone.className = btn.className;
     clone.setAttribute('aria-label', btn.getAttribute('aria-label') || 'menu');
     clone.dataset.ref = btn.id;
 
@@ -276,7 +193,6 @@ function setupLoopScroll(){
     img2.draggable = false;
     clone.appendChild(img2);
 
-    // 参照元と同じクリックに転送
     clone.addEventListener('click', () => {
       const ref = document.getElementById(clone.dataset.ref);
       if (ref) ref.click();
@@ -285,41 +201,33 @@ function setupLoopScroll(){
     return clone;
   });
 
+  const spacer = document.createElement('div');
+  spacer.style.height = '2px';
+  inner.appendChild(spacer);
   clones.forEach(n => inner.appendChild(n));
 
-  // 高さ計測（1セット分）
   let oneSetHeight = 0;
   const calcHeights = () => {
+    // gapはCSSの12px（loopInner gap）
+    const gap = 12;
     oneSetHeight = originalButtons.reduce((sum, b) => sum + b.getBoundingClientRect().height, 0);
-    // gap分（14px）を加味
-    const gap = 14;
     oneSetHeight += gap * (originalButtons.length - 1);
   };
 
-  // 初期化
   requestAnimationFrame(() => {
     calcHeights();
-    // 0だと上端で戻しにくいので少しだけ下げる
     scroller.scrollTop = 1;
   });
 
-  // リサイズで再計測
   window.addEventListener('resize', () => {
     calcHeights();
   });
 
-  // ループ処理
   scroller.addEventListener('scroll', () => {
     if (oneSetHeight <= 0) return;
 
-    // 下へ行き過ぎたら上へ巻き戻す
-    if (scroller.scrollTop >= oneSetHeight) {
-      scroller.scrollTop -= oneSetHeight;
-    }
-    // 上へ行き過ぎたら下へ巻き戻す
-    if (scroller.scrollTop <= 0) {
-      scroller.scrollTop += oneSetHeight;
-    }
+    if (scroller.scrollTop >= oneSetHeight) scroller.scrollTop -= oneSetHeight;
+    if (scroller.scrollTop <= 0) scroller.scrollTop += oneSetHeight;
   }, { passive: true });
 }
 
@@ -334,8 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
   bindRename(ui.tapM3, K.m3, 'メンバー名（3人目）', '○○○');
 
   bindMenus();
-  bindRogNextReveal();
   setupLoopScroll();
-
   render();
 });
