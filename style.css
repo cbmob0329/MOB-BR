@@ -1,13 +1,41 @@
 :root{
-  --w: 720px;      /* 基準画面（CSSで縮小してフィット） */
-  --h: 1280px;
-  --uiShadow: 0 12px 30px rgba(0,0,0,.45);
-  --gold: rgba(255, 204, 77, .9);
-  --gold2: rgba(255, 180, 0, .65);
-  --panel: rgba(0,0,0,.55);
-  --text: #f3f4f6;
-  --muted: rgba(255,255,255,.75);
-  --stroke: rgba(0,0,0,.55);
+  /* === Base canvas (design reference) ===
+     レイアウトはこの基準で組み、端末では縮小/拡大してフィットさせる
+  */
+  --refW: 720;
+  --refH: 1280;
+
+  --radius: 18px;
+  --shadow: 0 14px 34px rgba(0,0,0,.45);
+
+  --uiPanel: rgba(0,0,0,.34);
+  --uiPanel2: rgba(0,0,0,.26);
+  --uiStroke: rgba(0,0,0,.55);
+  --uiText: #f5f6f8;
+  --uiTextMuted: rgba(255,255,255,.78);
+
+  --gold1: rgba(255, 220, 140, .92);
+  --gold2: rgba(170, 110, 0, .88);
+
+  /* === Fixed safe gaps to avoid any overlap === */
+  --pad: 18px;
+  --gap: 16px;
+
+  /* Top areas */
+  --topHudH: 172px;       /* ヘッダー領域の確保 */
+  --topMiniH: 78px;       /* 上部右ボタン領域の確保 */
+
+  /* Main areas */
+  --leftMenuW: 250px;
+  --mainTop: 270px;       /* 上部領域と干渉しないための開始Y */
+  --mainH: 620px;
+
+  /* Log and bottom */
+  --logH: 220px;
+  --bottomBarH: 104px;
+
+  /* Font */
+  --font: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }
 
 *{ box-sizing: border-box; }
@@ -15,271 +43,290 @@ html,body{ height:100%; }
 body{
   margin:0;
   background:#000;
-  color:var(--text);
-  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  color:var(--uiText);
+  font-family: var(--font);
   overflow:hidden;
 }
 
-#app{
-  position:relative;
-  width: min(100vw, calc(var(--w) * 100vh / var(--h)));
-  height: min(100vh, calc(var(--h) * 100vw / var(--w)));
-  margin:auto;
-  top:50%;
+/* ========= App fit: keep aspect and scale ========= */
+.app{
+  position: relative;
+  /* 端末に収める（縦横比維持） */
+  width: min(100vw, calc(var(--refW) * 100vh / var(--refH)));
+  height: min(100vh, calc(var(--refH) * 100vw / var(--refW)));
+  margin: auto;
+  top: 50%;
   transform: translateY(-50%);
-  border-radius: 18px;
-  overflow:hidden;
-  box-shadow: var(--uiShadow);
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: #111;
 }
 
-/* 背景：haikeimain.png 固定 */
+/* iPhoneなど極小幅は全面表示 */
+@media (max-width: 420px){
+  .app{
+    width: 100vw;
+    height: 100vh;
+    top:0;
+    transform:none;
+    border-radius: 0;
+  }
+}
+
+/* ========= Background ========= */
 .bg{
   position:absolute;
   inset:0;
   background: #111 url("haikeimain.png?v=1") center/cover no-repeat;
-  filter: saturate(1.05) contrast(1.02);
+  filter: saturate(1.04) contrast(1.02);
+  z-index: 0;
 }
 
-/* 上HUD */
+/* ========= Top HUD ========= */
 .topHud{
   position:absolute;
-  top: 22px;
-  left: 22px;
-  right: 22px;
+  top: var(--pad);
+  left: var(--pad);
+  right: var(--pad);
+  height: var(--topHudH);
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
-  gap: 16px;
-  z-index: 5;
+  gap: var(--gap);
+  z-index: 10;
+  pointer-events: none; /* HUD自体はクリック対象じゃない */
 }
 
-.topLeftInfo{
+.hudLeft{ pointer-events: auto; }
+.hudRight{ pointer-events: auto; }
+
+.hudBox{
+  width: 320px;
+  max-width: 58vw;
   padding: 14px 14px;
   border-radius: 14px;
-  background: rgba(0,0,0,.35);
+  background: var(--uiPanel);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: 0 10px 24px rgba(0,0,0,.30);
   backdrop-filter: blur(2px);
-  box-shadow: 0 6px 18px rgba(0,0,0,.35);
-  min-width: 280px;
 }
 
-.topLeftInfo .tiny{
-  font-weight: 800;
-  letter-spacing: .04em;
-  opacity: .9;
-  font-size: 14px;
-  margin-bottom: 8px;
-}
-
-.topLeftInfo .row{
+.hudRow{
   display:flex;
   gap: 6px;
   font-size: 18px;
+  font-weight: 900;
   line-height: 1.35;
-  text-shadow: 0 2px 0 var(--stroke);
-}
-.topLeftInfo .label{
-  color: var(--muted);
-  font-weight: 700;
-}
-.topLeftInfo span{
+  text-shadow: 0 2px 0 rgba(0,0,0,.55);
   white-space: nowrap;
 }
-
-.topRightLogo{
-  width: 240px;
-  max-width: 35%;
-  display:flex;
-  justify-content:flex-end;
+.hudTiny{
+  font-size: 14px;
+  opacity: .95;
+  margin-bottom: 8px;
 }
-.topRightLogo img{
-  width: 100%;
+.hudLabel{
+  color: var(--uiTextMuted);
+  font-weight: 800;
+}
+.hudValue{ color:#fff; }
+
+.logo{
+  width: 240px;
+  max-width: 34vw;
   height: auto;
   display:block;
-  filter: drop-shadow(0 6px 16px rgba(0,0,0,.55));
+  filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
 }
 
-/* 上部小ボタン */
-.topMiniButtons{
+/* ========= Top-right mini buttons (separate from HUD to avoid overlap) ========= */
+.topMini{
   position:absolute;
-  top: 220px;
-  right: 28px;
+  top: calc(var(--pad) + var(--topHudH) - 4px);
+  right: var(--pad);
+  height: var(--topMiniH);
   display:flex;
-  gap: 14px;
-  z-index: 6;
+  gap: 12px;
+  align-items:center;
+  z-index: 12;
 }
+
 .miniBtn{
-  border: 2px solid rgba(0,0,0,.65);
-  background: linear-gradient(180deg, rgba(255,215,120,.95), rgba(170,110,0,.85));
-  color: #1b1200;
-  font-weight: 900;
-  font-size: 18px;
-  padding: 12px 18px;
+  height: 60px;
+  padding: 0 16px;
   border-radius: 14px;
-  box-shadow: 0 10px 22px rgba(0,0,0,.35);
+  border: 2px solid rgba(0,0,0,.60);
+  background: linear-gradient(180deg, var(--gold1), var(--gold2));
+  color: #1b1200;
+  font-weight: 1000;
+  font-size: 18px;
+  box-shadow: 0 12px 26px rgba(0,0,0,.35);
   cursor:pointer;
 }
 .miniBtn:active{ transform: translateY(1px); }
 
-/* 左メニュー */
-.leftMenu{
+/* ========= Main grid (fixed area so UI never overlaps) ========= */
+.mainGrid{
   position:absolute;
-  left: 20px;
-  top: 300px;
-  width: 250px;
+  left: var(--pad);
+  right: var(--pad);
+  top: var(--mainTop);
+  height: var(--mainH);
+  display:grid;
+  grid-template-columns: var(--leftMenuW) 1fr;
+  gap: var(--gap);
+  z-index: 9;
+}
+
+/* Left menu */
+.leftMenu{
   display:flex;
-  flex-direction:column;
-  gap: 18px;
-  z-index: 6;
+  flex-direction: column;
+  gap: 14px;
+  align-self: start;
 }
 
 .menuBtn{
-  position:relative;
-  height: 90px;
+  height: 92px;
   border-radius: 18px;
   border: 3px solid rgba(255, 220, 140, .75);
-  background: rgba(0,0,0,.35);
-  box-shadow: 0 10px 24px rgba(0,0,0,.35);
-  cursor:pointer;
-  overflow:hidden;
-  padding: 10px 16px;
-  text-align:left;
-}
-.menuBtn::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background: linear-gradient(135deg, rgba(255,220,120,.20), rgba(255,140,0,.08));
-  opacity:.9;
-}
-.menuBtn .menuSub{
-  position:relative;
-  display:block;
-  font-size: 16px;
-  font-weight: 800;
-  opacity:.85;
-  text-shadow: 0 2px 0 var(--stroke);
-}
-.menuBtn .menuMain{
-  position:relative;
-  display:block;
-  font-size: 34px;
+  background: rgba(0,0,0,.32);
+  color: #fff;
   font-weight: 1000;
-  letter-spacing:.02em;
-  margin-top: 6px;
-  text-shadow: 0 3px 0 var(--stroke);
+  font-size: 32px;
+  letter-spacing: .02em;
+  text-shadow: 0 3px 0 rgba(0,0,0,.55);
+  box-shadow: 0 14px 30px rgba(0,0,0,.30);
+  cursor:pointer;
 }
 .menuBtn:active{ transform: translateY(1px); }
 
-.smallBtn{
-  height: 64px;
+.leftMenuSub{
+  margin-top: 6px;
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.subBtn{
+  height: 66px;
   border-radius: 16px;
-  border: 2px solid rgba(255, 220, 140, .7);
-  background: rgba(0,0,0,.30);
-  color: var(--text);
-  font-weight: 900;
-  font-size: 18px;
-  box-shadow: 0 10px 22px rgba(0,0,0,.30);
+  border: 2px solid rgba(255, 220, 140, .70);
+  background: rgba(0,0,0,.28);
+  color:#fff;
+  font-weight: 1000;
+  font-size: 20px;
+  text-shadow: 0 2px 0 rgba(0,0,0,.55);
+  box-shadow: 0 12px 26px rgba(0,0,0,.26);
   cursor:pointer;
 }
-.smallBtn:active{ transform: translateY(1px); }
+.subBtn:active{ transform: translateY(1px); }
 
-/* 中央メインカード */
-.mainCard{
-  position:absolute;
-  left: 300px;
-  right: 28px;
-  top: 300px;
-  height: 560px;
-  z-index: 5;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-.mainCardInner{
-  position:relative;
-  width: 100%;
+/* Center card */
+.centerCard{
+  position: relative;
   height: 100%;
   border-radius: 22px;
-  overflow:hidden;
-  box-shadow: 0 14px 36px rgba(0,0,0,.45);
+  overflow: hidden;
+  box-shadow: 0 16px 38px rgba(0,0,0,.40);
   background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
 }
 
-.mainCardFrame{
+/* Frame image fills card */
+.cardFrameWrap{
   position:absolute;
   inset:0;
-  width:100%;
-  height:100%;
+  z-index: 1;
+}
+.cardFrame{
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  filter: drop-shadow(0 10px 22px rgba(0,0,0,.25));
-  opacity:.98;
+  opacity: .98;
+  filter: drop-shadow(0 12px 26px rgba(0,0,0,.22));
 }
 
-.mainCardContent{
+/* Content area inside the card (no overlap with outside UI) */
+.cardContent{
   position:absolute;
   inset:0;
-  padding: 28px;
+  padding: 22px;
+  z-index: 2;
   display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap: 18px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
 }
 
+/* Player image (allowed to overlap with frame/background within the card) */
 .playerTeamImg{
-  width: 78%;
-  max-height: 58%;
+  width: 84%;
+  max-height: 56%;
   object-fit: contain;
-  filter: drop-shadow(0 12px 26px rgba(0,0,0,.50));
+  align-self: center;
+  margin-top: 14px;
+  filter: drop-shadow(0 14px 30px rgba(0,0,0,.55));
 }
 
-.mainCardText{
-  width: 92%;
-  padding: 14px 16px;
+/* Card info block at bottom of card */
+.cardInfo{
+  width: 100%;
+  padding: 14px 14px;
   border-radius: 16px;
   background: rgba(0,0,0,.28);
-  backdrop-filter: blur(2px);
   border: 1px solid rgba(255,255,255,.12);
+  backdrop-filter: blur(2px);
 }
 
-.kvRow{
-  display:flex;
-  gap: 14px;
-  margin-top: 8px;
+/* Ensure readability and tidy alignment */
+.infoRow{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
 }
-.kvRow:first-child{ margin-top: 0; }
+.infoRow:first-child{ margin-top: 0; }
 
-.kv{
-  flex:1;
-  display:flex;
-  justify-content:space-between;
-  gap: 10px;
-  font-size: 18px;
+.infoItem{
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.infoKey{
+  font-size: 14px;
   font-weight: 900;
-  text-shadow: 0 2px 0 var(--stroke);
+  color: rgba(255,255,255,.82);
+  text-shadow: 0 2px 0 rgba(0,0,0,.55);
+  letter-spacing: .02em;
 }
-.kv .k{
-  color: rgba(255,255,255,.85);
-  font-weight: 800;
-}
-.kv .v{
-  color: #fff;
+.infoVal{
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 1000;
+  color:#fff;
+  text-shadow: 0 3px 0 rgba(0,0,0,.60);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ログ枠（下部） */
+/* ========= Log panel (fixed area, never overlaps main grid or bottom bar) ========= */
 .logPanel{
   position:absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 160px;
-  height: 220px;
+  left: var(--pad);
+  right: var(--pad);
+  top: calc(var(--mainTop) + var(--mainH) + var(--gap));
+  height: var(--logH);
   border-radius: 24px;
   background: rgba(82, 255, 68, .55);
   border: 4px solid rgba(0,0,0,.50);
   box-shadow: 0 18px 40px rgba(0,0,0,.45);
-  padding: 20px 22px;
-  z-index: 7;
+  z-index: 13;
+  padding: 18px 18px;
   overflow:hidden;
 }
 
@@ -287,50 +334,38 @@ body{
   font-size: 26px;
   font-weight: 1000;
   color: #0b1306;
-  text-shadow: 0 2px 0 rgba(255,255,255,.25);
+  text-shadow: 0 2px 0 rgba(255,255,255,.20);
   margin-bottom: 10px;
 }
 
 .logBody{
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
   line-height: 1.25;
   color: #0b1306;
-  padding-right: 120px;
 }
 
-.logWatermark{
+/* ========= Bottom bar ========= */
+.bottomBar{
   position:absolute;
-  right: 22px;
-  bottom: 22px;
-  font-size: 52px;
-  font-weight: 1000;
-  opacity: .22;
-  color:#0b1306;
-  transform: rotate(-8deg);
-}
-
-/* NEXT / SKIP */
-.bottomControls{
-  position:absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 52px;
+  left: var(--pad);
+  right: var(--pad);
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  height: var(--bottomBarH);
   display:flex;
-  gap: 18px;
-  z-index: 8;
+  gap: var(--gap);
+  z-index: 14;
 }
 
 .actionBtn{
-  flex:1;
-  height: 92px;
+  flex: 1;
   border-radius: 22px;
   border: 3px solid rgba(255, 220, 140, .75);
   background: rgba(0,0,0,.40);
   color: #fff;
   font-weight: 1000;
   font-size: 34px;
-  letter-spacing:.04em;
+  letter-spacing: .04em;
   text-shadow: 0 3px 0 rgba(0,0,0,.55);
   box-shadow: 0 14px 34px rgba(0,0,0,.40);
   cursor:pointer;
@@ -345,19 +380,21 @@ body{
   z-index: 20;
 }
 
-/* 小さめ端末最適化 */
-@media (max-width: 420px){
-  #app{
-    border-radius: 0;
-    width: 100vw;
-    height: 100vh;
-    top:0;
-    transform:none;
+/* ========= Responsive tweaks ========= */
+/* 画面がやや短い端末では、メイン領域を少し詰める */
+@media (max-height: 740px){
+  :root{
+    --mainTop: 250px;
+    --mainH: 580px;
+    --logH: 200px;
+    --bottomBarH: 96px;
   }
+  .menuBtn{ height: 86px; font-size: 30px; }
+  .actionBtn{ font-size: 32px; }
 }
 
-/* 画面比が極端に細い/太いときの軽い調整 */
-@media (max-aspect-ratio: 9/19){
-  .topMiniButtons{ top: 200px; }
-  .mainCard{ top: 285px; height: 540px; }
+/* 超横長/超縦長端末の見た目を安定させる */
+@media (min-aspect-ratio: 9/16){
+  .logo{ max-width: 28vw; }
+  .hudBox{ width: 300px; }
 }
