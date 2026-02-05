@@ -1,37 +1,25 @@
-/* =========================================================
-   MOB BR - Main Screen (FINAL layout based on your image)
-   - Background: haikeimain.png
-   - Right: logo + job.png panel + square main1.png + rog.png
-   - Left: image buttons (floaty)
-   - Mobile: prevent double-tap zoom (via touch-action + JS)
-   - Mobile: prevent long-press copy/select callout (iOS)
-   ========================================================= */
-
 :root{
   --pad: 16px;
   --gap: 14px;
 
-  --leftW: 240px; /* 左ボタン列幅（端末で自動調整） */
+  --leftW: 240px;
   --rightMax: 720px;
 
   --shadow: 0 18px 40px rgba(0,0,0,.45);
   --textShadow: 0 3px 0 rgba(0,0,0,.55);
 
-  --floatAmp: 5px;      /* ふわふわ移動幅（ほんの少し） */
+  --floatAmp: 5px;
   --floatTime: 3.2s;
 
   --popZ: 40;
 }
 
-/* ----- long-press copy/select callout suppress (intent: iOS text selection UI) ----- */
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
-
-/* If later you want selectable text, add .allow-select to that element */
 .allow-select{
   -webkit-user-select: text !important;
   user-select: text !important;
@@ -50,10 +38,15 @@ html, body{
 #app{
   position: relative;
   width: 100vw;
-  height: 100svh; /* iOS Safari対応 */
+  height: 100svh;
   overflow:hidden;
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+
+  display:grid;
+  grid-template-columns: var(--leftW) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
 }
 
 /* background */
@@ -64,34 +57,42 @@ html, body{
   z-index:0;
 }
 
-/* layout: left + right */
 .leftCol, .rightCol{
   position: relative;
   z-index: 2;
 }
 
-#app{
-  display:grid;
-  grid-template-columns: var(--leftW) minmax(0, 1fr);
-  gap: var(--gap);
-  align-items: start;
+/* LEFT: only this area scrolls (loop) */
+.leftCol{
+  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
 }
 
-/* LEFT buttons */
-.leftCol{
+.loopScroll{
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-top: 6px;
+  padding-right: 2px;
+  scrollbar-width: none;
+}
+.loopScroll::-webkit-scrollbar{ display:none; }
+
+.loopInner{
   display:flex;
   flex-direction: column;
   gap: 14px;
-  padding-top: 6px;
 }
 
+/* image buttons */
 .imgBtn{
   width: 100%;
   border: none;
   background: transparent;
   padding: 0;
   cursor: pointer;
-  touch-action: manipulation; /* ダブルタップ拡大を誘発しにくい */
+  touch-action: manipulation;
 }
 .imgBtn img{
   width: 100%;
@@ -103,15 +104,12 @@ html, body{
 .imgBtn:active{ transform: translateY(1px); }
 
 /* floaty */
-.floaty{
-  animation: floaty var(--floatTime) ease-in-out infinite;
-}
+.floaty{ animation: floaty var(--floatTime) ease-in-out infinite; }
 .delay1{ animation-delay: .15s; }
 .delay2{ animation-delay: .30s; }
 .delay3{ animation-delay: .45s; }
 .delay4{ animation-delay: .60s; }
 .delay5{ animation-delay: .75s; }
-
 @keyframes floaty{
   0%{ transform: translateY(0); }
   50%{ transform: translateY(calc(-1 * var(--floatAmp))); }
@@ -128,7 +126,7 @@ html, body{
   gap: var(--gap);
 }
 
-/* top row: logo + job */
+/* top row */
 .topRow{
   display:grid;
   grid-template-columns: 1fr 1.25fr;
@@ -165,7 +163,6 @@ html, body{
   width:100%;
   height:100%;
   object-fit: cover;
-  opacity: 1;
   pointer-events:none;
 }
 .jobText{
@@ -189,32 +186,22 @@ html, body{
   font-size: 16px;
   opacity: .95;
 }
+.tappable{ cursor:pointer; }
+.tappable:active{ opacity:.85; }
 
-/* tappable */
-.tappable{
-  cursor: pointer;
-  text-decoration: none;
-}
-.tappable:active{
-  opacity: .8;
-}
-
-/* main square row */
-.gameRow{
-  display:flex;
-  justify-content:flex-start;
-}
+/* main square */
+.gameRow{ display:flex; justify-content:flex-start; }
 
 .mainSquare{
   position: relative;
-  width: min(520px, 100%);
-  aspect-ratio: 1 / 1; /* 正方形固定 */
+  width: min(560px, 100%);  /* ちょい大きめ */
+  aspect-ratio: 1 / 1;
   border-radius: 18px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
 
-/* frame = main1.png (shape aligned) */
+/* frame */
 .mainFrame{
   position:absolute;
   inset:0;
@@ -225,41 +212,49 @@ html, body{
   z-index: 2;
 }
 
-/* team image front layer inside */
+/* team image: smaller + higher to fix member area */
 .teamImg{
   position:absolute;
-  inset: 8% 8% 18% 8%; /* 枠の内側に収める */
-  width:84%;
-  height:74%;
+  left: 10%;
+  right: 10%;
+  top: 10%;
+  bottom: 30%;            /* 下に文字スペースを確保 */
+  width: 80%;
+  height: 60%;
   object-fit: contain;
   z-index: 3;
   pointer-events:none;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* member area (simple) */
+/* member text */
 .members{
   position:absolute;
   left: 10%;
   right: 10%;
   bottom: 9%;
   z-index: 4;
-  color:#111;
-  font-weight: 900;
-  text-shadow: none;
   display:flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  align-items: flex-start;
 }
 .membersLabel{
   font-size: 18px;
+  font-weight: 1000;
   color:#111;
 }
 .membersNames{
   font-size: 18px;
-  letter-spacing: .04em;
+  font-weight: 1000;
   color:#222;
+  letter-spacing: .03em;
+  display:flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
+.sep{ opacity:.75; }
 
 /* bottom rog panel */
 .rogWrap{
@@ -290,29 +285,15 @@ html, body{
   justify-content:flex-start;
   gap: 10px;
 }
-.dateLine{
-  font-size: 32px;
-  line-height: 1;
-}
-.nextTourLine{
-  font-size: 18px;
-  opacity: .95;
-}
+.dateLine{ font-size: 32px; line-height: 1; }
+.nextTourLine{ font-size: 18px; opacity: .95; }
 .divider{
   height: 3px;
   background: rgba(255,255,255,.75);
   border-radius: 999px;
-  margin: 2px 0 2px;
 }
-.recentLog{
-  font-size: 24px;
-  line-height: 1.15;
-}
-.hintLine{
-  margin-top: auto;
-  font-size: 16px;
-  opacity: .9;
-}
+.recentLog{ font-size: 24px; line-height: 1.15; }
+.hintLine{ margin-top:auto; font-size: 16px; opacity:.9; }
 
 /* modal (week pop) */
 .modalBack{
@@ -342,16 +323,8 @@ html, body{
   color:#fff;
   text-shadow: var(--textShadow);
 }
-.weekPopTitle{
-  font-size: 28px;
-  font-weight: 1000;
-}
-.weekPopSub{
-  margin-top: 8px;
-  font-size: 20px;
-  font-weight: 1000;
-  opacity: .95;
-}
+.weekPopTitle{ font-size: 28px; font-weight: 1000; }
+.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
 
 /* next image button near pop */
 .nextImgBtn{
@@ -372,7 +345,7 @@ html, body{
 }
 .nextImgBtn:active{ transform: translateY(1px); }
 
-/* corner next */
+/* next (NOT always) */
 .nextCorner{
   position:absolute;
   right: 16px;
@@ -384,7 +357,9 @@ html, body{
   padding:0;
   cursor:pointer;
   touch-action: manipulation;
+  display:none; /* 常時表示しない */
 }
+.nextCorner.show{ display:block; }
 .nextCorner img{
   width:100%;
   height:auto;
@@ -401,7 +376,7 @@ html, body{
   z-index: 1;
 }
 
-/* ===== responsive ===== */
+/* responsive */
 @media (max-width: 860px){
   :root{ --leftW: 220px; }
   .jobWrap{ height: 132px; }
@@ -420,4 +395,5 @@ html, body{
   .dateLine{ font-size: 26px; }
   .recentLog{ font-size: 20px; }
   .nextCorner{ width: 130px; }
+  .mainSquare{ width: min(520px, 100%); }
 }
