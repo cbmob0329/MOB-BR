@@ -1,400 +1,107 @@
-:root{
-  /* === Base canvas (design reference) ===
-     レイアウトはこの基準で組み、端末では縮小/拡大してフィットさせる
-  */
-  --refW: 720;
-  --refH: 1280;
+* { box-sizing: border-box; }
 
-  --radius: 18px;
-  --shadow: 0 14px 34px rgba(0,0,0,.45);
-
-  --uiPanel: rgba(0,0,0,.34);
-  --uiPanel2: rgba(0,0,0,.26);
-  --uiStroke: rgba(0,0,0,.55);
-  --uiText: #f5f6f8;
-  --uiTextMuted: rgba(255,255,255,.78);
-
-  --gold1: rgba(255, 220, 140, .92);
-  --gold2: rgba(170, 110, 0, .88);
-
-  /* === Fixed safe gaps to avoid any overlap === */
-  --pad: 18px;
-  --gap: 16px;
-
-  /* Top areas */
-  --topHudH: 172px;       /* ヘッダー領域の確保 */
-  --topMiniH: 78px;       /* 上部右ボタン領域の確保 */
-
-  /* Main areas */
-  --leftMenuW: 250px;
-  --mainTop: 270px;       /* 上部領域と干渉しないための開始Y */
-  --mainH: 620px;
-
-  /* Log and bottom */
-  --logH: 220px;
-  --bottomBarH: 104px;
-
-  /* Font */
-  --font: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
 }
 
-*{ box-sizing: border-box; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  background:#000;
-  color:var(--uiText);
-  font-family: var(--font);
-  overflow:hidden;
-}
-
-/* ========= App fit: keep aspect and scale ========= */
-.app{
+#app {
   position: relative;
-  /* 端末に収める（縦横比維持） */
-  width: min(100vw, calc(var(--refW) * 100vh / var(--refH)));
-  height: min(100vh, calc(var(--refH) * 100vw / var(--refW)));
-  margin: auto;
-  top: 50%;
-  transform: translateY(-50%);
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  background: #111;
 }
 
-/* iPhoneなど極小幅は全面表示 */
-@media (max-width: 420px){
-  .app{
-    width: 100vw;
-    height: 100vh;
-    top:0;
-    transform:none;
-    border-radius: 0;
-  }
-}
-
-/* ========= Background ========= */
-.bg{
-  position:absolute;
-  inset:0;
-  background: #111 url("haikeimain.png?v=1") center/cover no-repeat;
-  filter: saturate(1.04) contrast(1.02);
+/* 全体背景 */
+.bg {
+  position: absolute;
+  inset: 0;
+  background: url("haikeimain.png") center / cover no-repeat;
   z-index: 0;
 }
 
-/* ========= Top HUD ========= */
-.topHud{
-  position:absolute;
-  top: var(--pad);
-  left: var(--pad);
-  right: var(--pad);
-  height: var(--topHudH);
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap: var(--gap);
-  z-index: 10;
-  pointer-events: none; /* HUD自体はクリック対象じゃない */
-}
-
-.hudLeft{ pointer-events: auto; }
-.hudRight{ pointer-events: auto; }
-
-.hudBox{
-  width: 320px;
-  max-width: 58vw;
-  padding: 14px 14px;
-  border-radius: 14px;
-  background: var(--uiPanel);
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow: 0 10px 24px rgba(0,0,0,.30);
-  backdrop-filter: blur(2px);
-}
-
-.hudRow{
-  display:flex;
-  gap: 6px;
-  font-size: 18px;
-  font-weight: 900;
-  line-height: 1.35;
-  text-shadow: 0 2px 0 rgba(0,0,0,.55);
-  white-space: nowrap;
-}
-.hudTiny{
-  font-size: 14px;
-  opacity: .95;
-  margin-bottom: 8px;
-}
-.hudLabel{
-  color: var(--uiTextMuted);
-  font-weight: 800;
-}
-.hudValue{ color:#fff; }
-
-.logo{
-  width: 240px;
-  max-width: 34vw;
-  height: auto;
-  display:block;
-  filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
-}
-
-/* ========= Top-right mini buttons (separate from HUD to avoid overlap) ========= */
-.topMini{
-  position:absolute;
-  top: calc(var(--pad) + var(--topHudH) - 4px);
-  right: var(--pad);
-  height: var(--topMiniH);
-  display:flex;
-  gap: 12px;
-  align-items:center;
-  z-index: 12;
-}
-
-.miniBtn{
-  height: 60px;
-  padding: 0 16px;
-  border-radius: 14px;
-  border: 2px solid rgba(0,0,0,.60);
-  background: linear-gradient(180deg, var(--gold1), var(--gold2));
-  color: #1b1200;
-  font-weight: 1000;
-  font-size: 18px;
-  box-shadow: 0 12px 26px rgba(0,0,0,.35);
-  cursor:pointer;
-}
-.miniBtn:active{ transform: translateY(1px); }
-
-/* ========= Main grid (fixed area so UI never overlaps) ========= */
-.mainGrid{
-  position:absolute;
-  left: var(--pad);
-  right: var(--pad);
-  top: var(--mainTop);
-  height: var(--mainH);
-  display:grid;
-  grid-template-columns: var(--leftMenuW) 1fr;
-  gap: var(--gap);
-  z-index: 9;
-}
-
-/* Left menu */
-.leftMenu{
-  display:flex;
-  flex-direction: column;
-  gap: 14px;
-  align-self: start;
-}
-
-.menuBtn{
-  height: 92px;
-  border-radius: 18px;
-  border: 3px solid rgba(255, 220, 140, .75);
-  background: rgba(0,0,0,.32);
+/* 共通 */
+.box {
+  border: 2px solid #fff;
   color: #fff;
-  font-weight: 1000;
-  font-size: 32px;
-  letter-spacing: .02em;
-  text-shadow: 0 3px 0 rgba(0,0,0,.55);
-  box-shadow: 0 14px 30px rgba(0,0,0,.30);
-  cursor:pointer;
-}
-.menuBtn:active{ transform: translateY(1px); }
-
-.leftMenuSub{
-  margin-top: 6px;
-  display:grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+  padding: 8px;
+  text-align: center;
+  background: rgba(0,0,0,0.4);
 }
 
-.subBtn{
-  height: 66px;
-  border-radius: 16px;
-  border: 2px solid rgba(255, 220, 140, .70);
-  background: rgba(0,0,0,.28);
-  color:#fff;
-  font-weight: 1000;
-  font-size: 20px;
-  text-shadow: 0 2px 0 rgba(0,0,0,.55);
-  box-shadow: 0 12px 26px rgba(0,0,0,.26);
-  cursor:pointer;
-}
-.subBtn:active{ transform: translateY(1px); }
-
-/* Center card */
-.centerCard{
+/* 上部 */
+.top {
   position: relative;
-  height: 100%;
-  border-radius: 22px;
-  overflow: hidden;
-  box-shadow: 0 16px 38px rgba(0,0,0,.40);
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.10);
-}
-
-/* Frame image fills card */
-.cardFrameWrap{
-  position:absolute;
-  inset:0;
   z-index: 1;
-}
-.cardFrame{
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: .98;
-  filter: drop-shadow(0 12px 26px rgba(0,0,0,.22));
-}
-
-/* Content area inside the card (no overlap with outside UI) */
-.cardContent{
-  position:absolute;
-  inset:0;
-  padding: 22px;
-  z-index: 2;
-  display:flex;
-  flex-direction: column;
+  display: flex;
   justify-content: space-between;
+  padding: 16px;
+}
+
+.top-left {
+  display: grid;
+  gap: 6px;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+}
+
+/* 中央 */
+.middle {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr;
   gap: 16px;
+  padding: 0 16px;
 }
 
-/* Player image (allowed to overlap with frame/background within the card) */
-.playerTeamImg{
-  width: 84%;
-  max-height: 56%;
-  object-fit: contain;
-  align-self: center;
-  margin-top: 14px;
-  filter: drop-shadow(0 14px 30px rgba(0,0,0,.55));
-}
-
-/* Card info block at bottom of card */
-.cardInfo{
-  width: 100%;
-  padding: 14px 14px;
-  border-radius: 16px;
-  background: rgba(0,0,0,.28);
-  border: 1px solid rgba(255,255,255,.12);
-  backdrop-filter: blur(2px);
-}
-
-/* Ensure readability and tidy alignment */
-.infoRow{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
+/* 左メニュー */
+.left {
+  display: grid;
   gap: 12px;
-  margin-top: 10px;
-}
-.infoRow:first-child{ margin-top: 0; }
-
-.infoItem{
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.08);
 }
 
-.infoKey{
-  font-size: 14px;
-  font-weight: 900;
-  color: rgba(255,255,255,.82);
-  text-shadow: 0 2px 0 rgba(0,0,0,.55);
-  letter-spacing: .02em;
-}
-.infoVal{
-  margin-top: 6px;
-  font-size: 20px;
-  font-weight: 1000;
-  color:#fff;
-  text-shadow: 0 3px 0 rgba(0,0,0,.60);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 中央ゲーム画面 */
+.center {
+  position: relative;
+  border: 2px dashed #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
 }
 
-/* ========= Log panel (fixed area, never overlaps main grid or bottom bar) ========= */
-.logPanel{
-  position:absolute;
-  left: var(--pad);
-  right: var(--pad);
-  top: calc(var(--mainTop) + var(--mainH) + var(--gap));
-  height: var(--logH);
-  border-radius: 24px;
-  background: rgba(82, 255, 68, .55);
-  border: 4px solid rgba(0,0,0,.50);
-  box-shadow: 0 18px 40px rgba(0,0,0,.45);
-  z-index: 13;
-  padding: 18px 18px;
-  overflow:hidden;
+.center img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
-.logTitle{
-  font-size: 26px;
-  font-weight: 1000;
-  color: #0b1306;
-  text-shadow: 0 2px 0 rgba(255,255,255,.20);
-  margin-bottom: 10px;
-}
-
-.logBody{
-  font-size: 22px;
-  font-weight: 900;
-  line-height: 1.25;
-  color: #0b1306;
-}
-
-/* ========= Bottom bar ========= */
-.bottomBar{
-  position:absolute;
-  left: var(--pad);
-  right: var(--pad);
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  height: var(--bottomBarH);
-  display:flex;
-  gap: var(--gap);
-  z-index: 14;
-}
-
-.actionBtn{
-  flex: 1;
-  border-radius: 22px;
-  border: 3px solid rgba(255, 220, 140, .75);
-  background: rgba(0,0,0,.40);
+.center-note {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-size: 12px;
   color: #fff;
-  font-weight: 1000;
-  font-size: 34px;
-  letter-spacing: .04em;
-  text-shadow: 0 3px 0 rgba(0,0,0,.55);
-  box-shadow: 0 14px 34px rgba(0,0,0,.40);
-  cursor:pointer;
-}
-.actionBtn:active{ transform: translateY(1px); }
-
-.safeSpacer{
-  position:absolute;
-  left:0; right:0; bottom:0;
-  height: env(safe-area-inset-bottom);
-  background: transparent;
-  z-index: 20;
+  background: rgba(0,0,0,0.5);
+  padding: 4px 6px;
 }
 
-/* ========= Responsive tweaks ========= */
-/* 画面がやや短い端末では、メイン領域を少し詰める */
-@media (max-height: 740px){
-  :root{
-    --mainTop: 250px;
-    --mainH: 580px;
-    --logH: 200px;
-    --bottomBarH: 96px;
-  }
-  .menuBtn{ height: 86px; font-size: 30px; }
-  .actionBtn{ font-size: 32px; }
+/* 下部 */
+.bottom {
+  position: relative;
+  z-index: 1;
+  padding: 16px;
 }
 
-/* 超横長/超縦長端末の見た目を安定させる */
-@media (min-aspect-ratio: 9/16){
-  .logo{ max-width: 28vw; }
-  .hudBox{ width: 300px; }
+.bottom .empty {
+  height: 120px;
+  line-height: 120px;
+  opacity: 0.8;
 }
