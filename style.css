@@ -14,6 +14,7 @@
   --popZ: 40;
 }
 
+/* 長押しコールアウト抑止（コピー選択UIを出しにくく） */
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
@@ -76,6 +77,8 @@ html, body{
   padding-top: 6px;
   padding-right: 2px;
   scrollbar-width: none;
+  /* iOSのバウンスを抑える（端での変な挙動対策） */
+  touch-action: pan-y;
 }
 .loopScroll::-webkit-scrollbar{ display:none; }
 
@@ -178,14 +181,12 @@ html, body{
   gap: 6px;
 }
 .jobLine{
-  font-size: 18px;         /* ↓少し小さく */
+  font-size: 20px;
   line-height: 1.05;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; /* 枠内に収める */
 }
 .jobLine.small{
-  font-size: 14px;
+  font-size: 16px;
   opacity: .95;
 }
 .tappable{ cursor:pointer; }
@@ -214,12 +215,12 @@ html, body{
   z-index: 2;
 }
 
-/* team image: slightly lower */
+/* team image: ほんの少し下へ（足元スペース確保しつつバナーの余白も） */
 .teamImg{
   position:absolute;
   left: 10%;
   right: 10%;
-  top: 12%;      /* ↓少し下げた */
+  top: 12%;
   bottom: 28%;
   width: 80%;
   height: 60%;
@@ -229,25 +230,45 @@ html, body{
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* member button */
-.memberBtn{
+/* ===== メンバー名：ボタン（バナー風） ===== */
+.members{
   position:absolute;
   left: 10%;
   right: 10%;
   bottom: 10%;
   z-index: 4;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ここが「ボタン」本体（JS側でクリックを拾う想定） */
+.membersBtn{
+  width: min(320px, 92%);
   border: none;
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(0,0,0,.55);
+  box-shadow: 0 10px 22px rgba(0,0,0,.45);
+  border: 2px solid rgba(255,255,255,.35);
+  color:#fff;
+  text-shadow: var(--textShadow);
   font-weight: 1000;
-  font-size: 16px;           /* 小さめ */
-  background: rgba(255,255,255,.88);
-  color: #111;
-  box-shadow: 0 10px 22px rgba(0,0,0,.35);
-  text-shadow: none;
+  font-size: 16px;
+  letter-spacing: .04em;
+  cursor: pointer;
   touch-action: manipulation;
 }
-.memberBtn:active{ transform: translateY(1px); opacity:.95; }
+.membersBtn:active{ transform: translateY(1px); opacity:.92; }
+
+/* 既存の membersLabel / membersNames は今後ポップに移すので、小さく残しても良い（非表示寄り） */
+.membersLabel{
+  display:none; /* もうラベルは出さない（ボタン化したため） */
+}
+.membersNames{
+  display:none; /* ここはポップ側で出す（JSで実装） */
+}
 
 /* bottom rog panel */
 .rogWrap{
@@ -279,8 +300,17 @@ html, body{
   gap: 10px;
 }
 
-.dateLine{ font-size: 28px; line-height: 1; }        /* ↓ */
-.nextTourLine{ font-size: 16px; opacity: .95; }      /* ↓ */
+/* ★ここを小さく：日付がデカすぎ問題を解消 */
+.dateLine{
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+/* 次の大会も少し控えめ */
+.nextTourLine{
+  font-size: 16px;
+  opacity: .95;
+}
 
 .divider{
   height: 3px;
@@ -288,20 +318,20 @@ html, body{
   border-radius: 999px;
 }
 
-/* 「最近の出来事：」は消す → 内容だけ */
-.recentOnly{
-  font-size: 18px;           /* ↓かなり小さく */
-  line-height: 1.15;
-  opacity: .98;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;     /* はみ出し防止 */
-  -webkit-box-orient: vertical;
+/* 「最近の出来事：」のラベルは消すので、本文用のスタイルだけ */
+.recentLog{
+  font-size: 18px;
+  line-height: 1.2;
 }
 
-.hintLine{ margin-top:auto; font-size: 14px; opacity:.9; }
+/* 「※ログを入れるかは未定」等の注記 */
+.hintLine{
+  margin-top:auto;
+  font-size: 14px;
+  opacity:.9;
+}
 
-/* ===== MODALS ===== */
+/* modal (week pop) */
 .modalBack{
   position:absolute;
   inset:0;
@@ -309,86 +339,6 @@ html, body{
   z-index: var(--popZ);
   display:none;
 }
-
-.modalCard{
-  position:absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%,-50%);
-  z-index: calc(var(--popZ) + 2);
-  width: min(560px, 86vw);
-  border-radius: 16px;
-  background: rgba(0,0,0,.78);
-  border: 2px solid rgba(255,255,255,.35);
-  box-shadow: var(--shadow);
-  padding: 16px;
-  color: #fff;
-  text-shadow: var(--textShadow);
-  display:none;
-}
-
-.modalTitle{
-  font-size: 22px;
-  font-weight: 1000;
-  margin-bottom: 12px;
-}
-
-.membersList{
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.nameRow{
-  width: 100%;
-  border: 0;
-  border-radius: 12px;
-  padding: 12px 12px;
-  background: rgba(255,255,255,.12);
-  color:#fff;
-  font-weight: 1000;
-  font-size: 18px;
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  touch-action: manipulation;
-}
-.nameRow:active{ transform: translateY(1px); opacity:.95; }
-
-.nameLabel{
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.22);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size: 16px;
-}
-.nameVal{
-  margin-left: 10px;
-  flex: 1;
-  text-align: right;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.closeBtn{
-  margin-top: 14px;
-  width: 100%;
-  border: none;
-  border-radius: 12px;
-  padding: 12px 12px;
-  font-size: 16px;
-  font-weight: 1000;
-  background: rgba(255,255,255,.9);
-  color:#111;
-  touch-action: manipulation;
-}
-.closeBtn:active{ transform: translateY(1px); opacity:.95; }
-
-/* week pop */
 .weekPop{
   position:absolute;
   left: 50%;
@@ -409,8 +359,8 @@ html, body{
   color:#fff;
   text-shadow: var(--textShadow);
 }
-.weekPopTitle{ font-size: 26px; font-weight: 1000; }
-.weekPopSub{ margin-top: 8px; font-size: 18px; font-weight: 1000; opacity: .95; }
+.weekPopTitle{ font-size: 28px; font-weight: 1000; }
+.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
 
 /* next image button near pop */
 .nextImgBtn{
@@ -455,44 +405,6 @@ html, body{
 }
 .nextCorner:active{ transform: translateY(1px); }
 
-/* team screen overlay */
-.teamScreen{
-  position:absolute;
-  inset:0;
-  z-index: calc(var(--popZ) + 3);
-  display:none;
-}
-.teamScreen.show{ display:block; }
-.teamPanel{
-  position:absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%,-50%);
-  width: min(620px, 90vw);
-  border-radius: 16px;
-  background: rgba(0,0,0,.82);
-  border: 2px solid rgba(255,255,255,.35);
-  box-shadow: var(--shadow);
-  padding: 16px;
-  color:#fff;
-  text-shadow: var(--textShadow);
-}
-.teamTitle{
-  font-size: 22px;
-  font-weight: 1000;
-  margin-bottom: 12px;
-}
-.teamBody{
-  font-size: 16px;
-  font-weight: 900;
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.teamMembers{ display:flex; flex-direction: column; gap: 6px; }
-.teamNote{ font-size: 13px; opacity:.9; }
-
-/* safe-area */
 .safePad{
   position:absolute;
   left:0; right:0; bottom:0;
@@ -504,6 +416,8 @@ html, body{
 @media (max-width: 860px){
   :root{ --leftW: 220px; }
   .jobWrap{ height: 132px; }
+  .jobLine{ font-size: 18px; }
+  .dateLine{ font-size: 22px; }
 }
 @media (max-width: 740px){
   :root{ --leftW: 200px; }
@@ -513,10 +427,11 @@ html, body{
 @media (max-width: 520px){
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
   .jobWrap{ height: 120px; }
-  .jobLine{ font-size: 15px; }
-  .dateLine{ font-size: 24px; }
-  .recentOnly{ font-size: 16px; }
+  .jobLine{ font-size: 16px; }
+  .dateLine{ font-size: 20px; }
+  .recentLog{ font-size: 16px; }
+  .hintLine{ font-size: 13px; }
   .nextCorner{ width: 130px; }
   .mainSquare{ width: min(520px, 100%); }
-  .memberBtn{ font-size: 15px; }
+  .membersBtn{ font-size: 15px; padding: 9px 12px; }
 }
