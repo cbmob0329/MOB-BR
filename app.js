@@ -1,145 +1,55 @@
-* {
-  box-sizing: border-box;
+'use strict';
+
+/*
+  Phase1 Main Screen:
+  - Prevent double-tap zoom (iOS) by blocking fast successive taps
+  - Keep only minimal interactions (log text changes)
+  - No heavy logic yet
+*/
+
+function $(id){ return document.getElementById(id); }
+
+const logBox = $('logBox');
+
+function setLog(text){
+  if (!logBox) return;
+  logBox.textContent = text;
 }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: #000;
-  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+/* ===== iOS double-tap zoom guard =====
+   (Viewport meta + touch-action helps, but iOS Safari sometimes still zooms.
+    So we cancel second tap within a short window.)
+*/
+(function preventDoubleTapZoom(){
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+})();
+
+/* ===== Bind buttons ===== */
+function bind(){
+  const btnTeam = $('btnTeam');
+  const btnTournament = $('btnTournament');
+  const btnShop = $('btnShop');
+  const btnTraining = $('btnTraining');
+  const btnNext = $('btnNext');
+  const btnAuto = $('btnAuto');
+
+  if (btnTeam) btnTeam.addEventListener('click', () => setLog('チーム：次フェーズ'));
+  if (btnTournament) btnTournament.addEventListener('click', () => setLog('大会：次フェーズ（大会画面へ）'));
+  if (btnShop) btnShop.addEventListener('click', () => setLog('ショップ：次フェーズ'));
+  if (btnTraining) btnTraining.addEventListener('click', () => setLog('修行：次フェーズ'));
+
+  if (btnNext) btnNext.addEventListener('click', () => setLog('NEXT：次フェーズ（週進行など）'));
+  if (btnAuto) btnAuto.addEventListener('click', () => setLog('AUTO：次フェーズ（自動進行）'));
 }
 
-#app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* 背景固定 */
-.bg {
-  position: absolute;
-  inset: 0;
-  background: url("haikeimain.png") center / cover no-repeat;
-  z-index: 0;
-}
-
-/* =====================
-   上部HUD
-===================== */
-.top {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  justify-content: space-between;
-  padding: 16px 20px;
-}
-
-.hud {
-  background: rgba(0,0,0,0.6);
-  border: 2px solid #d4af37;
-  border-radius: 14px;
-  padding: 12px 16px;
-  color: #fff;
-}
-
-.hud-row {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.logo img {
-  height: 64px;
-}
-
-/* =====================
-   中央エリア
-===================== */
-.middle {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 180px 1fr; /* ← 左を細く */
-  gap: 16px;
-  padding: 0 20px;
-}
-
-/* 左メニュー */
-.left {
-  display: grid;
-  gap: 14px;
-}
-
-.left button {
-  background: rgba(0,0,0,0.6);
-  border: 2px solid #d4af37;
-  border-radius: 16px;
-  color: #fff;
-  font-size: 22px;
-  font-weight: 800;
-  padding: 18px 0;
-}
-
-/* =====================
-   ゲーム画面（主役）
-===================== */
-.center {
-  background: rgba(0,0,0,0.35);
-  border: 3px solid #d4af37;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 420px;
-}
-
-.center img {
-  width: 100%;
-  height: 100%;
-  max-height: 520px; /* ← 大きく */
-  object-fit: contain;
-}
-
-/* =====================
-   下部ログ
-===================== */
-.bottom {
-  position: relative;
-  z-index: 2;
-  padding: 16px 20px;
-}
-
-.log {
-  height: 120px;
-  background: rgba(0,0,0,0.55);
-  border: 3px solid #00ff66;
-  border-radius: 20px;
-  color: #0bff6a;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* =====================
-   フッター操作
-===================== */
-.footer {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  padding: 0 20px 20px;
-}
-
-.footer button {
-  background: rgba(0,0,0,0.7);
-  border: 3px solid #d4af37;
-  border-radius: 20px;
-  color: #fff;
-  font-size: 28px;
-  font-weight: 900;
-  padding: 18px 0;
-}
+document.addEventListener('DOMContentLoaded', () => {
+  bind();
+  setLog('ログ：未定');
+});
