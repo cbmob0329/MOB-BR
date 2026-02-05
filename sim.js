@@ -1,18 +1,13 @@
 /* =========================================================
-   MOB BR - sim.js (FULL)
-   - 司令塔：試合の流れ.txt 準拠
-   - R1〜R6：復活 → イベント → 交戦（枠数保証）→ 移動
-   - AUTO / NEXT 制御
-   - プレイヤー脱落後の高速処理
+   MOB BR - sim.js (FULL / SPEC COMPLETE)
+   試合の流れ.txt 完全準拠
    ---------------------------------------------------------
-   依存：
-   - SimMap / SimEvents / SimBattle / SimResult
-   - RULES / Storage / UI（最低限）
-   ---------------------------------------------------------
-   提供：window.Sim
-   - startMatch({ teams })
-   - next()
-   - setAuto(on)
+   ・R1〜R6 進行順固定
+   ・交戦枠 必ず成立
+   ・敵選び 優先順位固定
+   ・プレイヤー戦確率 ラウンド別固定
+   ・全滅後の高速処理
+   ・紙芝居ログの順序保証
 ========================================================= */
 
 (function(){
@@ -24,77 +19,63 @@
   /* =========================
      INTERNAL STATE
   ========================== */
-  let _teams = [];
-  let _round = 0;
-  let _steps = [];     // UIに渡すステップキュー
-  let _auto = false;
-  let _fast = false;   // プレイヤー脱落後の高速処理
-  let _busy = false;
+  let teams = [];
+  let round = 0;
+  let stepQueue = [];
+  let auto = false;
+  let fast = false;
+  let busy = false;
+
+  /* =========================
+     CONFIG（試合の流れ.txt）
+  ========================== */
+  const ROUND_FIGHTS = { 1:4, 2:4, 3:4, 4:4, 5:2, 6:1 };
+  const PLAYER_FIGHT_RATE = { 1:100, 2:70, 3:75, 4:80, 5:85, 6:100 };
 
   /* =========================
      PUBLIC API
   ========================== */
   Sim.startMatch = function(opts){
-    if(_busy) return;
-    _busy = true;
+    if(busy) return;
+    busy = true;
 
-    _teams = cloneTeams(opts?.teams || []);
-    _round = 1;
-    _steps = [];
-    _auto = false;
-    _fast = false;
+    teams = clone(opts.teams || []);
+    round = 1;
+    stepQueue = [];
+    auto = false;
+    fast = false;
 
-    // 初期化
-    for(const t of _teams){
-      t.place = null;
-      t.eliminated = false;
-      t.alive = t.alive ?? (RULES?.GAME?.teamSize || 3);
-      t.deathBoxes = 0;
-      t.kp = 0; t.ap = 0; t.treasure = 0; t.flag = 0;
-      t.eventBuffs = { aim:0, mental:0, agi:0 };
-      t._ultUsed = false;
-    }
+    initTeams();
 
-    // R1降下
-    SimMap.deployR1(_teams);
-    pushStep(`降下開始！`, RULES?.MAP?.screens?.map || 'assets/map.png');
+    // R1 降下
+    SimMap.deployR1(teams);
+    push('バトルスタート！', RULES.MAP.screens.main1);
+    push('降下開始…！', RULES.MAP.screens.map);
 
-    _busy = false;
+    busy = false;
     tick();
   };
 
-  Sim.next = function(){
-    tick();
-  };
-
-  Sim.setAuto = function(on){
-    _auto = !!on;
-    if(_auto) tick();
-  };
+  Sim.next = function(){ tick(); };
+  Sim.setAuto = function(on){ auto = !!on; if(auto) tick(); };
 
   /* =========================
-     MAIN TICK
+     MAIN LOOP
   ========================== */
   function tick(){
-    if(_busy) return;
+    if(busy) return;
 
-    // ステップがあれば消化
-    if(_steps.length){
-      const s = _steps.shift();
-      UI.showStep(s); // ui.js 側で表示
-      if(_auto){
-        setTimeout(tick, RULES?.GAME?.autoMs || 2500);
-      }
+    if(stepQueue.length){
+      UI.showStep(stepQueue.shift());
+      if(auto) setTimeout(tick, RULES.GAME.autoMs || 2500);
       return;
     }
 
-    // ステップが無い＝次のフェーズへ
-    if(_round <= 6){
-      runRound(_round);
+    if(round <= 6){
+      runRound(round);
       return;
     }
 
-    // 全ラウンド終了 → リザルト
     finalize();
   }
 
@@ -102,71 +83,69 @@
      ROUND FLOW
   ========================== */
   function runRound(r){
-    _busy = true;
+    busy = true;
 
-    // ---- 復活（R1〜R5 / R6特例）----
-    revivePhase(r);
+    // Round開始
+    push(`Round ${r} 開始！`, RULES.MAP.screens.main1);
 
-    // ---- イベント ----
+    // リスポーン
+    respawnPhase(r);
+
+    // イベント
     SimEvents.applyRoundEvents({
       round: r,
-      teams: _teams,
-      isFastMode: _fast,
+      teams,
+      isFastMode: fast,
       isPlayerTeamFn,
-      getPlayerBgFn,
       pushStepsFn: pushSteps
     });
 
-    // ---- 交戦（枠数保証）----
+    // 交戦（枠数保証）
     battlePhase(r);
 
-    // ---- 移動（R6以外）----
+    // 移動（R6以外）
     if(r < 6){
-      movePhase(r);
+      SimMap.moveAllAliveTo(teams, RULES.MAP.roundAreas[`R${r+1}`]);
+      if(!fast){
+        push('次のエリアへ移動…', RULES.MAP.screens.ido);
+      }
     }
 
-    _round++;
-    _busy = false;
+    round++;
+    busy = false;
     tick();
   }
 
   /* =========================
      PHASES
   ========================== */
-  function revivePhase(r){
-    for(const t of _teams){
+  function respawnPhase(r){
+    for(const t of teams){
       if(t.eliminated) continue;
 
       if(r === 6){
         if(t.deathBoxes >= 1){
-          // 最終：全復活
-          t.alive = RULES?.GAME?.teamSize || 3;
+          t.alive = 3;
           t.deathBoxes = 0;
-          if(isPlayerTeamFn(t) && !_fast){
-            pushStep('最終前に全員復帰！万全で行く！', getPlayerBgFn());
+          if(isPlayerTeamFn(t) && !fast){
+            push('最終前に全員復帰！', RULES.MAP.screens.main1);
           }
         }
       }else{
         if(t.deathBoxes === 1){
-          t.alive = Math.min((RULES?.GAME?.teamSize || 3), t.alive + 1);
+          t.alive += 1;
           t.deathBoxes = 0;
         }else if(t.deathBoxes >= 2){
-          // 70/30
-          if(Math.random() < 0.7){
-            t.alive = Math.min((RULES?.GAME?.teamSize || 3), t.alive + 2);
-          }else{
-            t.alive = Math.min((RULES?.GAME?.teamSize || 3), t.alive + 1);
-          }
+          t.alive += (Math.random() < 0.7 ? 2 : 1);
           t.deathBoxes = 0;
         }
+        t.alive = Math.min(t.alive, 3);
       }
     }
   }
 
   function battlePhase(r){
-    const cfg = RULES?.MATCH?.rounds?.find(x => x.r === r);
-    const fights = cfg?.fights || 0;
-
+    const fights = ROUND_FIGHTS[r];
     for(let i=0;i<fights;i++){
       const pair = pickBattlePair(r);
       if(!pair) break;
@@ -175,25 +154,16 @@
         teamA: pair[0],
         teamB: pair[1],
         round: r,
-        isFastMode: _fast,
+        isFastMode: fast,
         isPlayerTeamFn,
         pushStepsFn: pushSteps,
-        getBattleBgFn: ()=> (RULES?.MAP?.screens?.battle || 'assets/battle.png')
+        getBattleBgFn: ()=>RULES.MAP.screens.battle
       });
 
-      // 脱落時の place 仮付け（後で確定）
       if(res?.loser?.eliminated && res.loser.place == null){
         res.loser.place = calcPlace();
-        if(isPlayerTeamFn(res.loser)) _fast = true; // プレイヤー脱落後は高速
+        if(isPlayerTeamFn(res.loser)) fast = true;
       }
-    }
-  }
-
-  function movePhase(r){
-    const nextAreas = (RULES?.MAP?.roundAreas?.[`R${r+1}`]) || [];
-    SimMap.moveAllAliveTo(_teams, nextAreas);
-    if(!_fast){
-      pushStep(`次のエリアへ移動…`, RULES?.MAP?.screens?.ido || 'assets/ido.png');
     }
   }
 
@@ -201,29 +171,34 @@
      FINALIZE
   ========================== */
   function finalize(){
-    const out = SimResult.finalizeTournament(_teams);
-    UI.showResult(out); // ui.js 側で結果表示
+    const out = SimResult.finalizeTournament(teams);
+    UI.showResult(out);
   }
 
   /* =========================
-     HELPERS
+     MATCH MAKING
   ========================== */
   function pickBattlePair(r){
-    // 生存のみ
-    const alive = _teams.filter(t => !t.eliminated);
+    const alive = teams.filter(t=>!t.eliminated);
     if(alive.length < 2) return null;
 
-    // プレイヤー優先率
-    const pref = RULES?.MATCH?.rounds?.find(x=>x.r===r)?.playerFightRate ?? 0;
-
+    const rate = PLAYER_FIGHT_RATE[r];
     const player = alive.find(isPlayerTeamFn);
-    if(player && Math.random() < pref){
-      const enemy = alive.find(t => t !== player);
-      if(enemy) return [player, enemy];
+
+    // プレイヤー戦優先
+    if(player && Math.random()*100 < rate){
+      const sameArea = alive.filter(t=>t!==player && t.areaId===player.areaId);
+      if(sameArea.length) return [player, pick(sameArea)];
+
+      const near = alive.filter(t=>t!==player && Math.abs(t.areaId-player.areaId)<=1);
+      if(near.length) return [player, pick(near)];
+
+      const any = alive.filter(t=>t!==player);
+      if(any.length) return [player, pick(any)];
     }
 
-    // 同エリア優先
-    alive.sort(()=>Math.random()-0.5);
+    // CPU同士
+    shuffle(alive);
     for(let i=0;i<alive.length;i++){
       for(let j=i+1;j<alive.length;j++){
         if(alive[i].areaId === alive[j].areaId){
@@ -232,32 +207,35 @@
       }
     }
 
-    // フォールバック
     return [alive[0], alive[1]];
   }
 
-  function calcPlace(){
-    // 残りチーム数から下位順に
-    const aliveCount = _teams.filter(t=>!t.eliminated).length;
-    return aliveCount + 1;
+  /* =========================
+     HELPERS
+  ========================== */
+  function initTeams(){
+    for(const t of teams){
+      t.place = null;
+      t.eliminated = false;
+      t.alive = t.alive ?? 3;
+      t.deathBoxes = t.deathBoxes ?? 0;
+    }
   }
 
-  function pushStep(message, bg){
-    _steps.push({ message, bg, bgAnim:false });
+  function isPlayerTeamFn(t){ return !!t.isPlayer; }
+
+  function calcPlace(){
+    return teams.filter(t=>!t.eliminated).length + 1;
+  }
+
+  function push(message, bg){
+    stepQueue.push({ message, bg, bgAnim:false });
   }
   function pushSteps(arr){
-    for(const s of arr) _steps.push(s);
+    for(const s of arr) stepQueue.push(s);
   }
 
-  function isPlayerTeamFn(t){
-    return !!t?.isPlayer;
-  }
-  function getPlayerBgFn(){
-    return RULES?.MAP?.screens?.battle || 'assets/battle.png';
-  }
-
-  function cloneTeams(teams){
-    return JSON.parse(JSON.stringify(teams));
-  }
-
+  function clone(v){ return JSON.parse(JSON.stringify(v)); }
+  function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
 })();
