@@ -2,14 +2,17 @@
 
 /*
   MOB BR - Main Screen v12
-  FIX:
-  - Text always stays inside frames (handled mainly by CSS clamp/wrap)
-  - Bottom panel never goes off-screen (rightCol grid rows + rog svh height)
-  - NEXT is NOT for week progression -> week-advance logic removed
-  - Mobile zoom suppression:
-      * user-scalable=no in meta viewport
-      * iOS gesture events prevented
-      * double-tap zoom prevented
+  - Left menu: loop scroll (only inside the button column)
+  - NEXT usage:
+      * ONLY inside popup flows (week popup / training / shop etc.)
+      * NOT used as "advance week" button on main screen
+  - Week progression:
+      * Tap rog panel to advance week (shows week popup)
+      * Confirm/close by popup NEXT
+  - Mobile hardening (iOS):
+      * prevent double-tap zoom
+      * prevent pinch zoom (gesture events)
+      * suppress long-press callout via CSS (-webkit-touch-callout/user-select)
 */
 
 const K = {
@@ -48,6 +51,18 @@ const ui = {
   tapM2: $('tapM2'),
   tapM3: $('tapM3'),
 
+  popBack: $('modalBack'),
+  weekPop: $('weekPop'),
+  popTitle: $('popTitle'),
+  popSub: $('popSub'),
+  btnPopNext: $('btnPopNext'),
+
+  // NOTE: btnWeekNext は “週進行用に使わない”
+  // HTMLに残っていても、ここでは一切使わない（表示もさせない）
+  btnWeekNext: $('btnWeekNext'),
+
+  rogWrap: $('rogWrap'),
+
   btnTeam: $('btnTeam'),
   btnBattle: $('btnBattle'),
   btnTraining: $('btnTraining'),
@@ -57,26 +72,35 @@ const ui = {
 
   loopScroll: $('loopScroll'),
   loopInner: $('loopInner'),
-
-  btnPopupNext: $('btnPopupNext'),
 };
 
-(function suppressZoomIOS(){
-  // iOS pinch zoom gesture suppression
-  const prevent = (e) => { e.preventDefault(); };
-  document.addEventListener('gesturestart', prevent, { passive:false });
-  document.addEventListener('gesturechange', prevent, { passive:false });
-  document.addEventListener('gestureend', prevent, { passive:false });
+/* ===== iOS zoom hardening ===== */
+(function hardPreventZoom(){
+  // 1) pinch (iOS Safari)
+  const stop = (e) => { e.preventDefault(); };
 
-  // double-tap zoom suppression (iOS Safari)
+  document.addEventListener('gesturestart', stop, { passive:false });
+  document.addEventListener('gesturechange', stop, { passive:false });
+  document.addEventListener('gestureend', stop, { passive:false });
+
+  // 2) dblclick zoom (some browsers)
+  document.addEventListener('dblclick', stop, { passive:false });
+
+  // 3) double-tap zoom fallback
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
-  }, { passive: false });
+  }, { passive:false });
+
+  // 4) multi-touch move (extra safety)
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive:false });
 })();
 
+/* ===== storage helpers ===== */
 function getNum(key, def){
   const v = Number(localStorage.getItem(key));
   return Number.isFinite(v) ? v : def;
@@ -88,11 +112,20 @@ function getStr(key, def){
 function setStr(key, val){ localStorage.setItem(key, String(val)); }
 function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
 
+function weeklyGoldByRank(rank){
+  if (rank >= 1 && rank <= 5) return 500;
+  if (rank >= 6 && rank <= 10) return 800;
+  if (rank >= 11 && rank <= 20) return 1000;
+  if (rank >= 21 && rank <= 30) return 2000;
+  return 3000;
+}
 function formatRank(rank){ return `RANK ${rank}`; }
 
+/* ===== render ===== */
 function render(){
   ui.company.textContent = getStr(K.company, 'CB Memory');
   ui.team.textContent = getStr(K.team, 'PLAYER TEAM');
+
   ui.gold.textContent = String(getNum(K.gold, 0));
   ui.rank.textContent = formatRank(getNum(K.rank, 10));
 
@@ -107,8 +140,26 @@ function render(){
   ui.tapM1.textContent = getStr(K.m1, '○○○');
   ui.tapM2.textContent = getStr(K.m2, '○○○');
   ui.tapM3.textContent = getStr(K.m3, '○○○');
+
+  // 週進行用NEXTは出さない（安全に常に非表示）
+  if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
 }
 
+/* ===== modal ===== */
+function showWeekPop(title, sub){
+  ui.popTitle.textContent = title;
+  ui.popSub.textContent = sub;
+  ui.popBack.style.display = 'block';
+  ui.weekPop.style.display = 'block';
+  ui.popBack.setAttribute('aria-hidden', 'false');
+}
+function hideWeekPop(){
+  ui.popBack.style.display = 'none';
+  ui.weekPop.style.display = 'none';
+  ui.popBack.setAttribute('aria-hidden', 'true');
+}
+
+/* ===== initial ===== */
 function ensureInitialInput(){
   if (!localStorage.getItem(K.y)) setNum(K.y, 1989);
   if (!localStorage.getItem(K.m)) setNum(K.m, 1);
@@ -153,7 +204,59 @@ function bindRename(el, key, label, defVal){
   });
 }
 
-// ===== Left menu placeholders (導線のみ) =====
+/* ===== week progression (NO main NEXT button) ===== */
+function computeNextWeek(y, m, w){
+  let ny = y, nm = m, nw = w + 1;
+  if (nw >= 5){
+    nw = 1;
+    nm = m + 1;
+    if (nm >= 13){
+      nm = 1;
+      ny = y + 1;
+    }
+  }
+  return { ny, nm, nw };
+}
+
+function advanceWeekByTap(){
+  const y = getNum(K.y, 1989);
+  const m = getNum(K.m, 1);
+  const w = getNum(K.w, 1);
+
+  const { ny, nm, nw } = computeNextWeek(y, m, w);
+
+  const rank = getNum(K.rank, 10);
+  const gain = weeklyGoldByRank(rank);
+
+  // 週ポップ表示（確定＆閉じるのはポップ内NEXTのみ）
+  showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
+
+  // ここが「NEXTの正しい役割」：ポップ内で次へ
+  ui.btnPopNext.onclick = () => {
+    setNum(K.y, ny);
+    setNum(K.m, nm);
+    setNum(K.w, nw);
+
+    const gold = getNum(K.gold, 0);
+    setNum(K.gold, gold + gain);
+
+    setStr(K.recent, `週が進んだ（+${gain}G）`);
+
+    hideWeekPop();
+    render();
+  };
+}
+
+/* rogをタップしたら週進行（ただしポップ内NEXTで確定） */
+function bindWeekByRogTap(){
+  ui.rogWrap.addEventListener('click', () => {
+    // ポップ表示中に連打で重ならないようにガード
+    if (ui.weekPop && ui.weekPop.style.display === 'block') return;
+    advanceWeekByTap();
+  });
+}
+
+/* ===== Left menu placeholders ===== */
 function setRecent(text){
   setStr(K.recent, text);
   render();
@@ -167,18 +270,25 @@ function bindMenus(){
   ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
   ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
 
-  // NEXTはポップアップ専用（今は未実装）。誤タップ防止で基本非表示。
-  ui.btnPopupNext.classList.remove('show');
+  // ポップ背景押下は閉じない（誤操作防止）
+  ui.popBack.addEventListener('click', (e) => e.preventDefault());
 }
 
-// ===== Loop scroll (infinite) for left menu =====
+/* ===== Loop scroll (infinite) for left menu ===== */
 function setupLoopScroll(){
   const scroller = ui.loopScroll;
   const inner = ui.loopInner;
 
   const originalButtons = Array.from(inner.querySelectorAll('button.imgBtn'));
 
-  // clones set (avoid duplicated IDs)
+  // already duplicated? (hot reload safety)
+  if (inner.dataset.loopReady === '1') return;
+  inner.dataset.loopReady = '1';
+
+  const spacer = document.createElement('div');
+  spacer.style.height = '2px';
+  inner.appendChild(spacer);
+
   const clones = originalButtons.map((btn) => {
     const clone = document.createElement('button');
     clone.type = 'button';
@@ -201,15 +311,11 @@ function setupLoopScroll(){
     return clone;
   });
 
-  const spacer = document.createElement('div');
-  spacer.style.height = '2px';
-  inner.appendChild(spacer);
   clones.forEach(n => inner.appendChild(n));
 
   let oneSetHeight = 0;
   const calcHeights = () => {
-    // gapはCSSの12px（loopInner gap）
-    const gap = 12;
+    const gap = 14;
     oneSetHeight = originalButtons.reduce((sum, b) => sum + b.getBoundingClientRect().height, 0);
     oneSetHeight += gap * (originalButtons.length - 1);
   };
@@ -226,12 +332,16 @@ function setupLoopScroll(){
   scroller.addEventListener('scroll', () => {
     if (oneSetHeight <= 0) return;
 
-    if (scroller.scrollTop >= oneSetHeight) scroller.scrollTop -= oneSetHeight;
-    if (scroller.scrollTop <= 0) scroller.scrollTop += oneSetHeight;
+    if (scroller.scrollTop >= oneSetHeight) {
+      scroller.scrollTop -= oneSetHeight;
+    }
+    if (scroller.scrollTop <= 0) {
+      scroller.scrollTop += oneSetHeight;
+    }
   }, { passive: true });
 }
 
-// ===== boot =====
+/* ===== boot ===== */
 document.addEventListener('DOMContentLoaded', () => {
   ensureInitialInput();
 
@@ -242,6 +352,8 @@ document.addEventListener('DOMContentLoaded', () => {
   bindRename(ui.tapM3, K.m3, 'メンバー名（3人目）', '○○○');
 
   bindMenus();
+  bindWeekByRogTap();
   setupLoopScroll();
+
   render();
 });
