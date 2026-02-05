@@ -1,268 +1,195 @@
-/* =========================================================
-   MOB BR - app.js (FULL)
-   - 起動処理
-   - メイン画面
-   - 週進行
-   - 画面遷移の司令塔
-   ---------------------------------------------------------
-   重要ルール（厳守）：
-   ・数値（%/勝率/内部補正）はUIに出さない
-   ・表示は ui.js、試合進行は sim.js に委譲
-   ・9ファイル構成・名前変更禁止
-========================================================= */
+'use strict';
 
-(function(){
-  'use strict';
+/*
+  MOB BR - Phase1 (Main Screen only)
+  Files:
+    - index.html
+    - style.css
+    - app.js
 
-  /* =========================
-     DOM
-  ========================== */
-  const el = {
-    dateText: document.getElementById('dateText'),
-    bgImage: document.getElementById('bgImage'),
-    playerImage: document.getElementById('playerImage'),
-    enemyImage: document.getElementById('enemyImage'),
-    playerTeamName: document.getElementById('playerTeamName'),
-    enemyTeamName: document.getElementById('enemyTeamName'),
-    autoBtn: document.getElementById('autoBtn'),
-    nextBtn: document.getElementById('nextBtn'),
-  };
+  Rules:
+    - Background (haikeimain.png) and Player image (P1.png) can overlap.
+    - UI elements (frames/buttons/text blocks) must NOT overlap each other.
+    - Images are in root (direct) except folders: cpu/, cards/, maps/.
+*/
 
-  /* =========================
-     APP STATE
-  ========================== */
-  const AppState = {
-    mode: 'main',          // 'main' | 'training' | 'shop' | 'tournament' | 'match'
-    auto: false,
-    busy: false,           // 処理中ロック
-    initialized: false,
-  };
+const VERSION = 'v0.1-main';
 
-  /* =========================
-     CONSTANTS
-  ========================== */
-  const ASSETS = {
-    main: 'assets/main1.png',
-    ido: 'assets/ido.png',
-    battle: 'assets/battle.png',
-    winner: 'assets/winner.png',
-    map: 'assets/map.png',
-    shop: 'assets/shop.png',
-  };
+/** ===== Simple state (Phase1) ===== */
+const state = {
+  companyName: 'CB Memory',
+  companyRank: 'RANK 10',
+  teamName: 'PLAYER TEAM',
+  gold: 0,
+  year: 1989,
+  month: 1,
+  week: 1,
+  nextEvent: '未設定',
+};
 
-  /* =========================
-     INIT
-  ========================== */
-  function init(){
-    // Storage 初期化
-    Storage.init();
+/** ===== DOM refs ===== */
+const $ = (id) => document.getElementById(id);
 
-    // 初期データの整合
-    ensureInitialState();
+const UI = {
+  ver: $('uiVer'),
+  companyName: $('uiCompanyName'),
+  companyRank: $('uiCompanyRank'),
+  teamName: $('uiTeamName'),
 
-    // UI 初期描画
-    renderMain();
+  cardCompanyName: $('uiCardCompanyName'),
+  cardCompanyRank: $('uiCardCompanyRank'),
+  cardTeamName: $('uiCardTeamName'),
+  cardGold: $('uiCardGold'),
+  cardWeek: $('uiCardWeek'),
+  cardNextEvent: $('uiCardNextEvent'),
 
-    // イベント
-    bindEvents();
+  logTitle: $('uiLogTitle'),
+  logBody: $('uiLogBody'),
 
-    AppState.initialized = true;
+  btnTeam: $('btnTeam'),
+  btnTournament: $('btnTournament'),
+  btnShop: $('btnShop'),
+  btnTraining: $('btnTraining'),
+  btnRecord: $('btnRecord'),
+  btnCollection: $('btnCollection'),
+  btnResults: $('btnResults'),
+  btnSchedule: $('btnSchedule'),
+  btnNext: $('btnNext'),
+  btnAuto: $('btnAuto'),
+};
 
-    // 初回メッセージ
-    UI.setMessage('準備完了。次の行動を選ぼう。');
+/** ===== Utilities ===== */
+function escapeHtml(str){
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function setText(el, text){
+  if (!el) return;
+  el.textContent = text;
+}
+
+function setLog(title, html){
+  if (UI.logTitle) UI.logTitle.textContent = title;
+  if (UI.logBody) UI.logBody.innerHTML = html;
+}
+
+function formatWeek(){
+  return `${state.year}年${state.month}月 第${state.week}週`;
+}
+
+/** ===== Apply State to UI ===== */
+function render(){
+  setText(UI.ver, VERSION);
+
+  setText(UI.companyName, state.companyName);
+  setText(UI.companyRank, state.companyRank);
+  setText(UI.teamName, state.teamName);
+
+  setText(UI.cardCompanyName, state.companyName);
+  setText(UI.cardCompanyRank, state.companyRank);
+  setText(UI.cardTeamName, state.teamName);
+  setText(UI.cardGold, String(state.gold));
+  setText(UI.cardWeek, formatWeek());
+  setText(UI.cardNextEvent, state.nextEvent);
+}
+
+/** ===== Main Screen Actions (Phase1) ===== */
+function showMainGuide(){
+  setLog(
+    'メイン画面',
+    [
+      'ここが拠点です。育成・ガチャ・閲覧系などは基本ここから進行します。<br/>',
+      '「大会」から大会画面へ進む導線を次フェーズで実装します。<br/>',
+      '<br/>',
+      '※UI同士（文字/枠/ボタン）は被らない設計で固定。<br/>',
+      '※背景とプレイヤー画像は重なってOK。'
+    ].join('')
+  );
+}
+
+function onMenuClick(name){
+  const n = escapeHtml(name);
+  setLog(
+    n,
+    [
+      `「${n}」を選択しました。<br/>`,
+      'この項目は次フェーズで画面/機能を追加します。'
+    ].join('')
+  );
+}
+
+function onTournamentClick(){
+  setLog(
+    '大会',
+    [
+      '大会画面へ進みます（次フェーズで実装）。<br/>',
+      '<br/>',
+      '予定：<br/>',
+      '・大会週に入ったら大会開始UI（NEXTのみ）→ 大会画面へ<br/>',
+      '・大会中は育成メニューなどのボタンを表示しない<br/>',
+      '・大会終了後にメインへ戻るとボタンが復帰'
+    ].join('')
+  );
+}
+
+function onNext(){
+  // Phase1: NEXTはガイドに戻す（後で週進行へ変更）
+  showMainGuide();
+}
+
+let autoTimer = null;
+let autoOn = false;
+
+function setAuto(on){
+  autoOn = on;
+  if (UI.btnAuto) UI.btnAuto.textContent = on ? 'AUTO ON' : 'AUTO';
+  if (autoTimer){
+    clearInterval(autoTimer);
+    autoTimer = null;
   }
-
-  /* =========================
-     STATE ENSURE
-  ========================== */
-  function ensureInitialState(){
-    const s = Storage.getState();
-
-    // 初回起動時
-    if(!s || !s.current){
-      Storage.reset();
-    }
-
-    // 表示用の初期画像
-    setBackground(ASSETS.main);
-    setPlayerImage(Storage.getPlayerTeamImage());
-    hideEnemy();
+  if (on){
+    // Phase1: 3秒ごとにガイドへ戻すだけ（挙動確認用）
+    autoTimer = setInterval(() => {
+      showMainGuide();
+    }, 3000);
   }
+}
 
-  /* =========================
-     RENDER
-  ========================== */
-  function renderMain(){
-    AppState.mode = 'main';
+/** ===== Bind ===== */
+function bind(){
+  if (UI.btnTeam) UI.btnTeam.addEventListener('click', () => onMenuClick('チーム'));
+  if (UI.btnTournament) UI.btnTournament.addEventListener('click', onTournamentClick);
+  if (UI.btnShop) UI.btnShop.addEventListener('click', () => onMenuClick('ショップ'));
+  if (UI.btnTraining) UI.btnTraining.addEventListener('click', () => onMenuClick('修行'));
 
-    // 日付表示
-    el.dateText.textContent = formatDate(Storage.getCurrentDate());
+  if (UI.btnRecord) UI.btnRecord.addEventListener('click', () => onMenuClick('戦績'));
+  if (UI.btnCollection) UI.btnCollection.addEventListener('click', () => onMenuClick('コレクション'));
 
-    // 背景
-    setBackground(ASSETS.main);
+  if (UI.btnResults) UI.btnResults.addEventListener('click', () => onMenuClick('大会結果'));
+  if (UI.btnSchedule) UI.btnSchedule.addEventListener('click', () => onMenuClick('スケジュール'));
 
-    // プレイヤー
-    setPlayerImage(Storage.getPlayerTeamImage());
-    el.playerTeamName.textContent = Storage.getTeamName();
-    el.playerTeamName.style.opacity = 1;
+  if (UI.btnNext) UI.btnNext.addEventListener('click', onNext);
 
-    hideEnemy();
-
-    // ボタン
-    el.nextBtn.classList.remove('is-disabled');
-  }
-
-  /* =========================
-     EVENTS
-  ========================== */
-  function bindEvents(){
-    el.nextBtn.addEventListener('click', onNext);
-    el.autoBtn.addEventListener('click', onToggleAuto);
-  }
-
-  function onNext(){
-    if(AppState.busy) return;
-
-    if(AppState.mode === 'main'){
-      proceedWeek();
-      return;
-    }
-
-    // 他モードは ui/sim 側に委譲
-    UI.next();
-  }
-
-  function onToggleAuto(){
-    AppState.auto = !AppState.auto;
-    el.autoBtn.classList.toggle('is-on', AppState.auto);
-    UI.setAuto(AppState.auto);
-  }
-
-  /* =========================
-     WEEK PROGRESSION
-  ========================== */
-  function proceedWeek(){
-    AppState.busy = true;
-
-    // 週切り替え
-    Storage.nextWeek();
-
-    // 週ポップ表示
-    const d = Storage.getCurrentDate();
-    UI.showPopup([
-      `${d.year}年${d.month}月 第${d.week}週`,
-      getWeeklyGText()
-    ], () => {
-      // 大会チェック
-      if(Storage.isTournamentWeek()){
-        startTournamentWeek();
-      }else{
-        // 通常週
-        renderMain();
-        AppState.busy = false;
-      }
+  if (UI.btnAuto){
+    UI.btnAuto.addEventListener('click', () => {
+      setAuto(!autoOn);
     });
   }
 
-  function getWeeklyGText(){
-    const g = Storage.calcWeeklyG();
-    return `企業ランクにより ${g}G 獲得！`;
-  }
+  // Safety: stop auto when tab is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && autoOn) setAuto(false);
+  });
+}
 
-  /* =========================
-     TOURNAMENT
-  ========================== */
-  function startTournamentWeek(){
-    AppState.mode = 'tournament';
-
-    // 開始メッセージ（大会種別ごと）
-    const msg = Storage.getTournamentStartMessage();
-    UI.showPopup([msg], () => {
-      // 試合画面へ
-      startMatch();
-    });
-  }
-
-  /* =========================
-     MATCH
-  ========================== */
-  function startMatch(){
-    AppState.mode = 'match';
-
-    // 背景：降下前
-    setBackground(ASSETS.main);
-
-    // 敵非表示
-    hideEnemy();
-
-    // sim に試合開始を委譲
-    Sim.startMatch({
-      onUpdate: handleSimUpdate,
-      onEnd: handleMatchEnd
-    });
-  }
-
-  function handleSimUpdate(update){
-    // 表示のみを ui.js に委譲
-    UI.applySimUpdate(update);
-  }
-
-  function handleMatchEnd(result){
-    // result 表示後、メインへ戻す
-    UI.showResult(result, () => {
-      renderMain();
-      AppState.busy = false;
-    });
-  }
-
-  /* =========================
-     VIEW HELPERS
-  ========================== */
-  function setBackground(src){
-    el.bgImage.src = src;
-  }
-
-  function setPlayerImage(src){
-    el.playerImage.src = src;
-  }
-
-  function showEnemy(team){
-    if(!team) return;
-    el.enemyImage.src = `assets/${team.teamId}.png`;
-    el.enemyImage.style.opacity = 1;
-    el.enemyTeamName.textContent = team.name;
-    el.enemyTeamName.style.opacity = 1;
-  }
-
-  function hideEnemy(){
-    el.enemyImage.style.opacity = 0;
-    el.enemyTeamName.style.opacity = 0;
-    el.enemyImage.src = '';
-    el.enemyTeamName.textContent = '';
-  }
-
-  /* =========================
-     UTIL
-  ========================== */
-  function formatDate(d){
-    if(!d) return '----';
-    return `${d.year}年${d.month}月 第${d.week}週`;
-  }
-
-  /* =========================
-     BOOT
-  ========================== */
-  window.addEventListener('DOMContentLoaded', init);
-
-  /* =========================
-     EXPOSE (UI/Sim から呼ばれる)
-  ========================== */
-  window.App = {
-    showEnemy,
-    hideEnemy,
-    setBackground,
-    setPlayerImage,
-    renderMain,
-  };
-
+/** ===== Init ===== */
+(function init(){
+  render();
+  bind();
+  showMainGuide();
 })();
