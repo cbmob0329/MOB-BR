@@ -1,19 +1,13 @@
 'use strict';
 
 /*
-  MOB BR - Main Screen v12
-  - Left menu: loop scroll (only inside the button column)
-  - NEXT not always visible:
-      * Week popup shows NEXT
-      * Rog panel tap shows NEXT temporarily (3 sec)
+  MOB BR - Main Screen (Main UI + Team Screen skeleton)
+  - Left menu: loop scroll (only inside the button column) with stronger anti-bug handling
+  - Members: creates a banner-like button under team image (if not in HTML) + popup to rename
+  - Team button: opens "チーム管理" modal (UI骨組み)
   - Mobile:
       * prevent double-tap zoom (iOS)
       * long-press callout suppression is CSS (-webkit-touch-callout/user-select)
-  - Member names:
-      * "メンバー名" button opens popup
-      * tap row to rename
-  - Team button:
-      * opens team screen (intro)
 */
 
 const K = {
@@ -45,9 +39,13 @@ const ui = {
   nextTour: $('uiNextTour'),
   nextTourW: $('uiNextTourW'),
   recent: $('uiRecent'),
+  hint: $('uiHint'),
 
   tapCompany: $('tapCompany'),
-  tapTeamName: $('tapTeamName'),
+  tapTeam: $('tapTeam'),
+  tapM1: $('tapM1'),
+  tapM2: $('tapM2'),
+  tapM3: $('tapM3'),
 
   popBack: $('modalBack'),
   weekPop: $('weekPop'),
@@ -68,25 +66,7 @@ const ui = {
   loopScroll: $('loopScroll'),
   loopInner: $('loopInner'),
 
-  // member popup
-  btnMembers: $('btnMembers'),
-  membersPop: $('membersPop'),
-  rowM1: $('rowM1'),
-  rowM2: $('rowM2'),
-  rowM3: $('rowM3'),
-  uiM1: $('uiM1'),
-  uiM2: $('uiM2'),
-  uiM3: $('uiM3'),
-  btnCloseMembers: $('btnCloseMembers'),
-
-  // team screen
-  teamScreen: $('teamScreen'),
-  btnCloseTeam: $('btnCloseTeam'),
-  tCompany: $('tCompany'),
-  tTeam: $('tTeam'),
-  tM1: $('tM1'),
-  tM2: $('tM2'),
-  tM3: $('tM3')
+  app: $('app'),
 };
 
 (function preventDoubleTapZoom(){
@@ -109,91 +89,8 @@ function getStr(key, def){
 function setStr(key, val){ localStorage.setItem(key, String(val)); }
 function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
 
-function weeklyGoldByRank(rank){
-  if (rank >= 1 && rank <= 5) return 500;
-  if (rank >= 6 && rank <= 10) return 800;
-  if (rank >= 11 && rank <= 20) return 1000;
-  if (rank >= 21 && rank <= 30) return 2000;
-  return 3000;
-}
 function formatRank(rank){ return `RANK ${rank}`; }
 
-function render(){
-  const company = getStr(K.company, 'CB Memory');
-  const team = getStr(K.team, 'PLAYER TEAM');
-  const m1 = getStr(K.m1, '○○○');
-  const m2 = getStr(K.m2, '○○○');
-  const m3 = getStr(K.m3, '○○○');
-
-  ui.company.textContent = company;
-  ui.team.textContent = team;
-
-  ui.gold.textContent = String(getNum(K.gold, 0));
-  ui.rank.textContent = formatRank(getNum(K.rank, 10));
-
-  ui.y.textContent = String(getNum(K.y, 1989));
-  ui.m.textContent = String(getNum(K.m, 1));
-  ui.w.textContent = String(getNum(K.w, 1));
-
-  ui.nextTour.textContent = getStr(K.nextTour, '未定');
-  ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
-
-  // 「最近の出来事」ラベルは消し、本文だけ
-  ui.recent.textContent = getStr(K.recent, '未定');
-
-  // member popup values
-  ui.uiM1.textContent = m1;
-  ui.uiM2.textContent = m2;
-  ui.uiM3.textContent = m3;
-
-  // team screen values
-  ui.tCompany.textContent = company;
-  ui.tTeam.textContent = team;
-  ui.tM1.textContent = m1;
-  ui.tM2.textContent = m2;
-  ui.tM3.textContent = m3;
-}
-
-function showBack(){
-  ui.popBack.style.display = 'block';
-  ui.popBack.setAttribute('aria-hidden', 'false');
-}
-function hideBack(){
-  ui.popBack.style.display = 'none';
-  ui.popBack.setAttribute('aria-hidden', 'true');
-}
-
-function showWeekPop(title, sub){
-  ui.popTitle.textContent = title;
-  ui.popSub.textContent = sub;
-  showBack();
-  ui.weekPop.style.display = 'block';
-}
-function hideWeekPop(){
-  ui.weekPop.style.display = 'none';
-  hideBack();
-}
-
-function showMembersPop(){
-  showBack();
-  ui.membersPop.style.display = 'block';
-}
-function hideMembersPop(){
-  ui.membersPop.style.display = 'none';
-  hideBack();
-}
-
-function showTeamScreen(){
-  ui.teamScreen.classList.add('show');
-  ui.teamScreen.setAttribute('aria-hidden', 'false');
-  // 背景タップで閉じる誤爆防止のため、teamScreen自体は閉じない。ボタンで閉じる。
-}
-function hideTeamScreen(){
-  ui.teamScreen.classList.remove('show');
-  ui.teamScreen.setAttribute('aria-hidden', 'true');
-}
-
-// ===== initial =====
 function ensureInitialInput(){
   if (!localStorage.getItem(K.y)) setNum(K.y, 1989);
   if (!localStorage.getItem(K.m)) setNum(K.m, 1);
@@ -204,6 +101,7 @@ function ensureInitialInput(){
   if (!localStorage.getItem(K.nextTour)) setStr(K.nextTour, '未定');
   if (!localStorage.getItem(K.nextTourW)) setStr(K.nextTourW, '未定');
 
+  // 初回入力（仕様）
   if (!localStorage.getItem(K.company)){
     const v = prompt('企業名を入力してください', 'CB Memory');
     if (v !== null && v.trim() !== '') setStr(K.company, v.trim());
@@ -226,176 +124,388 @@ function ensureInitialInput(){
   }
 }
 
-function bindRenamePrompt(key, label, defVal){
-  const cur = getStr(key, defVal);
-  const v = prompt(`${label}を変更`, cur);
-  if (v === null) return;
-  const nv = v.trim();
-  if (nv === '') return;
-  setStr(key, nv);
-  render();
-}
-
-// ===== NEXT (not always) =====
-let nextHideTimer = null;
-function showNextTemporarily(ms=3000){
-  ui.btnWeekNext.classList.add('show');
-  if (nextHideTimer) clearTimeout(nextHideTimer);
-  nextHideTimer = setTimeout(() => ui.btnWeekNext.classList.remove('show'), ms);
-}
-function bindRogNextReveal(){
-  ui.rogWrap.addEventListener('click', () => {
-    showNextTemporarily(3200);
+function bindRename(el, key, label, defVal){
+  if (!el) return;
+  el.addEventListener('click', () => {
+    const cur = getStr(key, defVal);
+    const v = prompt(`${label}を変更`, cur);
+    if (v === null) return;
+    const nv = v.trim();
+    if (nv === '') return;
+    setStr(key, nv);
+    render();
   });
 }
 
-// ===== Week progression =====
-function advanceWeek(){
-  const y = getNum(K.y, 1989);
-  const m = getNum(K.m, 1);
-  const w = getNum(K.w, 1);
+/* ===== Week pop (表示だけ)
+   ※NEXTは「週を跨ぐためのボタンではない」ため、ここでは「閉じる」用途に限定
+*/
+function showWeekPop(title, sub){
+  ui.popTitle.textContent = title;
+  ui.popSub.textContent = sub;
+  ui.popBack.style.display = 'block';
+  ui.weekPop.style.display = 'block';
+  ui.popBack.setAttribute('aria-hidden', 'false');
+}
+function hideWeekPop(){
+  ui.popBack.style.display = 'none';
+  ui.weekPop.style.display = 'none';
+  ui.popBack.setAttribute('aria-hidden', 'true');
+}
 
-  let ny = y, nm = m, nw = w + 1;
-  if (nw >= 5){
-    nw = 1;
-    nm = m + 1;
-    if (nm >= 13){
-      nm = 1;
-      ny = y + 1;
+/* ===== Recent label remove (「最近の出来事：」を消す) ===== */
+function removeRecentLabelText(){
+  const el = ui.recent?.closest('.recentLog');
+  if (!el) return;
+  for (const node of Array.from(el.childNodes)){
+    if (node.nodeType === Node.TEXT_NODE){
+      node.textContent = '';
     }
   }
-
-  const rank = getNum(K.rank, 10);
-  const gain = weeklyGoldByRank(rank);
-
-  showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
-
-  ui.btnPopNext.onclick = () => {
-    setNum(K.y, ny);
-    setNum(K.m, nm);
-    setNum(K.w, nw);
-
-    const gold = getNum(K.gold, 0);
-    setNum(K.gold, gold + gain);
-
-    setStr(K.recent, `週が進んだ（+${gain}G）`);
-
-    hideWeekPop();
-    render();
-    ui.btnWeekNext.classList.remove('show');
-  };
 }
 
-// ===== Members popup =====
-function bindMembers(){
-  ui.btnMembers.addEventListener('click', () => {
-    render();
-    showMembersPop();
+/* ===== Members banner button + popup ===== */
+function ensureMembersButton(){
+  const membersWrap = document.querySelector('.members');
+  if (!membersWrap) return null;
+
+  let btn = membersWrap.querySelector('.membersBtn');
+  if (btn) return btn;
+
+  btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'membersBtn';
+  btn.id = 'btnMembers';
+  btn.setAttribute('aria-label', 'メンバー名');
+  btn.textContent = 'メンバー名';
+  membersWrap.appendChild(btn);
+  return btn;
+}
+
+function createModalShell(id){
+  let back = document.getElementById(`${id}_back`);
+  let modal = document.getElementById(`${id}_modal`);
+  if (back && modal) return { back, modal };
+
+  back = document.createElement('div');
+  back.id = `${id}_back`;
+  back.style.position = 'absolute';
+  back.style.inset = '0';
+  back.style.background = 'rgba(0,0,0,.55)';
+  back.style.zIndex = '60';
+  back.style.display = 'none';
+
+  modal = document.createElement('div');
+  modal.id = `${id}_modal`;
+  modal.style.position = 'absolute';
+  modal.style.left = '50%';
+  modal.style.top = '50%';
+  modal.style.transform = 'translate(-50%,-50%)';
+  modal.style.zIndex = '61';
+  modal.style.width = 'min(560px, 88vw)';
+  modal.style.maxHeight = '80svh';
+  modal.style.overflow = 'hidden';
+  modal.style.display = 'none';
+  modal.style.pointerEvents = 'auto';
+
+  const card = document.createElement('div');
+  card.style.width = '100%';
+  card.style.maxHeight = '80svh';
+  card.style.overflow = 'auto';
+  card.style.background = 'rgba(0,0,0,.78)';
+  card.style.border = '2px solid rgba(255,255,255,.35)';
+  card.style.borderRadius = '16px';
+  card.style.boxShadow = '0 18px 40px rgba(0,0,0,.45)';
+  card.style.padding = '16px';
+  card.style.color = '#fff';
+  card.style.textShadow = '0 3px 0 rgba(0,0,0,.55)';
+  card.style.webkitOverflowScrolling = 'touch';
+
+  modal.appendChild(card);
+  ui.app.appendChild(back);
+  ui.app.appendChild(modal);
+
+  back.addEventListener('click', () => {
+    hideCustomModal(id);
   });
 
-  ui.btnCloseMembers.addEventListener('click', hideMembersPop);
-
-  // 背景押しは閉じない（誤爆防止）→ closeボタンのみ
-  ui.popBack.addEventListener('click', (e) => e.preventDefault());
-
-  ui.rowM1.addEventListener('click', () => bindRenamePrompt(K.m1, 'メンバー名（1人目）', '○○○'));
-  ui.rowM2.addEventListener('click', () => bindRenamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
-  ui.rowM3.addEventListener('click', () => bindRenamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
+  return { back, modal };
 }
 
-// ===== Top rename =====
-function bindTopRename(){
-  ui.tapCompany.addEventListener('click', () => bindRenamePrompt(K.company, '企業名', 'CB Memory'));
-  ui.tapTeamName.addEventListener('click', () => bindRenamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
+function showCustomModal(id){
+  const { back, modal } = createModalShell(id);
+  back.style.display = 'block';
+  modal.style.display = 'block';
 }
 
-// ===== Left menu placeholders + TEAM screen =====
-function setRecent(text){
-  setStr(K.recent, text);
-  render();
+function hideCustomModal(id){
+  const back = document.getElementById(`${id}_back`);
+  const modal = document.getElementById(`${id}_modal`);
+  if (back) back.style.display = 'none';
+  if (modal) modal.style.display = 'none';
 }
 
+function buildMembersPopup(){
+  const { modal } = createModalShell('members');
+  const card = modal.firstElementChild;
+  card.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.textContent = 'メンバー名';
+  title.style.fontSize = '22px';
+  title.style.fontWeight = '1000';
+  title.style.marginBottom = '12px';
+  card.appendChild(title);
+
+  const info = document.createElement('div');
+  info.textContent = '変更したいメンバーを選んでください';
+  info.style.fontSize = '14px';
+  info.style.opacity = '.92';
+  info.style.marginBottom = '10px';
+  card.appendChild(info);
+
+  const list = document.createElement('div');
+  list.style.display = 'grid';
+  list.style.gap = '10px';
+  card.appendChild(list);
+
+  const makeBtn = (label, key) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.width = '100%';
+    b.style.padding = '12px 12px';
+    b.style.borderRadius = '14px';
+    b.style.border = '2px solid rgba(255,255,255,.28)';
+    b.style.background = 'rgba(255,255,255,.08)';
+    b.style.color = '#fff';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '16px';
+    b.style.textAlign = 'left';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.addEventListener('click', () => {
+      const cur = getStr(key, '○○○');
+      const v = prompt('メンバー名を変更', cur);
+      if (v === null) return;
+      const nv = v.trim();
+      if (!nv) return;
+      setStr(key, nv);
+      render();
+      buildMembersPopup();
+    });
+    return b;
+  };
+
+  list.appendChild(makeBtn(`1人目：${getStr(K.m1,'○○○')}`, K.m1));
+  list.appendChild(makeBtn(`2人目：${getStr(K.m2,'○○○')}`, K.m2));
+  list.appendChild(makeBtn(`3人目：${getStr(K.m3,'○○○')}`, K.m3));
+
+  const foot = document.createElement('div');
+  foot.style.display = 'flex';
+  foot.style.justifyContent = 'flex-end';
+  foot.style.gap = '10px';
+  foot.style.marginTop = '14px';
+  card.appendChild(foot);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '閉じる';
+  close.style.padding = '10px 12px';
+  close.style.borderRadius = '12px';
+  close.style.border = '2px solid rgba(255,255,255,.35)';
+  close.style.background = 'rgba(0,0,0,.35)';
+  close.style.color = '#fff';
+  close.style.fontWeight = '1000';
+  close.style.cursor = 'pointer';
+  close.style.touchAction = 'manipulation';
+  close.addEventListener('click', () => hideCustomModal('members'));
+  foot.appendChild(close);
+}
+
+function openMembersPopup(){
+  buildMembersPopup();
+  showCustomModal('members');
+}
+/* ===== Team Screen (チーム管理：中身入り・第1段階) ===== */
+function buildTeamPopup(){
+  const { modal } = createModalShell('team');
+  const card = modal.firstElementChild;
+  card.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.textContent = 'チーム管理';
+  title.style.fontSize = '22px';
+  title.style.fontWeight = '1000';
+  title.style.marginBottom = '12px';
+  card.appendChild(title);
+
+  const teamName = document.createElement('div');
+  teamName.textContent = `チーム名：${getStr(K.team,'PLAYER TEAM')}`;
+  teamName.style.fontSize = '16px';
+  teamName.style.marginBottom = '10px';
+  card.appendChild(teamName);
+
+  const membersTitle = document.createElement('div');
+  membersTitle.textContent = 'メンバー';
+  membersTitle.style.fontSize = '18px';
+  membersTitle.style.fontWeight = '1000';
+  membersTitle.style.margin = '12px 0 8px';
+  card.appendChild(membersTitle);
+
+  const list = document.createElement('div');
+  list.style.display = 'grid';
+  list.style.gap = '8px';
+  card.appendChild(list);
+
+  const makeRow = (name) => {
+    const row = document.createElement('div');
+    row.style.padding = '10px 12px';
+    row.style.borderRadius = '12px';
+    row.style.border = '2px solid rgba(255,255,255,.25)';
+    row.style.background = 'rgba(255,255,255,.06)';
+    row.style.fontWeight = '900';
+    row.textContent = name;
+    return row;
+  };
+
+  list.appendChild(makeRow(getStr(K.m1,'○○○')));
+  list.appendChild(makeRow(getStr(K.m2,'○○○')));
+  list.appendChild(makeRow(getStr(K.m3,'○○○')));
+
+  const note = document.createElement('div');
+  note.textContent = '※能力・パッシブ・ウルトは次フェーズで追加';
+  note.style.fontSize = '14px';
+  note.style.opacity = '.85';
+  note.style.marginTop = '12px';
+  card.appendChild(note);
+
+  const foot = document.createElement('div');
+  foot.style.display = 'flex';
+  foot.style.justifyContent = 'flex-end';
+  foot.style.marginTop = '14px';
+  card.appendChild(foot);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '閉じる';
+  close.style.padding = '10px 12px';
+  close.style.borderRadius = '12px';
+  close.style.border = '2px solid rgba(255,255,255,.35)';
+  close.style.background = 'rgba(0,0,0,.35)';
+  close.style.color = '#fff';
+  close.style.fontWeight = '1000';
+  close.style.cursor = 'pointer';
+  close.style.touchAction = 'manipulation';
+  close.addEventListener('click', () => hideCustomModal('team'));
+  foot.appendChild(close);
+}
+
+function openTeamPopup(){
+  buildTeamPopup();
+  showCustomModal('team');
+}
+
+/* ===== Left menu binding ===== */
 function bindMenus(){
   ui.btnTeam.addEventListener('click', () => {
-    render();
-    showTeamScreen();
+    openTeamPopup();
   });
-  ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
-  ui.btnTraining.addEventListener('click', () => setRecent('育成：未実装（次フェーズ）'));
-  ui.btnShop.addEventListener('click', () => setRecent('ショップ：未実装（次フェーズ）'));
-  ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
-  ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
 
-  ui.btnWeekNext.addEventListener('click', advanceWeek);
-
-  ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
+  ui.btnBattle.addEventListener('click', () => {
+    setStr(K.recent, '大会：未実装');
+    render();
+  });
+  ui.btnTraining.addEventListener('click', () => {
+    setStr(K.recent, '育成：未実装');
+    render();
+  });
+  ui.btnShop.addEventListener('click', () => {
+    setStr(K.recent, 'ショップ：未実装');
+    render();
+  });
+  ui.btnSchedule.addEventListener('click', () => {
+    setStr(K.recent, 'スケジュール：未実装');
+    render();
+  });
+  ui.btnCard.addEventListener('click', () => {
+    setStr(K.recent, 'カードコレクション：未実装');
+    render();
+  });
 }
 
-// ===== Loop scroll (infinite) for left menu =====
+/* ===== Loop scroll (bug-resistant) ===== */
 function setupLoopScroll(){
   const scroller = ui.loopScroll;
   const inner = ui.loopInner;
-
   const originalButtons = Array.from(inner.querySelectorAll('button.imgBtn'));
+  if (!originalButtons.length) return;
 
   const spacer = document.createElement('div');
   spacer.style.height = '2px';
   inner.appendChild(spacer);
 
   const clones = originalButtons.map((btn) => {
-    const clone = document.createElement('button');
-    clone.type = 'button';
-    clone.className = btn.className;
-    clone.setAttribute('aria-label', btn.getAttribute('aria-label') || 'menu');
-    clone.dataset.ref = btn.id;
-
-    const img = btn.querySelector('img');
-    const img2 = document.createElement('img');
-    img2.src = img.getAttribute('src');
-    img2.alt = img.getAttribute('alt');
-    img2.draggable = false;
-    clone.appendChild(img2);
-
-    clone.addEventListener('click', () => {
-      const ref = document.getElementById(clone.dataset.ref);
-      if (ref) ref.click();
-    });
-
+    const clone = btn.cloneNode(true);
+    clone.id = '';
+    clone.addEventListener('click', () => btn.click());
     return clone;
   });
-
   clones.forEach(n => inner.appendChild(n));
 
   let oneSetHeight = 0;
   const calcHeights = () => {
-    oneSetHeight = originalButtons.reduce((sum, b) => sum + b.getBoundingClientRect().height, 0);
-    const gap = 14;
-    oneSetHeight += gap * (originalButtons.length - 1);
+    oneSetHeight = originalButtons.reduce((s,b)=>s+b.getBoundingClientRect().height,0);
+    oneSetHeight += 14 * (originalButtons.length - 1);
   };
 
   requestAnimationFrame(() => {
     calcHeights();
-    scroller.scrollTop = 1;
+    scroller.scrollTop = 2;
   });
 
-  window.addEventListener('resize', () => {
-    calcHeights();
-  });
+  window.addEventListener('resize', calcHeights);
 
   scroller.addEventListener('scroll', () => {
     if (oneSetHeight <= 0) return;
-    if (scroller.scrollTop >= oneSetHeight) scroller.scrollTop -= oneSetHeight;
-    if (scroller.scrollTop <= 0) scroller.scrollTop += oneSetHeight;
-  }, { passive: true });
+    if (scroller.scrollTop >= oneSetHeight) {
+      scroller.scrollTop -= oneSetHeight;
+    } else if (scroller.scrollTop <= 0) {
+      scroller.scrollTop += oneSetHeight;
+    }
+  }, { passive:true });
 }
 
-// ===== boot =====
+/* ===== Render ===== */
+function render(){
+  ui.company.textContent = getStr(K.company, 'CB Memory');
+  ui.team.textContent = getStr(K.team, 'PLAYER TEAM');
+  ui.gold.textContent = String(getNum(K.gold, 0));
+  ui.rank.textContent = formatRank(getNum(K.rank, 10));
+
+  ui.y.textContent = String(getNum(K.y, 1989));
+  ui.m.textContent = String(getNum(K.m, 1));
+  ui.w.textContent = String(getNum(K.w, 1));
+
+  ui.nextTour.textContent = getStr(K.nextTour, '未定');
+  ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
+  ui.recent.textContent = getStr(K.recent, '未定');
+}
+
+/* ===== Boot ===== */
 document.addEventListener('DOMContentLoaded', () => {
   ensureInitialInput();
-  bindTopRename();
+
+  bindRename(ui.tapCompany, K.company, '企業名', 'CB Memory');
+  bindRename(ui.tapTeam, K.team, 'チーム名', 'PLAYER TEAM');
+
+  const membersBtn = ensureMembersButton();
+  if (membersBtn){
+    membersBtn.addEventListener('click', openMembersPopup);
+  }
+
   bindMenus();
-  bindRogNextReveal();
-  bindMembers();
   setupLoopScroll();
+  removeRecentLabelText();
   render();
 });
