@@ -1,4 +1,6 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 html, body {
   margin: 0;
@@ -15,7 +17,7 @@ html, body {
   overflow: hidden;
 }
 
-/* 全体背景 */
+/* 背景固定 */
 .bg {
   position: absolute;
   inset: 0;
@@ -23,85 +25,121 @@ html, body {
   z-index: 0;
 }
 
-/* 共通 */
-.box {
-  border: 2px solid #fff;
-  color: #fff;
-  padding: 8px;
-  text-align: center;
-  background: rgba(0,0,0,0.4);
-}
-
-/* 上部 */
+/* =====================
+   上部HUD
+===================== */
 .top {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
-  padding: 16px;
+  padding: 16px 20px;
 }
 
-.top-left {
-  display: grid;
-  gap: 6px;
+.hud {
+  background: rgba(0,0,0,0.6);
+  border: 2px solid #d4af37;
+  border-radius: 14px;
+  padding: 12px 16px;
+  color: #fff;
 }
 
-.top-right {
-  display: flex;
-  align-items: center;
+.hud-row {
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
-/* 中央 */
+.logo img {
+  height: 64px;
+}
+
+/* =====================
+   中央エリア
+===================== */
 .middle {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 180px 1fr; /* ← 左を細く */
   gap: 16px;
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 /* 左メニュー */
 .left {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
-/* 中央ゲーム画面 */
+.left button {
+  background: rgba(0,0,0,0.6);
+  border: 2px solid #d4af37;
+  border-radius: 16px;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+  padding: 18px 0;
+}
+
+/* =====================
+   ゲーム画面（主役）
+===================== */
 .center {
-  position: relative;
-  border: 2px dashed #fff;
+  background: rgba(0,0,0,0.35);
+  border: 3px solid #d4af37;
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 360px;
+  min-height: 420px;
 }
 
 .center img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  max-height: 520px; /* ← 大きく */
   object-fit: contain;
 }
 
-.center-note {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  font-size: 12px;
-  color: #fff;
-  background: rgba(0,0,0,0.5);
-  padding: 4px 6px;
-}
-
-/* 下部 */
+/* =====================
+   下部ログ
+===================== */
 .bottom {
   position: relative;
-  z-index: 1;
-  padding: 16px;
+  z-index: 2;
+  padding: 16px 20px;
 }
 
-.bottom .empty {
+.log {
   height: 120px;
-  line-height: 120px;
-  opacity: 0.8;
+  background: rgba(0,0,0,0.55);
+  border: 3px solid #00ff66;
+  border-radius: 20px;
+  color: #0bff6a;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =====================
+   フッター操作
+===================== */
+.footer {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 0 20px 20px;
+}
+
+.footer button {
+  background: rgba(0,0,0,0.7);
+  border: 3px solid #d4af37;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 900;
+  padding: 18px 0;
 }
