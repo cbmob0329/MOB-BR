@@ -1,253 +1,298 @@
-/* =========================================================
-   MOB BR - style.css (FULL)
-   - 背景(main/ido/battle/area)を「同一表示枠」に固定
-   - 背景の手前にプレイヤー絵を重ねる
-   - 交戦時は右に敵チームも重ねる
-   - ログ枠は下部に固定（レイアウト画像イメージ）
-========================================================= */
+/* style.css (FULL)  MOB BR
+   Purpose:
+   - 全背景(main/ido/battle/area)の表示枠は同一サイズで統一
+   - P1.png(プレイヤー)は常時前面
+   - 交戦時は右側に敵(cpu画像)を同背景内で表示
+   - ログは下部固定。ただし「半分は背景にかかり、半分はみ出す」配置へ
+   - 全体背景(ゲーム画面外)は haikeimain.png を使用
+*/
 
 :root{
-  --scene-max: 600px;        /* 表示枠の最大（レイアウト画像が600角想定） */
-  --ui-radius: 14px;
+  --ui-max-w: 980px;
+  --ui-pad: 14px;
+
+  /* 進行背景( main/ido/battle/area )を表示する「舞台」サイズ（比率固定） */
+  --stage-aspect: 16 / 9;
+
+  /* ログ枠 */
+  --log-h: 160px;              /* ログ枠の高さ */
+  --log-half-out: 80px;        /* 下に出す量（ログの約半分） */
+  --log-radius: 18px;
+
+  /* z-index設計 */
+  --z-bg: 1;
+  --z-stage: 10;
+  --z-fg: 30;                  /* P1やチーム情報の前面 */
+  --z-enemy: 25;               /* 敵表示 */
+  --z-log: 20;                 /* ログは下部固定だが、P1を隠しにくい */
+  --z-overlay: 60;
+
+  /* 色 */
+  --text: #f5f5f5;
+  --muted: rgba(255,255,255,.78);
+  --panel: rgba(0,0,0,.55);
+  --panel2: rgba(0,0,0,.38);
+  --stroke: rgba(255,255,255,.16);
   --shadow: 0 10px 30px rgba(0,0,0,.45);
-
-  --nameplate-bg: rgba(35, 61, 180, .95);
-  --nameplate-border: #ffe600;
-
-  --log-bg: #1fb24a;
-  --log-border: #ff3b30;
-  --log-text: #ff3b30;
 }
 
 *{ box-sizing:border-box; }
-html,body{
-  margin:0; padding:0;
-  background:#0b0f17;
-  color:#fff;
-  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+html, body{
+  height:100%;
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  color: var(--text);
 }
 
-#appRoot{
-  min-height:100vh;
+body{
+  /* ✅ ゲーム画面全体の背景 */
+  background-image: url("./haikeimain.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+img{ image-rendering: pixelated; }
+button{ font-family: inherit; }
+
+/* ===== App Root ===== */
+#app, .app, #root{
+  min-height:100%;
   display:flex;
-  align-items:center;
   justify-content:center;
-  padding:14px;
+  align-items:flex-start;
+  padding: var(--ui-pad);
 }
 
-/* =========================
-   SCENE（表示枠を固定）
-   重要：どの背景でも「この枠」に100%フィット
-========================= */
-#scene{
-  position:relative;
-  width:min(94vw, var(--scene-max));
-  aspect-ratio: 1 / 1; /* ここで統一 */
-  border-radius: 18px;
-  overflow:hidden;
+/* ===== Main Frame ===== */
+#gameFrame, .game-frame, .frame{
+  width: min(var(--ui-max-w), calc(100vw - var(--ui-pad)*2));
+  position: relative;
+}
+
+/* ===== Stage (背景を同一サイズで表示する「舞台」) =====
+   - 背景は「この枠の中」に収める
+   - 画面比率が変わっても舞台は一定比率
+*/
+#stage, .stage, .scene, #scene{
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--stage-aspect);
+  overflow: hidden;
+  border-radius: 22px;
   box-shadow: var(--shadow);
-  background:#000;
+  border: 1px solid var(--stroke);
+  background: rgba(0,0,0,.25);
 }
 
-/* 背景画像：常に同一枠にフィット */
-#sceneBg{
+/* 背景レイヤー（main/ido/battle/area等） */
+#bgLayer, .bg-layer, .layer-bg, .stage-bg{
   position:absolute;
   inset:0;
+  z-index: var(--z-bg);
+}
+#bgLayer img, .bg-layer img, .layer-bg img, .stage-bg img{
   width:100%;
   height:100%;
-  object-fit: cover;            /* 枠に合わせて統一表示（余白やサイズ差を無くす） */
-  image-rendering: pixelated;   /* ドット絵向け */
-  transform: translateZ(0);
-  z-index: 1;
-}
-
-/* =========================
-   交戦キャラ表示（手前レイヤー）
-========================= */
-
-/* 左：プレイヤー */
-#teamPanel{
-  position:absolute;
-  left: 6%;
-  bottom: 22%;
-  width: 40%;
-  height: 46%;
-  display:flex;
-  align-items:flex-end;
-  justify-content:center;
-  pointer-events:none;
-  z-index: 4;
-}
-
-#teamImage{
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 10px 14px rgba(0,0,0,.55));
-}
-
-/* 右：敵（ui.js が生成する enemyWrap / enemyImg を使う） */
-#enemyWrap{
-  position:absolute;
-  right: 6%;
-  bottom: 22%;
-  width: 40%;
-  height: 46%;
-  display:none; /* 非交戦は消す */
-  pointer-events:none;
-  z-index: 4;
-}
-
-#enemyImg{
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 10px 14px rgba(0,0,0,.55));
-}
-
-/* =========================
-   名前プレート（チーム名＋メンバー名）
-   ※ui.jsでDOM生成、ここで見た目を統一
-========================= */
-.nameplate{
-  position:absolute;
-  width: 44%;
-  max-width: 260px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--nameplate-bg);
-  border: 5px solid var(--nameplate-border);
-  color:#fff;
-  font-weight:900;
-  text-align:center;
-  line-height: 1.15;
-  box-shadow: 0 8px 18px rgba(0,0,0,.35);
-  z-index: 5;
-}
-.nameplate .sub{
+  object-fit: cover;
   display:block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 800;
-  opacity: .95;
 }
 
-/* 左右の位置 */
-#playerNameplate{
-  left: 6%;
-  top: 14%;
-}
-#enemyNameplate{
-  right: 6%;
-  top: 14%;
-}
-
-/* =========================
-   LOG（下部固定・大きめ）
-========================= */
-#logPanel{
+/* 進行演出レイヤー（必要なら） */
+#midLayer, .mid-layer, .layer-mid{
   position:absolute;
-  left: 10%;
-  right: 10%;
-  bottom: 6%;
-  background: var(--log-bg);
-  border: 6px solid var(--log-border);
-  border-radius: 12px;
-  padding: 14px 14px 10px 14px;
-  z-index: 7;
-  box-shadow: 0 10px 20px rgba(0,0,0,.35);
-}
-
-#logText{
-  color: var(--log-text);
-  font-weight: 900;
-  font-size: 22px;
-  text-align:center;
-  letter-spacing: .02em;
-  min-height: 52px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-#logControls{
-  margin-top: 10px;
-  display:flex;
-  gap:10px;
-  justify-content:center;
-}
-
-#logControls button{
-  appearance:none;
-  border:none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight:900;
-  background:#111827;
-  color:#fff;
-  box-shadow: 0 8px 18px rgba(0,0,0,.25);
-}
-
-#logControls button:active{
-  transform: translateY(1px);
-}
-
-/* =========================
-   HUD（任意）
-========================= */
-#hud{
-  position:absolute;
-  left: 10px;
-  bottom: 10px;
-  display:flex;
-  gap:10px;
-  z-index: 8;
-  opacity:.9;
+  inset:0;
+  z-index: var(--z-stage);
   pointer-events:none;
 }
 
-#hud > div{
-  background: rgba(0,0,0,.55);
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 800;
+/* 前面レイヤー（P1 / UI / 敵チーム） */
+#fgLayer, .fg-layer, .layer-fg{
+  position:absolute;
+  inset:0;
+  z-index: var(--z-fg);
+  pointer-events:none;
 }
 
-/* =========================
-   RESULT
-========================= */
-#resultPanel{
-  width:min(94vw, var(--scene-max));
-  border-radius: 18px;
-  overflow:hidden;
-  box-shadow: var(--shadow);
-  background: rgba(0,0,0,.35);
-  padding: 10px;
-  color:#fff;
+/* ===== Player Side (常時前面) ===== */
+#playerSide, .player-side, .player-panel, #playerPanel{
+  position:absolute;
+  left: 3.2%;
+  top: 8%;
+  width: 46%;
+  height: 78%;
+  z-index: var(--z-fg);
+  pointer-events:none;
 }
 
-#resultTitle{
-  text-align:center;
+/* プレイヤー画像（P1.png） */
+#playerImage, .player-image, #playerPic, .p1-image{
+  position:absolute;
+  left: 0;
+  top: 10%;
+  width: 58%;
+  height: auto;
+  max-height: 82%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
+}
+
+/* チーム名＋メンバー縦並び（✅見やすさ優先） */
+#playerInfo, .player-info, #playerText, .team-info{
+  position:absolute;
+  left: 60%;
+  top: 12%;
+  width: 40%;
+  padding: 10px 10px;
+  background: var(--panel2);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
+}
+
+.player-info .team-name,
+#playerInfo .team-name,
+.team-info .team-name{
   font-weight: 900;
   font-size: 18px;
-  padding: 6px 0;
+  line-height: 1.15;
+  letter-spacing: .02em;
+  text-shadow: 0 2px 0 rgba(0,0,0,.65);
+  margin-bottom: 8px;
 }
 
-#resultControls{
+.player-info .member,
+#playerInfo .member,
+.team-info .member{
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text);
+  text-shadow: 0 2px 0 rgba(0,0,0,.65);
+  margin: 2px 0;
+}
+
+/* ===== Enemy Side (交戦時のみ右側に表示) ===== */
+#enemySide, .enemy-side, .enemy-panel, #enemyPanel{
+  position:absolute;
+  right: 3.2%;
+  top: 12%;
+  width: 42%;
+  height: 70%;
+  z-index: var(--z-enemy);
+  pointer-events:none;
+  display:none; /* ui.js が交戦時に表示 */
+}
+
+#enemyImage, .enemy-image, #enemyPic{
+  position:absolute;
+  right: 0;
+  top: 8%;
+  width: 66%;
+  height: auto;
+  max-height: 84%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
+}
+
+#enemyInfo, .enemy-info{
+  position:absolute;
+  right: 68%;
+  top: 12%;
+  width: 32%;
+  padding: 10px 10px;
+  background: var(--panel2);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
+  text-align:left;
+}
+
+.enemy-info .team-name{
+  font-weight: 900;
+  font-size: 16px;
+  line-height: 1.15;
+  text-shadow: 0 2px 0 rgba(0,0,0,.65);
+}
+
+/* ===== Log (下部固定 / 半分はみ出し) ===== */
+#logPanel, .log-panel, #logBox, .log-box, #logArea{
+  position:absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 94%;
+  height: var(--log-h);
+
+  /* ✅半分はみ出し */
+  bottom: calc(-1 * var(--log-half-out));
+
+  z-index: var(--z-log);
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: var(--log-radius);
+  box-shadow: 0 16px 30px rgba(0,0,0,.55);
+  backdrop-filter: blur(3px);
+  overflow:hidden;
+  pointer-events:none;
+}
+
+#logPanel .log-inner,
+.log-panel .log-inner,
+#logBox .log-inner,
+.log-box .log-inner,
+#logArea .log-inner{
+  padding: 14px 16px;
+  height: 100%;
   display:flex;
-  justify-content:center;
-  padding: 10px 0 6px 0;
+  flex-direction:column;
+  justify-content:flex-start;
+  gap: 8px;
 }
 
-#resultControls button{
-  appearance:none;
-  border:none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight:900;
-  background:#111827;
-  color:#fff;
+/* ✅ログ文字は白（赤は使わない） */
+#logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
+  margin:0;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1.35;
+  text-shadow: 0 2px 0 rgba(0,0,0,.70);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
+
+/* ログに「赤」を使ってた場合の保険（強制的に白へ） */
+.log-red, .danger, .warn, .critical{
+  color: #ffffff !important;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 520px){
+  :root{
+    --log-h: 150px;
+    --log-half-out: 78px;
+  }
+  #playerInfo, .player-info, #playerText, .team-info{
+    padding: 8px 8px;
+  }
+  .player-info .team-name,
+  #playerInfo .team-name,
+  .team-info .team-name{
+    font-size: 16px;
+  }
+  .player-info .member,
+  #playerInfo .member,
+  .team-info .member{
+    font-size: 14px;
+  }
+  #logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
+    font-size: 15px;
+  }
+}
+
+/* ===== Utility (必要なら) ===== */
+.hidden{ display:none !important; }
+.show{ display:block !important; }
