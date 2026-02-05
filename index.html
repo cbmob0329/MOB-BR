@@ -2,85 +2,75 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>MOB Battle Royale</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-
-  <!-- Reset / Base -->
-  <meta name="theme-color" content="#000000" />
-
-  <!-- Style -->
-  <link rel="stylesheet" href="./style.css" />
-
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>MOB BR</title>
+  <link rel="stylesheet" href="style.css?v=1" />
 </head>
+
 <body>
+  <!-- 画面全体 -->
+  <div id="appRoot">
 
-  <!-- =========================
-       APP ROOT
-  ========================== -->
-  <div id="app">
+    <!-- 背景（紙芝居） -->
+    <div id="scene">
+      <img id="sceneBg" src="assets/main1.png?v=1" alt="" />
 
-    <!-- =========================
-         HEADER
-    ========================== -->
-    <header id="header">
-      <div id="header-left">
-        <span id="dateText">----</span>
-      </div>
-      <div id="header-right">
-        <img id="logo" src="assets/rogo.png" alt="logo" />
-      </div>
-    </header>
-
-    <!-- =========================
-         MAIN VISUAL AREA
-    ========================== -->
-    <main id="main">
-
-      <!-- 背景（紙芝居） -->
-      <div id="bgLayer">
-        <img id="bgImage" src="assets/main1.png" alt="background" />
+      <!-- 前面：チーム画像 -->
+      <div id="teamPanel">
+        <img id="teamImage" src="assets/P1.png?v=1" alt="" />
       </div>
 
-      <!-- 左：プレイヤー -->
-      <div id="leftCharacter">
-        <img id="playerImage" src="assets/P1.png" alt="player team" />
-        <div class="teamName" id="playerTeamName"></div>
+      <!-- 中央ログ枠（RPGセリフ枠） -->
+      <div id="logPanel">
+        <div id="logText">準備中…</div>
+
+        <!-- 右下操作 -->
+        <div id="logControls">
+          <button id="btnAuto" type="button">AUTO</button>
+          <button id="btnNext" type="button">NEXT</button>
+        </div>
       </div>
 
-      <!-- 右：敵チーム -->
-      <div id="rightCharacter">
-        <img id="enemyImage" src="" alt="enemy team" />
-        <div class="teamName" id="enemyTeamName"></div>
+      <!-- 右上ステータス（最低限） -->
+      <div id="hud">
+        <div id="hudDate">1989 / 1月 / 1週</div>
+        <div id="hudMode">MODE: VIEW</div>
       </div>
+    </div>
 
-      <!-- 中央：セリフ／ログ枠 -->
-      <div id="messageBox">
-        <div id="messageText"></div>
+    <!-- リザルト（必要ならui.jsが表示制御） -->
+    <div id="resultPanel" style="display:none;">
+      <div id="resultTitle">RESULT</div>
+      <div id="resultTableWrap"></div>
+      <div id="resultControls">
+        <button id="btnResultNext" type="button">NEXT</button>
       </div>
-
-    </main>
-
-    <!-- =========================
-         FOOTER / CONTROLS
-    ========================== -->
-    <footer id="footer">
-      <button id="autoBtn">AUTO</button>
-      <button id="nextBtn">NEXT</button>
-    </footer>
+    </div>
 
   </div>
 
-  <!-- =========================
-       SCRIPTS
-       ※9ファイル固定・順序厳守
-  ========================== -->
-  <script src="./data_rules.js"></script>
-  <script src="./data_player.js"></script>
-  <script src="./data_cpu_teams.js"></script>
-  <script src="./storage.js"></script>
-  <script src="./ui.js"></script>
-  <script src="./sim.js"></script>
-  <script src="./app.js"></script>
+  <!-- =====================================================
+       SCRIPT LOADING ORDER（ここが「影響が出る部分」）
+       - 定義/保存 → UI → sim分割 → sim本体 → app
+  ====================================================== -->
+  <script src="data_rules.js?v=1"></script>
+  <script src="storage.js?v=1"></script>
 
+  <script src="data_player.js?v=1"></script>
+  <script src="data_cpu_teams.js?v=1"></script>
+
+  <script src="ui.js?v=1"></script>
+
+  <!-- sim 分割（新規追加ファイル） -->
+  <script src="sim-map.js?v=1"></script>
+  <script src="sim-events.js?v=1"></script>
+  <script src="sim-battle.js?v=1"></script>
+  <script src="sim-result.js?v=1"></script>
+
+  <!-- sim 司令塔（window.Sim を提供） -->
+  <script src="sim.js?v=1"></script>
+
+  <!-- 司令塔 -->
+  <script src="app.js?v=1"></script>
 </body>
 </html>
