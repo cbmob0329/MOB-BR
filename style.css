@@ -1,30 +1,31 @@
 /* style.css (FULL)  MOB BR
-   Purpose:
-   - 全背景(main/ido/battle/area)の表示枠は同一サイズで統一
-   - P1.png(プレイヤー)は常時前面
-   - 交戦時は右側に敵(cpu画像)を同背景内で表示
-   - ログは下部固定。ただし「半分は背景にかかり、半分はみ出す」配置へ
-   - 全体背景(ゲーム画面外)は haikeimain.png を使用
+   v=20260205_03
+   Fix:
+   - ゲーム枠が上に寄る → #app を縦中央寄せ（スマホでも中央に）
+   - 画面全体が白い → body背景に「画像 + 黒フォールバック」を強制
+   - ログ文字は白固定
+   - ログ枠は下部固定＆半分はみ出し
+   - P1は常時前面、チーム名/メンバー名は縦並び
 */
 
 :root{
   --ui-max-w: 980px;
   --ui-pad: 14px;
 
-  /* 進行背景( main/ido/battle/area )を表示する「舞台」サイズ（比率固定） */
+  /* 進行背景を表示する舞台比率 */
   --stage-aspect: 16 / 9;
 
   /* ログ枠 */
-  --log-h: 160px;              /* ログ枠の高さ */
-  --log-half-out: 80px;        /* 下に出す量（ログの約半分） */
+  --log-h: 160px;
+  --log-half-out: 90px;  /* ←「半分はみ出す」を強めに（好みに応じて 80〜120） */
   --log-radius: 18px;
 
-  /* z-index設計 */
+  /* z-index */
   --z-bg: 1;
   --z-stage: 10;
-  --z-fg: 30;                  /* P1やチーム情報の前面 */
-  --z-enemy: 25;               /* 敵表示 */
-  --z-log: 20;                 /* ログは下部固定だが、P1を隠しにくい */
+  --z-enemy: 25;
+  --z-log: 20;
+  --z-fg: 30;
   --z-overlay: 60;
 
   /* 色 */
@@ -34,6 +35,9 @@
   --panel2: rgba(0,0,0,.38);
   --stroke: rgba(255,255,255,.16);
   --shadow: 0 10px 30px rgba(0,0,0,.45);
+
+  /* 背景フォールバック（画像が読めなくても白にならない） */
+  --bg-fallback: #0b0f17;
 }
 
 *{ box-sizing:border-box; }
@@ -44,25 +48,35 @@ html, body{
   color: var(--text);
 }
 
+/* ✅ ページ全体背景：画像 + 黒フォールバック（ここが白対策の本丸） */
 body{
-  /* ✅ ゲーム画面全体の背景 */
+  background-color: var(--bg-fallback);
   background-image: url("./haikeimain.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
+
+  /* iPhoneの余白対策 */
+  min-height: 100vh;
 }
 
+/* 画像はドット寄りに */
 img{ image-rendering: pixelated; }
 button{ font-family: inherit; }
 
 /* ===== App Root ===== */
+/* ✅ ここが「上に寄る」原因だったので、縦中央寄せにする */
 #app, .app, #root{
-  min-height:100%;
+  min-height: 100vh;
   display:flex;
-  justify-content:center;
-  align-items:flex-start;
-  padding: var(--ui-pad);
+  justify-content:center;     /* 横中央 */
+  align-items:center;         /* 縦中央 ←重要 */
+  padding:
+    calc(var(--ui-pad) + env(safe-area-inset-top))
+    var(--ui-pad)
+    calc(var(--ui-pad) + env(safe-area-inset-bottom))
+    var(--ui-pad);
 }
 
 /* ===== Main Frame ===== */
@@ -71,10 +85,7 @@ button{ font-family: inherit; }
   position: relative;
 }
 
-/* ===== Stage (背景を同一サイズで表示する「舞台」) =====
-   - 背景は「この枠の中」に収める
-   - 画面比率が変わっても舞台は一定比率
-*/
+/* ===== Stage ===== */
 #stage, .stage, .scene, #scene{
   position: relative;
   width: 100%;
@@ -86,7 +97,7 @@ button{ font-family: inherit; }
   background: rgba(0,0,0,.25);
 }
 
-/* 背景レイヤー（main/ido/battle/area等） */
+/* 背景レイヤー */
 #bgLayer, .bg-layer, .layer-bg, .stage-bg{
   position:absolute;
   inset:0;
@@ -99,7 +110,7 @@ button{ font-family: inherit; }
   display:block;
 }
 
-/* 進行演出レイヤー（必要なら） */
+/* 演出レイヤー */
 #midLayer, .mid-layer, .layer-mid{
   position:absolute;
   inset:0;
@@ -107,7 +118,7 @@ button{ font-family: inherit; }
   pointer-events:none;
 }
 
-/* 前面レイヤー（P1 / UI / 敵チーム） */
+/* 前面レイヤー */
 #fgLayer, .fg-layer, .layer-fg{
   position:absolute;
   inset:0;
@@ -115,7 +126,7 @@ button{ font-family: inherit; }
   pointer-events:none;
 }
 
-/* ===== Player Side (常時前面) ===== */
+/* ===== Player Side ===== */
 #playerSide, .player-side, .player-panel, #playerPanel{
   position:absolute;
   left: 3.2%;
@@ -126,24 +137,24 @@ button{ font-family: inherit; }
   pointer-events:none;
 }
 
-/* プレイヤー画像（P1.png） */
+/* ✅ 1枚目イメージ：P1を少し小さくして情報が見えるように */
 #playerImage, .player-image, #playerPic, .p1-image{
   position:absolute;
   left: 0;
   top: 10%;
-  width: 58%;
+  width: 52%;         /* ←58%→52%（少し小さく） */
   height: auto;
-  max-height: 82%;
+  max-height: 78%;
   object-fit: contain;
   filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
 }
 
-/* チーム名＋メンバー縦並び（✅見やすさ優先） */
+/* チーム情報パネル（縦並び：チーム名→メンバー1→2→3） */
 #playerInfo, .player-info, #playerText, .team-info{
   position:absolute;
-  left: 60%;
-  top: 12%;
-  width: 40%;
+  left: 54%;          /* ←画像の右に確実に入る */
+  top: 10%;
+  width: 46%;
   padding: 10px 10px;
   background: var(--panel2);
   border: 1px solid var(--stroke);
@@ -169,12 +180,12 @@ button{ font-family: inherit; }
   font-weight: 800;
   font-size: 15px;
   line-height: 1.35;
-  color: var(--text);
+  color: #fff;
   text-shadow: 0 2px 0 rgba(0,0,0,.65);
   margin: 2px 0;
 }
 
-/* ===== Enemy Side (交戦時のみ右側に表示) ===== */
+/* ===== Enemy Side ===== */
 #enemySide, .enemy-side, .enemy-panel, #enemyPanel{
   position:absolute;
   right: 3.2%;
@@ -183,7 +194,7 @@ button{ font-family: inherit; }
   height: 70%;
   z-index: var(--z-enemy);
   pointer-events:none;
-  display:none; /* ui.js が交戦時に表示 */
+  display:none;
 }
 
 #enemyImage, .enemy-image, #enemyPic{
@@ -218,7 +229,7 @@ button{ font-family: inherit; }
   text-shadow: 0 2px 0 rgba(0,0,0,.65);
 }
 
-/* ===== Log (下部固定 / 半分はみ出し) ===== */
+/* ===== Log ===== */
 #logPanel, .log-panel, #logBox, .log-box, #logArea{
   position:absolute;
   left: 50%;
@@ -226,7 +237,7 @@ button{ font-family: inherit; }
   width: 94%;
   height: var(--log-h);
 
-  /* ✅半分はみ出し */
+  /* ✅ 下に下げる（半分はみ出し） */
   bottom: calc(-1 * var(--log-half-out));
 
   z-index: var(--z-log);
@@ -236,7 +247,9 @@ button{ font-family: inherit; }
   box-shadow: 0 16px 30px rgba(0,0,0,.55);
   backdrop-filter: blur(3px);
   overflow:hidden;
-  pointer-events:none;
+
+  /* ボタンは押せる必要があるので logPanel だけ pointer-events ON */
+  pointer-events:auto;
 }
 
 #logPanel .log-inner,
@@ -252,10 +265,10 @@ button{ font-family: inherit; }
   gap: 8px;
 }
 
-/* ✅ログ文字は白（赤は使わない） */
+/* ✅ ログ文字は白固定（赤禁止） */
 #logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
   margin:0;
-  color: #ffffff;
+  color: #ffffff !important;
   font-weight: 800;
   font-size: 16px;
   line-height: 1.35;
@@ -264,7 +277,7 @@ button{ font-family: inherit; }
   white-space: pre-wrap;
 }
 
-/* ログに「赤」を使ってた場合の保険（強制的に白へ） */
+/* 保険：赤系クラスがあっても白に潰す */
 .log-red, .danger, .warn, .critical{
   color: #ffffff !important;
 }
@@ -273,11 +286,19 @@ button{ font-family: inherit; }
 @media (max-width: 520px){
   :root{
     --log-h: 150px;
-    --log-half-out: 78px;
+    --log-half-out: 96px;
   }
+
+  #playerImage, .player-image, #playerPic, .p1-image{
+    width: 50%;
+  }
+
   #playerInfo, .player-info, #playerText, .team-info{
     padding: 8px 8px;
+    left: 52%;
+    width: 48%;
   }
+
   .player-info .team-name,
   #playerInfo .team-name,
   .team-info .team-name{
@@ -288,11 +309,12 @@ button{ font-family: inherit; }
   .team-info .member{
     font-size: 14px;
   }
+
   #logText, .log-text, #logLine, .log-line, #logPanel p, .log-panel p{
     font-size: 15px;
   }
 }
 
-/* ===== Utility (必要なら) ===== */
+/* Utility */
 .hidden{ display:none !important; }
 .show{ display:block !important; }
