@@ -1,303 +1,253 @@
-/* =========================================
+/* =========================================================
    MOB BR - style.css (FULL)
-   - Smartphone-first
-   - Paper-theater layout: BG + Left/Right chars + Center message box
-   - No external libs
-========================================= */
+   - 背景(main/ido/battle/area)を「同一表示枠」に固定
+   - 背景の手前にプレイヤー絵を重ねる
+   - 交戦時は右に敵チームも重ねる
+   - ログ枠は下部に固定（レイアウト画像イメージ）
+========================================================= */
 
 :root{
-  --bg:#000;
-  --panel:#0b0f17;
-  --panel2:#0f172a;
-  --text:#e5e7eb;
-  --muted:#9ca3af;
-  --line:rgba(255,255,255,.14);
-  --shadow:0 10px 26px rgba(0,0,0,.55);
+  --scene-max: 600px;        /* 表示枠の最大（レイアウト画像が600角想定） */
+  --ui-radius: 14px;
+  --shadow: 0 10px 30px rgba(0,0,0,.45);
 
-  --safe-top: env(safe-area-inset-top);
-  --safe-bottom: env(safe-area-inset-bottom);
+  --nameplate-bg: rgba(35, 61, 180, .95);
+  --nameplate-border: #ffe600;
 
-  --header-h: 56px;
-  --footer-h: 64px;
-
-  --radius:14px;
-  --btn-radius:14px;
-
-  --msg-h: 132px; /* 中央セリフ枠の高さ（スマホ基準） */
-  --char-w: 40%;  /* 左右キャラ枠の幅比率 */
-  --gap: 10px;
+  --log-bg: #1fb24a;
+  --log-border: #ff3b30;
+  --log-text: #ff3b30;
 }
 
 *{ box-sizing:border-box; }
 html,body{
-  height:100%;
-  margin:0;
-  padding:0;
-  background:var(--bg);
-  color:var(--text);
-  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  margin:0; padding:0;
+  background:#0b0f17;
+  color:#fff;
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
 }
 
-img{
-  display:block;
-  max-width:100%;
-  height:auto;
-  image-rendering: auto;
-}
-
-button{
-  font: inherit;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#app{
-  min-height:100svh;
-  display:flex;
-  flex-direction:column;
-  padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
-}
-
-/* =========================================
-   HEADER
-========================================= */
-#header{
-  height: var(--header-h);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10,10,12,.92), rgba(10,10,12,.75));
-  backdrop-filter: blur(6px);
-}
-
-#header-left{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  min-width: 0;
-}
-
-#dateText{
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: .02em;
-  color: var(--text);
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  max-width: 60vw;
-}
-
-#header-right{
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap: 10px;
-}
-
-#logo{
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,.35));
-}
-
-/* =========================================
-   MAIN (Paper Theater)
-========================================= */
-#main{
-  position:relative;
-  flex:1;
-  overflow:hidden;
-  background: #000;
-}
-
-/* 背景レイヤー */
-#bgLayer{
-  position:absolute;
-  inset:0;
+#appRoot{
+  min-height:100vh;
   display:flex;
   align-items:center;
   justify-content:center;
+  padding:14px;
+}
+
+/* =========================
+   SCENE（表示枠を固定）
+   重要：どの背景でも「この枠」に100%フィット
+========================= */
+#scene{
+  position:relative;
+  width:min(94vw, var(--scene-max));
+  aspect-ratio: 1 / 1; /* ここで統一 */
+  border-radius: 18px;
+  overflow:hidden;
+  box-shadow: var(--shadow);
   background:#000;
 }
 
-#bgImage{
+/* 背景画像：常に同一枠にフィット */
+#sceneBg{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
-  object-fit: cover; /* 画面端黒帯を作らない */
-  object-position: center center;
+  object-fit: cover;            /* 枠に合わせて統一表示（余白やサイズ差を無くす） */
+  image-rendering: pixelated;   /* ドット絵向け */
   transform: translateZ(0);
+  z-index: 1;
 }
 
-/* 左右キャラ */
-#leftCharacter,
-#rightCharacter{
+/* =========================
+   交戦キャラ表示（手前レイヤー）
+========================= */
+
+/* 左：プレイヤー */
+#teamPanel{
   position:absolute;
-  top: 0;
-  bottom: 0;
-  width: var(--char-w);
+  left: 6%;
+  bottom: 22%;
+  width: 40%;
+  height: 46%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
-  padding: 10px 10px calc(var(--footer-h) + var(--msg-h) + 18px);
   pointer-events:none;
+  z-index: 4;
 }
 
-#leftCharacter{ left: 0; }
-#rightCharacter{ right: 0; }
-
-#playerImage,
-#enemyImage{
-  width: min(92%, 260px);
-  max-height: 52svh;
+#teamImage{
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 10px 18px rgba(0,0,0,.45));
-  transform: translateZ(0);
+  image-rendering: pixelated;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.55));
 }
 
-/* 敵画像は基本「交戦時のみ表示」想定 */
-#enemyImage{
-  opacity: 0;
-}
-
-.teamName{
+/* 右：敵（ui.js が生成する enemyWrap / enemyImg を使う） */
+#enemyWrap{
   position:absolute;
-  left: 10px;
-  right: 10px;
-  bottom: calc(var(--footer-h) + var(--msg-h) + 22px);
-  margin: 0 auto;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(0,0,0,.55);
+  right: 6%;
+  bottom: 22%;
+  width: 40%;
+  height: 46%;
+  display:none; /* 非交戦は消す */
+  pointer-events:none;
+  z-index: 4;
+}
+
+#enemyImg{
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.55));
+}
+
+/* =========================
+   名前プレート（チーム名＋メンバー名）
+   ※ui.jsでDOM生成、ここで見た目を統一
+========================= */
+.nameplate{
+  position:absolute;
+  width: 44%;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--nameplate-bg);
+  border: 5px solid var(--nameplate-border);
+  color:#fff;
+  font-weight:900;
+  text-align:center;
+  line-height: 1.15;
+  box-shadow: 0 8px 18px rgba(0,0,0,.35);
+  z-index: 5;
+}
+.nameplate .sub{
+  display:block;
+  margin-top: 4px;
   font-size: 12px;
   font-weight: 800;
-  text-align:center;
-  color: var(--text);
-  box-shadow: var(--shadow);
-  opacity: 0; /* 通常は非表示、必要時にJSで出す */
+  opacity: .95;
 }
 
-/* 左右のチーム名位置を少し調整 */
-#leftCharacter .teamName{ bottom: calc(var(--footer-h) + var(--msg-h) + 22px); }
-#rightCharacter .teamName{ bottom: calc(var(--footer-h) + var(--msg-h) + 22px); }
+/* 左右の位置 */
+#playerNameplate{
+  left: 6%;
+  top: 14%;
+}
+#enemyNameplate{
+  right: 6%;
+  top: 14%;
+}
 
-/* 中央セリフ枠 */
-#messageBox{
+/* =========================
+   LOG（下部固定・大きめ）
+========================= */
+#logPanel{
   position:absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(var(--footer-h) + 10px);
-  width: min(94vw, 560px);
-  height: var(--msg-h);
-  padding: 12px 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10,12,18,.82), rgba(10,12,18,.66));
-  box-shadow: var(--shadow);
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  left: 10%;
+  right: 10%;
+  bottom: 6%;
+  background: var(--log-bg);
+  border: 6px solid var(--log-border);
+  border-radius: 12px;
+  padding: 14px 14px 10px 14px;
+  z-index: 7;
+  box-shadow: 0 10px 20px rgba(0,0,0,.35);
 }
 
-#messageText{
-  width:100%;
-  height:100%;
-  overflow:hidden;
-  display:flex;
-  align-items:center;
-  justify-content:center;
+#logText{
+  color: var(--log-text);
+  font-weight: 900;
+  font-size: 22px;
   text-align:center;
-  font-size: 16px;
-  line-height: 1.35;
-  font-weight: 900;
-  letter-spacing: .01em;
-  padding: 2px 6px;
-  text-shadow: 0 2px 10px rgba(0,0,0,.45);
-  word-break: keep-all;
-}
-
-/* =========================================
-   FOOTER / CONTROLS
-========================================= */
-#footer{
-  height: var(--footer-h);
+  letter-spacing: .02em;
+  min-height: 52px;
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10,10,12,.72), rgba(10,10,12,.92));
-  backdrop-filter: blur(6px);
+  justify-content:center;
 }
 
-#autoBtn,
-#nextBtn{
-  flex:1;
-  height: 46px;
-  border-radius: var(--btn-radius);
-  border: 1px solid rgba(255,255,255,.16);
-  background: rgba(20,24,32,.85);
-  color: var(--text);
-  font-weight: 900;
-  letter-spacing: .04em;
-  box-shadow: 0 8px 18px rgba(0,0,0,.45);
+#logControls{
+  margin-top: 10px;
+  display:flex;
+  gap:10px;
+  justify-content:center;
 }
 
-#autoBtn:active,
-#nextBtn:active{
+#logControls button{
+  appearance:none;
+  border:none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight:900;
+  background:#111827;
+  color:#fff;
+  box-shadow: 0 8px 18px rgba(0,0,0,.25);
+}
+
+#logControls button:active{
   transform: translateY(1px);
 }
 
-#autoBtn.is-on{
-  border-color: rgba(80,255,160,.55);
-  box-shadow: 0 10px 22px rgba(0,0,0,.55), 0 0 0 2px rgba(80,255,160,.16) inset;
-}
-
-#nextBtn.is-disabled,
-#autoBtn.is-disabled{
-  opacity: .45;
+/* =========================
+   HUD（任意）
+========================= */
+#hud{
+  position:absolute;
+  left: 10px;
+  bottom: 10px;
+  display:flex;
+  gap:10px;
+  z-index: 8;
+  opacity:.9;
   pointer-events:none;
 }
 
-/* =========================================
-   Utility (Optional)
-========================================= */
-.hidden{ display:none !important; }
-.fade-in{ animation: fadeIn .18s ease-out both; }
-.fade-out{ animation: fadeOut .18s ease-out both; }
-.slide-left{ animation: slideLeft .22s ease-out both; }
-.slide-right{ animation: slideRight .22s ease-out both; }
-
-@keyframes fadeIn{ from{opacity:0} to{opacity:1} }
-@keyframes fadeOut{ from{opacity:1} to{opacity:0} }
-@keyframes slideLeft{ from{transform:translateX(24px)} to{transform:translateX(0)} }
-@keyframes slideRight{ from{transform:translateX(-24px)} to{transform:translateX(0)} }
-
-/* =========================================
-   Responsive fine-tuning
-========================================= */
-@media (max-width: 360px){
-  :root{
-    --msg-h: 120px;
-    --header-h: 54px;
-    --footer-h: 62px;
-  }
-  #messageText{ font-size: 15px; }
+#hud > div{
+  background: rgba(0,0,0,.55);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-@media (min-width: 768px){
-  :root{
-    --msg-h: 148px;
-    --char-w: 36%;
-  }
-  #messageText{ font-size: 17px; }
+/* =========================
+   RESULT
+========================= */
+#resultPanel{
+  width:min(94vw, var(--scene-max));
+  border-radius: 18px;
+  overflow:hidden;
+  box-shadow: var(--shadow);
+  background: rgba(0,0,0,.35);
+  padding: 10px;
+  color:#fff;
+}
+
+#resultTitle{
+  text-align:center;
+  font-weight: 900;
+  font-size: 18px;
+  padding: 6px 0;
+}
+
+#resultControls{
+  display:flex;
+  justify-content:center;
+  padding: 10px 0 6px 0;
+}
+
+#resultControls button{
+  appearance:none;
+  border:none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight:900;
+  background:#111827;
+  color:#fff;
 }
