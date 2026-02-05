@@ -1,22 +1,34 @@
 :root{
-  --pad: 14px;
-  --gap: 12px;
+  --pad: 16px;
+  --gap: 14px;
 
-  /* 左のボタン列幅（小さめに） */
-  --leftW: 210px;
+  --leftW: 240px;
+  --rightMax: 720px;
 
   --shadow: 0 18px 40px rgba(0,0,0,.45);
   --textShadow: 0 3px 0 rgba(0,0,0,.55);
 
   --floatAmp: 5px;
   --floatTime: 3.2s;
+
+  --popZ: 40;
 }
 
 .no-callout, .no-callout *{
   -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none;   /* 長押しのコピーUI抑止 */
+  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
+}
+.allow-select{
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
+
+/* 追加：iOSのダブルタップズーム抑止の補強（JSでも止めるのが確実） */
+html, body, #app{
+  touch-action: manipulation;
 }
 
 *{ box-sizing: border-box; }
@@ -24,7 +36,7 @@ html, body{
   margin:0;
   height:100%;
   background:#000;
-  overflow:hidden; /* 画面全体はスクロールさせない */
+  overflow:hidden;
   font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }
 
@@ -33,14 +45,13 @@ html, body{
   width: 100vw;
   height: 100svh;
   overflow:hidden;
-
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
 
   display:grid;
   grid-template-columns: var(--leftW) minmax(0, 1fr);
   gap: var(--gap);
-  align-items: stretch;
+  align-items: start;
 }
 
 /* background */
@@ -58,8 +69,7 @@ html, body{
 
 /* LEFT: only this area scrolls (loop) */
 .leftCol{
-  height: 100%;
-  overflow:hidden;
+  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
 }
 
 .loopScroll{
@@ -69,6 +79,7 @@ html, body{
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-top: 6px;
+  padding-right: 2px;
   scrollbar-width: none;
 }
 .loopScroll::-webkit-scrollbar{ display:none; }
@@ -76,7 +87,7 @@ html, body{
 .loopInner{
   display:flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 /* image buttons */
@@ -110,46 +121,50 @@ html, body{
   100%{ transform: translateY(0); }
 }
 
-/* RIGHT column layout: 上・中・下を必ず画面内に収める */
+/* RIGHT column
+   ★ここが肝：右カラムも「画面内に収まる高さ」を持たせて、内部で配分する */
 .rightCol{
-  height: 100%;
   width: 100%;
-  max-width: 760px;
+  max-width: var(--rightMax);
   justify-self: start;
 
-  display:grid;
-  grid-template-rows: auto 1fr auto;
-  gap: var(--gap);
+  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
   min-height: 0;
+
+  display:flex;
+  flex-direction: column;
+  gap: var(--gap);
 }
 
 /* top row */
 .topRow{
+  flex: 0 0 auto;
   display:grid;
   grid-template-columns: 1fr 1.25fr;
   gap: var(--gap);
   align-items: start;
+  min-height: 0;
 }
 
-/* logo */
 .logoWrap{
   display:flex;
+  justify-content:flex-start;
   align-items:flex-start;
 }
 .logoWrap img{
   width: 100%;
-  max-width: 330px;
+  max-width: 320px;
   height:auto;
   display:block;
   filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
   pointer-events:none;
 }
 
-/* job panel: テキストが枠内に必ず収まる */
+/* job panel */
 .jobWrap{
   position: relative;
   width: 100%;
-  height: clamp(110px, 16svh, 150px);
+  height: clamp(110px, 18vh, 140px);
   border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -167,45 +182,49 @@ html, body{
   inset:0;
   padding: 12px 14px;
   color:#fff;
-  font-weight: 1000;
+  font-weight: 900;
   text-shadow: var(--textShadow);
-
   display:flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-
+  gap: 6px;
   min-width: 0;
 }
-.jobLine{
-  /* ここが重要：端末幅に合わせて縮む */
-  font-size: clamp(12px, 2.4vw, 18px);
-  line-height: 1.12;
 
-  white-space: normal;            /* 折り返しOK */
-  overflow-wrap: anywhere;        /* 長い名前でもはみ出さない */
-  word-break: break-word;
+/* ★nowrapをやめて「枠内に収める」優先
+   ただし1行で見せたいので ellipsis にする（値が長い時は切る） */
+.jobLine{
+  font-size: clamp(14px, 2.2vw, 20px);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .jobLine.small{
-  font-size: clamp(11px, 2.1vw, 16px);
+  font-size: clamp(12px, 1.8vw, 16px);
   opacity: .95;
 }
 .tappable{ cursor:pointer; }
 .tappable:active{ opacity:.85; }
 
-/* middle: main square (枠は大きく、でも下部を潰さない) */
+/* main square */
 .gameRow{
+  flex: 1 1 auto;
   min-height: 0;
   display:flex;
-  align-items: center;
+  justify-content:flex-start;
 }
 
-/* 画面の縦に合わせて自動調整 */
+/* ★縦に収めるため「高さ基準」で最大化する（正方形維持） */
 .mainSquare{
   position: relative;
-  width: min(56svh, 560px);
-  max-width: 100%;
+  width: min(560px, 100%);
+  height: auto;
   aspect-ratio: 1 / 1;
+
+  /* 右カラムの残り高さの中で収める */
+  max-height: 52vh;
+  max-height: calc(100% - 4px);
   border-radius: 18px;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -222,70 +241,79 @@ html, body{
   z-index: 2;
 }
 
-/* team image: さらに少し小さくしてメンバー領域確保 */
+/* team image: smaller + higher to fix member area */
 .teamImg{
   position:absolute;
-  left: 11%;
-  right: 11%;
-  top: 10%;
-  bottom: 34%;  /* 下に文字スペースを確保 */
-  width: 78%;
-  height: 56%;
+  left: 10%;
+  right: 10%;
+  top: 8%;
+  bottom: 32%;
+  width: 80%;
+  height: 60%;
   object-fit: contain;
   z-index: 3;
   pointer-events:none;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
 }
 
-/* member text: 枠内に収める */
+/* member text */
 .members{
   position:absolute;
   left: 10%;
   right: 10%;
   bottom: 8%;
   z-index: 4;
-
   display:flex;
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
-
   min-width: 0;
 }
+
+/* ★枠内優先で可変 */
 .membersLabel{
-  font-size: clamp(12px, 2.2vw, 18px);
+  font-size: clamp(14px, 2vw, 18px);
   font-weight: 1000;
   color:#111;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .membersNames{
-  font-size: clamp(12px, 2.4vw, 18px);
+  font-size: clamp(14px, 2vw, 18px);
   font-weight: 1000;
   color:#222;
-
+  letter-spacing: .03em;
   display:flex;
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
-
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  max-width: 100%;
+}
+.mName{
+  max-width: 100%;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 .sep{ opacity:.75; }
 
-/* bottom rog panel: はみ出さないようsvhで制御 */
+/* bottom rog panel */
 .bottomRow{
+  flex: 0 0 auto;
   min-height: 0;
 }
 
+/* ★下を切らない：高さを可変にして、画面が低い時は縮む */
 .rogWrap{
   position: relative;
   width: 100%;
-  height: clamp(160px, 24svh, 230px);
+  height: clamp(160px, 26vh, 210px);
   border-radius: 14px;
   overflow:hidden;
   box-shadow: var(--shadow);
 }
-
 .rogBg{
   position:absolute;
   inset:0;
@@ -294,7 +322,6 @@ html, body{
   object-fit: cover;
   pointer-events:none;
 }
-
 .rogText{
   position:absolute;
   inset:0;
@@ -302,22 +329,28 @@ html, body{
   color:#fff;
   font-weight: 1000;
   text-shadow: var(--textShadow);
-
   display:flex;
   flex-direction: column;
+  justify-content:flex-start;
   gap: 10px;
-
   min-width: 0;
+  overflow:hidden; /* ★文字が外に飛ばない */
 }
+
+/* ★全部 clamp + ellipsis で枠内厳守 */
 .dateLine{
-  font-size: clamp(20px, 4.6vw, 34px);
-  line-height: 1.05;
-  overflow-wrap: anywhere;
+  font-size: clamp(22px, 4.4vw, 32px);
+  line-height: 1;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 .nextTourLine{
-  font-size: clamp(12px, 2.6vw, 18px);
-  line-height: 1.15;
-  overflow-wrap: anywhere;
+  font-size: clamp(14px, 2.6vw, 18px);
+  opacity: .95;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 .divider{
   height: 3px;
@@ -325,22 +358,77 @@ html, body{
   border-radius: 999px;
 }
 .recentLog{
-  font-size: clamp(14px, 3.2vw, 22px);
-  line-height: 1.18;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  font-size: clamp(16px, 3.4vw, 24px);
+  line-height: 1.15;
+  overflow:hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;        /* ★最大2行で止める */
+  -webkit-box-orient: vertical;
 }
 .hintLine{
-  margin-top: auto;
-  font-size: clamp(11px, 2.2vw, 16px);
-  opacity:.95;
+  margin-top:auto;
+  font-size: clamp(12px, 2.4vw, 16px);
+  opacity:.9;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 
-/* NEXT: ポップアップ専用（今は非表示が基本） */
+/* modal (week pop) */
+.modalBack{
+  position:absolute;
+  inset:0;
+  background: rgba(0,0,0,.55);
+  z-index: var(--popZ);
+  display:none;
+}
+.weekPop{
+  position:absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%,-50%);
+  z-index: calc(var(--popZ) + 1);
+  display:none;
+  width: min(560px, 86vw);
+  pointer-events:none;
+}
+.weekPopCard{
+  width:100%;
+  border-radius: 16px;
+  background: rgba(0,0,0,.75);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 18px 18px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+}
+.weekPopTitle{ font-size: 28px; font-weight: 1000; }
+.weekPopSub{ margin-top: 8px; font-size: 20px; font-weight: 1000; opacity: .95; }
+
+/* next image button near pop */
+.nextImgBtn{
+  margin-top: 10px;
+  width: 140px;
+  border:none;
+  background: transparent;
+  padding:0;
+  pointer-events:auto;
+  touch-action: manipulation;
+}
+.nextImgBtn img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
+  pointer-events:none;
+}
+.nextImgBtn:active{ transform: translateY(1px); }
+
+/* next (NOT always) */
 .nextCorner{
   position:absolute;
-  right: 14px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 10;
   width: 150px;
   border:none;
@@ -348,7 +436,7 @@ html, body{
   padding:0;
   cursor:pointer;
   touch-action: manipulation;
-  display:none;
+  display:none; /* 常時表示しない */
 }
 .nextCorner.show{ display:block; }
 .nextCorner img{
@@ -368,13 +456,20 @@ html, body{
 }
 
 /* responsive */
-@media (max-width: 760px){
-  :root{ --leftW: 190px; }
+@media (max-width: 860px){
+  :root{ --leftW: 220px; }
+}
+@media (max-width: 740px){
+  :root{ --leftW: 200px; }
   .topRow{ grid-template-columns: 1fr; }
   .logoWrap img{ max-width: 340px; }
-  .mainSquare{ width: min(52svh, 520px); }
 }
 @media (max-width: 520px){
-  :root{ --pad: 12px; --gap: 10px; --leftW: 170px; }
-  .mainSquare{ width: min(48svh, 480px); }
+  :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
+  .nextCorner{ width: 130px; }
+
+  /* iPhone縦で詰まる時に備えてさらに圧縮 */
+  .jobWrap{ height: clamp(104px, 17vh, 120px); }
+  .rogWrap{ height: clamp(150px, 24vh, 190px); }
+  .mainSquare{ max-height: 48vh; }
 }
