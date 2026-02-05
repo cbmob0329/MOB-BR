@@ -1,145 +1,277 @@
-* {
-  box-sizing: border-box;
+/* =========================================================
+   MOB BR Main Screen (mobile-first)
+   - Prevent iOS long-press text selection/callout ONLY
+   - Prevent double-tap zoom by CSS + viewport + JS (app.js)
+   - Keep bottom visible (safe-area)
+   - Background fixed: haikeimain.png
+   - Game view square matches frame
+   ========================================================= */
+
+/* ----- long-press selection/callout control (intent: stop copy UI) ----- */
+html, body, #app {
+  -webkit-user-select: none; /* iOS: disable selection UI */
+  user-select: none;
+  -webkit-touch-callout: none; /* iOS: disable callout (copy/save image menu) */
+  -webkit-tap-highlight-color: rgba(0,0,0,0); /* remove blue highlight */
 }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: #000;
-  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+/* Allow selection if you ever need it later: add .allow-select to an element */
+.allow-select {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
 }
 
-#app {
+/* ----- base ----- */
+*{ box-sizing: border-box; }
+html, body{
+  margin:0;
+  padding:0;
+  height:100%;
+  background:#000;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  overflow:hidden;
+}
+
+:root{
+  --pad: 14px;
+  --gap: 12px;
+  --gold: #d4af37;
+  --panel: rgba(0,0,0,.62);
+  --panel2: rgba(0,0,0,.40);
+  --shadow: 0 14px 34px rgba(0,0,0,.45);
+
+  /* ボタンを小さく */
+  --btnH: 72px;
+  --btnFont: 20px;
+
+  --hudFont: 16px;
+  --hudTiny: 14px;
+
+  /* フッター/ログ高さ */
+  --logH: 92px;
+  --footH: 88px;
+}
+
+#app{
   position: relative;
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
+  overflow:hidden;
+  padding-bottom: calc(env(safe-area-inset-bottom));
 }
 
-/* 背景固定 */
-.bg {
-  position: absolute;
-  inset: 0;
-  background: url("haikeimain.png") center / cover no-repeat;
-  z-index: 0;
+/* ----- background (ALWAYS haikeimain.png) ----- */
+.bg{
+  position:absolute;
+  inset:0;
+  background: #111 url("haikeimain.png") center/cover no-repeat;
+  z-index:0;
 }
 
-/* =====================
-   上部HUD
-===================== */
-.top {
+/* ----- layout grid ----- */
+.top,
+.middle,
+.bottom,
+.footer{
   position: relative;
   z-index: 2;
-  display: flex;
+}
+
+/* ----- top HUD ----- */
+.top{
+  display:flex;
   justify-content: space-between;
-  padding: 16px 20px;
+  align-items: flex-start;
+  gap: var(--gap);
+  padding: var(--pad);
 }
 
-.hud {
-  background: rgba(0,0,0,0.6);
-  border: 2px solid #d4af37;
-  border-radius: 14px;
-  padding: 12px 16px;
-  color: #fff;
-}
-
-.hud-row {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.logo img {
-  height: 64px;
-}
-
-/* =====================
-   中央エリア
-===================== */
-.middle {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 180px 1fr; /* ← 左を細く */
-  gap: 16px;
-  padding: 0 20px;
-}
-
-/* 左メニュー */
-.left {
-  display: grid;
-  gap: 14px;
-}
-
-.left button {
-  background: rgba(0,0,0,0.6);
-  border: 2px solid #d4af37;
+.hud{
+  width: min(420px, 60vw);
+  background: var(--panel);
+  border: 2px solid var(--gold);
   border-radius: 16px;
-  color: #fff;
-  font-size: 22px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+
+.hud-row{
+  color:#fff;
   font-weight: 800;
-  padding: 18px 0;
+  font-size: var(--hudFont);
+  line-height: 1.35;
+  white-space: nowrap;
+  text-shadow: 0 2px 0 rgba(0,0,0,.6);
+}
+.hud-ver{
+  font-size: var(--hudTiny);
+  opacity: .95;
+  margin-bottom: 6px;
 }
 
-/* =====================
-   ゲーム画面（主役）
-===================== */
-.center {
-  background: rgba(0,0,0,0.35);
-  border: 3px solid #d4af37;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 420px;
+.logo{
+  width: min(240px, 34vw);
+  display:flex;
+  justify-content: flex-end;
 }
-
-.center img {
+.logo img{
   width: 100%;
-  height: 100%;
-  max-height: 520px; /* ← 大きく */
-  object-fit: contain;
+  height: auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.55));
+  pointer-events: none;
 }
 
-/* =====================
-   下部ログ
-===================== */
-.bottom {
-  position: relative;
-  z-index: 2;
-  padding: 16px 20px;
-}
-
-.log {
-  height: 120px;
-  background: rgba(0,0,0,0.55);
-  border: 3px solid #00ff66;
-  border-radius: 20px;
-  color: #0bff6a;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* =====================
-   フッター操作
-===================== */
-.footer {
-  position: relative;
-  z-index: 2;
+/* ----- middle: left menu + game ----- */
+.middle{
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  padding: 0 20px 20px;
+  grid-template-columns: 170px 1fr; /* 左をさらにコンパクト */
+  gap: var(--gap);
+  padding: 0 var(--pad);
+  /* 下部ログ/フッター分を確保して切れ防止 */
+  height: calc(100vh - (var(--pad)*2) - 110px - var(--logH) - var(--footH) - env(safe-area-inset-bottom));
+  min-height: 360px;
 }
 
-.footer button {
-  background: rgba(0,0,0,0.7);
-  border: 3px solid #d4af37;
-  border-radius: 20px;
-  color: #fff;
+/* left menu */
+.left{
+  display: grid;
+  grid-auto-rows: var(--btnH);
+  gap: 12px;
+  align-content: start;
+}
+
+.menuBtn{
+  height: var(--btnH);
+  border-radius: 18px;
+  border: 2px solid var(--gold);
+  background: rgba(0,0,0,.66);
+  color:#fff;
+  font-weight: 1000;
+  font-size: var(--btnFont);
+  letter-spacing: .02em;
+  text-shadow: 0 3px 0 rgba(0,0,0,.6);
+  box-shadow: 0 12px 24px rgba(0,0,0,.35);
+  cursor:pointer;
+  touch-action: manipulation; /* ダブルタップ拡大を誘発しにくい */
+}
+.menuBtn:active{ transform: translateY(1px); }
+
+/* game area: square and big */
+.gameWrap{
+  display:flex;
+  align-items: stretch;
+  justify-content: stretch;
+  min-width: 0;
+}
+
+.gameSquare{
+  width: 100%;
+  aspect-ratio: 1 / 1; /* 正方形固定 */
+  max-height: 100%;
+  margin: 0 auto;
+  border-radius: 22px;
+  border: 3px solid var(--gold);
+  background: rgba(0,0,0,.35);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* game background image (main.png) fills square */
+.gameBg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* player overlay in front (P1.png) */
+.playerOverlay{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 14px 28px rgba(0,0,0,.55));
+}
+
+/* ----- bottom log (undecided) ----- */
+.bottom{
+  padding: var(--pad);
+}
+
+.log{
+  height: var(--logH);
+  border-radius: 18px;
+  border: 3px solid rgba(0,255,102,.85);
+  background: rgba(0,0,0,.55);
+  color: rgba(0,255,102,.95);
+  font-weight: 1000;
+  font-size: 20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow: 0 16px 34px rgba(0,0,0,.45);
+  text-shadow: 0 2px 0 rgba(0,0,0,.6);
+}
+
+/* ----- footer ----- */
+.footer{
+  padding: 0 var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+}
+
+.actionBtn{
+  height: var(--footH);
+  border-radius: 22px;
+  border: 3px solid var(--gold);
+  background: rgba(0,0,0,.72);
+  color:#fff;
+  font-weight: 1000;
   font-size: 28px;
-  font-weight: 900;
-  padding: 18px 0;
+  letter-spacing:.04em;
+  text-shadow: 0 3px 0 rgba(0,0,0,.65);
+  box-shadow: 0 16px 34px rgba(0,0,0,.45);
+  cursor:pointer;
+  touch-action: manipulation;
+}
+.actionBtn:active{ transform: translateY(1px); }
+
+.safeSpacer{
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height: env(safe-area-inset-bottom);
+  z-index: 30;
+}
+
+/* small devices */
+@media (max-width: 360px){
+  :root{
+    --btnH: 66px;
+    --btnFont: 18px;
+    --hudFont: 15px;
+    --logH: 86px;
+    --footH: 84px;
+  }
+  .middle{
+    grid-template-columns: 156px 1fr;
+  }
+}
+
+/* short height devices: keep everything visible */
+@media (max-height: 720px){
+  :root{
+    --pad: 12px;
+    --btnH: 66px;
+    --logH: 80px;
+    --footH: 80px;
+  }
+  .log{ font-size: 18px; }
 }
