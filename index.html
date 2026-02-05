@@ -7,96 +7,127 @@
   <link rel="stylesheet" href="style.css?v=1" />
 </head>
 <body>
-  <div id="app" class="screen-main" aria-label="MOB BR Main Screen">
-    <!-- 背景（共通） -->
-    <div id="bg" class="bg" aria-hidden="true"></div>
+  <div id="app" class="app screen-main" aria-label="MOB BR メイン画面">
+    <!-- 共通背景（CSSで haikeimain.png） -->
+    <div class="bg" aria-hidden="true"></div>
 
-    <!-- 上部HUD -->
-    <div class="topHud">
-      <div class="topLeftInfo">
-        <div class="tiny">VER <span id="ver">v0.1-proto</span></div>
-        <div class="row"><span class="label">企業名：</span><span id="companyName">MOB COMPA</span></div>
-        <div class="row"><span class="label">企業ランク：</span><span id="companyRank">RANK 10</span></div>
-        <div class="row"><span class="label">チーム名：</span><span id="teamName">PLAYER TEAM</span></div>
-      </div>
-
-      <div class="topRightLogo">
-        <img id="logo" src="rogo.png?v=1" alt="MOB BR Logo" />
-      </div>
-    </div>
-
-    <!-- 上部右寄りの小ボタン -->
-    <div class="topMiniButtons">
-      <button class="miniBtn" id="btnResults" type="button">大会結果</button>
-      <button class="miniBtn" id="btnSchedule" type="button">スケジュール</button>
-    </div>
-
-    <!-- 左メニュー -->
-    <div class="leftMenu">
-      <button class="menuBtn" id="btnTeam" type="button">
-        <span class="menuSub">チーム</span>
-        <span class="menuMain">チーム</span>
-      </button>
-
-      <button class="menuBtn" id="btnTournament" type="button">
-        <span class="menuSub">ガチャ</span>
-        <span class="menuMain">大会</span>
-      </button>
-
-      <button class="menuBtn" id="btnShop" type="button">
-        <span class="menuSub">やか</span>
-        <span class="menuMain">ショップ</span>
-      </button>
-
-      <button class="menuBtn" id="btnTraining" type="button">
-        <span class="menuSub">セ</span>
-        <span class="menuMain">修行</span>
-      </button>
-
-      <button class="smallBtn" id="btnRecord" type="button">戦績</button>
-      <button class="smallBtn" id="btnCollection" type="button">コレクション</button>
-    </div>
-
-    <!-- メインカード（中央） -->
-    <div class="mainCard">
-      <div class="mainCardInner">
-        <img class="mainCardFrame" src="main1.png?v=1" alt="" aria-hidden="true" />
-        <div class="mainCardContent">
-          <img class="playerTeamImg" id="playerTeamImg" src="P1.png?v=1" alt="プレイヤーチーム" />
-          <div class="mainCardText">
-            <div class="kvRow">
-              <div class="kv"><span class="k">企業名</span><span class="v" id="cardCompany">MOB COMPA</span></div>
-              <div class="kv"><span class="k">チーム名</span><span class="v" id="cardTeam">PLAYER TEAM</span></div>
-            </div>
-            <div class="kvRow">
-              <div class="kv"><span class="k">企業ランク</span><span class="v" id="cardRank">RANK 10</span></div>
-              <div class="kv"><span class="k">所持G</span><span class="v" id="cardGold">0</span></div>
-            </div>
+    <!-- ===== 上部HUD（情報は互いに被らない） ===== -->
+    <header class="topHud">
+      <div class="hudLeft">
+        <div class="hudBox">
+          <div class="hudRow hudTiny">
+            <span class="hudLabel">VER</span>
+            <span id="uiVer" class="hudValue">v0.1</span>
+          </div>
+          <div class="hudRow">
+            <span class="hudLabel">企業名：</span>
+            <span id="uiCompanyName" class="hudValue">---</span>
+          </div>
+          <div class="hudRow">
+            <span class="hudLabel">企業ランク：</span>
+            <span id="uiCompanyRank" class="hudValue">---</span>
+          </div>
+          <div class="hudRow">
+            <span class="hudLabel">チーム名：</span>
+            <span id="uiTeamName" class="hudValue">---</span>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 下部ログ枠 -->
-    <div class="logPanel" role="region" aria-label="ログ">
-      <div class="logTitle">メイン画面</div>
-      <div class="logBody" id="logBody">
-        「大会」ボタンでプロト開始。<br/>
-        （今は流れだけ、次で実装を詰める）
+      <div class="hudRight">
+        <img id="uiLogo" class="logo" src="rogo.png?v=1" alt="MOB BR ロゴ" />
       </div>
-      <div class="logWatermark">Check!!</div>
+    </header>
+
+    <!-- ===== 上部右：補助ボタン（被らない） ===== -->
+    <div class="topMini">
+      <button id="btnResults" class="miniBtn" type="button">大会結果</button>
+      <button id="btnSchedule" class="miniBtn" type="button">スケジュール</button>
     </div>
 
-    <!-- 下部操作 -->
-    <div class="bottomControls">
-      <button class="actionBtn" id="btnNext" type="button">NEXT</button>
-      <button class="actionBtn" id="btnSkip" type="button">SKIP</button>
+    <!-- ===== メインレイアウト（左メニュー／中央カード） ===== -->
+    <div class="mainGrid">
+      <!-- 左メニュー（UI同士非重なり） -->
+      <nav class="leftMenu" aria-label="メインメニュー">
+        <button id="btnTeam" class="menuBtn" type="button">チーム</button>
+        <button id="btnTournament" class="menuBtn" type="button">大会</button>
+        <button id="btnShop" class="menuBtn" type="button">ショップ</button>
+        <button id="btnTraining" class="menuBtn" type="button">修行</button>
+
+        <div class="leftMenuSub">
+          <button id="btnRecord" class="subBtn" type="button">戦績</button>
+          <button id="btnCollection" class="subBtn" type="button">コレクション</button>
+        </div>
+      </nav>
+
+      <!-- 中央カード（枠＋プレイヤー画像は重なりOK） -->
+      <main class="centerCard" aria-label="メインカード">
+        <div class="cardFrameWrap">
+          <img class="cardFrame" src="main1.png?v=1" alt="" aria-hidden="true" />
+        </div>
+
+        <div class="cardContent">
+          <!-- プレイヤーチーム画像（背景/枠との重なりOK） -->
+          <img id="uiPlayerTeamImg" class="playerTeamImg" src="P1.png?v=1" alt="プレイヤーチーム" />
+
+          <!-- 情報ブロック（他UIと非重なり） -->
+          <div class="cardInfo">
+            <div class="infoRow">
+              <div class="infoItem">
+                <div class="infoKey">企業名</div>
+                <div id="uiCardCompanyName" class="infoVal">---</div>
+              </div>
+              <div class="infoItem">
+                <div class="infoKey">チーム名</div>
+                <div id="uiCardTeamName" class="infoVal">---</div>
+              </div>
+            </div>
+
+            <div class="infoRow">
+              <div class="infoItem">
+                <div class="infoKey">企業ランク</div>
+                <div id="uiCardCompanyRank" class="infoVal">---</div>
+              </div>
+              <div class="infoItem">
+                <div class="infoKey">所持G</div>
+                <div id="uiCardGold" class="infoVal">0</div>
+              </div>
+            </div>
+
+            <div class="infoRow">
+              <div class="infoItem">
+                <div class="infoKey">年月 / 週</div>
+                <div id="uiCardWeek" class="infoVal">1989年1月 第1週</div>
+              </div>
+              <div class="infoItem">
+                <div class="infoKey">次の大会</div>
+                <div id="uiCardNextEvent" class="infoVal">---</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
 
-    <!-- セーフエリア余白 -->
+    <!-- ===== ログ（紙芝居用・非重なり） ===== -->
+    <section class="logPanel" aria-label="ログ">
+      <div id="uiLogTitle" class="logTitle">メイン画面</div>
+      <div id="uiLogBody" class="logBody">
+        メイン画面を作成中。<br/>
+        次は style.css で配置と余白を確定します。
+      </div>
+    </section>
+
+    <!-- ===== 下部操作 ===== -->
+    <footer class="bottomBar">
+      <button id="btnNext" class="actionBtn" type="button">NEXT</button>
+      <button id="btnAuto" class="actionBtn" type="button">AUTO</button>
+    </footer>
+
     <div class="safeSpacer" aria-hidden="true"></div>
   </div>
 
-  <script src="main.js?v=1"></script>
+  <!-- フェーズ1では app.js のみ -->
+  <script src="app.js?v=1" defer></script>
 </body>
 </html>
