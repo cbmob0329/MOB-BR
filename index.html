@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>MOB BR - Main</title>
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
   <div id="app" class="no-callout" aria-label="MOB BR メイン画面">
@@ -79,9 +79,9 @@
           <img class="mainFrame" src="main1.png" alt="メイン枠" draggable="false">
           <img class="teamImg" id="teamImg" src="P1.png" alt="プレイヤーチーム" draggable="false">
 
-          <!-- 足元：メンバー名ボタン -->
-          <button class="memberBtn" id="btnMembers" type="button" aria-label="メンバー名">
-            メンバー名
+          <!-- 足元：メンバー名ボタン（バナー風） -->
+          <button class="memberBtn bannerBtn" id="btnMembers" type="button" aria-label="メンバー名">
+            <span class="bannerText">メンバー名</span>
           </button>
         </div>
       </section>
@@ -99,7 +99,7 @@
             </div>
             <div class="divider"></div>
 
-            <!-- 「最近の出来事」ラベルは消す：内容だけ -->
+            <!-- ラベル無し：内容だけ -->
             <div class="recentOnly">
               <span id="uiRecent">未定</span>
             </div>
@@ -111,9 +111,10 @@
 
     </main>
 
-    <!-- ===== メンバー名ポップ ===== -->
+    <!-- ===== 背景（共通） ===== -->
     <div class="modalBack" id="modalBack" aria-hidden="true"></div>
 
+    <!-- ===== メンバー名ポップ ===== -->
     <div class="modalCard" id="membersPop" role="dialog" aria-modal="true" aria-label="メンバー名">
       <div class="modalTitle">メンバー名</div>
 
@@ -135,7 +136,7 @@
       <button class="closeBtn" id="btnCloseMembers" type="button" aria-label="閉じる">閉じる</button>
     </div>
 
-    <!-- 週切替ポップ（中央） -->
+    <!-- ===== 週切替ポップ（中央） ===== -->
     <div class="weekPop" id="weekPop" role="dialog" aria-modal="true" aria-label="週切り替え">
       <div class="weekPopCard">
         <div class="weekPopTitle" id="popTitle">1989年1月 第1週</div>
@@ -153,22 +154,118 @@
       <img src="bnext.png" alt="NEXT" draggable="false">
     </button>
 
-    <!-- ===== チーム画面（簡易：導入） ===== -->
+    <!-- ===== チーム画面（中身あり） ===== -->
     <div class="teamScreen" id="teamScreen" aria-hidden="true">
       <div class="teamPanel" role="dialog" aria-modal="true" aria-label="チーム画面">
-        <div class="teamTitle">チーム</div>
-        <div class="teamBody">
+        <div class="teamHeader">
+          <div class="teamTitle">チーム</div>
+          <button class="teamClose" id="btnCloseTeam" type="button" aria-label="閉じる">閉じる</button>
+        </div>
+
+        <div class="teamTopInfo">
           <div class="teamLine">企業名：<span id="tCompany"></span></div>
           <div class="teamLine">チーム名：<span id="tTeam"></span></div>
-          <div class="teamLine">メンバー：</div>
-          <div class="teamMembers">
-            <div class="tm">1) <span id="tM1"></span></div>
-            <div class="tm">2) <span id="tM2"></span></div>
-            <div class="tm">3) <span id="tM3"></span></div>
-          </div>
-          <div class="teamNote">※能力/パッシブ/ウルト/戦績/セーブ等は次フェーズで実装</div>
+          <div class="teamLine">所持G：<span id="tGold"></span>G / 企業ランク：<span id="tRank"></span></div>
         </div>
-        <button class="closeBtn" id="btnCloseTeam" type="button" aria-label="閉じる">閉じる</button>
+
+        <div class="teamTabs" role="tablist" aria-label="チームタブ">
+          <button class="tabBtn active" id="tabMembers" type="button" role="tab" aria-selected="true">メンバー</button>
+          <button class="tabBtn" id="tabCoach" type="button" role="tab" aria-selected="false">コーチ</button>
+          <button class="tabBtn" id="tabRecords" type="button" role="tab" aria-selected="false">戦績</button>
+          <button class="tabBtn" id="tabSave" type="button" role="tab" aria-selected="false">セーブ</button>
+        </div>
+
+        <div class="teamBodyScroll" id="teamBodyScroll">
+
+          <!-- メンバー -->
+          <section class="tabPane show" id="paneMembers" aria-label="メンバー">
+            <div class="memberCards">
+              <div class="memberCard">
+                <div class="mcHead">
+                  <div class="mcName">1) <span id="tm1"></span></div>
+                  <button class="miniBtn" id="btnRenameM1" type="button">名前変更</button>
+                </div>
+                <div class="statsGrid" id="statsM1"></div>
+                <div class="skillBox">
+                  <div class="sbTitle">パッシブ</div>
+                  <div class="sbText" id="passiveM1"></div>
+                </div>
+                <div class="skillBox">
+                  <div class="sbTitle">ウルト</div>
+                  <div class="sbText" id="ultM1"></div>
+                </div>
+              </div>
+
+              <div class="memberCard">
+                <div class="mcHead">
+                  <div class="mcName">2) <span id="tm2"></span></div>
+                  <button class="miniBtn" id="btnRenameM2" type="button">名前変更</button>
+                </div>
+                <div class="statsGrid" id="statsM2"></div>
+                <div class="skillBox">
+                  <div class="sbTitle">パッシブ</div>
+                  <div class="sbText" id="passiveM2"></div>
+                </div>
+                <div class="skillBox">
+                  <div class="sbTitle">ウルト</div>
+                  <div class="sbText" id="ultM2"></div>
+                </div>
+              </div>
+
+              <div class="memberCard">
+                <div class="mcHead">
+                  <div class="mcName">3) <span id="tm3"></span></div>
+                  <button class="miniBtn" id="btnRenameM3" type="button">名前変更</button>
+                </div>
+                <div class="statsGrid" id="statsM3"></div>
+                <div class="skillBox">
+                  <div class="sbTitle">パッシブ</div>
+                  <div class="sbText" id="passiveM3"></div>
+                </div>
+                <div class="skillBox">
+                  <div class="sbTitle">ウルト</div>
+                  <div class="sbText" id="ultM3"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- コーチ -->
+          <section class="tabPane" id="paneCoach" aria-label="コーチ">
+            <div class="coachSection">
+              <div class="sectionTitle">装備中（最大5）</div>
+              <div class="equipGrid" id="equipGrid"></div>
+
+              <div class="sectionTitle">所持スキル（タップ→装備先を選択）</div>
+              <div class="ownedList" id="ownedList"></div>
+
+              <div class="noteSmall">※効果数値はUIに表示しない（説明文のみ）。</div>
+            </div>
+          </section>
+
+          <!-- 戦績 -->
+          <section class="tabPane" id="paneRecords" aria-label="戦績">
+            <div class="recordsSection">
+              <div class="sectionTitle">終了した大会のみ</div>
+              <div class="recordsList" id="recordsList"></div>
+              <div class="noteSmall">※未参加／途中敗退大会は表示しない想定（大会実装後に連動）。</div>
+            </div>
+          </section>
+
+          <!-- セーブ -->
+          <section class="tabPane" id="paneSave" aria-label="セーブ">
+            <div class="saveSection">
+              <div class="sectionTitle">手動セーブ</div>
+              <button class="bigBtn" id="btnDoSave" type="button">セーブする</button>
+
+              <div class="sectionTitle" style="margin-top:14px;">セーブ一覧（削除可能）</div>
+              <div class="saveList" id="saveList"></div>
+
+              <div class="noteSmall">※セーブはローカル保存（端末/ブラウザ依存）。</div>
+            </div>
+          </section>
+
+        </div>
       </div>
     </div>
 
@@ -177,6 +274,6 @@
 
   </div>
 
-  <script src="app.js?v=12" defer></script>
+  <script src="app.js?v=13" defer></script>
 </body>
 </html>
