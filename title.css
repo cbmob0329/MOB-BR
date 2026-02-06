@@ -1,0 +1,97 @@
+/* =========================================================
+   title.css
+   MOB BR / Title Screen styles only
+   - タイトル画面専用（白×緑チェック、ロゴ、NEXT）
+   - main/team/training には影響しない
+========================================================= */
+
+/* =========================
+   TITLE SCREEN
+========================= */
+.titleScreen{
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+
+  /* base.css 側に --pad がある前提 */
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+
+/* 白×緑チェック背景（CSSで実装） */
+.titleBg{
+  position: absolute;
+  inset: 0;
+
+  background:
+    linear-gradient(45deg, rgba(46,204,113,.25) 25%, transparent 25%) 0 0/40px 40px,
+    linear-gradient(45deg, transparent 75%, rgba(46,204,113,.25) 75%) 0 0/40px 40px,
+    linear-gradient(45deg, transparent 25%, rgba(46,204,113,.25) 25%) 20px 20px/40px 40px,
+    linear-gradient(45deg, rgba(46,204,113,.25) 75%, transparent 75%) 20px 20px/40px 40px,
+    #fff;
+
+  z-index: 0;
+}
+
+.titleInner{
+  position: relative;
+  z-index: 2;
+
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 22px;
+}
+
+.titleLogo{
+  width: min(520px, 86vw);
+}
+
+.titleLogo img{
+  width: 100%;
+  height: auto;
+  display: block;
+
+  filter: drop-shadow(0 16px 26px rgba(0,0,0,.35));
+  pointer-events: none;
+}
+
+/* NEXT ボタン */
+.titleNextBtn{
+  width: 170px;
+  border: none;
+  background: transparent;
+  padding: 0;
+
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.titleNextBtn img{
+  width: 100%;
+  height: auto;
+  display: block;
+
+  filter: drop-shadow(0 14px 24px rgba(0,0,0,.35));
+  pointer-events: none;
+}
+
+.titleNextBtn:active{
+  transform: translateY(1px);
+  opacity: .95;
+}
+
+/* タイトル画面内の safe-area 確保（HTMLに .safePad がある場合のみ） */
+.titleScreen .safePad{
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: env(safe-area-inset-bottom);
+}
