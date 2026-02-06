@@ -1,17 +1,21 @@
 'use strict';
 
 /*
-  MOB BR - ui_team.js v14（HTML固定レイアウト対応版）
+  MOB BR - ui_team.js v14（フル）
 
   目的：
-  - #teamScreen の中身を「保存データ mobbr_playerTeam」を基準に動かす（無ければ初回生成して保存）
-  - A/B/C の名前変更 → storage の m1/m2/m3 へ反映 → mobbr_playerTeam.members[].name も同期 → 全UIへ反映
-  - ステータス7種（数値）・パッシブ・ウルトを表示（playerTeam から）
-  - セーブ：手動セーブ（mobbr_save1 にスナップショット保存）
-  - セーブ削除：完全リセット → タイトルへ戻る → 次のNEXTで名称入力からやり直し
+  - #teamScreen（固定HTML）を動かす
+  - 参照元を「DP.buildDefaultTeam()」ではなく
+    localStorage の mobbr_playerTeam（storage.KEYS.playerTeam）に統一
+    → 育成で更新された exp/lv がチーム画面に必ず反映される
 
-  前提：
-  - storage.js / data_player.js が先に読み込まれていること
+  仕様（現段階での安全実装）：
+  - playerTeam が無い/壊れている場合は default を生成して保存してから表示（壊れにくい）
+  - 表示ステータスは「基礎stats + (Lv-1)」で成長が見える形にする（簡易）
+    ※今後、仕様が固まったら計算式は差し替え可能
+  - 名前変更は storage(m1/m2/m3) を更新し、playerTeam.members[].name にも同期
+  - セーブ：スナップショット保存（mobbr_save1）
+  - セーブ削除：storage.resetAll() → タイトルへ戻る（既存仕様）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -20,7 +24,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  const S = window.MOBBR?.storage;
+  const S  = window.MOBBR?.storage;
   const DP = window.MOBBR?.data?.player;
 
   if (!S || !S.KEYS){
@@ -45,7 +49,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tCompany: $('tCompany'),
     tTeam: $('tTeam'),
 
-    // names
+    // names (buttons)
     tNameA: $('tNameA'),
     tNameB: $('tNameB'),
     tNameC: $('tNameC'),
@@ -83,7 +87,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tC_passive: $('tC_passive'),
     tC_ult: $('tC_ult'),
 
-    // save buttons
+    // save buttons（HTML固定）
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
@@ -97,62 +101,67 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function getNameA(){ return S.getStr(K.m1, 'A'); }
   function getNameB(){ return S.getStr(K.m2, 'B'); }
   function getNameC(){ return S.getStr(K.m3, 'C'); }
-
   function setNameA(v){ S.setStr(K.m1, v); }
   function setNameB(v){ S.setStr(K.m2, v); }
   function setNameC(v){ S.setStr(K.m3, v); }
 
-  function normalize(stats){ return DP.normalizeStats(stats); }
-
-  // ===== playerTeam load/save =====
-  function loadPlayerTeam(){
+  function loadPlayerTeamOrCreate(){
+    let team;
     try{
       const raw = localStorage.getItem(K.playerTeam);
-      if (!raw) return null;
-      const t = JSON.parse(raw);
-      if (!t || !Array.isArray(t.members)) return null;
-      return t;
-    }catch(e){
-      return null;
+      team = raw ? JSON.parse(raw) : null;
+    }catch{
+      team = null;
     }
+
+    const valid = team && Array.isArray(team.members);
+    if (!valid){
+      team = DP.buildDefaultTeam();
+      // 初期名前を storage に寄せる
+      try{
+        const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
+        if (bySlot[0]) bySlot[0].name = getNameA();
+        if (bySlot[1]) bySlot[1].name = getNameB();
+        if (bySlot[2]) bySlot[2].name = getNameC();
+      }catch{}
+      localStorage.setItem(K.playerTeam, JSON.stringify(team));
+      return team;
+    }
+
+    // 正規化（不足があっても落とさない）
+    try{
+      team.members.forEach(m=>{
+        m.stats = DP.normalizeStats(m.stats);
+        m.exp   = DP.normalizeExp(m.exp);
+        m.lv    = DP.normalizeLv(m.lv);
+      });
+    }catch{}
+
+    return team;
   }
 
   function savePlayerTeam(team){
     try{
       localStorage.setItem(K.playerTeam, JSON.stringify(team));
     }catch(e){
-      // ignore
+      console.warn('[ui_team] failed to save playerTeam', e);
     }
   }
 
-  function ensurePlayerTeam(){
-    // 無ければ data_player.js の既定から生成して保存
-    let team = loadPlayerTeam();
-    if (!team){
-      team = DP.cloneTeam(DP.buildDefaultTeam());
-      savePlayerTeam(team);
+  // 表示用：基礎stats + (lv-1) で “成長” を見える化（簡易）
+  function effectiveStats(member){
+    const base = DP.normalizeStats(member?.stats);
+    const lv   = DP.normalizeLv(member?.lv);
+    const out = {};
+    for (const k of DP.STAT_KEYS){
+      const add = Math.max(0, (Number(lv[k]) || 1) - 1);
+      out[k] = (Number(base[k]) || 0) + add;
     }
-    return team;
+    return out;
   }
 
-  function syncPlayerTeamNamesFromStorage(team){
-    if (!team || !Array.isArray(team.members)) return;
-
-    const nm1 = getNameA();
-    const nm2 = getNameB();
-    const nm3 = getNameC();
-
-    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    if (bySlot[0]) bySlot[0].name = nm1;
-    if (bySlot[1]) bySlot[1].name = nm2;
-    if (bySlot[2]) bySlot[2].name = nm3;
-
-    savePlayerTeam(team);
-  }
-
-  // ===== render helpers =====
   function reflectNamesEverywhere(){
-    // team screen buttons
+    // team screen
     safeText(dom.tNameA, getNameA());
     safeText(dom.tNameB, getNameB());
     safeText(dom.tNameC, getNameC());
@@ -164,34 +173,35 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (uiM1) uiM1.textContent = getNameA();
     if (uiM2) uiM2.textContent = getNameB();
     if (uiM3) uiM3.textContent = getNameC();
-
-    // メインのチーム画面ヘッダ（存在すれば）
-    const tM1 = $('tM1');
-    const tM2 = $('tM2');
-    const tM3 = $('tM3');
-    if (tM1) tM1.textContent = getNameA();
-    if (tM2) tM2.textContent = getNameB();
-    if (tM3) tM3.textContent = getNameC();
   }
 
+  // ===== render =====
   function render(){
     // meta
     safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
     safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
 
-    // team data
-    const team = ensurePlayerTeam();
+    const team = loadPlayerTeamOrCreate();
 
-    // 起動/表示のたびに「storageの名前」に寄せて破綻を防ぐ
-    syncPlayerTeamNamesFromStorage(team);
-
+    // members index（id優先 / 予備でslot）
     const byId = {};
     for (const m of team.members) byId[m.id] = m;
 
+    const A = byId.A || team.members.find(x=>x.slot===1) || null;
+    const B = byId.B || team.members.find(x=>x.slot===2) || null;
+    const C = byId.C || team.members.find(x=>x.slot===3) || null;
+
+    // storage名を playerTeam に同期（表示のブレ防止）
+    try{
+      if (A) A.name = getNameA();
+      if (B) B.name = getNameB();
+      if (C) C.name = getNameC();
+      savePlayerTeam(team);
+    }catch{}
+
     // A
-    const A = byId.A;
     if (A){
-      const st = normalize(A.stats);
+      const st = effectiveStats(A);
       safeText(dom.tA_hp, st.hp);
       safeText(dom.tA_mental, st.mental);
       safeText(dom.tA_aim, st.aim);
@@ -204,9 +214,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     // B
-    const B = byId.B;
     if (B){
-      const st = normalize(B.stats);
+      const st = effectiveStats(B);
       safeText(dom.tB_hp, st.hp);
       safeText(dom.tB_mental, st.mental);
       safeText(dom.tB_aim, st.aim);
@@ -219,9 +228,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     // C
-    const C = byId.C;
     if (C){
-      const st = normalize(C.stats);
+      const st = effectiveStats(C);
       safeText(dom.tC_hp, st.hp);
       safeText(dom.tC_mental, st.mental);
       safeText(dom.tC_aim, st.aim);
@@ -233,7 +241,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tC_ult, C.ult || '未定');
     }
 
-    // names
     reflectNamesEverywhere();
   }
 
@@ -251,22 +258,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.teamScreen.setAttribute('aria-hidden', 'true');
   }
 
-  // ===== rename handlers =====
-  function applyRename(memberId, newName){
-    const nv = String(newName || '').trim();
-    if (!nv) return;
-
-    // storage 更新
-    if (memberId === 'A') setNameA(nv);
-    if (memberId === 'B') setNameB(nv);
-    if (memberId === 'C') setNameC(nv);
-
-    // playerTeam も同期
-    const team = ensurePlayerTeam();
-    syncPlayerTeamNamesFromStorage(team);
-
-    // 即時反映
-    reflectNamesEverywhere();
+  // ===== rename =====
+  function syncPlayerTeamNamesFromStorage(){
+    const team = loadPlayerTeamOrCreate();
+    try{
+      const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
+      if (bySlot[0]) bySlot[0].name = getNameA();
+      if (bySlot[1]) bySlot[1].name = getNameB();
+      if (bySlot[2]) bySlot[2].name = getNameC();
+      savePlayerTeam(team);
+    }catch{}
   }
 
   function bindRename(){
@@ -275,7 +276,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const cur = getNameA();
         const v = prompt('メンバー名（A）を変更', cur);
         if (v === null) return;
-        applyRename('A', v);
+        const nv = v.trim();
+        if (!nv) return;
+        setNameA(nv);
+        syncPlayerTeamNamesFromStorage();
+        render();
+        if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
       });
     }
     if (dom.tNameB){
@@ -283,7 +289,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const cur = getNameB();
         const v = prompt('メンバー名（B）を変更', cur);
         if (v === null) return;
-        applyRename('B', v);
+        const nv = v.trim();
+        if (!nv) return;
+        setNameB(nv);
+        syncPlayerTeamNamesFromStorage();
+        render();
+        if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
       });
     }
     if (dom.tNameC){
@@ -291,36 +302,38 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const cur = getNameC();
         const v = prompt('メンバー名（C）を変更', cur);
         if (v === null) return;
-        applyRename('C', v);
+        const nv = v.trim();
+        if (!nv) return;
+        setNameC(nv);
+        syncPlayerTeamNamesFromStorage();
+        render();
+        if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
       });
     }
   }
 
   // ===== save =====
   function manualSave(){
-    // 現状の重要情報 + playerTeam をスナップショット
     const snap = {
       ver: 'v14',
       ts: Date.now(),
-
       company: S.getStr(K.company, 'CB Memory'),
       team: S.getStr(K.team, 'PLAYER TEAM'),
       m1: getNameA(),
       m2: getNameB(),
       m3: getNameC(),
-
       year: S.getNum(K.year, 1989),
       month: S.getNum(K.month, 1),
       week: S.getNum(K.week, 1),
-
       gold: S.getNum(K.gold, 0),
       rank: S.getNum(K.rank, 10),
-
       nextTour: S.getStr(K.nextTour, '未定'),
       nextTourW: S.getStr(K.nextTourW, '未定'),
       recent: S.getStr(K.recent, '未定'),
-
-      playerTeam: ensurePlayerTeam()
+      playerTeam: (function(){
+        try{ return JSON.parse(localStorage.getItem(K.playerTeam) || 'null'); }
+        catch{ return null; }
+      })()
     };
 
     localStorage.setItem('mobbr_save1', JSON.stringify(snap));
@@ -333,27 +346,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (window.MOBBR?.storage?.resetAll){
       window.MOBBR.storage.resetAll();
     }else{
-      localStorage.clear();
       location.reload();
     }
   }
 
   function bindSave(){
-    if (dom.btnManualSave){
-      dom.btnManualSave.addEventListener('click', manualSave);
-    }
-    if (dom.btnDeleteSave){
-      dom.btnDeleteSave.addEventListener('click', deleteSaveAndReset);
-    }
+    if (dom.btnManualSave) dom.btnManualSave.addEventListener('click', manualSave);
+    if (dom.btnDeleteSave) dom.btnDeleteSave.addEventListener('click', deleteSaveAndReset);
   }
 
-  // ===== open/close binding =====
-  let boundOpenClose = false;
   function bindOpenClose(){
-    if (boundOpenClose) return;
-    boundOpenClose = true;
-
-    // ui_main.js 側でも btnTeam を触るが、二重でも破綻しない（openは冪等）
+    // ui_main.js 側でも btnTeam を開くが、二重でも致命傷にならないようガード
     if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
     if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
   }
@@ -364,24 +367,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (inited) return;
     inited = true;
 
-    // 初回に playerTeam を必ず用意（無ければ生成→保存）
-    ensurePlayerTeam();
-
     bindOpenClose();
     bindRename();
     bindSave();
 
-    // 初回描画（開かなくても安全）
+    // 開かなくても安全に1回描画（他UIから render() 呼ばれてもOK）
     render();
   }
 
   window.MOBBR.initTeamUI = initTeamUI;
   window.MOBBR.ui.team = { open, close, render };
 
-  // 動的ロード対策：DOMが既に出来ているなら即初期化
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', initTeamUI);
-  }else{
-    initTeamUI();
-  }
+  // 動的ロード（NEXT後）でも確実に動くように即実行
+  initTeamUI();
 })();
