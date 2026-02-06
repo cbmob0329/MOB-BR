@@ -1,0 +1,290 @@
+/* =========================================================
+   team.css
+   MOB BR / Team Screen styles only
+   - TEAM画面専用（他画面に影響しない）
+========================================================= */
+
+/* =========================
+   TEAM SCREEN (FULL SPEC UI)
+========================= */
+.teamScreen{
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--popZ) + 3);
+  display: none;
+}
+.teamScreen.show{ display:block; }
+
+.teamPanel{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: min(620px, 92vw);
+  max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
+  overflow:auto;
+  border-radius: 16px;
+  background: rgba(0,0,0,.82);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+  -webkit-overflow-scrolling: touch;
+}
+.teamPanelWide{
+  width: min(860px, 94vw);
+}
+
+.teamHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.teamTitle{
+  font-size: 22px;
+  font-weight: 1000;
+  margin: 0;
+}
+
+.teamCloseBtn{
+  margin-top: 0;
+  width: auto;
+  padding: 10px 14px;
+}
+
+.teamMeta{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.teamSection{
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px solid rgba(255,255,255,.20);
+}
+
+.teamSectionTitle{
+  font-size: 18px;
+  font-weight: 1000;
+  margin-bottom: 10px;
+}
+
+/* members */
+.memberCards{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.memberCard{
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.08);
+  padding: 12px;
+}
+
+.memberTop{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.memberRole{
+  font-size: 15px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+.memberNameBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.90);
+  color:#111;
+  font-weight: 1000;
+  font-size: 16px;
+  touch-action: manipulation;
+  box-shadow: 0 10px 22px rgba(0,0,0,.25);
+}
+.memberNameBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.statGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.statRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.statRow .k{ font-size: 14px; font-weight: 1000; opacity: .95; }
+.statRow .v{ font-size: 14px; font-weight: 1000; }
+
+.skillBox{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skillLine{
+  display:flex;
+  gap: 10px;
+  align-items:flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+
+.skillLine .sk{
+  width: 88px;
+  flex: 0 0 88px;
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+.skillLine .sv{
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+/* coach slots */
+.coachSlots{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coachSlot{
+  width:100%;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color:#fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  text-align:left;
+  font-weight: 1000;
+  touch-action: manipulation;
+}
+.coachSlot:active{ transform: translateY(1px); opacity:.95; }
+
+.slotNo{
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.20);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+  flex: 0 0 34px;
+}
+
+.slotText{ flex: 1; min-width: 0; }
+
+.slotName{
+  font-size: 16px;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+
+.slotDesc{
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .9;
+  line-height: 1.2;
+}
+
+/* records */
+.recordsBox{
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  padding: 12px;
+}
+
+.recordsEmpty{
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .9;
+}
+
+.recordsList{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* save */
+.saveRow{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.saveBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  touch-action: manipulation;
+}
+.saveBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.dangerBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,80,80,.92);
+  color:#111;
+  touch-action: manipulation;
+}
+.dangerBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.saveNote{
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .9;
+  line-height: 1.25;
+}
+
+/* responsive（TEAM画面のみ） */
+@media (max-width: 980px){
+  .teamPanelWide{ width: min(720px, 94vw); }
+}
+@media (max-width: 520px){
+  .teamPanelWide{ width: 94vw; }
+  .saveRow{ grid-template-columns: 1fr; }
+  .statGrid{ grid-template-columns: 1fr; }
+}
