@@ -3,11 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
-  <meta name="format-detection" content="telephone=no,email=no,address=no" />
   <title>MOB BR - Main</title>
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
-
 <body>
   <div id="app" class="no-callout" aria-label="MOB BR メイン画面">
 
@@ -18,7 +16,6 @@
     <aside class="leftCol" aria-label="メニュー">
       <div class="loopScroll" id="loopScroll" aria-label="メニュー一覧（スクロール）">
         <div class="loopInner" id="loopInner">
-
           <button class="imgBtn floaty" id="btnTeam" type="button" aria-label="チーム">
             <img src="bteam.png" alt="TEAM" draggable="false">
           </button>
@@ -42,7 +39,6 @@
           <button class="imgBtn floaty delay5" id="btnCard" type="button" aria-label="カードコレクション">
             <img src="bcard.png" alt="CARD COLLECTION" draggable="false">
           </button>
-
         </div>
       </div>
     </aside>
@@ -64,15 +60,12 @@
             <div class="jobLine tappable" id="tapCompany" title="タップで変更">
               企業名：<span id="uiCompany">CB Memory</span>
             </div>
-
             <div class="jobLine tappable" id="tapTeamName" title="タップで変更">
               チーム名：<span id="uiTeam">PLAYER TEAM</span>
             </div>
-
             <div class="jobLine">
               所持G：<span id="uiGold">0</span>G
             </div>
-
             <div class="jobLine">
               企業ランク：<span id="uiRank">RANK 10</span>
             </div>
@@ -93,7 +86,7 @@
         </div>
       </section>
 
-      <!-- 右下：rog情報（年月週／次大会／ログ本文のみ） -->
+      <!-- 右下：rog情報（年月週／次大会／最近ログ） -->
       <section class="bottomRow" aria-label="下部情報">
         <div class="rogWrap" id="rogWrap">
           <img class="rogBg" src="rog.png" alt="" aria-hidden="true" draggable="false">
@@ -101,14 +94,12 @@
             <div class="dateLine">
               <span id="uiY">1989</span>年 <span id="uiM">1</span>月 <span id="uiW">1</span>週
             </div>
-
             <div class="nextTourLine">
               次の大会：<span id="uiNextTour">未定</span>（<span id="uiNextTourW">未定</span>）
             </div>
-
             <div class="divider"></div>
 
-            <!-- 「最近の出来事」ラベル無し：本文だけ -->
+            <!-- 「最近の出来事」ラベルは消す：内容だけ -->
             <div class="recentOnly">
               <span id="uiRecent">未定</span>
             </div>
@@ -120,10 +111,9 @@
 
     </main>
 
-    <!-- ===== 共通の暗転背景（週ポップ / メンバー名ポップで使用） ===== -->
+    <!-- ===== メンバー名ポップ ===== -->
     <div class="modalBack" id="modalBack" aria-hidden="true"></div>
 
-    <!-- ===== メンバー名ポップ ===== -->
     <div class="modalCard" id="membersPop" role="dialog" aria-modal="true" aria-label="メンバー名">
       <div class="modalTitle">メンバー名</div>
 
@@ -132,12 +122,10 @@
           <span class="nameLabel">1</span>
           <span class="nameVal" id="uiM1">○○○</span>
         </button>
-
         <button class="nameRow" id="rowM2" type="button" aria-label="メンバー2">
           <span class="nameLabel">2</span>
           <span class="nameVal" id="uiM2">○○○</span>
         </button>
-
         <button class="nameRow" id="rowM3" type="button" aria-label="メンバー3">
           <span class="nameLabel">3</span>
           <span class="nameVal" id="uiM3">○○○</span>
@@ -147,7 +135,7 @@
       <button class="closeBtn" id="btnCloseMembers" type="button" aria-label="閉じる">閉じる</button>
     </div>
 
-    <!-- ===== 週切替ポップ（中央） ===== -->
+    <!-- 週切替ポップ（中央） -->
     <div class="weekPop" id="weekPop" role="dialog" aria-modal="true" aria-label="週切り替え">
       <div class="weekPopCard">
         <div class="weekPopTitle" id="popTitle">1989年1月 第1週</div>
@@ -165,24 +153,204 @@
       <img src="bnext.png" alt="NEXT" draggable="false">
     </button>
 
-    <!-- ===== チーム画面（導入：このあと中身を実装していく） ===== -->
+    <!-- ===== チーム画面（中身：確定仕様ベース） ===== -->
     <div class="teamScreen" id="teamScreen" aria-hidden="true">
       <div class="teamPanel" role="dialog" aria-modal="true" aria-label="チーム画面">
+
         <div class="teamTitle">チーム</div>
 
-        <div class="teamBody">
+        <!-- タブ（CSSは次で追加：今はHTMLだけ用意） -->
+        <div class="teamTabs" role="tablist" aria-label="チームメニュー">
+          <button class="teamTab isActive" id="tabMembers" type="button" role="tab" aria-selected="true" aria-controls="panelMembers">メンバー</button>
+          <button class="teamTab" id="tabCoach" type="button" role="tab" aria-selected="false" aria-controls="panelCoach">コーチ</button>
+          <button class="teamTab" id="tabRecord" type="button" role="tab" aria-selected="false" aria-controls="panelRecord">戦績</button>
+          <button class="teamTab" id="tabSave" type="button" role="tab" aria-selected="false" aria-controls="panelSave">セーブ</button>
+        </div>
+
+        <div class="teamTopInfo" aria-label="基本情報">
           <div class="teamLine">企業名：<span id="tCompany"></span></div>
           <div class="teamLine">チーム名：<span id="tTeam"></span></div>
+        </div>
 
-          <div class="teamLine">メンバー：</div>
-          <div class="teamMembers">
-            <div class="tm">1) <span id="tM1"></span></div>
-            <div class="tm">2) <span id="tM2"></span></div>
-            <div class="tm">3) <span id="tM3"></span></div>
+        <!-- ===== パネル：メンバー（メイン） ===== -->
+        <section class="teamSection show" id="panelMembers" role="tabpanel" aria-label="メンバー" aria-labelledby="tabMembers">
+          <div class="teamSectionTitle">現在のメンバー</div>
+
+          <!-- A（IGL） -->
+          <div class="memberCard" id="cardA" aria-label="メンバーA">
+            <div class="memberHead">
+              <div class="memberRole">A（IGL）</div>
+              <button class="memberNameBtn" id="tM1Btn" type="button" aria-label="名前変更 A">
+                <span class="memberName" id="tM1">○○○</span>
+              </button>
+            </div>
+
+            <div class="statsGrid" aria-label="能力ステータス">
+              <div class="stat"><span class="k">体力</span><span class="v" id="stA_hp">0</span></div>
+              <div class="stat"><span class="k">メンタル</span><span class="v" id="stA_mental">0</span></div>
+              <div class="stat"><span class="k">エイム</span><span class="v" id="stA_aim">0</span></div>
+              <div class="stat"><span class="k">敏捷性</span><span class="v" id="stA_agi">0</span></div>
+              <div class="stat"><span class="k">技術</span><span class="v" id="stA_skill">0</span></div>
+              <div class="stat"><span class="k">サポート</span><span class="v" id="stA_support">0</span></div>
+              <div class="stat"><span class="k">探知</span><span class="v" id="stA_scan">0</span></div>
+            </div>
+
+            <div class="textBlock">
+              <div class="lbl">パッシブ</div>
+              <div class="val" id="txtA_passive">チームのアーマー+5</div>
+            </div>
+            <div class="textBlock">
+              <div class="lbl">ウルト</div>
+              <div class="val" id="txtA_ult">FightBoost +2</div>
+            </div>
           </div>
 
-          <div class="teamNote">※能力/パッシブ/ウルト/戦績/セーブ等は次フェーズで実装</div>
-        </div>
+          <!-- B（アタッカー） -->
+          <div class="memberCard" id="cardB" aria-label="メンバーB">
+            <div class="memberHead">
+              <div class="memberRole">B（アタッカー）</div>
+              <button class="memberNameBtn" id="tM2Btn" type="button" aria-label="名前変更 B">
+                <span class="memberName" id="tM2">○○○</span>
+              </button>
+            </div>
+
+            <div class="statsGrid" aria-label="能力ステータス">
+              <div class="stat"><span class="k">体力</span><span class="v" id="stB_hp">0</span></div>
+              <div class="stat"><span class="k">メンタル</span><span class="v" id="stB_mental">0</span></div>
+              <div class="stat"><span class="k">エイム</span><span class="v" id="stB_aim">0</span></div>
+              <div class="stat"><span class="k">敏捷性</span><span class="v" id="stB_agi">0</span></div>
+              <div class="stat"><span class="k">技術</span><span class="v" id="stB_skill">0</span></div>
+              <div class="stat"><span class="k">サポート</span><span class="v" id="stB_support">0</span></div>
+              <div class="stat"><span class="k">探知</span><span class="v" id="stB_scan">0</span></div>
+            </div>
+
+            <div class="textBlock">
+              <div class="lbl">パッシブ</div>
+              <div class="val" id="txtB_passive">チームの敏捷性+5</div>
+            </div>
+            <div class="textBlock">
+              <div class="lbl">ウルト</div>
+              <div class="val" id="txtB_ult">FightBoost +2</div>
+            </div>
+          </div>
+
+          <!-- C（サポーター） -->
+          <div class="memberCard" id="cardC" aria-label="メンバーC">
+            <div class="memberHead">
+              <div class="memberRole">C（サポーター）</div>
+              <button class="memberNameBtn" id="tM3Btn" type="button" aria-label="名前変更 C">
+                <span class="memberName" id="tM3">○○○</span>
+              </button>
+            </div>
+
+            <div class="statsGrid" aria-label="能力ステータス">
+              <div class="stat"><span class="k">体力</span><span class="v" id="stC_hp">0</span></div>
+              <div class="stat"><span class="k">メンタル</span><span class="v" id="stC_mental">0</span></div>
+              <div class="stat"><span class="k">エイム</span><span class="v" id="stC_aim">0</span></div>
+              <div class="stat"><span class="k">敏捷性</span><span class="v" id="stC_agi">0</span></div>
+              <div class="stat"><span class="k">技術</span><span class="v" id="stC_skill">0</span></div>
+              <div class="stat"><span class="k">サポート</span><span class="v" id="stC_support">0</span></div>
+              <div class="stat"><span class="k">探知</span><span class="v" id="stC_scan">0</span></div>
+            </div>
+
+            <div class="textBlock">
+              <div class="lbl">パッシブ</div>
+              <div class="val" id="txtC_passive">チームの探知+5</div>
+            </div>
+            <div class="textBlock">
+              <div class="lbl">ウルト</div>
+              <div class="val" id="txtC_ult">FightBoost +2</div>
+            </div>
+          </div>
+
+          <div class="teamHint">
+            ※「％、勝率、補正値」は表示しません（仕様）
+          </div>
+        </section>
+
+        <!-- ===== パネル：コーチスキル（装備枠） ===== -->
+        <section class="teamSection" id="panelCoach" role="tabpanel" aria-label="コーチスキル" aria-labelledby="tabCoach" hidden>
+          <div class="teamSectionTitle">コーチスキル（装備枠）</div>
+
+          <div class="coachSlots" aria-label="装備枠（最大5）">
+            <div class="slotRow">
+              <div class="slotLabel">SLOT 1</div>
+              <div class="slotText" id="coachSlot1">未装備</div>
+              <div class="slotBtns">
+                <button class="slotBtn" id="btnEquip1" type="button" aria-label="装備1">装備</button>
+                <button class="slotBtn" id="btnUnequip1" type="button" aria-label="解除1">解除</button>
+              </div>
+            </div>
+
+            <div class="slotRow">
+              <div class="slotLabel">SLOT 2</div>
+              <div class="slotText" id="coachSlot2">未装備</div>
+              <div class="slotBtns">
+                <button class="slotBtn" id="btnEquip2" type="button" aria-label="装備2">装備</button>
+                <button class="slotBtn" id="btnUnequip2" type="button" aria-label="解除2">解除</button>
+              </div>
+            </div>
+
+            <div class="slotRow">
+              <div class="slotLabel">SLOT 3</div>
+              <div class="slotText" id="coachSlot3">未装備</div>
+              <div class="slotBtns">
+                <button class="slotBtn" id="btnEquip3" type="button" aria-label="装備3">装備</button>
+                <button class="slotBtn" id="btnUnequip3" type="button" aria-label="解除3">解除</button>
+              </div>
+            </div>
+
+            <div class="slotRow">
+              <div class="slotLabel">SLOT 4</div>
+              <div class="slotText" id="coachSlot4">未装備</div>
+              <div class="slotBtns">
+                <button class="slotBtn" id="btnEquip4" type="button" aria-label="装備4">装備</button>
+                <button class="slotBtn" id="btnUnequip4" type="button" aria-label="解除4">解除</button>
+              </div>
+            </div>
+
+            <div class="slotRow">
+              <div class="slotLabel">SLOT 5</div>
+              <div class="slotText" id="coachSlot5">未装備</div>
+              <div class="slotBtns">
+                <button class="slotBtn" id="btnEquip5" type="button" aria-label="装備5">装備</button>
+                <button class="slotBtn" id="btnUnequip5" type="button" aria-label="解除5">解除</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="teamHint">
+            ※効果数値は表示しません（文章のみ）
+          </div>
+        </section>
+
+        <!-- ===== パネル：戦績（終了した大会のみ表示） ===== -->
+        <section class="teamSection" id="panelRecord" role="tabpanel" aria-label="戦績" aria-labelledby="tabRecord" hidden>
+          <div class="teamSectionTitle">戦績（終了した大会のみ）</div>
+
+          <div class="recordList" id="recordList" aria-label="戦績一覧">
+            <!-- JSで「終了した大会のみ」追加していく -->
+            <div class="recordEmpty" id="recordEmpty">まだ終了した大会がありません</div>
+          </div>
+
+          <!-- 年間集計など（仕様の表示項目を用意：数値はJSで反映） -->
+          <div class="recordSummary" aria-label="年間集計">
+            <div class="sumRow">年間キル数（全員）：<span id="sumKills">0</span></div>
+            <div class="sumRow">年間アシスト数（全員）：<span id="sumAssists">0</span></div>
+            <div class="sumRow">年末企業ランク：<span id="sumYearRank">RANK 10</span></div>
+          </div>
+        </section>
+
+        <!-- ===== パネル：セーブ ===== -->
+        <section class="teamSection" id="panelSave" role="tabpanel" aria-label="セーブ" aria-labelledby="tabSave" hidden>
+          <div class="teamSectionTitle">セーブ</div>
+
+          <div class="saveBox" aria-label="手動セーブ">
+            <button class="saveBtn" id="btnManualSave" type="button" aria-label="手動セーブ">手動セーブ</button>
+            <button class="saveBtn danger" id="btnDeleteSave" type="button" aria-label="セーブ削除">セーブ削除</button>
+            <div class="saveHint" id="saveHint">※ここは次で動作を実装します</div>
+          </div>
+        </section>
 
         <button class="closeBtn" id="btnCloseTeam" type="button" aria-label="閉じる">閉じる</button>
       </div>
@@ -193,6 +361,6 @@
 
   </div>
 
-  <script src="app.js?v=12" defer></script>
+  <script src="app.js?v=13" defer></script>
 </body>
 </html>
