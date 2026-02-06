@@ -178,11 +178,11 @@ html, body{
   gap: 6px;
 }
 .jobLine{
-  font-size: 18px;         /* ↓少し小さく */
+  font-size: 18px;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* 枠内に収める */
+  text-overflow: ellipsis;
 }
 .jobLine.small{
   font-size: 14px;
@@ -214,12 +214,12 @@ html, body{
   z-index: 2;
 }
 
-/* team image: slightly lower */
+/* team image */
 .teamImg{
   position:absolute;
   left: 10%;
   right: 10%;
-  top: 12%;      /* ↓少し下げた */
+  top: 12%;
   bottom: 28%;
   width: 80%;
   height: 60%;
@@ -240,7 +240,7 @@ html, body{
   border-radius: 12px;
   padding: 10px 12px;
   font-weight: 1000;
-  font-size: 16px;           /* 小さめ */
+  font-size: 16px;
   background: rgba(255,255,255,.88);
   color: #111;
   box-shadow: 0 10px 22px rgba(0,0,0,.35);
@@ -279,8 +279,8 @@ html, body{
   gap: 10px;
 }
 
-.dateLine{ font-size: 28px; line-height: 1; }        /* ↓ */
-.nextTourLine{ font-size: 16px; opacity: .95; }      /* ↓ */
+.dateLine{ font-size: 28px; line-height: 1; }
+.nextTourLine{ font-size: 16px; opacity: .95; }
 
 .divider{
   height: 3px;
@@ -288,14 +288,13 @@ html, body{
   border-radius: 999px;
 }
 
-/* 「最近の出来事：」は消す → 内容だけ */
 .recentOnly{
-  font-size: 18px;           /* ↓かなり小さく */
+  font-size: 18px;
   line-height: 1.15;
   opacity: .98;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 3;     /* はみ出し防止 */
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
@@ -455,7 +454,7 @@ html, body{
 }
 .nextCorner:active{ transform: translateY(1px); }
 
-/* team screen overlay */
+/* ===== TEAM SCREEN (overlay) ===== */
 .teamScreen{
   position:absolute;
   inset:0;
@@ -463,34 +462,281 @@ html, body{
   display:none;
 }
 .teamScreen.show{ display:block; }
+
+/* panel */
 .teamPanel{
   position:absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%,-50%);
-  width: min(620px, 90vw);
+  width: min(760px, 94vw);
+  max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
+  overflow: hidden;
   border-radius: 16px;
   background: rgba(0,0,0,.82);
   border: 2px solid rgba(255,255,255,.35);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: 14px;
   color:#fff;
   text-shadow: var(--textShadow);
-}
-.teamTitle{
-  font-size: 22px;
-  font-weight: 1000;
-  margin-bottom: 12px;
-}
-.teamBody{
-  font-size: 16px;
-  font-weight: 900;
   display:flex;
   flex-direction: column;
   gap: 10px;
 }
-.teamMembers{ display:flex; flex-direction: column; gap: 6px; }
-.teamNote{ font-size: 13px; opacity:.9; }
+
+.teamTitle{
+  font-size: 22px;
+  font-weight: 1000;
+}
+
+/* tabs */
+.teamTabs{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.teamTab{
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 1000;
+  font-size: 14px;
+  background: rgba(255,255,255,.14);
+  color:#fff;
+  touch-action: manipulation;
+}
+.teamTab:active{ transform: translateY(1px); opacity:.95; }
+.teamTab.isActive{
+  background: rgba(255,255,255,.92);
+  color:#111;
+  text-shadow: none;
+}
+
+/* top info */
+.teamTopInfo{
+  font-size: 14px;
+  font-weight: 900;
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.teamLine{ white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+
+/* sections */
+.teamSection{
+  display:none;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+}
+.teamSection.show{ display:block; }
+
+.teamSectionTitle{
+  font-size: 16px;
+  font-weight: 1000;
+  margin: 4px 0 10px;
+}
+
+/* member cards */
+.memberCard{
+  border-radius: 14px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.memberHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.memberRole{
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+.memberNameBtn{
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  font-weight: 1000;
+  font-size: 14px;
+  text-shadow: none;
+  touch-action: manipulation;
+}
+.memberNameBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.memberName{
+  display:block;
+  max-width: 220px;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* stats grid */
+.statsGrid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+.stat{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.10);
+}
+.stat .k{ font-size: 13px; font-weight: 1000; opacity:.95; }
+.stat .v{ font-size: 14px; font-weight: 1000; }
+
+/* passive/ult text blocks */
+.textBlock{
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.10);
+  margin-top: 8px;
+}
+.textBlock .lbl{
+  font-size: 12px;
+  font-weight: 1000;
+  opacity: .9;
+}
+.textBlock .val{
+  font-size: 14px;
+  font-weight: 1000;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.teamHint{
+  font-size: 12px;
+  opacity: .9;
+  margin: 4px 0 8px;
+}
+
+/* coach slots */
+.coachSlots{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.slotRow{
+  border-radius: 14px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slotLabel{
+  font-size: 12px;
+  font-weight: 1000;
+  opacity: .9;
+}
+.slotText{
+  font-size: 14px;
+  font-weight: 1000;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.10);
+}
+.slotBtns{
+  display:flex;
+  gap: 8px;
+}
+.slotBtn{
+  flex: 1;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 10px;
+  font-size: 14px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  text-shadow: none;
+  touch-action: manipulation;
+}
+.slotBtn:active{ transform: translateY(1px); opacity:.95; }
+
+/* record */
+.recordList{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.recordEmpty{
+  border-radius: 14px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 900;
+  opacity: .95;
+}
+.recordSummary{
+  margin-top: 10px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 900;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sumRow{
+  display:flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* save */
+.saveBox{
+  border-radius: 14px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 12px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.saveBtn{
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  text-shadow: none;
+  touch-action: manipulation;
+}
+.saveBtn:active{ transform: translateY(1px); opacity:.95; }
+.saveBtn.danger{
+  background: rgba(255,80,80,.92);
+  color:#111;
+}
+.saveHint{ font-size: 12px; opacity:.9; }
 
 /* safe-area */
 .safePad{
@@ -519,4 +765,8 @@ html, body{
   .nextCorner{ width: 130px; }
   .mainSquare{ width: min(520px, 100%); }
   .memberBtn{ font-size: 15px; }
+
+  .teamPanel{ width: min(760px, 96vw); padding: 12px; }
+  .statsGrid{ grid-template-columns: 1fr; }
+  .memberName{ max-width: 180px; }
 }
