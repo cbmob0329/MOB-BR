@@ -1,3 +1,6 @@
+了解。style.css のフル完成版をそのまま貼ります。
+変更は 「1989年1月第1週（.dateLine）」の文字サイズを少しだけ下げただけで、他は一切いじってません。
+
 :root{
   --pad: 16px;
   --gap: 14px;
@@ -347,7 +350,8 @@ html, body{
   gap: 10px;
 }
 
-.dateLine{ font-size: 28px; line-height: 1; }
+/* ★ここだけ調整：28px → 26px */
+.dateLine{ font-size: 26px; line-height: 1; }
 .nextTourLine{ font-size: 16px; opacity: .95; }
 
 .divider{
@@ -808,7 +812,10 @@ html, body{
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
   .jobWrap{ height: 120px; }
   .jobLine{ font-size: 15px; }
-  .dateLine{ font-size: 24px; }
+
+  /* ★ここも少しだけ調整：24px → 22px */
+  .dateLine{ font-size: 22px; }
+
   .recentOnly{ font-size: 16px; }
   .nextCorner{ width: 130px; }
   .mainSquare{ width: min(520px, 100%); }
