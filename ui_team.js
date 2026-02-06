@@ -1,10 +1,16 @@
 'use strict';
 
 /*
-  ui_team.js v13
-  - メンバー名の正は localStorage(mobbr_m1/m2/m3)
-  - render() で playerTeam JSON にも同期して保存（ズレ防止）
-  - チームで名前変更したら、メインにも必ず反映（initMainUI を呼ぶ）
+  MOB BR - ui_team.js v13（HTML固定レイアウト対応版）
+
+  目的：
+  - #teamScreen の中身を「確定仕様ベース」で動かす
+    1) A/B/C の名前変更（タップで変更）→ storageのm1/m2/m3へ反映 → 全UIへ反映
+    2) ステータス7種（数値）・パッシブ・ウルトを表示
+    3) セーブ：手動セーブ（簡易スナップショット保存）
+    4) セーブ削除：完全リセット → タイトルへ戻る → 次のNEXTで名称入力からやり直し
+  前提：
+  - storage.js / data_player.js が先に読み込まれていること
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -13,341 +19,286 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  const K = {
-    company: 'mobbr_company',
-    team: 'mobbr_team',
-    m1: 'mobbr_m1',
-    m2: 'mobbr_m2',
-    m3: 'mobbr_m3',
-
-    playerTeam: 'mobbr_playerTeam',
-    coachSkillsOwned: 'mobbr_coachSkillsOwned',
-    records: 'mobbr_records',
-    save1: 'mobbr_save1'
-  };
-
-  function getStr(key, def){
-    const v = localStorage.getItem(key);
-    return (v === null || v === undefined || v === '') ? def : v;
-  }
-  function setStr(key, val){ localStorage.setItem(key, String(val)); }
-
-  function getJSON(key, def){
-    try{
-      const raw = localStorage.getItem(key);
-      if (!raw) return def;
-      return JSON.parse(raw);
-    }catch(e){
-      return def;
-    }
-  }
-  function setJSON(key, obj){
-    localStorage.setItem(key, JSON.stringify(obj));
-  }
-
+  const S = window.MOBBR?.storage;
   const DP = window.MOBBR?.data?.player;
+
+  if (!S || !S.KEYS){
+    console.warn('[ui_team] storage.js not found');
+    return;
+  }
   if (!DP){
     console.warn('[ui_team] data_player.js not found');
     return;
   }
 
+  // ===== DOM =====
   const dom = {
+    // open/close
     btnTeam: $('btnTeam'),
     teamScreen: $('teamScreen'),
     btnCloseTeam: $('btnCloseTeam'),
 
+    // meta
     tCompany: $('tCompany'),
     tTeam: $('tTeam'),
 
+    // names
     tNameA: $('tNameA'),
     tNameB: $('tNameB'),
     tNameC: $('tNameC'),
 
-    tA: {
-      hp:$('tA_hp'), mental:$('tA_mental'), aim:$('tA_aim'), agi:$('tA_agi'),
-      tech:$('tA_tech'), support:$('tA_support'), scan:$('tA_scan'),
-      passive:$('tA_passive'), ult:$('tA_ult')
-    },
-    tB: {
-      hp:$('tB_hp'), mental:$('tB_mental'), aim:$('tB_aim'), agi:$('tB_agi'),
-      tech:$('tB_tech'), support:$('tB_support'), scan:$('tB_scan'),
-      passive:$('tB_passive'), ult:$('tB_ult')
-    },
-    tC: {
-      hp:$('tC_hp'), mental:$('tC_mental'), aim:$('tC_aim'), agi:$('tC_agi'),
-      tech:$('tC_tech'), support:$('tC_support'), scan:$('tC_scan'),
-      passive:$('tC_passive'), ult:$('tC_ult')
-    },
+    // stats A
+    tA_hp: $('tA_hp'),
+    tA_mental: $('tA_mental'),
+    tA_aim: $('tA_aim'),
+    tA_agi: $('tA_agi'),
+    tA_tech: $('tA_tech'),
+    tA_support: $('tA_support'),
+    tA_scan: $('tA_scan'),
+    tA_passive: $('tA_passive'),
+    tA_ult: $('tA_ult'),
 
-    slotBtns: [ $('slot1'), $('slot2'), $('slot3'), $('slot4'), $('slot5') ],
-    slotName: [ $('slot1Name'), $('slot2Name'), $('slot3Name'), $('slot4Name'), $('slot5Name') ],
-    slotDesc: [ $('slot1Desc'), $('slot2Desc'), $('slot3Desc'), $('slot4Desc'), $('slot5Desc') ],
+    // stats B
+    tB_hp: $('tB_hp'),
+    tB_mental: $('tB_mental'),
+    tB_aim: $('tB_aim'),
+    tB_agi: $('tB_agi'),
+    tB_tech: $('tB_tech'),
+    tB_support: $('tB_support'),
+    tB_scan: $('tB_scan'),
+    tB_passive: $('tB_passive'),
+    tB_ult: $('tB_ult'),
 
-    recordsEmpty: $('recordsEmpty'),
-    recordsList: $('recordsList'),
+    // stats C
+    tC_hp: $('tC_hp'),
+    tC_mental: $('tC_mental'),
+    tC_aim: $('tC_aim'),
+    tC_agi: $('tC_agi'),
+    tC_tech: $('tC_tech'),
+    tC_support: $('tC_support'),
+    tC_scan: $('tC_scan'),
+    tC_passive: $('tC_passive'),
+    tC_ult: $('tC_ult'),
 
+    // save buttons（あなたのHTML）
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
 
-  function ensurePlayerTeam(){
-    let team = getJSON(K.playerTeam, null);
-    if (team && Array.isArray(team.members)) return team;
+  // ===== keys =====
+  const K = S.KEYS;
 
-    team = DP.buildDefaultTeam();
-
-    // 初期名は localStorage を優先
-    const nm1 = getStr(K.m1, 'A');
-    const nm2 = getStr(K.m2, 'B');
-    const nm3 = getStr(K.m3, 'C');
-
-    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    if (bySlot[0]) bySlot[0].name = nm1;
-    if (bySlot[1]) bySlot[1].name = nm2;
-    if (bySlot[2]) bySlot[2].name = nm3;
-
-    team.members = team.members.map(m => ({ ...m, stats: DP.normalizeStats(m.stats) }));
-    setJSON(K.playerTeam, team);
-    return team;
+  // ===== utils =====
+  function safeText(el, text){
+    if (!el) return;
+    el.textContent = String(text ?? '');
   }
 
-  function ensureCoachOwned(){
-    const owned = getJSON(K.coachSkillsOwned, null);
-    if (Array.isArray(owned)) return owned;
-    setJSON(K.coachSkillsOwned, []);
-    return [];
+  function getNameA(){ return S.getStr(K.m1, 'A'); }
+  function getNameB(){ return S.getStr(K.m2, 'B'); }
+  function getNameC(){ return S.getStr(K.m3, 'C'); }
+
+  function setNameA(v){ S.setStr(K.m1, v); }
+  function setNameB(v){ S.setStr(K.m2, v); }
+  function setNameC(v){ S.setStr(K.m3, v); }
+
+  function normalize(stats){ return DP.normalizeStats(stats); }
+
+  function getDefaultTeam(){
+    // data_player.js の確定データ
+    return DP.buildDefaultTeam();
   }
 
-  function ensureRecords(){
-    const rec = getJSON(K.records, null);
-    if (Array.isArray(rec)) return rec;
-    setJSON(K.records, []);
-    return [];
-  }
+  // ===== render all UI names (main + team) =====
+  function reflectNamesEverywhere(){
+    // team screen buttons
+    safeText(dom.tNameA, getNameA());
+    safeText(dom.tNameB, getNameB());
+    safeText(dom.tNameC, getNameC());
 
-  function syncNamesFromStorageIntoTeam(team){
-    // ★これが肝：メインで変更した名前を、チームJSONにも毎回同期してズレを消す
-    const nm1 = getStr(K.m1, 'A');
-    const nm2 = getStr(K.m2, 'B');
-    const nm3 = getStr(K.m3, 'C');
-
-    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    if (bySlot[0]) bySlot[0].name = nm1;
-    if (bySlot[1]) bySlot[1].name = nm2;
-    if (bySlot[2]) bySlot[2].name = nm3;
-
-    setJSON(K.playerTeam, team);
-  }
-
-  function writeMemberToDom(member, nameBtn, t){
-    if (!member) return;
-
-    const stats = DP.normalizeStats(member.stats);
-    if (nameBtn) nameBtn.textContent = member.name || member.displayNameDefault || '○○○';
-
-    if (t.hp) t.hp.textContent = String(stats.hp);
-    if (t.mental) t.mental.textContent = String(stats.mental);
-    if (t.aim) t.aim.textContent = String(stats.aim);
-    if (t.agi) t.agi.textContent = String(stats.agi);
-    if (t.tech) t.tech.textContent = String(stats.tech);
-    if (t.support) t.support.textContent = String(stats.support);
-    if (t.scan) t.scan.textContent = String(stats.scan);
-
-    if (t.passive) t.passive.textContent = member.passive || '未定';
-    if (t.ult) t.ult.textContent = member.ult || '未定';
+    // main screen member popup（存在すれば）
+    const uiM1 = $('uiM1');
+    const uiM2 = $('uiM2');
+    const uiM3 = $('uiM3');
+    if (uiM1) uiM1.textContent = getNameA();
+    if (uiM2) uiM2.textContent = getNameB();
+    if (uiM3) uiM3.textContent = getNameC();
   }
 
   function render(){
-    const team = ensurePlayerTeam();
+    // meta
+    safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
+    safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
 
-    // ここで常に同期（メイン変更を確実に反映）
-    syncNamesFromStorageIntoTeam(team);
+    // members + stats
+    const team = getDefaultTeam();
+    const byId = {};
+    for (const m of team.members) byId[m.id] = m;
 
-    if (dom.tCompany) dom.tCompany.textContent = getStr(K.company, 'CB Memory');
-    if (dom.tTeam) dom.tTeam.textContent = getStr(K.team, 'PLAYER TEAM');
-
-    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    writeMemberToDom(bySlot[0], dom.tNameA, dom.tA);
-    writeMemberToDom(bySlot[1], dom.tNameB, dom.tB);
-    writeMemberToDom(bySlot[2], dom.tNameC, dom.tC);
-
-    // coach slots
-    if (!team.coachSkills || !Array.isArray(team.coachSkills.equipped)){
-      team.coachSkills = { maxSlots: 5, equipped: [null,null,null,null,null] };
-    }
-    while (team.coachSkills.equipped.length < 5) team.coachSkills.equipped.push(null);
-    if (team.coachSkills.equipped.length > 5) team.coachSkills.equipped = team.coachSkills.equipped.slice(0,5);
-
-    for (let i=0;i<5;i++){
-      const cur = team.coachSkills.equipped[i];
-      if (dom.slotName[i]) dom.slotName[i].textContent = cur ? String(cur) : '未装備';
-      if (dom.slotDesc[i]) dom.slotDesc[i].textContent = cur ? 'タップで解除' : '装備／解除のみ（効果数値は非表示）';
+    // A
+    const A = byId.A;
+    if (A){
+      const st = normalize(A.stats);
+      safeText(dom.tA_hp, st.hp);
+      safeText(dom.tA_mental, st.mental);
+      safeText(dom.tA_aim, st.aim);
+      safeText(dom.tA_agi, st.agi);
+      safeText(dom.tA_tech, st.tech);
+      safeText(dom.tA_support, st.support);
+      safeText(dom.tA_scan, st.scan);
+      safeText(dom.tA_passive, A.passive || '未定');
+      safeText(dom.tA_ult, A.ult || '未定');
     }
 
-    // records（終了のみ）
-    const all = ensureRecords();
-    const finished = all.filter(r => r && r.finished === true);
-
-    if (dom.recordsList) dom.recordsList.innerHTML = '';
-    if (dom.recordsEmpty){
-      dom.recordsEmpty.style.display = finished.length ? 'none' : 'block';
+    // B
+    const B = byId.B;
+    if (B){
+      const st = normalize(B.stats);
+      safeText(dom.tB_hp, st.hp);
+      safeText(dom.tB_mental, st.mental);
+      safeText(dom.tB_aim, st.aim);
+      safeText(dom.tB_agi, st.agi);
+      safeText(dom.tB_tech, st.tech);
+      safeText(dom.tB_support, st.support);
+      safeText(dom.tB_scan, st.scan);
+      safeText(dom.tB_passive, B.passive || '未定');
+      safeText(dom.tB_ult, B.ult || '未定');
     }
 
-    if (dom.recordsList && finished.length){
-      finished.forEach((r)=>{
-        const card = document.createElement('div');
-        card.className = 'recordCard';
-        card.innerHTML = `
-          <div class="recordTitle">${(r.tourName || '大会')}</div>
-          <div class="recordLine">総合順位：${(r.totalRank ?? '—')} / 総合ポイント：${(r.totalPoint ?? '—')}</div>
-          <div class="recordLine">年間キル数（全員）：${(r.yearKillsAll ?? '—')} / 年間アシスト数（全員）：${(r.yearAssistsAll ?? '—')}</div>
-          <div class="recordLine">年末企業ランク：${(r.yearEndCompanyRank ?? '—')}</div>
-        `;
-        dom.recordsList.appendChild(card);
-      });
+    // C
+    const C = byId.C;
+    if (C){
+      const st = normalize(C.stats);
+      safeText(dom.tC_hp, st.hp);
+      safeText(dom.tC_mental, st.mental);
+      safeText(dom.tC_aim, st.aim);
+      safeText(dom.tC_agi, st.agi);
+      safeText(dom.tC_tech, st.tech);
+      safeText(dom.tC_support, st.support);
+      safeText(dom.tC_scan, st.scan);
+      safeText(dom.tC_passive, C.passive || '未定');
+      safeText(dom.tC_ult, C.ult || '未定');
     }
+
+    // names
+    reflectNamesEverywhere();
   }
 
+  // ===== open/close =====
   function open(){
-    if (dom.teamScreen){
-      dom.teamScreen.classList.add('show');
-      dom.teamScreen.setAttribute('aria-hidden', 'false');
-    }
+    if (!dom.teamScreen) return;
+    dom.teamScreen.classList.add('show');
+    dom.teamScreen.setAttribute('aria-hidden', 'false');
     render();
   }
 
   function close(){
-    if (dom.teamScreen){
-      dom.teamScreen.classList.remove('show');
-      dom.teamScreen.setAttribute('aria-hidden', 'true');
-    }
+    if (!dom.teamScreen) return;
+    dom.teamScreen.classList.remove('show');
+    dom.teamScreen.setAttribute('aria-hidden', 'true');
   }
 
-  let bound = false;
-
-  function bind(){
-    if (bound) return;
-    bound = true;
-
-    if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
-    if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
-
-    function bindRename(nameBtn, storageKey){
-      if (!nameBtn) return;
-
-      nameBtn.addEventListener('click', ()=>{
-        const cur = getStr(storageKey, '○○○');
-        const v = prompt('メンバー名を変更', cur);
+  // ===== rename handlers =====
+  function bindRename(){
+    if (dom.tNameA){
+      dom.tNameA.addEventListener('click', ()=>{
+        const cur = getNameA();
+        const v = prompt('メンバー名（A）を変更', cur);
         if (v === null) return;
         const nv = v.trim();
         if (!nv) return;
-
-        // 正は m1/m2/m3
-        setStr(storageKey, nv);
-
-        // 即同期＆保存
-        const team = ensurePlayerTeam();
-        syncNamesFromStorageIntoTeam(team);
-
-        // メインにも反映
-        if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
-
-        render();
+        setNameA(nv);
+        reflectNamesEverywhere();
       });
     }
-
-    bindRename(dom.tNameA, K.m1);
-    bindRename(dom.tNameB, K.m2);
-    bindRename(dom.tNameC, K.m3);
-
-    // coach slots
-    for (let i=0;i<5;i++){
-      const btn = dom.slotBtns[i];
-      if (!btn) continue;
-
-      btn.addEventListener('click', ()=>{
-        const team = ensurePlayerTeam();
-        const owned = ensureCoachOwned();
-
-        const cur = team.coachSkills.equipped[i];
-
-        if (cur){
-          if (!confirm(`このスキルを解除しますか？\n\n${cur}`)) return;
-          team.coachSkills.equipped[i] = null;
-          setJSON(K.playerTeam, team);
-          render();
-          return;
-        }
-
-        if (!owned.length){
-          const v = prompt('装備するコーチスキル（文章）を入力', '（例）戦闘開始時にチームの集中力が上がる');
-          if (v === null) return;
-          const nv = v.trim();
-          if (!nv) return;
-          owned.push(nv);
-          setJSON(K.coachSkillsOwned, owned);
-          team.coachSkills.equipped[i] = nv;
-          setJSON(K.playerTeam, team);
-          render();
-          return;
-        }
-
-        const list = owned.map((t,idx)=> `${idx+1}) ${t}`).join('\n');
-        const pick = prompt(`装備するスキル番号を入力\n\n${list}`, '1');
-        if (pick === null) return;
-        const n = Number(pick);
-        if (!Number.isFinite(n) || n < 1 || n > owned.length) return;
-
-        team.coachSkills.equipped[i] = owned[n-1];
-        setJSON(K.playerTeam, team);
-        render();
+    if (dom.tNameB){
+      dom.tNameB.addEventListener('click', ()=>{
+        const cur = getNameB();
+        const v = prompt('メンバー名（B）を変更', cur);
+        if (v === null) return;
+        const nv = v.trim();
+        if (!nv) return;
+        setNameB(nv);
+        reflectNamesEverywhere();
       });
     }
-
-    if (dom.btnManualSave){
-      dom.btnManualSave.addEventListener('click', ()=>{
-        const snapshot = {
-          version: 'v13',
-          ts: Date.now(),
-          company: getStr(K.company, 'CB Memory'),
-          team: getStr(K.team, 'PLAYER TEAM'),
-          m1: getStr(K.m1, 'A'),
-          m2: getStr(K.m2, 'B'),
-          m3: getStr(K.m3, 'C'),
-          playerTeam: getJSON(K.playerTeam, ensurePlayerTeam()),
-          coachSkillsOwned: getJSON(K.coachSkillsOwned, []),
-          records: getJSON(K.records, [])
-        };
-        setJSON(K.save1, snapshot);
-        alert('セーブしました。');
-      });
-    }
-
-    if (dom.btnDeleteSave){
-      dom.btnDeleteSave.addEventListener('click', ()=>{
-        if (!confirm('セーブ削除すると、スケジュール/名前/戦績/持ち物/育成など全てリセットされます。\n本当に実行しますか？')) return;
-
-        const keys = [];
-        for (let i=0; i<localStorage.length; i++){
-          const k = localStorage.key(i);
-          if (!k) continue;
-          if (k.startsWith('mobbr_')) keys.push(k);
-        }
-        keys.forEach(k => localStorage.removeItem(k));
-
-        window.dispatchEvent(new CustomEvent('mobbr:goTitle'));
+    if (dom.tNameC){
+      dom.tNameC.addEventListener('click', ()=>{
+        const cur = getNameC();
+        const v = prompt('メンバー名（C）を変更', cur);
+        if (v === null) return;
+        const nv = v.trim();
+        if (!nv) return;
+        setNameC(nv);
+        reflectNamesEverywhere();
       });
     }
   }
 
+  // ===== save =====
+  function manualSave(){
+    // まずは「現状の重要情報だけ」スナップショット（将来ここに育成/所持品などを足す）
+    const snap = {
+      ver: 'v13',
+      ts: Date.now(),
+      company: S.getStr(K.company, 'CB Memory'),
+      team: S.getStr(K.team, 'PLAYER TEAM'),
+      m1: getNameA(),
+      m2: getNameB(),
+      m3: getNameC(),
+      year: S.getNum(K.year, 1989),
+      month: S.getNum(K.month, 1),
+      week: S.getNum(K.week, 1),
+      gold: S.getNum(K.gold, 0),
+      rank: S.getNum(K.rank, 10),
+      nextTour: S.getStr(K.nextTour, '未定'),
+      nextTourW: S.getStr(K.nextTourW, '未定'),
+      recent: S.getStr(K.recent, '未定')
+    };
+
+    localStorage.setItem('mobbr_save1', JSON.stringify(snap));
+    alert('セーブしました。');
+  }
+
+  function deleteSaveAndReset(){
+    if (!confirm('セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？')) return;
+
+    // ★完全リセット → タイトルへ
+    // ★次のNEXTで「企業/チーム/メンバー名の入力」→ 1989年1月第1週から
+    if (window.MOBBR?.storage?.resetAll){
+      window.MOBBR.storage.resetAll();
+    }else{
+      location.reload();
+    }
+  }
+
+  function bindSave(){
+    if (dom.btnManualSave){
+      dom.btnManualSave.addEventListener('click', manualSave);
+    }
+    if (dom.btnDeleteSave){
+      dom.btnDeleteSave.addEventListener('click', deleteSaveAndReset);
+    }
+  }
+
+  function bindOpenClose(){
+    if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
+    if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
+  }
+
+  // ===== init =====
   function initTeamUI(){
-    bind();
-    ensurePlayerTeam();
+    bindOpenClose();
+    bindRename();
+    bindSave();
+    // 初回描画（開かなくても安全）
     render();
   }
 
   window.MOBBR.initTeamUI = initTeamUI;
   window.MOBBR.ui.team = { open, close, render };
 
-  initTeamUI();
+  document.addEventListener('DOMContentLoaded', ()=>{
+    initTeamUI();
+  });
 })();
