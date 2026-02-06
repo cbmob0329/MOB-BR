@@ -1,13 +1,10 @@
 'use strict';
 
 /*
-  MOB BR - ui_team.js v13
-  app.js の loadScript() で「NEXT後に読み込まれる」前提。
-  → DOMContentLoaded に依存せず、initTeamUI() を公開して即実行。
-
-  ※あなたの index.html の teamScreen は “完成HTML” が既にある。
-  なので .teamBody を探して作り直す方式は捨てて、
-  既存IDへ値を流し込む方式に変更。
+  ui_team.js v13
+  - メンバー名の正は localStorage(mobbr_m1/m2/m3)
+  - render() で playerTeam JSON にも同期して保存（ズレ防止）
+  - チームで名前変更したら、メインにも必ず反映（initMainUI を呼ぶ）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -16,7 +13,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  // ---- storage keys ----
   const K = {
     company: 'mobbr_company',
     team: 'mobbr_team',
@@ -49,30 +45,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     localStorage.setItem(key, JSON.stringify(obj));
   }
 
-  // data_player.js
   const DP = window.MOBBR?.data?.player;
   if (!DP){
     console.warn('[ui_team] data_player.js not found');
     return;
   }
 
-  // ---- DOM ----
   const dom = {
-    // open/close
     btnTeam: $('btnTeam'),
     teamScreen: $('teamScreen'),
     btnCloseTeam: $('btnCloseTeam'),
 
-    // meta
     tCompany: $('tCompany'),
     tTeam: $('tTeam'),
 
-    // names
     tNameA: $('tNameA'),
     tNameB: $('tNameB'),
     tNameC: $('tNameC'),
 
-    // stats
     tA: {
       hp:$('tA_hp'), mental:$('tA_mental'), aim:$('tA_aim'), agi:$('tA_agi'),
       tech:$('tA_tech'), support:$('tA_support'), scan:$('tA_scan'),
@@ -89,16 +79,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       passive:$('tC_passive'), ult:$('tC_ult')
     },
 
-    // coach slots
     slotBtns: [ $('slot1'), $('slot2'), $('slot3'), $('slot4'), $('slot5') ],
     slotName: [ $('slot1Name'), $('slot2Name'), $('slot3Name'), $('slot4Name'), $('slot5Name') ],
     slotDesc: [ $('slot1Desc'), $('slot2Desc'), $('slot3Desc'), $('slot4Desc'), $('slot5Desc') ],
 
-    // records
     recordsEmpty: $('recordsEmpty'),
     recordsList: $('recordsList'),
 
-    // save
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
@@ -124,13 +111,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return team;
   }
 
-  function syncNamesToStorage(team){
-    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    if (bySlot[0]) setStr(K.m1, bySlot[0].name || getStr(K.m1,'A'));
-    if (bySlot[1]) setStr(K.m2, bySlot[1].name || getStr(K.m2,'B'));
-    if (bySlot[2]) setStr(K.m3, bySlot[2].name || getStr(K.m3,'C'));
-  }
-
   function ensureCoachOwned(){
     const owned = getJSON(K.coachSkillsOwned, null);
     if (Array.isArray(owned)) return owned;
@@ -143,6 +123,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (Array.isArray(rec)) return rec;
     setJSON(K.records, []);
     return [];
+  }
+
+  function syncNamesFromStorageIntoTeam(team){
+    // ★これが肝：メインで変更した名前を、チームJSONにも毎回同期してズレを消す
+    const nm1 = getStr(K.m1, 'A');
+    const nm2 = getStr(K.m2, 'B');
+    const nm3 = getStr(K.m3, 'C');
+
+    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
+    if (bySlot[0]) bySlot[0].name = nm1;
+    if (bySlot[1]) bySlot[1].name = nm2;
+    if (bySlot[2]) bySlot[2].name = nm3;
+
+    setJSON(K.playerTeam, team);
   }
 
   function writeMemberToDom(member, nameBtn, t){
@@ -166,18 +160,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function render(){
     const team = ensurePlayerTeam();
 
-    // meta
+    // ここで常に同期（メイン変更を確実に反映）
+    syncNamesFromStorageIntoTeam(team);
+
     if (dom.tCompany) dom.tCompany.textContent = getStr(K.company, 'CB Memory');
     if (dom.tTeam) dom.tTeam.textContent = getStr(K.team, 'PLAYER TEAM');
 
     const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-    const A = bySlot[0];
-    const B = bySlot[1];
-    const C = bySlot[2];
-
-    writeMemberToDom(A, dom.tNameA, dom.tA);
-    writeMemberToDom(B, dom.tNameB, dom.tB);
-    writeMemberToDom(C, dom.tNameC, dom.tC);
+    writeMemberToDom(bySlot[0], dom.tNameA, dom.tA);
+    writeMemberToDom(bySlot[1], dom.tNameB, dom.tB);
+    writeMemberToDom(bySlot[2], dom.tNameC, dom.tC);
 
     // coach slots
     if (!team.coachSkills || !Array.isArray(team.coachSkills.equipped)){
@@ -192,7 +184,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (dom.slotDesc[i]) dom.slotDesc[i].textContent = cur ? 'タップで解除' : '装備／解除のみ（効果数値は非表示）';
     }
 
-    // records（終了した大会のみ表示）
+    // records（終了のみ）
     const all = ensureRecords();
     const finished = all.filter(r => r && r.finished === true);
 
@@ -231,46 +223,42 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ---- events ----
   let bound = false;
 
   function bind(){
     if (bound) return;
     bound = true;
 
-    // open/close
     if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
     if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
 
-    // rename member
-    function bindRename(nameBtn, slotIndex){
+    function bindRename(nameBtn, storageKey){
       if (!nameBtn) return;
-      nameBtn.addEventListener('click', ()=>{
-        const team = ensurePlayerTeam();
-        const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-        const m = bySlot[slotIndex];
-        if (!m) return;
 
-        const cur = m.name || m.displayNameDefault || '○○○';
+      nameBtn.addEventListener('click', ()=>{
+        const cur = getStr(storageKey, '○○○');
         const v = prompt('メンバー名を変更', cur);
         if (v === null) return;
         const nv = v.trim();
         if (!nv) return;
 
-        m.name = nv;
-        setJSON(K.playerTeam, team);
-        syncNamesToStorage(team);
+        // 正は m1/m2/m3
+        setStr(storageKey, nv);
 
-        // ui_main 側の表示も更新
+        // 即同期＆保存
+        const team = ensurePlayerTeam();
+        syncNamesFromStorageIntoTeam(team);
+
+        // メインにも反映
         if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
 
         render();
       });
     }
 
-    bindRename(dom.tNameA, 0);
-    bindRename(dom.tNameB, 1);
-    bindRename(dom.tNameC, 2);
+    bindRename(dom.tNameA, K.m1);
+    bindRename(dom.tNameB, K.m2);
+    bindRename(dom.tNameC, K.m3);
 
     // coach slots
     for (let i=0;i<5;i++){
@@ -283,7 +271,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
         const cur = team.coachSkills.equipped[i];
 
-        // 解除
         if (cur){
           if (!confirm(`このスキルを解除しますか？\n\n${cur}`)) return;
           team.coachSkills.equipped[i] = null;
@@ -292,7 +279,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           return;
         }
 
-        // 装備（所持が無いなら文章追加→装備）
         if (!owned.length){
           const v = prompt('装備するコーチスキル（文章）を入力', '（例）戦闘開始時にチームの集中力が上がる');
           if (v === null) return;
@@ -306,7 +292,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           return;
         }
 
-        // 既存から番号選択
         const list = owned.map((t,idx)=> `${idx+1}) ${t}`).join('\n');
         const pick = prompt(`装備するスキル番号を入力\n\n${list}`, '1');
         if (pick === null) return;
@@ -319,7 +304,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // save
     if (dom.btnManualSave){
       dom.btnManualSave.addEventListener('click', ()=>{
         const snapshot = {
@@ -343,7 +327,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.btnDeleteSave.addEventListener('click', ()=>{
         if (!confirm('セーブ削除すると、スケジュール/名前/戦績/持ち物/育成など全てリセットされます。\n本当に実行しますか？')) return;
 
-        // mobbr_ のみ削除（他プロジェクトに触らない）
         const keys = [];
         for (let i=0; i<localStorage.length; i++){
           const k = localStorage.key(i);
@@ -352,7 +335,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
         keys.forEach(k => localStorage.removeItem(k));
 
-        // タイトルへ戻す
         window.dispatchEvent(new CustomEvent('mobbr:goTitle'));
       });
     }
@@ -367,6 +349,5 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   window.MOBBR.initTeamUI = initTeamUI;
   window.MOBBR.ui.team = { open, close, render };
 
-  // 動的ロードでも確実に起動
   initTeamUI();
 })();
