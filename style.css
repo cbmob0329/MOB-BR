@@ -1,4 +1,4 @@
-　:root{
+:root{
   --pad: 16px;
   --gap: 14px;
 
@@ -36,10 +36,7 @@ html, body{
 }
 
 /* =========================
-   TITLE SCREEN（追加）
-   - 背景：白×緑チェック
-   - ロゴrogo.png
-   - ロゴ下にbnext.png
+   TITLE SCREEN
 ========================= */
 .titleScreen{
   position: relative;
@@ -48,50 +45,46 @@ html, body{
   overflow:hidden;
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  background:#fff;
 }
 
-/* 白×緑チェック（CSSで作る） */
 .titleBg{
   position:absolute;
   inset:0;
+  /* 白×緑チェック */
   background:
-    linear-gradient(45deg, rgba(34,197,94,.22) 25%, transparent 25%, transparent 75%, rgba(34,197,94,.22) 75%, rgba(34,197,94,.22)),
-    linear-gradient(45deg, rgba(34,197,94,.22) 25%, transparent 25%, transparent 75%, rgba(34,197,94,.22) 75%, rgba(34,197,94,.22));
-  background-size: 52px 52px;
-  background-position: 0 0, 26px 26px;
+    linear-gradient(45deg, rgba(46,204,113,.25) 25%, transparent 25%) 0 0/40px 40px,
+    linear-gradient(45deg, transparent 75%, rgba(46,204,113,.25) 75%) 0 0/40px 40px,
+    linear-gradient(45deg, transparent 25%, rgba(46,204,113,.25) 25%) 20px 20px/40px 40px,
+    linear-gradient(45deg, rgba(46,204,113,.25) 75%, transparent 75%) 20px 20px/40px 40px,
+    #fff;
   z-index:0;
 }
 
-/* 中央寄せ（縦） */
 .titleInner{
   position: relative;
   z-index: 2;
   width: 100%;
-  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
+  height: 100%;
   display:flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
+  align-items:center;
+  justify-content:center;
+  gap: 22px;
 }
 
 .titleLogo{
-  width: min(560px, 88vw);
-  display:flex;
-  justify-content:center;
-  align-items:center;
+  width: min(520px, 86vw);
 }
 .titleLogo img{
   width: 100%;
-  height: auto;
+  height:auto;
   display:block;
-  filter: drop-shadow(0 14px 22px rgba(0,0,0,.25));
+  filter: drop-shadow(0 16px 26px rgba(0,0,0,.35));
   pointer-events:none;
 }
 
 .titleNextBtn{
-  width: min(220px, 52vw);
+  width: 170px;
   border:none;
   background: transparent;
   padding:0;
@@ -102,14 +95,13 @@ html, body{
   width:100%;
   height:auto;
   display:block;
-  filter: drop-shadow(0 12px 22px rgba(0,0,0,.25));
+  filter: drop-shadow(0 14px 24px rgba(0,0,0,.35));
   pointer-events:none;
 }
 .titleNextBtn:active{ transform: translateY(1px); opacity:.95; }
 
-
 /* =========================
-   MAIN（既存）
+   MAIN APP LAYOUT
 ========================= */
 #app{
   position: relative;
@@ -487,7 +479,6 @@ html, body{
 .weekPopTitle{ font-size: 26px; font-weight: 1000; }
 .weekPopSub{ margin-top: 8px; font-size: 18px; font-weight: 1000; opacity: .95; }
 
-/* next image button near pop */
 .nextImgBtn{
   margin-top: 10px;
   width: 140px;
@@ -530,7 +521,9 @@ html, body{
 }
 .nextCorner:active{ transform: translateY(1px); }
 
-/* team screen overlay */
+/* =========================
+   TEAM SCREEN (FULL SPEC UI)
+========================= */
 .teamScreen{
   position:absolute;
   inset:0;
@@ -538,12 +531,15 @@ html, body{
   display:none;
 }
 .teamScreen.show{ display:block; }
+
 .teamPanel{
   position:absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%,-50%);
-  width: min(620px, 90vw);
+  width: min(620px, 92vw);
+  max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
+  overflow:auto;
   border-radius: 16px;
   background: rgba(0,0,0,.82);
   border: 2px solid rgba(255,255,255,.35);
@@ -551,21 +547,241 @@ html, body{
   padding: 16px;
   color:#fff;
   text-shadow: var(--textShadow);
+  -webkit-overflow-scrolling: touch;
+}
+.teamPanelWide{
+  width: min(860px, 94vw);
+}
+
+.teamHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
 }
 .teamTitle{
   font-size: 22px;
   font-weight: 1000;
-  margin-bottom: 12px;
+  margin: 0;
 }
-.teamBody{
+.teamCloseBtn{
+  margin-top: 0;
+  width: auto;
+  padding: 10px 14px;
+}
+
+.teamMeta{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
   font-size: 16px;
   font-weight: 900;
+}
+
+.teamSection{
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px solid rgba(255,255,255,.20);
+}
+
+.teamSectionTitle{
+  font-size: 18px;
+  font-weight: 1000;
+  margin-bottom: 10px;
+}
+
+.memberCards{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.memberCard{
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.08);
+  padding: 12px;
+}
+
+.memberTop{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.memberRole{
+  font-size: 15px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+.memberNameBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.90);
+  color:#111;
+  font-weight: 1000;
+  font-size: 16px;
+  touch-action: manipulation;
+  box-shadow: 0 10px 22px rgba(0,0,0,.25);
+}
+.memberNameBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.statGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.statRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.statRow .k{ font-size: 14px; font-weight: 1000; opacity: .95; }
+.statRow .v{ font-size: 14px; font-weight: 1000; }
+
+.skillBox{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skillLine{
+  display:flex;
+  gap: 10px;
+  align-items:flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.skillLine .sk{
+  width: 88px;
+  flex: 0 0 88px;
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .95;
+}
+.skillLine .sv{
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+/* coach slots */
+.coachSlots{
   display:flex;
   flex-direction: column;
   gap: 10px;
 }
-.teamMembers{ display:flex; flex-direction: column; gap: 6px; }
-.teamNote{ font-size: 13px; opacity:.9; }
+.coachSlot{
+  width:100%;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color:#fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  text-align:left;
+  font-weight: 1000;
+  touch-action: manipulation;
+}
+.coachSlot:active{ transform: translateY(1px); opacity:.95; }
+
+.slotNo{
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.20);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+  flex: 0 0 34px;
+}
+.slotText{ flex: 1; min-width: 0; }
+.slotName{
+  font-size: 16px;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.slotDesc{
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .9;
+  line-height: 1.2;
+}
+
+/* records */
+.recordsBox{
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  padding: 12px;
+}
+.recordsEmpty{
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .9;
+}
+.recordsList{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* save */
+.saveRow{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.saveBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  touch-action: manipulation;
+}
+.saveBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.dangerBtn{
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,80,80,.92);
+  color:#111;
+  touch-action: manipulation;
+}
+.dangerBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.saveNote{
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .9;
+  line-height: 1.25;
+}
 
 /* safe-area */
 .safePad{
@@ -576,6 +792,9 @@ html, body{
 }
 
 /* responsive */
+@media (max-width: 980px){
+  .teamPanelWide{ width: min(720px, 94vw); }
+}
 @media (max-width: 860px){
   :root{ --leftW: 220px; }
   .jobWrap{ height: 132px; }
@@ -584,9 +803,6 @@ html, body{
   :root{ --leftW: 200px; }
   .topRow{ grid-template-columns: 1fr; }
   .logoWrap img{ max-width: 340px; }
-
-  .titleLogo{ width: min(520px, 90vw); }
-  .titleNextBtn{ width: min(210px, 56vw); }
 }
 @media (max-width: 520px){
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
@@ -598,6 +814,7 @@ html, body{
   .mainSquare{ width: min(520px, 100%); }
   .memberBtn{ font-size: 15px; }
 
-  .titleLogo{ width: min(460px, 92vw); }
-  .titleNextBtn{ width: min(200px, 62vw); }
+  .teamPanelWide{ width: 94vw; }
+  .saveRow{ grid-template-columns: 1fr; }
+  .statGrid{ grid-template-columns: 1fr; }
 }
