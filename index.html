@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no,email=no,address=no" />
   <title>MOB BR - Main</title>
   <link rel="stylesheet" href="style.css?v=12" />
 </head>
+
 <body>
   <div id="app" class="no-callout" aria-label="MOB BR メイン画面">
 
@@ -16,6 +18,7 @@
     <aside class="leftCol" aria-label="メニュー">
       <div class="loopScroll" id="loopScroll" aria-label="メニュー一覧（スクロール）">
         <div class="loopInner" id="loopInner">
+
           <button class="imgBtn floaty" id="btnTeam" type="button" aria-label="チーム">
             <img src="bteam.png" alt="TEAM" draggable="false">
           </button>
@@ -39,6 +42,7 @@
           <button class="imgBtn floaty delay5" id="btnCard" type="button" aria-label="カードコレクション">
             <img src="bcard.png" alt="CARD COLLECTION" draggable="false">
           </button>
+
         </div>
       </div>
     </aside>
@@ -60,12 +64,15 @@
             <div class="jobLine tappable" id="tapCompany" title="タップで変更">
               企業名：<span id="uiCompany">CB Memory</span>
             </div>
+
             <div class="jobLine tappable" id="tapTeamName" title="タップで変更">
               チーム名：<span id="uiTeam">PLAYER TEAM</span>
             </div>
+
             <div class="jobLine">
               所持G：<span id="uiGold">0</span>G
             </div>
+
             <div class="jobLine">
               企業ランク：<span id="uiRank">RANK 10</span>
             </div>
@@ -86,7 +93,7 @@
         </div>
       </section>
 
-      <!-- 右下：rog情報（年月週／次大会／最近ログ） -->
+      <!-- 右下：rog情報（年月週／次大会／ログ本文のみ） -->
       <section class="bottomRow" aria-label="下部情報">
         <div class="rogWrap" id="rogWrap">
           <img class="rogBg" src="rog.png" alt="" aria-hidden="true" draggable="false">
@@ -94,12 +101,14 @@
             <div class="dateLine">
               <span id="uiY">1989</span>年 <span id="uiM">1</span>月 <span id="uiW">1</span>週
             </div>
+
             <div class="nextTourLine">
               次の大会：<span id="uiNextTour">未定</span>（<span id="uiNextTourW">未定</span>）
             </div>
+
             <div class="divider"></div>
 
-            <!-- 「最近の出来事」ラベルは消す：内容だけ -->
+            <!-- 「最近の出来事」ラベル無し：本文だけ -->
             <div class="recentOnly">
               <span id="uiRecent">未定</span>
             </div>
@@ -111,9 +120,10 @@
 
     </main>
 
-    <!-- ===== メンバー名ポップ ===== -->
+    <!-- ===== 共通の暗転背景（週ポップ / メンバー名ポップで使用） ===== -->
     <div class="modalBack" id="modalBack" aria-hidden="true"></div>
 
+    <!-- ===== メンバー名ポップ ===== -->
     <div class="modalCard" id="membersPop" role="dialog" aria-modal="true" aria-label="メンバー名">
       <div class="modalTitle">メンバー名</div>
 
@@ -122,10 +132,12 @@
           <span class="nameLabel">1</span>
           <span class="nameVal" id="uiM1">○○○</span>
         </button>
+
         <button class="nameRow" id="rowM2" type="button" aria-label="メンバー2">
           <span class="nameLabel">2</span>
           <span class="nameVal" id="uiM2">○○○</span>
         </button>
+
         <button class="nameRow" id="rowM3" type="button" aria-label="メンバー3">
           <span class="nameLabel">3</span>
           <span class="nameVal" id="uiM3">○○○</span>
@@ -135,7 +147,7 @@
       <button class="closeBtn" id="btnCloseMembers" type="button" aria-label="閉じる">閉じる</button>
     </div>
 
-    <!-- 週切替ポップ（中央） -->
+    <!-- ===== 週切替ポップ（中央） ===== -->
     <div class="weekPop" id="weekPop" role="dialog" aria-modal="true" aria-label="週切り替え">
       <div class="weekPopCard">
         <div class="weekPopTitle" id="popTitle">1989年1月 第1週</div>
@@ -153,21 +165,25 @@
       <img src="bnext.png" alt="NEXT" draggable="false">
     </button>
 
-    <!-- ===== チーム画面（簡易：導入） ===== -->
+    <!-- ===== チーム画面（導入：このあと中身を実装していく） ===== -->
     <div class="teamScreen" id="teamScreen" aria-hidden="true">
       <div class="teamPanel" role="dialog" aria-modal="true" aria-label="チーム画面">
         <div class="teamTitle">チーム</div>
+
         <div class="teamBody">
           <div class="teamLine">企業名：<span id="tCompany"></span></div>
           <div class="teamLine">チーム名：<span id="tTeam"></span></div>
+
           <div class="teamLine">メンバー：</div>
           <div class="teamMembers">
             <div class="tm">1) <span id="tM1"></span></div>
             <div class="tm">2) <span id="tM2"></span></div>
             <div class="tm">3) <span id="tM3"></span></div>
           </div>
+
           <div class="teamNote">※能力/パッシブ/ウルト/戦績/セーブ等は次フェーズで実装</div>
         </div>
+
         <button class="closeBtn" id="btnCloseTeam" type="button" aria-label="閉じる">閉じる</button>
       </div>
     </div>
