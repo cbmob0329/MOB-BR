@@ -1,20 +1,25 @@
-/* =========================================================
-   team.css
-   MOB BR / Team Screen styles only
-   - TEAM画面専用（他画面に影響しない）
-========================================================= */
-
 /* =========================
-   TEAM SCREEN (FULL SPEC UI)
+   team.css  (v14+)
+   - TEAM SCREEN styles only
+   - IMPORTANT: hidden overlay must NOT capture taps
 ========================= */
-.teamScreen{
-  position: absolute;
-  inset: 0;
-  z-index: calc(var(--popZ) + 3);
-  display: none;
-}
-.teamScreen.show{ display:block; }
 
+/* hidden default: never capture taps */
+.teamScreen{
+  position:absolute;
+  inset:0;
+  z-index: calc(var(--popZ) + 3);
+  display:none;
+  pointer-events:none; /* ★吸い込み防止 */
+}
+
+/* show: visible + tappable */
+.teamScreen.show{
+  display:block;
+  pointer-events:auto;
+}
+
+/* panel */
 .teamPanel{
   position:absolute;
   left: 50%;
@@ -32,10 +37,12 @@
   text-shadow: var(--textShadow);
   -webkit-overflow-scrolling: touch;
 }
+
 .teamPanelWide{
   width: min(860px, 94vw);
 }
 
+/* header */
 .teamHead{
   display:flex;
   align-items:center;
@@ -55,6 +62,7 @@
   padding: 10px 14px;
 }
 
+/* meta */
 .teamMeta{
   margin-top: 10px;
   display:flex;
@@ -64,6 +72,13 @@
   font-weight: 900;
 }
 
+.teamLine{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* sections */
 .teamSection{
   margin-top: 14px;
   padding-top: 12px;
@@ -76,7 +91,7 @@
   margin-bottom: 10px;
 }
 
-/* members */
+/* member cards */
 .memberCards{
   display:grid;
   grid-template-columns: 1fr;
@@ -104,6 +119,7 @@
   opacity: .95;
 }
 
+/* rename button */
 .memberNameBtn{
   border:none;
   border-radius: 12px;
@@ -115,8 +131,13 @@
   touch-action: manipulation;
   box-shadow: 0 10px 22px rgba(0,0,0,.25);
 }
-.memberNameBtn:active{ transform: translateY(1px); opacity:.95; }
 
+.memberNameBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
+
+/* stats grid */
 .statGrid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -133,9 +154,19 @@
   background: rgba(0,0,0,.25);
   border: 1px solid rgba(255,255,255,.14);
 }
-.statRow .k{ font-size: 14px; font-weight: 1000; opacity: .95; }
-.statRow .v{ font-size: 14px; font-weight: 1000; }
 
+.statRow .k{
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+.statRow .v{
+  font-size: 14px;
+  font-weight: 1000;
+}
+
+/* skill box */
 .skillBox{
   margin-top: 10px;
   display:flex;
@@ -188,7 +219,11 @@
   font-weight: 1000;
   touch-action: manipulation;
 }
-.coachSlot:active{ transform: translateY(1px); opacity:.95; }
+
+.coachSlot:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
 
 .slotNo{
   width: 34px;
@@ -202,7 +237,10 @@
   flex: 0 0 34px;
 }
 
-.slotText{ flex: 1; min-width: 0; }
+.slotText{
+  flex: 1;
+  min-width: 0;
+}
 
 .slotName{
   font-size: 16px;
@@ -240,7 +278,7 @@
   gap: 10px;
 }
 
-/* save */
+/* save row */
 .saveRow{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -257,7 +295,11 @@
   color:#111;
   touch-action: manipulation;
 }
-.saveBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.saveBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
 
 .dangerBtn{
   border:none;
@@ -269,7 +311,11 @@
   color:#111;
   touch-action: manipulation;
 }
-.dangerBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.dangerBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
 
 .saveNote{
   margin-top: 10px;
@@ -279,10 +325,11 @@
   line-height: 1.25;
 }
 
-/* responsive（TEAM画面のみ） */
+/* responsive */
 @media (max-width: 980px){
   .teamPanelWide{ width: min(720px, 94vw); }
 }
+
 @media (max-width: 520px){
   .teamPanelWide{ width: 94vw; }
   .saveRow{ grid-template-columns: 1fr; }
