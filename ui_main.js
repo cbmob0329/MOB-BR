@@ -6,7 +6,8 @@
   - 右下ログ(rog)タップでNEXTを出す機能は廃止（NEXTはここでは使わない）
   - 左メニューは「ループ無し」＝通常の上下スクロールのみ（JS側は何もしない）
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
-  - btra.png（btnTraining）で育成画面へ（#trainingScreen があれば開く／無ければログに出す）
+  - btra.png（btnTraining）で育成画面へ
+    ★重要：ui_training.js がある場合は必ず MOBBR.ui.training.open() を呼ぶ（中身生成のため）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -22,7 +23,7 @@ window.MOBBR = window.MOBBR || {};
     gold: 'mobbr_gold',
     rank: 'mobbr_rank',
 
-    // ★ここ重要：storage.js に合わせて year/month/week
+    // storage.js に合わせて year/month/week
     year: 'mobbr_year',
     month: 'mobbr_month',
     week: 'mobbr_week',
@@ -117,7 +118,7 @@ window.MOBBR = window.MOBBR || {};
       tM2: $('tM2'),
       tM3: $('tM3'),
 
-      // training overlay（今後実装。DOMがあれば開く）
+      // training overlay
       trainingScreen: $('trainingScreen'),
       btnCloseTraining: $('btnCloseTraining')
     };
@@ -298,7 +299,14 @@ window.MOBBR = window.MOBBR || {};
   }
 
   function showTrainingScreen(){
-    // #trainingScreen がまだ無いなら、今はログだけ出す（壊さない）
+    // ★最重要：ui_training.js があれば open() を呼ぶ（中身生成＋画面表示まで任せる）
+    const openFn = window.MOBBR?.ui?.training?.open;
+    if (typeof openFn === 'function'){
+      openFn();
+      return;
+    }
+
+    // フォールバック：DOMだけ開く（旧挙動）
     if (!ui.trainingScreen){
       setStr(K.recent, '育成：未実装（次フェーズ）');
       render();
@@ -352,8 +360,6 @@ window.MOBBR = window.MOBBR || {};
     if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
     if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
 
-    // rogタップでNEXT表示 → 廃止（何も付けない）
-
     // btnWeekNext はここでは使わないので無効化（誤爆防止）
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
@@ -369,10 +375,10 @@ window.MOBBR = window.MOBBR || {};
     if (ui.btnCard) ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
 
     if (ui.btnCloseTeam) ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
+    // ※training の閉じるは ui_training.js 側でも制御するが、DOMだけのフォールバック用に残す
     if (ui.btnCloseTraining) ui.btnCloseTraining.addEventListener('click', hideTrainingScreen);
 
-    // 週進行（今は使うなら外部でボタンを決める想定だが、残しておく）
-    // ※必要なら btnWeekNext を表示して使う仕様にする。現状は非表示/無効。
+    // 週進行（必要なら btnWeekNext を表示して使う仕様にする。現状は非表示/無効。）
     // if (ui.btnWeekNext) ui.btnWeekNext.addEventListener('click', advanceWeek);
 
     setupLoopScroll();
