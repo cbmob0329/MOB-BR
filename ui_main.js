@@ -1,34 +1,45 @@
 'use strict';
 
 /*
-  ui_main.js (v13)
-  - app.js の loadScript() で NEXT後に読み込まれる前提
-  - rog(右下ログ)タップでNEXTを出す機能は廃止
-  - 左メニューはループしない（上下スクロールのみ）
-  - メンバー名変更時、ui_team側にも再描画通知
+  ui_main.js (v13) FULL FIXED
+
+  仕様：
+  - storage.js のキー定義と完全一致
+  - 0年0月0週バグ修正（1989年1月第1週スタート保証）
+  - rogタップでNEXT表示 → 完全廃止
+  - 左メニューは通常スクロールのみ（ループなし）
+  - メンバー名変更は team画面にも即時反映
 */
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
+
+  // ===== storage keys（storage.js と完全一致）=====
   const K = {
     company: 'mobbr_company',
     team: 'mobbr_team',
+
     m1: 'mobbr_m1',
     m2: 'mobbr_m2',
     m3: 'mobbr_m3',
+
     gold: 'mobbr_gold',
     rank: 'mobbr_rank',
-    y: 'mobbr_y',
-    m: 'mobbr_m',
-    w: 'mobbr_w',
+
+    y: 'mobbr_year',
+    m: 'mobbr_month',
+    w: 'mobbr_week',
+
     nextTour: 'mobbr_nextTour',
     nextTourW: 'mobbr_nextTourW',
+
     recent: 'mobbr_recent',
   };
 
   const $ = (id) => document.getElementById(id);
 
+  // ===== helpers =====
   function getNum(key, def){
     const v = Number(localStorage.getItem(key));
     return Number.isFinite(v) ? v : def;
@@ -37,8 +48,12 @@ window.MOBBR = window.MOBBR || {};
     const v = localStorage.getItem(key);
     return (v === null || v === undefined || v === '') ? def : v;
   }
-  function setStr(key, val){ localStorage.setItem(key, String(val)); }
-  function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
+  function setNum(key, val){
+    localStorage.setItem(key, String(Number(val)));
+  }
+  function setStr(key, val){
+    localStorage.setItem(key, String(val));
+  }
 
   function weeklyGoldByRank(rank){
     if (rank >= 1 && rank <= 5) return 500;
@@ -47,8 +62,12 @@ window.MOBBR = window.MOBBR || {};
     if (rank >= 21 && rank <= 30) return 2000;
     return 3000;
   }
-  function formatRank(rank){ return `RANK ${rank}`; }
 
+  function formatRank(rank){
+    return `RANK ${rank}`;
+  }
+
+  // ===== DOM =====
   let ui = null;
 
   function collectDom(){
@@ -68,27 +87,21 @@ window.MOBBR = window.MOBBR || {};
       tapTeamName: $('tapTeamName'),
 
       modalBack: $('modalBack'),
-
       weekPop: $('weekPop'),
       popTitle: $('popTitle'),
       popSub: $('popSub'),
       btnPopNext: $('btnPopNext'),
 
-      // next (※rogタップで出すのは廃止)
-      btnWeekNext: $('btnWeekNext'),
-      rogWrap: $('rogWrap'),
+      btnWeekNext: $('btnWeekNext'), // 使わない（常に非表示）
+      rogWrap: $('rogWrap'),         // 使わない
 
-      // left menu
       btnTeam: $('btnTeam'),
       btnBattle: $('btnBattle'),
       btnTraining: $('btnTraining'),
       btnShop: $('btnShop'),
       btnSchedule: $('btnSchedule'),
       btnCard: $('btnCard'),
-      loopScroll: $('loopScroll'),
-      loopInner: $('loopInner'),
 
-      // member popup
       btnMembers: $('btnMembers'),
       membersPop: $('membersPop'),
       rowM1: $('rowM1'),
@@ -99,25 +112,25 @@ window.MOBBR = window.MOBBR || {};
       uiM3: $('uiM3'),
       btnCloseMembers: $('btnCloseMembers'),
 
-      // team overlay
       teamScreen: $('teamScreen'),
       btnCloseTeam: $('btnCloseTeam'),
       tCompany: $('tCompany'),
       tTeam: $('tTeam'),
       tM1: $('tM1'),
       tM2: $('tM2'),
-      tM3: $('tM3')
+      tM3: $('tM3'),
     };
   }
 
+  // ===== render =====
   function render(){
     if (!ui) collectDom();
 
     const company = getStr(K.company, 'CB Memory');
     const team = getStr(K.team, 'PLAYER TEAM');
-    const m1 = getStr(K.m1, '○○○');
-    const m2 = getStr(K.m2, '○○○');
-    const m3 = getStr(K.m3, '○○○');
+    const m1 = getStr(K.m1, 'A');
+    const m2 = getStr(K.m2, 'B');
+    const m3 = getStr(K.m3, 'C');
 
     if (ui.company) ui.company.textContent = company;
     if (ui.team) ui.team.textContent = team;
@@ -133,31 +146,28 @@ window.MOBBR = window.MOBBR || {};
     if (ui.nextTourW) ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
     if (ui.recent) ui.recent.textContent = getStr(K.recent, '未定');
 
-    // member popup values
     if (ui.uiM1) ui.uiM1.textContent = m1;
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
 
-    // team overlay quick header
     if (ui.tCompany) ui.tCompany.textContent = company;
     if (ui.tTeam) ui.tTeam.textContent = team;
     if (ui.tM1) ui.tM1.textContent = m1;
     if (ui.tM2) ui.tM2.textContent = m2;
     if (ui.tM3) ui.tM3.textContent = m3;
 
-    // NEXTボタンはここでは使わない（常に隠す）
+    // NEXTは常に使わない
     if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
   }
 
+  // ===== modal =====
   function showBack(){
     if (!ui.modalBack) return;
     ui.modalBack.style.display = 'block';
-    ui.modalBack.setAttribute('aria-hidden', 'false');
   }
   function hideBack(){
     if (!ui.modalBack) return;
     ui.modalBack.style.display = 'none';
-    ui.modalBack.setAttribute('aria-hidden', 'true');
   }
 
   function showWeekPop(title, sub){
@@ -171,49 +181,41 @@ window.MOBBR = window.MOBBR || {};
     hideBack();
   }
 
-  function showMembersPop(){
-    showBack();
-    if (ui.membersPop) ui.membersPop.style.display = 'block';
-  }
-  function hideMembersPop(){
-    if (ui.membersPop) ui.membersPop.style.display = 'none';
-    hideBack();
+  // ===== rename =====
+  function notifyTeamSync(){
+    if (window.MOBBR?.ui?.team?.render){
+      window.MOBBR.ui.team.render();
+    }
   }
 
-  function notifyTeamNameSync(){
-    // メインで名前変えたら、チーム画面側も必ず追従させる
-    if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
-  }
-
-  function renamePrompt(key, label, defVal){
-    const cur = getStr(key, defVal);
+  function renamePrompt(key, label){
+    const cur = getStr(key, '');
     const v = prompt(`${label}を変更`, cur);
     if (v === null) return;
     const nv = v.trim();
-    if (nv === '') return;
-
+    if (!nv) return;
     setStr(key, nv);
     render();
-    notifyTeamNameSync();
+    notifyTeamSync();
   }
 
+  // ===== week advance =====
   function advanceWeek(){
     const y = getNum(K.y, 1989);
     const m = getNum(K.m, 1);
     const w = getNum(K.w, 1);
 
     let ny = y, nm = m, nw = w + 1;
-    if (nw >= 5){
+    if (nw > 4){
       nw = 1;
-      nm = m + 1;
-      if (nm >= 13){
+      nm++;
+      if (nm > 12){
         nm = 1;
-        ny = y + 1;
+        ny++;
       }
     }
 
-    const rank = getNum(K.rank, 10);
-    const gain = weeklyGoldByRank(rank);
+    const gain = weeklyGoldByRank(getNum(K.rank, 10));
 
     showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
 
@@ -222,92 +224,51 @@ window.MOBBR = window.MOBBR || {};
         setNum(K.y, ny);
         setNum(K.m, nm);
         setNum(K.w, nw);
-
-        const gold = getNum(K.gold, 0);
-        setNum(K.gold, gold + gain);
-
+        setNum(K.gold, getNum(K.gold, 0) + gain);
         setStr(K.recent, `週が進んだ（+${gain}G）`);
-
         hideWeekPop();
         render();
-
-        // ここでもNEXTは出さない
-        if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
       };
     }
   }
 
-  function showTeamScreen(){
-    if (!ui.teamScreen) return;
-    ui.teamScreen.classList.add('show');
-    ui.teamScreen.setAttribute('aria-hidden', 'false');
-    if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
-  }
-  function hideTeamScreen(){
-    if (!ui.teamScreen) return;
-    ui.teamScreen.classList.remove('show');
-    ui.teamScreen.setAttribute('aria-hidden', 'true');
-  }
-
-  function setRecent(text){
-    setStr(K.recent, text);
-    render();
-  }
-
-  // ループスクロール廃止：何もしない（通常の上下スクロールだけ）
-  function setupLoopScroll(){
-    // 以前の clone / scroll巻き戻しを完全撤去
-    // CSS側で overflow-y: auto; になっていれば普通に上下スクロールできる
-    return;
-  }
-
+  // ===== bind =====
   let bound = false;
   function bind(){
     if (bound) return;
     bound = true;
 
-    if (ui.modalBack){
-      ui.modalBack.addEventListener('click', (e) => e.preventDefault(), { passive:false });
-    }
-
     if (ui.tapCompany){
-      ui.tapCompany.addEventListener('click', () => renamePrompt(K.company, '企業名', 'CB Memory'));
+      ui.tapCompany.addEventListener('click', () => renamePrompt(K.company, '企業名'));
     }
     if (ui.tapTeamName){
-      ui.tapTeamName.addEventListener('click', () => renamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
+      ui.tapTeamName.addEventListener('click', () => renamePrompt(K.team, 'チーム名'));
     }
 
     if (ui.btnMembers){
-      ui.btnMembers.addEventListener('click', () => { render(); showMembersPop(); });
+      ui.btnMembers.addEventListener('click', () => { render(); showBack(); ui.membersPop.style.display='block'; });
     }
     if (ui.btnCloseMembers){
-      ui.btnCloseMembers.addEventListener('click', hideMembersPop);
+      ui.btnCloseMembers.addEventListener('click', () => { ui.membersPop.style.display='none'; hideBack(); });
     }
 
-    if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', '○○○'));
-    if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
-    if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
+    if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）'));
+    if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）'));
+    if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）'));
 
-    // rogタップでNEXT表示 → 廃止（何も付けない）
-    // if (ui.rogWrap) ...
+    if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => {
+      ui.teamScreen.classList.add('show');
+      notifyTeamSync();
+    });
+    if (ui.btnCloseTeam) ui.btnCloseTeam.addEventListener('click', () => {
+      ui.teamScreen.classList.remove('show');
+    });
 
-    // btnWeekNext はここでは使わないので、クリックも無効化（誤爆防止）
-    // 週進行は必要なら別UIで決める。今は weekPop の NEXT( btnPopNext )のみ。
-    if (ui.btnWeekNext){
-      ui.btnWeekNext.onclick = null;
-      ui.btnWeekNext.classList.remove('show');
-    }
-
-    if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => { render(); showTeamScreen(); });
-    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
-    if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => setRecent('育成：未実装（次フェーズ）'));
-    if (ui.btnShop) ui.btnShop.addEventListener('click', () => setRecent('ショップ：未実装（次フェーズ）'));
-    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
-    if (ui.btnCard) ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
-
-    if (ui.btnCloseTeam) ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
-
-    setupLoopScroll();
+    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setStr(K.recent, '大会：未実装'));
+    if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => setStr(K.recent, '育成：未実装'));
+    if (ui.btnShop) ui.btnShop.addEventListener('click', () => setStr(K.recent, 'ショップ：未実装'));
+    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setStr(K.recent, 'スケジュール：未実装'));
+    if (ui.btnCard) ui.btnCard.addEventListener('click', () => setStr(K.recent, 'カード：未実装'));
   }
 
   function initMainUI(){
@@ -317,7 +278,6 @@ window.MOBBR = window.MOBBR || {};
   }
 
   window.MOBBR.initMainUI = initMainUI;
-
-  // 動的ロードでも確実に起動
   initMainUI();
+
 })();
