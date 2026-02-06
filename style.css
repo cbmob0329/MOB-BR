@@ -1,5 +1,4 @@
-了解。style.css のフル完成版をそのまま貼ります。
-変更は 「1989年1月第1週（.dateLine）」の文字サイズを少しだけ下げただけで、他は一切いじってません。
+/* style.css?v=15 (FULL) */
 
 :root{
   --pad: 16px;
@@ -350,7 +349,7 @@ html, body{
   gap: 10px;
 }
 
-/* ★ここだけ調整：28px → 26px */
+/* date size tuned */
 .dateLine{ font-size: 26px; line-height: 1; }
 .nextTourLine{ font-size: 16px; opacity: .95; }
 
@@ -787,6 +786,286 @@ html, body{
   line-height: 1.25;
 }
 
+/* =========================
+   TRAINING SCREEN (SIMPLE & STABLE)
+   - 画像なし
+   - 名前バナー＋テキスト
+   - 経験値バー / あと○でLvアップ
+   - ボタンは NEXT（=OK）系のみ
+========================= */
+.trainingScreen{
+  position:absolute;
+  inset:0;
+  z-index: calc(var(--popZ) + 4);
+  display:none;
+}
+.trainingScreen.show{ display:block; }
+
+.trainingPanel{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: min(720px, 94vw);
+  max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
+  overflow:auto;
+  border-radius: 16px;
+  background: rgba(0,0,0,.84);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+  -webkit-overflow-scrolling: touch;
+}
+
+.trainingHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.trainingTitle{
+  font-size: 22px;
+  font-weight: 1000;
+  margin: 0;
+}
+.trainingCloseBtn{
+  margin-top: 0;
+  width: auto;
+  padding: 10px 14px;
+}
+
+.trainingMeta{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.trainingLine{
+  font-size: 16px;
+  font-weight: 900;
+  opacity: .98;
+}
+.trainingLine.small{
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .92;
+  line-height: 1.25;
+}
+
+.trainingSection{
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px solid rgba(255,255,255,.20);
+}
+.trainingSectionTitle{
+  font-size: 18px;
+  font-weight: 1000;
+  margin-bottom: 10px;
+}
+
+/* cards container (JS generates) */
+.trainingCards{
+  display:flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* per member card */
+.trainingCard{
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.08);
+  padding: 12px;
+}
+
+.trainingCardHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* name banner */
+.trainingNameBanner{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+.trainingSlot{
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.20);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+  font-weight: 1000;
+  flex: 0 0 34px;
+}
+.trainingName{
+  font-size: 16px;
+  font-weight: 1000;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.trainingPicked{
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .92;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  text-align:right;
+}
+
+/* menu buttons list */
+.trainingMenu{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+.trainingMenuBtn{
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color:#fff;
+  border-radius: 12px;
+  padding: 10px 10px;
+  text-align:left;
+  font-weight: 1000;
+  font-size: 14px;
+  line-height: 1.15;
+  touch-action: manipulation;
+}
+.trainingMenuBtn:active{ transform: translateY(1px); opacity:.95; }
+.trainingMenuBtn.isOn{
+  background: rgba(255,255,255,.18);
+  border-color: rgba(255,255,255,.38);
+}
+
+/* EXP bars */
+.expBox{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expRow{
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.expTop{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.expKey{
+  font-size: 13px;
+  font-weight: 1000;
+  opacity: .95;
+}
+.expHint{
+  font-size: 12px;
+  font-weight: 900;
+  opacity: .9;
+  white-space: nowrap;
+}
+
+.expBar{
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.16);
+  overflow:hidden;
+  border: 1px solid rgba(255,255,255,.14);
+}
+.expFill{
+  height: 100%;
+  width: 0%;
+  background: rgba(255,255,255,.85);
+  border-radius: 999px;
+}
+
+/* start button */
+.trainingStartBtn{
+  margin-top: 12px;
+  width: 100%;
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  touch-action: manipulation;
+  box-shadow: 0 10px 22px rgba(0,0,0,.25);
+}
+.trainingStartBtn:active{ transform: translateY(1px); opacity:.95; }
+.trainingStartBtn:disabled{
+  opacity: .45;
+  filter: grayscale(30%);
+  box-shadow: none;
+}
+
+.trainingNote{
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  opacity: .9;
+  line-height: 1.25;
+}
+
+/* result */
+.trainingResultTop{
+  font-size: 15px;
+  font-weight: 1000;
+  opacity: .98;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.trainingResultList{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trainingResultItem{
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.18);
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 1.25;
+  opacity: .98;
+}
+.trainingOkBtn{
+  margin-top: 12px;
+  width: 100%;
+  border:none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 16px;
+  font-weight: 1000;
+  background: rgba(255,255,255,.92);
+  color:#111;
+  touch-action: manipulation;
+}
+.trainingOkBtn:active{ transform: translateY(1px); opacity:.95; }
+
 /* safe-area */
 .safePad{
   position:absolute;
@@ -807,13 +1086,13 @@ html, body{
   :root{ --leftW: 200px; }
   .topRow{ grid-template-columns: 1fr; }
   .logoWrap img{ max-width: 340px; }
+  .trainingMenu{ grid-template-columns: 1fr; }
 }
 @media (max-width: 520px){
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
   .jobWrap{ height: 120px; }
   .jobLine{ font-size: 15px; }
 
-  /* ★ここも少しだけ調整：24px → 22px */
   .dateLine{ font-size: 22px; }
 
   .recentOnly{ font-size: 16px; }
@@ -824,4 +1103,6 @@ html, body{
   .teamPanelWide{ width: 94vw; }
   .saveRow{ grid-template-columns: 1fr; }
   .statGrid{ grid-template-columns: 1fr; }
+
+  .trainingPanel{ width: 94vw; }
 }
