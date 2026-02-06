@@ -1,30 +1,35 @@
-/* =========================================================
-   training.css
-   MOB BR / Training Screen styles only
-   - 育成（修行）画面専用（他画面に影響しない）
-========================================================= */
-
 /* =========================
-   TRAINING SCREEN
+   training.css  (v14+)
+   - TRAINING SCREEN styles only
+   - IMPORTANT: hidden overlay must NOT capture taps
 ========================= */
+
+/* hidden default: never capture taps */
 .trainingScreen{
   position:absolute;
   inset:0;
-  z-index: calc(var(--popZ) + 3);
+  z-index: calc(var(--popZ) + 4);
   display:none;
+  pointer-events:none; /* ★吸い込み防止 */
 }
-.trainingScreen.show{ display:block; }
 
+/* show: visible + tappable */
+.trainingScreen.show{
+  display:block;
+  pointer-events:auto;
+}
+
+/* panel */
 .trainingPanel{
   position:absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%,-50%);
-  width: min(860px, 94vw);
+  width: min(760px, 94vw);
   max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
   overflow:auto;
   border-radius: 16px;
-  background: rgba(0,0,0,.82);
+  background: rgba(0,0,0,.84);
   border: 2px solid rgba(255,255,255,.35);
   box-shadow: var(--shadow);
   padding: 16px;
@@ -33,7 +38,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* head */
+/* header */
 .trainingHead{
   display:flex;
   align-items:center;
@@ -62,8 +67,11 @@
   font-size: 16px;
   font-weight: 900;
 }
-.trainingLine{ font-size: 16px; font-weight: 900; }
-.trainingLine.small{ font-size: 13px; opacity: .92; font-weight: 900; }
+
+.trainingLine.small{
+  font-size: 13px;
+  opacity: .9;
+}
 
 /* section */
 .trainingSection{
@@ -71,21 +79,21 @@
   padding-top: 12px;
   border-top: 2px solid rgba(255,255,255,.20);
 }
+
 .trainingSectionTitle{
   font-size: 18px;
   font-weight: 1000;
   margin-bottom: 10px;
 }
 
-/* =========================
-   TRAINING CARDS (A/B/C)
-========================= */
+/* cards container (3 members) */
 .trainingCards{
   display:grid;
   grid-template-columns: 1fr;
   gap: 12px;
 }
 
+/* each member card */
 .trainingCard{
   border-radius: 14px;
   border: 2px solid rgba(255,255,255,.22);
@@ -97,42 +105,48 @@
   font-size: 16px;
   font-weight: 1000;
   margin-bottom: 10px;
-  opacity: .98;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
+/* menu list */
 .trainingMenuList{
   display:grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
+/* menu buttons */
 .trainingMenuBtn{
-  border: 0;
+  border: none;
   border-radius: 12px;
-  padding: 12px 10px;
-  background: rgba(255,255,255,.12);
-  color:#fff;
+  padding: 10px 10px;
+  background: rgba(255,255,255,.90);
+  color:#111;
   font-weight: 1000;
   font-size: 14px;
-  line-height: 1.1;
-  text-align:center;
   touch-action: manipulation;
-  box-shadow: 0 10px 22px rgba(0,0,0,.20);
+  box-shadow: 0 10px 22px rgba(0,0,0,.25);
+  text-align:center;
 }
-.trainingMenuBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.trainingMenuBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
 
 .trainingMenuBtn.selected{
-  background: rgba(255,255,255,.92);
-  color:#111;
-  text-shadow: none;
-  box-shadow: 0 10px 22px rgba(0,0,0,.30);
+  outline: 3px solid rgba(46,204,113,.95);
+  box-shadow: 0 0 0 6px rgba(46,204,113,.18), 0 10px 22px rgba(0,0,0,.25);
 }
 
 /* start button */
 .trainingStartBtn{
   margin-top: 12px;
   width: 100%;
-  border: none;
+  border:none;
   border-radius: 12px;
   padding: 14px 12px;
   font-size: 16px;
@@ -140,13 +154,17 @@
   background: rgba(255,255,255,.92);
   color:#111;
   touch-action: manipulation;
-  box-shadow: 0 12px 26px rgba(0,0,0,.25);
 }
-.trainingStartBtn:active{ transform: translateY(1px); opacity:.95; }
+
+.trainingStartBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
+}
+
 .trainingStartBtn:disabled{
-  opacity: .55;
-  filter: grayscale(.25);
-  box-shadow: none;
+  opacity: .45;
+  filter: grayscale(60%);
+  transform: none;
 }
 
 /* note */
@@ -154,17 +172,11 @@
   margin-top: 10px;
   font-size: 13px;
   font-weight: 900;
-  opacity: .92;
+  opacity: .9;
   line-height: 1.25;
 }
 
-/* =========================
-   RESULT SECTION
-========================= */
-#trainingResultSection{
-  margin-top: 14px;
-}
-
+/* result section */
 .trainingResultTop{
   font-size: 16px;
   font-weight: 1000;
@@ -180,18 +192,16 @@
 .trainingResultRow{
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.08);
-  padding: 12px 12px;
-  font-size: 14px;
-  font-weight: 900;
+  background: rgba(255,255,255,.10);
+  padding: 10px 12px;
+  font-weight: 1000;
   line-height: 1.25;
 }
 
-/* OK button */
 .trainingOkBtn{
   margin-top: 12px;
   width: 100%;
-  border: none;
+  border:none;
   border-radius: 12px;
   padding: 14px 12px;
   font-size: 16px;
@@ -199,61 +209,20 @@
   background: rgba(255,255,255,.92);
   color:#111;
   touch-action: manipulation;
-  box-shadow: 0 12px 26px rgba(0,0,0,.25);
 }
-.trainingOkBtn:active{ transform: translateY(1px); opacity:.95; }
 
-/* =========================
-   OPTIONAL: confirm box (if you add later)
-   - 使わなければ無害
-========================= */
-.trainingConfirm{
-  margin-top: 12px;
-  border-radius: 14px;
-  border: 2px solid rgba(255,255,255,.18);
-  background: rgba(0,0,0,.25);
-  padding: 12px;
+.trainingOkBtn:active{
+  transform: translateY(1px);
+  opacity:.95;
 }
-.trainingConfirmTitle{
-  font-size: 16px;
-  font-weight: 1000;
-  margin-bottom: 10px;
-}
-.trainingConfirmBtns{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.trainingConfirmYes,
-.trainingConfirmNo{
-  border: 0;
-  border-radius: 12px;
-  padding: 14px 12px;
-  font-size: 15px;
-  font-weight: 1000;
-  touch-action: manipulation;
-}
-.trainingConfirmYes{
-  background: rgba(255,255,255,.92);
-  color:#111;
-}
-.trainingConfirmNo{
-  background: rgba(255,80,80,.92);
-  color:#111;
-}
-.trainingConfirmYes:active,
-.trainingConfirmNo:active{ transform: translateY(1px); opacity:.95; }
 
-/* responsive（育成画面のみ） */
-@media (max-width: 740px){
-  .trainingPanel{ width: min(720px, 94vw); }
-  .trainingMenuList{ grid-template-columns: 1fr; }
-}
+/* responsive */
 @media (max-width: 520px){
-  .trainingPanel{ width: 94vw; }
-  .trainingTitle{ font-size: 20px; }
-  .trainingLine{ font-size: 15px; }
-  .trainingMenuBtn{ font-size: 14px; }
-  .trainingStartBtn, .trainingOkBtn{ font-size: 15px; }
-  .trainingConfirmBtns{ grid-template-columns: 1fr; }
+  .trainingPanel{
+    width: 94vw;
+    padding: 14px;
+  }
+  .trainingMenuList{
+    grid-template-columns: 1fr;
+  }
 }
