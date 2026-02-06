@@ -2,8 +2,10 @@
 
 /*
   ui_main.js (v13)
-  app.js の loadScript() で「NEXT後に読み込まれる」前提。
-  → DOMContentLoaded に依存せず、initMainUI() を公開して即実行できる形にする。
+  - app.js の loadScript() で NEXT後に読み込まれる前提
+  - rog(右下ログ)タップでNEXTを出す機能は廃止
+  - 左メニューはループしない（上下スクロールのみ）
+  - メンバー名変更時、ui_team側にも再描画通知
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -47,7 +49,6 @@ window.MOBBR = window.MOBBR || {};
   }
   function formatRank(rank){ return `RANK ${rank}`; }
 
-  // ---- DOM refs (毎回取り直してもいいが、安定のため init でまとめる) ----
   let ui = null;
 
   function collectDom(){
@@ -73,9 +74,11 @@ window.MOBBR = window.MOBBR || {};
       popSub: $('popSub'),
       btnPopNext: $('btnPopNext'),
 
+      // next (※rogタップで出すのは廃止)
       btnWeekNext: $('btnWeekNext'),
       rogWrap: $('rogWrap'),
 
+      // left menu
       btnTeam: $('btnTeam'),
       btnBattle: $('btnBattle'),
       btnTraining: $('btnTraining'),
@@ -85,6 +88,7 @@ window.MOBBR = window.MOBBR || {};
       loopScroll: $('loopScroll'),
       loopInner: $('loopInner'),
 
+      // member popup
       btnMembers: $('btnMembers'),
       membersPop: $('membersPop'),
       rowM1: $('rowM1'),
@@ -95,6 +99,7 @@ window.MOBBR = window.MOBBR || {};
       uiM3: $('uiM3'),
       btnCloseMembers: $('btnCloseMembers'),
 
+      // team overlay
       teamScreen: $('teamScreen'),
       btnCloseTeam: $('btnCloseTeam'),
       tCompany: $('tCompany'),
@@ -128,15 +133,20 @@ window.MOBBR = window.MOBBR || {};
     if (ui.nextTourW) ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
     if (ui.recent) ui.recent.textContent = getStr(K.recent, '未定');
 
+    // member popup values
     if (ui.uiM1) ui.uiM1.textContent = m1;
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
 
+    // team overlay quick header
     if (ui.tCompany) ui.tCompany.textContent = company;
     if (ui.tTeam) ui.tTeam.textContent = team;
     if (ui.tM1) ui.tM1.textContent = m1;
     if (ui.tM2) ui.tM2.textContent = m2;
     if (ui.tM3) ui.tM3.textContent = m3;
+
+    // NEXTボタンはここでは使わない（常に隠す）
+    if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
   }
 
   function showBack(){
@@ -170,24 +180,21 @@ window.MOBBR = window.MOBBR || {};
     hideBack();
   }
 
+  function notifyTeamNameSync(){
+    // メインで名前変えたら、チーム画面側も必ず追従させる
+    if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
+  }
+
   function renamePrompt(key, label, defVal){
     const cur = getStr(key, defVal);
     const v = prompt(`${label}を変更`, cur);
     if (v === null) return;
     const nv = v.trim();
     if (nv === '') return;
+
     setStr(key, nv);
     render();
-  }
-
-  let nextHideTimer = null;
-  function showNextTemporarily(ms=3000){
-    if (!ui.btnWeekNext) return;
-    ui.btnWeekNext.classList.add('show');
-    if (nextHideTimer) clearTimeout(nextHideTimer);
-    nextHideTimer = setTimeout(() => {
-      if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
-    }, ms);
+    notifyTeamNameSync();
   }
 
   function advanceWeek(){
@@ -224,6 +231,7 @@ window.MOBBR = window.MOBBR || {};
         hideWeekPop();
         render();
 
+        // ここでもNEXTは出さない
         if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
       };
     }
@@ -233,8 +241,6 @@ window.MOBBR = window.MOBBR || {};
     if (!ui.teamScreen) return;
     ui.teamScreen.classList.add('show');
     ui.teamScreen.setAttribute('aria-hidden', 'false');
-
-    // ui_team 側が居れば中身更新
     if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
   }
   function hideTeamScreen(){
@@ -248,80 +254,18 @@ window.MOBBR = window.MOBBR || {};
     render();
   }
 
-  // infinite loop scroll（あなたの現仕様のまま）
+  // ループスクロール廃止：何もしない（通常の上下スクロールだけ）
   function setupLoopScroll(){
-    if (!ui.loopScroll || !ui.loopInner) return;
-
-    const scroller = ui.loopScroll;
-    const inner = ui.loopInner;
-
-    const originalButtons = Array.from(inner.querySelectorAll('button.imgBtn'));
-    if (!originalButtons.length) return;
-
-    // 既にクローン作成済みなら二重にしない
-    if (inner.dataset.loopReady === '1') return;
-    inner.dataset.loopReady = '1';
-
-    const spacer = document.createElement('div');
-    spacer.style.height = '2px';
-    inner.appendChild(spacer);
-
-    const clones = originalButtons.map((btn) => {
-      const clone = document.createElement('button');
-      clone.type = 'button';
-      clone.className = btn.className;
-      clone.setAttribute('aria-label', btn.getAttribute('aria-label') || 'menu');
-      clone.dataset.ref = btn.id;
-
-      const img = btn.querySelector('img');
-      const img2 = document.createElement('img');
-      img2.src = img.getAttribute('src');
-      img2.alt = img.getAttribute('alt');
-      img2.draggable = false;
-      clone.appendChild(img2);
-
-      clone.addEventListener('click', () => {
-        const ref = document.getElementById(clone.dataset.ref);
-        if (ref) ref.click();
-      });
-
-      return clone;
-    });
-
-    clones.forEach(n => inner.appendChild(n));
-
-    let oneSetHeight = 0;
-
-    const calcHeights = () => {
-      oneSetHeight = 0;
-      for (const b of originalButtons){
-        oneSetHeight += b.getBoundingClientRect().height;
-      }
-      const gap = 14;
-      oneSetHeight += gap * (originalButtons.length - 1);
-    };
-
-    requestAnimationFrame(() => {
-      calcHeights();
-      scroller.scrollTop = 1;
-    });
-
-    window.addEventListener('resize', () => calcHeights());
-
-    scroller.addEventListener('scroll', () => {
-      if (oneSetHeight <= 0) return;
-      if (scroller.scrollTop >= oneSetHeight) scroller.scrollTop -= oneSetHeight;
-      if (scroller.scrollTop <= 0) scroller.scrollTop += oneSetHeight;
-    }, { passive: true });
+    // 以前の clone / scroll巻き戻しを完全撤去
+    // CSS側で overflow-y: auto; になっていれば普通に上下スクロールできる
+    return;
   }
 
-  // ---- bind (二重バインド防止) ----
   let bound = false;
   function bind(){
     if (bound) return;
     bound = true;
 
-    // modalBack は「閉じない」仕様のまま。ただし表示を残すと操作不能になるので「隠す」のはUI側で確実にやる。
     if (ui.modalBack){
       ui.modalBack.addEventListener('click', (e) => e.preventDefault(), { passive:false });
     }
@@ -339,15 +283,19 @@ window.MOBBR = window.MOBBR || {};
     if (ui.btnCloseMembers){
       ui.btnCloseMembers.addEventListener('click', hideMembersPop);
     }
+
     if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', '○○○'));
     if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
     if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
 
-    if (ui.rogWrap){
-      ui.rogWrap.addEventListener('click', () => showNextTemporarily(3200));
-    }
+    // rogタップでNEXT表示 → 廃止（何も付けない）
+    // if (ui.rogWrap) ...
+
+    // btnWeekNext はここでは使わないので、クリックも無効化（誤爆防止）
+    // 週進行は必要なら別UIで決める。今は weekPop の NEXT( btnPopNext )のみ。
     if (ui.btnWeekNext){
-      ui.btnWeekNext.addEventListener('click', advanceWeek);
+      ui.btnWeekNext.onclick = null;
+      ui.btnWeekNext.classList.remove('show');
     }
 
     if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => { render(); showTeamScreen(); });
@@ -362,7 +310,6 @@ window.MOBBR = window.MOBBR || {};
     setupLoopScroll();
   }
 
-  // ---- public init ----
   function initMainUI(){
     collectDom();
     bind();
@@ -371,6 +318,6 @@ window.MOBBR = window.MOBBR || {};
 
   window.MOBBR.initMainUI = initMainUI;
 
-  // 「動的ロード」でも確実に起動
+  // 動的ロードでも確実に起動
   initMainUI();
 })();
