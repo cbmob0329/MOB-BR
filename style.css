@@ -1,4 +1,4 @@
-:root{
+　:root{
   --pad: 16px;
   --gap: 14px;
 
@@ -35,6 +35,82 @@ html, body{
   font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }
 
+/* =========================
+   TITLE SCREEN（追加）
+   - 背景：白×緑チェック
+   - ロゴrogo.png
+   - ロゴ下にbnext.png
+========================= */
+.titleScreen{
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  overflow:hidden;
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  background:#fff;
+}
+
+/* 白×緑チェック（CSSで作る） */
+.titleBg{
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(45deg, rgba(34,197,94,.22) 25%, transparent 25%, transparent 75%, rgba(34,197,94,.22) 75%, rgba(34,197,94,.22)),
+    linear-gradient(45deg, rgba(34,197,94,.22) 25%, transparent 25%, transparent 75%, rgba(34,197,94,.22) 75%, rgba(34,197,94,.22));
+  background-size: 52px 52px;
+  background-position: 0 0, 26px 26px;
+  z-index:0;
+}
+
+/* 中央寄せ（縦） */
+.titleInner{
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
+  display:flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.titleLogo{
+  width: min(560px, 88vw);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+.titleLogo img{
+  width: 100%;
+  height: auto;
+  display:block;
+  filter: drop-shadow(0 14px 22px rgba(0,0,0,.25));
+  pointer-events:none;
+}
+
+.titleNextBtn{
+  width: min(220px, 52vw);
+  border:none;
+  background: transparent;
+  padding:0;
+  cursor:pointer;
+  touch-action: manipulation;
+}
+.titleNextBtn img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.25));
+  pointer-events:none;
+}
+.titleNextBtn:active{ transform: translateY(1px); opacity:.95; }
+
+
+/* =========================
+   MAIN（既存）
+========================= */
 #app{
   position: relative;
   width: 100vw;
@@ -214,7 +290,7 @@ html, body{
   z-index: 2;
 }
 
-/* team image */
+/* team image: slightly lower */
 .teamImg{
   position:absolute;
   left: 10%;
@@ -454,7 +530,7 @@ html, body{
 }
 .nextCorner:active{ transform: translateY(1px); }
 
-/* ===== TEAM SCREEN (overlay) ===== */
+/* team screen overlay */
 .teamScreen{
   position:absolute;
   inset:0;
@@ -462,281 +538,34 @@ html, body{
   display:none;
 }
 .teamScreen.show{ display:block; }
-
-/* panel */
 .teamPanel{
   position:absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%,-50%);
-  width: min(760px, 94vw);
-  max-height: calc(100svh - 24px - env(safe-area-inset-bottom));
-  overflow: hidden;
+  width: min(620px, 90vw);
   border-radius: 16px;
   background: rgba(0,0,0,.82);
   border: 2px solid rgba(255,255,255,.35);
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 16px;
   color:#fff;
   text-shadow: var(--textShadow);
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
 }
-
 .teamTitle{
   font-size: 22px;
   font-weight: 1000;
+  margin-bottom: 12px;
 }
-
-/* tabs */
-.teamTabs{
-  display:flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.teamTab{
-  border: 0;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-weight: 1000;
-  font-size: 14px;
-  background: rgba(255,255,255,.14);
-  color:#fff;
-  touch-action: manipulation;
-}
-.teamTab:active{ transform: translateY(1px); opacity:.95; }
-.teamTab.isActive{
-  background: rgba(255,255,255,.92);
-  color:#111;
-  text-shadow: none;
-}
-
-/* top info */
-.teamTopInfo{
-  font-size: 14px;
-  font-weight: 900;
-  display:flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.teamLine{ white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
-
-/* sections */
-.teamSection{
-  display:none;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 4px;
-}
-.teamSection.show{ display:block; }
-
-.teamSectionTitle{
+.teamBody{
   font-size: 16px;
-  font-weight: 1000;
-  margin: 4px 0 10px;
-}
-
-/* member cards */
-.memberCard{
-  border-radius: 14px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 12px;
-  margin-bottom: 10px;
-}
-
-.memberHead{
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.memberRole{
-  font-size: 14px;
-  font-weight: 1000;
-  opacity: .95;
-}
-
-.memberNameBtn{
-  border: 0;
-  border-radius: 12px;
-  padding: 8px 10px;
-  background: rgba(255,255,255,.92);
-  color:#111;
-  font-weight: 1000;
-  font-size: 14px;
-  text-shadow: none;
-  touch-action: manipulation;
-}
-.memberNameBtn:active{ transform: translateY(1px); opacity:.95; }
-
-.memberName{
-  display:block;
-  max-width: 220px;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* stats grid */
-.statsGrid{
-  display:grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 10px;
-  margin-bottom: 10px;
-}
-.stat{
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.10);
-}
-.stat .k{ font-size: 13px; font-weight: 1000; opacity:.95; }
-.stat .v{ font-size: 14px; font-weight: 1000; }
-
-/* passive/ult text blocks */
-.textBlock{
-  display:flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.10);
-  margin-top: 8px;
-}
-.textBlock .lbl{
-  font-size: 12px;
-  font-weight: 1000;
-  opacity: .9;
-}
-.textBlock .val{
-  font-size: 14px;
-  font-weight: 1000;
-  line-height: 1.25;
-  word-break: break-word;
-}
-
-.teamHint{
-  font-size: 12px;
-  opacity: .9;
-  margin: 4px 0 8px;
-}
-
-/* coach slots */
-.coachSlots{
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.slotRow{
-  border-radius: 14px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 10px;
-  display:flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.slotLabel{
-  font-size: 12px;
-  font-weight: 1000;
-  opacity: .9;
-}
-.slotText{
-  font-size: 14px;
-  font-weight: 1000;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.10);
-}
-.slotBtns{
-  display:flex;
-  gap: 8px;
-}
-.slotBtn{
-  flex: 1;
-  border: 0;
-  border-radius: 12px;
-  padding: 10px 10px;
-  font-size: 14px;
-  font-weight: 1000;
-  background: rgba(255,255,255,.92);
-  color:#111;
-  text-shadow: none;
-  touch-action: manipulation;
-}
-.slotBtn:active{ transform: translateY(1px); opacity:.95; }
-
-/* record */
-.recordList{
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.recordEmpty{
-  border-radius: 14px;
-  background: rgba(255,255,255,.08);
-  border: 1px solid rgba(255,255,255,.14);
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 900;
-  opacity: .95;
-}
-.recordSummary{
-  margin-top: 10px;
-  border-radius: 14px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 12px;
-  font-size: 14px;
   font-weight: 900;
   display:flex;
   flex-direction: column;
-  gap: 8px;
-}
-.sumRow{
-  display:flex;
-  justify-content: space-between;
   gap: 10px;
 }
-
-/* save */
-.saveBox{
-  border-radius: 14px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 12px;
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.saveBtn{
-  width: 100%;
-  border: none;
-  border-radius: 12px;
-  padding: 12px 12px;
-  font-size: 16px;
-  font-weight: 1000;
-  background: rgba(255,255,255,.92);
-  color:#111;
-  text-shadow: none;
-  touch-action: manipulation;
-}
-.saveBtn:active{ transform: translateY(1px); opacity:.95; }
-.saveBtn.danger{
-  background: rgba(255,80,80,.92);
-  color:#111;
-}
-.saveHint{ font-size: 12px; opacity:.9; }
+.teamMembers{ display:flex; flex-direction: column; gap: 6px; }
+.teamNote{ font-size: 13px; opacity:.9; }
 
 /* safe-area */
 .safePad{
@@ -755,6 +584,9 @@ html, body{
   :root{ --leftW: 200px; }
   .topRow{ grid-template-columns: 1fr; }
   .logoWrap img{ max-width: 340px; }
+
+  .titleLogo{ width: min(520px, 90vw); }
+  .titleNextBtn{ width: min(210px, 56vw); }
 }
 @media (max-width: 520px){
   :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
@@ -766,7 +598,6 @@ html, body{
   .mainSquare{ width: min(520px, 100%); }
   .memberBtn{ font-size: 15px; }
 
-  .teamPanel{ width: min(760px, 96vw); padding: 12px; }
-  .statsGrid{ grid-template-columns: 1fr; }
-  .memberName{ max-width: 180px; }
+  .titleLogo{ width: min(460px, 92vw); }
+  .titleNextBtn{ width: min(200px, 62vw); }
 }
