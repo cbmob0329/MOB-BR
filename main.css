@@ -1,0 +1,428 @@
+/* =========================================================
+   main.css  (MOB BR / v14)
+   役割：
+   - メイン画面（#app）専用スタイル
+   - 左メニュー / 右カラム / main正方形 / rogログ
+   - メンバー名ポップ / 週ポップ / 右下NEXT（※現状非表示）
+   ※teamScreen / trainingScreen / titleScreen は別CSSに分離
+========================================================= */
+
+/* =========================
+   MAIN APP LAYOUT
+========================= */
+#app{
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+
+  display: grid;
+  grid-template-columns: var(--leftW) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+/* background */
+.bg{
+  position: absolute;
+  inset: 0;
+  background: #111 url("haikeimain.png") center/cover no-repeat;
+  z-index: 0;
+}
+
+.leftCol, .rightCol{
+  position: relative;
+  z-index: 2;
+}
+
+/* =========================
+   LEFT MENU（上下スクロールのみ）
+========================= */
+.leftCol{
+  height: calc(100svh - (var(--pad) * 2) - env(safe-area-inset-bottom));
+}
+
+.loopScroll{
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-top: 6px;
+  padding-right: 2px;
+  scrollbar-width: none;
+}
+.loopScroll::-webkit-scrollbar{ display:none; }
+
+.loopInner{
+  display:flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* image buttons */
+.imgBtn{
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.imgBtn img{
+  width: 100%;
+  height: auto;
+  display:block;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
+  pointer-events: none;
+}
+.imgBtn:active{ transform: translateY(1px); }
+
+/* floaty */
+.floaty{ animation: floaty var(--floatTime) ease-in-out infinite; }
+.delay1{ animation-delay: .15s; }
+.delay2{ animation-delay: .30s; }
+.delay3{ animation-delay: .45s; }
+.delay4{ animation-delay: .60s; }
+.delay5{ animation-delay: .75s; }
+@keyframes floaty{
+  0%{ transform: translateY(0); }
+  50%{ transform: translateY(calc(-1 * var(--floatAmp))); }
+  100%{ transform: translateY(0); }
+}
+
+/* =========================
+   RIGHT COLUMN
+========================= */
+.rightCol{
+  width: 100%;
+  max-width: var(--rightMax);
+  justify-self: start;
+  display:flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* top row */
+.topRow{
+  display:grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: var(--gap);
+  align-items: start;
+}
+
+.logoWrap{
+  display:flex;
+  justify-content:flex-start;
+  align-items:flex-start;
+}
+.logoWrap img{
+  width: 100%;
+  max-width: 320px;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 14px 22px rgba(0,0,0,.55));
+  pointer-events:none;
+}
+
+/* job panel */
+.jobWrap{
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.jobBg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  pointer-events:none;
+}
+.jobText{
+  position:absolute;
+  inset:0;
+  padding: 14px 16px;
+  color:#fff;
+  font-weight: 900;
+  text-shadow: var(--textShadow);
+  display:flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.jobLine{
+  font-size: 18px;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jobLine.small{
+  font-size: 14px;
+  opacity: .95;
+}
+.tappable{ cursor:pointer; }
+.tappable:active{ opacity:.85; }
+
+/* =========================
+   MAIN SQUARE（main1 + P1）
+========================= */
+.gameRow{ display:flex; justify-content:flex-start; }
+
+.mainSquare{
+  position: relative;
+  width: min(560px, 100%);
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+/* frame */
+.mainFrame{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: contain;
+  pointer-events:none;
+  z-index: 2;
+}
+
+/* team image: slightly lower */
+.teamImg{
+  position:absolute;
+  left: 10%;
+  right: 10%;
+  top: 12%;
+  bottom: 28%;
+  width: 80%;
+  height: 60%;
+  object-fit: contain;
+  z-index: 3;
+  pointer-events:none;
+  filter: drop-shadow(0 14px 26px rgba(0,0,0,.55));
+}
+
+/* member button */
+.memberBtn{
+  position:absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 10%;
+  z-index: 4;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 1000;
+  font-size: 16px;
+  background: rgba(255,255,255,.88);
+  color: #111;
+  box-shadow: 0 10px 22px rgba(0,0,0,.35);
+  text-shadow: none;
+  touch-action: manipulation;
+}
+.memberBtn:active{ transform: translateY(1px); opacity:.95; }
+
+/* =========================
+   ROG（右下ログ枠）
+========================= */
+.rogWrap{
+  position: relative;
+  width: 100%;
+  height: 210px;
+  border-radius: 14px;
+  overflow:hidden;
+  box-shadow: var(--shadow);
+}
+.rogBg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  pointer-events:none;
+}
+.rogText{
+  position:absolute;
+  inset:0;
+  padding: 16px 16px;
+  color:#fff;
+  font-weight: 1000;
+  text-shadow: var(--textShadow);
+  display:flex;
+  flex-direction: column;
+  justify-content:flex-start;
+  gap: 10px;
+}
+
+/* ※「1989年1月第1週」サイズ調整済み */
+.dateLine{ font-size: 26px; line-height: 1; }
+.nextTourLine{ font-size: 16px; opacity: .95; }
+
+.divider{
+  height: 3px;
+  background: rgba(255,255,255,.75);
+  border-radius: 999px;
+}
+
+.recentOnly{
+  font-size: 18px;
+  line-height: 1.15;
+  opacity: .98;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.hintLine{ margin-top:auto; font-size: 14px; opacity:.9; }
+
+/* =========================
+   MEMBERS POP（メンバー名）
+   ※modalBack / modalCard / closeBtn の基本は base.css 側にある前提
+========================= */
+.membersList{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nameRow{
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 12px;
+  background: rgba(255,255,255,.12);
+  color:#fff;
+  font-weight: 1000;
+  font-size: 18px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  touch-action: manipulation;
+}
+.nameRow:active{ transform: translateY(1px); opacity:.95; }
+
+.nameLabel{
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.22);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+}
+.nameVal{
+  margin-left: 10px;
+  flex: 1;
+  text-align: right;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================
+   WEEK POP（中央：週切替）
+========================= */
+.weekPop{
+  position:absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%,-50%);
+  z-index: calc(var(--popZ) + 1);
+  display:none;
+  width: min(560px, 86vw);
+  pointer-events:none;
+}
+.weekPopCard{
+  width:100%;
+  border-radius: 16px;
+  background: rgba(0,0,0,.75);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: var(--shadow);
+  padding: 18px 18px;
+  color:#fff;
+  text-shadow: var(--textShadow);
+}
+.weekPopTitle{ font-size: 26px; font-weight: 1000; }
+.weekPopSub{ margin-top: 8px; font-size: 18px; font-weight: 1000; opacity: .95; }
+
+.nextImgBtn{
+  margin-top: 10px;
+  width: 140px;
+  border:none;
+  background: transparent;
+  padding:0;
+  pointer-events:auto;
+  touch-action: manipulation;
+}
+.nextImgBtn img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
+  pointer-events:none;
+}
+.nextImgBtn:active{ transform: translateY(1px); }
+
+/* =========================
+   右下NEXT（現状：使わない）
+========================= */
+.nextCorner{
+  position:absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 10;
+  width: 150px;
+  border:none;
+  background: transparent;
+  padding:0;
+  cursor:pointer;
+  touch-action: manipulation;
+  display:none; /* デフォルト非表示 */
+}
+.nextCorner.show{ display:block; }
+.nextCorner img{
+  width:100%;
+  height:auto;
+  display:block;
+  filter: drop-shadow(0 12px 22px rgba(0,0,0,.6));
+  pointer-events:none;
+}
+.nextCorner:active{ transform: translateY(1px); }
+
+/* =========================
+   RESPONSIVE（メイン画面分のみ）
+========================= */
+@media (max-width: 860px){
+  :root{ --leftW: 220px; }
+  .jobWrap{ height: 132px; }
+}
+
+@media (max-width: 740px){
+  :root{ --leftW: 200px; }
+  .topRow{ grid-template-columns: 1fr; }
+  .logoWrap img{ max-width: 340px; }
+}
+
+@media (max-width: 520px){
+  :root{ --pad: 12px; --gap: 12px; --leftW: 170px; }
+  .jobWrap{ height: 120px; }
+  .jobLine{ font-size: 15px; }
+
+  /* さらに小さめ */
+  .dateLine{ font-size: 22px; }
+
+  .recentOnly{ font-size: 16px; }
+  .nextCorner{ width: 130px; }
+  .mainSquare{ width: min(520px, 100%); }
+  .memberBtn{ font-size: 15px; }
+}
