@@ -1,14 +1,15 @@
 'use strict';
 
 /*
-  MOB BR - ui_team.js v13（HTML固定レイアウト対応版）
+  MOB BR - ui_team.js v14（HTML固定レイアウト対応版）
 
   目的：
-  - #teamScreen の中身を「確定仕様ベース」で動かす
-    1) A/B/C の名前変更（タップで変更）→ storageのm1/m2/m3へ反映 → 全UIへ反映
-    2) ステータス7種（数値）・パッシブ・ウルトを表示
-    3) セーブ：手動セーブ（簡易スナップショット保存）
-    4) セーブ削除：完全リセット → タイトルへ戻る → 次のNEXTで名称入力からやり直し
+  - #teamScreen の中身を「保存データ mobbr_playerTeam」を基準に動かす（無ければ初回生成して保存）
+  - A/B/C の名前変更 → storage の m1/m2/m3 へ反映 → mobbr_playerTeam.members[].name も同期 → 全UIへ反映
+  - ステータス7種（数値）・パッシブ・ウルトを表示（playerTeam から）
+  - セーブ：手動セーブ（mobbr_save1 にスナップショット保存）
+  - セーブ削除：完全リセット → タイトルへ戻る → 次のNEXTで名称入力からやり直し
+
   前提：
   - storage.js / data_player.js が先に読み込まれていること
 */
@@ -30,6 +31,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     console.warn('[ui_team] data_player.js not found');
     return;
   }
+
+  const K = S.KEYS;
 
   // ===== DOM =====
   const dom = {
@@ -80,13 +83,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tC_passive: $('tC_passive'),
     tC_ult: $('tC_ult'),
 
-    // save buttons（あなたのHTML）
+    // save buttons
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
-
-  // ===== keys =====
-  const K = S.KEYS;
 
   // ===== utils =====
   function safeText(el, text){
@@ -104,12 +104,53 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function normalize(stats){ return DP.normalizeStats(stats); }
 
-  function getDefaultTeam(){
-    // data_player.js の確定データ
-    return DP.buildDefaultTeam();
+  // ===== playerTeam load/save =====
+  function loadPlayerTeam(){
+    try{
+      const raw = localStorage.getItem(K.playerTeam);
+      if (!raw) return null;
+      const t = JSON.parse(raw);
+      if (!t || !Array.isArray(t.members)) return null;
+      return t;
+    }catch(e){
+      return null;
+    }
   }
 
-  // ===== render all UI names (main + team) =====
+  function savePlayerTeam(team){
+    try{
+      localStorage.setItem(K.playerTeam, JSON.stringify(team));
+    }catch(e){
+      // ignore
+    }
+  }
+
+  function ensurePlayerTeam(){
+    // 無ければ data_player.js の既定から生成して保存
+    let team = loadPlayerTeam();
+    if (!team){
+      team = DP.cloneTeam(DP.buildDefaultTeam());
+      savePlayerTeam(team);
+    }
+    return team;
+  }
+
+  function syncPlayerTeamNamesFromStorage(team){
+    if (!team || !Array.isArray(team.members)) return;
+
+    const nm1 = getNameA();
+    const nm2 = getNameB();
+    const nm3 = getNameC();
+
+    const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
+    if (bySlot[0]) bySlot[0].name = nm1;
+    if (bySlot[1]) bySlot[1].name = nm2;
+    if (bySlot[2]) bySlot[2].name = nm3;
+
+    savePlayerTeam(team);
+  }
+
+  // ===== render helpers =====
   function reflectNamesEverywhere(){
     // team screen buttons
     safeText(dom.tNameA, getNameA());
@@ -123,6 +164,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (uiM1) uiM1.textContent = getNameA();
     if (uiM2) uiM2.textContent = getNameB();
     if (uiM3) uiM3.textContent = getNameC();
+
+    // メインのチーム画面ヘッダ（存在すれば）
+    const tM1 = $('tM1');
+    const tM2 = $('tM2');
+    const tM3 = $('tM3');
+    if (tM1) tM1.textContent = getNameA();
+    if (tM2) tM2.textContent = getNameB();
+    if (tM3) tM3.textContent = getNameC();
   }
 
   function render(){
@@ -130,8 +179,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
     safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
 
-    // members + stats
-    const team = getDefaultTeam();
+    // team data
+    const team = ensurePlayerTeam();
+
+    // 起動/表示のたびに「storageの名前」に寄せて破綻を防ぐ
+    syncPlayerTeamNamesFromStorage(team);
+
     const byId = {};
     for (const m of team.members) byId[m.id] = m;
 
@@ -199,16 +252,30 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== rename handlers =====
+  function applyRename(memberId, newName){
+    const nv = String(newName || '').trim();
+    if (!nv) return;
+
+    // storage 更新
+    if (memberId === 'A') setNameA(nv);
+    if (memberId === 'B') setNameB(nv);
+    if (memberId === 'C') setNameC(nv);
+
+    // playerTeam も同期
+    const team = ensurePlayerTeam();
+    syncPlayerTeamNamesFromStorage(team);
+
+    // 即時反映
+    reflectNamesEverywhere();
+  }
+
   function bindRename(){
     if (dom.tNameA){
       dom.tNameA.addEventListener('click', ()=>{
         const cur = getNameA();
         const v = prompt('メンバー名（A）を変更', cur);
         if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameA(nv);
-        reflectNamesEverywhere();
+        applyRename('A', v);
       });
     }
     if (dom.tNameB){
@@ -216,10 +283,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const cur = getNameB();
         const v = prompt('メンバー名（B）を変更', cur);
         if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameB(nv);
-        reflectNamesEverywhere();
+        applyRename('B', v);
       });
     }
     if (dom.tNameC){
@@ -227,33 +291,36 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const cur = getNameC();
         const v = prompt('メンバー名（C）を変更', cur);
         if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameC(nv);
-        reflectNamesEverywhere();
+        applyRename('C', v);
       });
     }
   }
 
   // ===== save =====
   function manualSave(){
-    // まずは「現状の重要情報だけ」スナップショット（将来ここに育成/所持品などを足す）
+    // 現状の重要情報 + playerTeam をスナップショット
     const snap = {
-      ver: 'v13',
+      ver: 'v14',
       ts: Date.now(),
+
       company: S.getStr(K.company, 'CB Memory'),
       team: S.getStr(K.team, 'PLAYER TEAM'),
       m1: getNameA(),
       m2: getNameB(),
       m3: getNameC(),
+
       year: S.getNum(K.year, 1989),
       month: S.getNum(K.month, 1),
       week: S.getNum(K.week, 1),
+
       gold: S.getNum(K.gold, 0),
       rank: S.getNum(K.rank, 10),
+
       nextTour: S.getStr(K.nextTour, '未定'),
       nextTourW: S.getStr(K.nextTourW, '未定'),
-      recent: S.getStr(K.recent, '未定')
+      recent: S.getStr(K.recent, '未定'),
+
+      playerTeam: ensurePlayerTeam()
     };
 
     localStorage.setItem('mobbr_save1', JSON.stringify(snap));
@@ -263,11 +330,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function deleteSaveAndReset(){
     if (!confirm('セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？')) return;
 
-    // ★完全リセット → タイトルへ
-    // ★次のNEXTで「企業/チーム/メンバー名の入力」→ 1989年1月第1週から
     if (window.MOBBR?.storage?.resetAll){
       window.MOBBR.storage.resetAll();
     }else{
+      localStorage.clear();
       location.reload();
     }
   }
@@ -281,16 +347,30 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ===== open/close binding =====
+  let boundOpenClose = false;
   function bindOpenClose(){
+    if (boundOpenClose) return;
+    boundOpenClose = true;
+
+    // ui_main.js 側でも btnTeam を触るが、二重でも破綻しない（openは冪等）
     if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
     if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
   }
 
   // ===== init =====
+  let inited = false;
   function initTeamUI(){
+    if (inited) return;
+    inited = true;
+
+    // 初回に playerTeam を必ず用意（無ければ生成→保存）
+    ensurePlayerTeam();
+
     bindOpenClose();
     bindRename();
     bindSave();
+
     // 初回描画（開かなくても安全）
     render();
   }
@@ -298,7 +378,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   window.MOBBR.initTeamUI = initTeamUI;
   window.MOBBR.ui.team = { open, close, render };
 
-  document.addEventListener('DOMContentLoaded', ()=>{
+  // 動的ロード対策：DOMが既に出来ているなら即初期化
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initTeamUI);
+  }else{
     initTeamUI();
-  });
+  }
 })();
