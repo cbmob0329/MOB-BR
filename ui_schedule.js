@@ -1,22 +1,11 @@
 'use strict';
 
 /*
-  MOB BR - ui_schedule.js v15（フル）
+  MOB BR - ui_schedule.js v1（フル）
 
   役割：
-  - スケジュール画面の制御
-  - 年間スケジュールを表示
-  - 現在の「月/週」から “次の大会” を自動判定して赤で強調
-
-  方針：
-  - DOMが無くても落とさない（未実装でもrecentに書くだけで復帰）
-  - storage.js があれば優先、無ければ localStorage 直読み
-
-  期待DOM（次のindex.htmlで追加予定）：
-  - btnSchedule（既にある）
-  - scheduleScreen
-  - btnCloseSchedule
-  - scheduleList（一覧描画先）
+  - 年間スケジュール画面の制御
+  - 次の大会を赤文字で強調表示
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -25,135 +14,104 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  const S = window.MOBBR?.storage || null;
-  const KEYS = S?.KEYS || {
-    year: 'mobbr_year',
-    month: 'mobbr_month',
-    week: 'mobbr_week',
-    recent: 'mobbr_recent'
-  };
+  const S = window.MOBBR?.storage;
+  if (!S || !S.KEYS){
+    console.warn('[ui_schedule] storage.js not found');
+    return;
+  }
 
-  // ===== schedule master（確定：演出用テキスト）=====
-  // month: 1..12, week: 1..4
-  const SCHEDULE = [
-    { section:'【スプリット1】', month:2,  week:1, title:'ローカル大会' },
-    { section:'【スプリット1】', month:3,  week:1, title:'ナショナル大会' },
-    { section:'【スプリット1】', month:3,  week:2, title:'ナショナル大会後半' },
-    { section:'【スプリット1】', month:3,  week:3, title:'ナショナルラストチャンス' },
-    { section:'【スプリット1】', month:4,  week:1, title:'ワールドファイナル' },
+  const K = S.KEYS;
 
-    { section:'【スプリット2】', month:7,  week:1, title:'ローカル大会' },
-    { section:'【スプリット2】', month:8,  week:1, title:'ナショナル大会' },
-    { section:'【スプリット2】', month:8,  week:2, title:'ナショナル大会後半' },
-    { section:'【スプリット2】', month:8,  week:3, title:'ナショナルラストチャンス' },
-    { section:'【スプリット2】', month:9,  week:1, title:'ワールドファイナル' },
-
-    { section:'【チャンピオンシップリーグ】', month:11, week:1, title:'ローカル大会' },
-    { section:'【チャンピオンシップリーグ】', month:12, week:1, title:'ナショナル大会' },
-    { section:'【チャンピオンシップリーグ】', month:12, week:2, title:'ナショナル大会後半' },
-    { section:'【チャンピオンシップリーグ】', month:12, week:3, title:'ナショナルラストチャンス' },
-    { section:'【チャンピオンシップリーグ】', month:1,  week:2, title:'チャンピオンシップ ワールドファイナル' }
-  ];
-
-  // ===== DOM =====
+  /* =========================
+     DOM
+  ========================= */
   const dom = {
-    btnSchedule: $('btnSchedule'),
-
     screen: $('scheduleScreen'),
-    btnClose: $('btnCloseSchedule'),
+    close: $('btnCloseSchedule'),
     list: $('scheduleList')
   };
 
-  // ===== storage helpers =====
-  function getNum(key, def){
-    if (S?.getNum) return S.getNum(key, def);
-    const v = Number(localStorage.getItem(key));
-    return Number.isFinite(v) ? v : def;
-  }
-  function setStr(key, val){
-    if (S?.setStr) return S.setStr(key, val);
-    localStorage.setItem(key, String(val));
-  }
+  /* =========================
+     年間スケジュール定義（確定）
+  ========================= */
+  const SCHEDULE = [
+    { split:'スプリット1', y:null, m:2, w:1, name:'ローカル大会' },
+    { split:'スプリット1', y:null, m:3, w:1, name:'ナショナル大会' },
+    { split:'スプリット1', y:null, m:3, w:2, name:'ナショナル大会後半' },
+    { split:'スプリット1', y:null, m:3, w:3, name:'ナショナルラストチャンス' },
+    { split:'スプリット1', y:null, m:4, w:1, name:'ワールドファイナル' },
 
-  function getCurrent(){
+    { split:'スプリット2', y:null, m:7, w:1, name:'ローカル大会' },
+    { split:'スプリット2', y:null, m:8, w:1, name:'ナショナル大会' },
+    { split:'スプリット2', y:null, m:8, w:2, name:'ナショナル大会後半' },
+    { split:'スプリット2', y:null, m:8, w:3, name:'ナショナルラストチャンス' },
+    { split:'スプリット2', y:null, m:9, w:1, name:'ワールドファイナル' },
+
+    { split:'チャンピオンシップリーグ', y:null, m:11, w:1, name:'ローカル大会' },
+    { split:'チャンピオンシップリーグ', y:null, m:12, w:1, name:'ナショナル大会' },
+    { split:'チャンピオンシップリーグ', y:null, m:12, w:2, name:'ナショナル大会後半' },
+    { split:'チャンピオンシップリーグ', y:null, m:12, w:3, name:'ナショナルラストチャンス' },
+    { split:'チャンピオンシップリーグ', y:null, m:1,  w:2, name:'チャンピオンシップ ワールドファイナル' }
+  ];
+
+  /* =========================
+     現在日時
+  ========================= */
+  function getNow(){
     return {
-      y: getNum(KEYS.year, 1989),
-      m: getNum(KEYS.month, 1),
-      w: getNum(KEYS.week, 1)
+      y: S.getNum(K.year, 1989),
+      m: S.getNum(K.month, 1),
+      w: S.getNum(K.week, 1)
     };
   }
 
-  // ===== next event logic =====
-  // “今の週を含む”かどうか：仕様的に「次の大会」は “現在週以降で最も近い” にする
-  // 例：今が3月第1週なら、3月第1週のイベントが次に表示される
-  function scoreFromNow(curM, curW, evM, evW){
-    // 月差（12ヶ月循環）
-    let dm = (evM >= curM) ? (evM - curM) : (evM + 12 - curM);
-
-    // 同月で、イベント週が過去なら「来年の同月扱い」にする
-    if (dm === 0 && evW < curW){
-      dm = 12;
-    }
-
-    // 同月なら週差を優先
-    const dw = (dm === 0) ? (evW - curW) : 0;
-
-    // 比較用スコア（小さいほど近い）
-    return dm * 10 + dw;
+  function isNextTournament(item, now){
+    if (item.m < now.m) return false;
+    if (item.m === now.m && item.w < now.w) return false;
+    return true;
   }
 
-  function findNextIndex(){
-    const cur = getCurrent();
-    let bestIdx = 0;
-    let bestScore = Infinity;
-
-    for (let i=0;i<SCHEDULE.length;i++){
-      const ev = SCHEDULE[i];
-      const sc = scoreFromNow(cur.m, cur.w, ev.month, ev.week);
-      if (sc < bestScore){
-        bestScore = sc;
-        bestIdx = i;
-      }
-    }
-    return bestIdx;
-  }
-
-  // ===== render =====
-  function clearList(){
-    if (dom.list) dom.list.innerHTML = '';
-  }
-
+  /* =========================
+     render
+  ========================= */
   function render(){
     if (!dom.list) return;
 
-    clearList();
+    dom.list.innerHTML = '';
 
-    // 次の大会を決定
-    const nextIdx = findNextIndex();
+    const now = getNow();
+    let currentSplit = '';
+    let nextFound = false;
 
-    // セクションごとに描画
-    let currentSection = '';
-    SCHEDULE.forEach((ev, idx)=>{
-      if (ev.section !== currentSection){
-        currentSection = ev.section;
-
+    SCHEDULE.forEach(item=>{
+      if (item.split !== currentSplit){
         const h = document.createElement('div');
-        h.className = 'scheduleSectionTitle';
-        h.textContent = currentSection;
+        h.textContent = `【${item.split}】`;
+        h.style.fontWeight = '1000';
+        h.style.margin = '12px 0 6px';
         dom.list.appendChild(h);
+        currentSplit = item.split;
       }
 
       const row = document.createElement('div');
-      row.className = 'scheduleRow';
-      if (idx === nextIdx) row.classList.add('isNext');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.padding = '6px 4px';
+      row.style.borderBottom = '1px solid rgba(255,255,255,.12)';
+      row.style.fontSize = '14px';
 
       const left = document.createElement('div');
-      left.className = 'scheduleWhen';
-      left.textContent = `${ev.month}月 第${ev.week}週：`;
+      left.textContent = `${item.m}月 第${item.w}週`;
 
       const right = document.createElement('div');
-      right.className = 'scheduleWhat';
-      right.textContent = ev.title;
+      right.textContent = item.name;
+
+      // 次の大会を赤強調（最初の1件だけ）
+      if (!nextFound && isNextTournament(item, now)){
+        row.style.color = '#ff3b30';
+        row.style.fontWeight = '1000';
+        nextFound = true;
+      }
 
       row.appendChild(left);
       row.appendChild(right);
@@ -161,15 +119,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
   }
 
-  // ===== open / close =====
+  /* =========================
+     open / close
+  ========================= */
   function open(){
-    // DOM未実装でも落とさない
-    if (!dom.screen || !dom.list){
-      setStr(KEYS.recent, 'スケジュールを確認した（画面未実装）');
-      if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
-      return;
-    }
-
+    if (!dom.screen) return;
     render();
     dom.screen.classList.add('show');
     dom.screen.setAttribute('aria-hidden', 'false');
@@ -181,25 +135,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.screen.setAttribute('aria-hidden', 'true');
   }
 
-  // ===== bind =====
-  let bound = false;
+  /* =========================
+     bind
+  ========================= */
   function bind(){
-    if (bound) return;
-    bound = true;
-
-    // 左メニュー
-    if (dom.btnSchedule) dom.btnSchedule.addEventListener('click', open);
-
-    // 閉じる
-    if (dom.btnClose) dom.btnClose.addEventListener('click', close);
+    if (dom.close){
+      dom.close.addEventListener('click', close);
+    }
   }
 
-  function initScheduleUI(){
+  function init(){
     bind();
   }
 
-  window.MOBBR.initScheduleUI = initScheduleUI;
-  window.MOBBR.ui.schedule = { open, close, render };
+  // expose
+  window.MOBBR.ui.schedule = { open, close };
 
-  document.addEventListener('DOMContentLoaded', initScheduleUI);
+  document.addEventListener('DOMContentLoaded', init);
 })();
