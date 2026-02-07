@@ -196,6 +196,139 @@
       <button class="closeBtn" id="btnCloseMembers" type="button">閉じる</button>
     </div>
 
+    <!-- =========================================================
+         TEAM SCREEN（★復活：ui_team.js が参照するID）
+    ========================================================== -->
+    <div id="teamScreen" class="teamScreen" aria-label="チーム" aria-hidden="true">
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">チーム</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTeam" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div>企業名：<span id="tCompany">CB Memory</span></div>
+          <div>チーム名：<span id="tTeam">PLAYER TEAM</span></div>
+
+          <!-- 総合%（ui_team.jsが「右にカード込み」を後付けする） -->
+          <div id="tTeamPowerRow" style="margin-top:8px;font-weight:1000;">
+            総合戦闘力：<span id="tTeamPower">0%</span>
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">メンバー</div>
+
+          <!-- 名前（タップで変更） -->
+          <div class="recordsList">
+            <div class="recordRow">
+              <div class="recordLeft">A</div>
+              <button class="saveBtn" id="tNameA" type="button">A</button>
+            </div>
+            <div class="recordRow">
+              <div class="recordLeft">B</div>
+              <button class="saveBtn" id="tNameB" type="button">B</button>
+            </div>
+            <div class="recordRow">
+              <div class="recordLeft">C</div>
+              <button class="saveBtn" id="tNameC" type="button">C</button>
+            </div>
+          </div>
+
+          <div style="height:12px;"></div>
+
+          <!-- ステータス表示（ui_team.js が参照するID） -->
+          <div class="teamSectionTitle">ステータス</div>
+          <div class="recordsList">
+
+            <!-- A -->
+            <div class="recordRow"><div class="recordLeft">A HP</div><div class="recordRight" id="tA_hp">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A メンタル</div><div class="recordRight" id="tA_mental">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A エイム</div><div class="recordRight" id="tA_aim">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A アジリティ</div><div class="recordRight" id="tA_agi">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A テクニック</div><div class="recordRight" id="tA_tech">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A サポート</div><div class="recordRight" id="tA_support">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A スキャン</div><div class="recordRight" id="tA_scan">0</div></div>
+            <div class="recordRow"><div class="recordLeft">A パッシブ</div><div class="recordRight" id="tA_passive">未定</div></div>
+            <div class="recordRow"><div class="recordLeft">A ULT</div><div class="recordRight" id="tA_ult">未定</div></div>
+
+            <div class="divider" style="margin:10px 0;"></div>
+
+            <!-- B -->
+            <div class="recordRow"><div class="recordLeft">B HP</div><div class="recordRight" id="tB_hp">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B メンタル</div><div class="recordRight" id="tB_mental">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B エイム</div><div class="recordRight" id="tB_aim">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B アジリティ</div><div class="recordRight" id="tB_agi">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B テクニック</div><div class="recordRight" id="tB_tech">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B サポート</div><div class="recordRight" id="tB_support">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B スキャン</div><div class="recordRight" id="tB_scan">0</div></div>
+            <div class="recordRow"><div class="recordLeft">B パッシブ</div><div class="recordRight" id="tB_passive">未定</div></div>
+            <div class="recordRow"><div class="recordLeft">B ULT</div><div class="recordRight" id="tB_ult">未定</div></div>
+
+            <div class="divider" style="margin:10px 0;"></div>
+
+            <!-- C -->
+            <div class="recordRow"><div class="recordLeft">C HP</div><div class="recordRight" id="tC_hp">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C メンタル</div><div class="recordRight" id="tC_mental">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C エイム</div><div class="recordRight" id="tC_aim">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C アジリティ</div><div class="recordRight" id="tC_agi">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C テクニック</div><div class="recordRight" id="tC_tech">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C サポート</div><div class="recordRight" id="tC_support">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C スキャン</div><div class="recordRight" id="tC_scan">0</div></div>
+            <div class="recordRow"><div class="recordLeft">C パッシブ</div><div class="recordRight" id="tC_passive">未定</div></div>
+            <div class="recordRow"><div class="recordLeft">C ULT</div><div class="recordRight" id="tC_ult">未定</div></div>
+
+          </div>
+
+          <div style="height:14px;"></div>
+
+          <!-- セーブ -->
+          <div class="teamSectionTitle">セーブ</div>
+          <div class="saveRow">
+            <button class="saveBtn" id="btnManualSave" type="button">セーブ</button>
+            <button class="saveBtn" id="btnDeleteSave" type="button">セーブ削除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         TRAINING SCREEN（★復活：ui_training.js が参照するID）
+    ========================================================== -->
+    <div id="trainingScreen" class="teamScreen" aria-label="修行" aria-hidden="true">
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">修行</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTraining" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div>
+            <span id="trY">1989</span>年
+            <span id="trM">1</span>月
+            <span id="trW">1</span>週
+          </div>
+          <div style="opacity:.9;font-size:13px;line-height:1.3;margin-top:4px;">
+            3人分の修行を選び、開始すると結果がポップアップで出ます。<br />
+            OKで確定して週が進みます。
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">修行メニュー</div>
+
+          <!-- ui_training.js がここにカードを動的生成 -->
+          <div id="trainingCards" class="recordsList"></div>
+
+          <div style="height:12px;"></div>
+
+          <button class="saveBtn" id="btnTrainingStart" type="button" disabled>
+            修行開始
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- =========================
          SHOP SCREEN
          ※ui_shop.js が参照するIDに合わせる
@@ -303,8 +436,6 @@
         </div>
       </div>
     </div>
-
-    <!-- TEAM / TRAINING は既存DOMをそのまま使用（すでにある前提） -->
 
     <div class="safePad" aria-hidden="true"></div>
   </div>
