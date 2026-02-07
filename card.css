@@ -1,88 +1,123 @@
-/* card.css v15
-   - カードコレクション画面の見た目
-*/
+/* =========================
+   MOB BR - card.css v15
+   - カードコレクション画面専用
+   - 一覧：右側に「×枚数」「+補正%」を縦配置
+   - プレビュー：画像小さめ＆中央
+========================= */
 
-#cardScreen .teamPanel{
-  /* teamPanel を流用。ここでは追加だけ */
+/* screen wrapper */
+#cardScreen{
+  /* teamScreen を流用しているので追加は最小 */
 }
 
-/* 一覧 */
+/* list container */
 #cardList{
-  margin-top: 10px;
   display:flex;
   flex-direction: column;
   gap: 10px;
-  max-height: min(62svh, 520px);
-  overflow:auto;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 4px;
 }
 
-/* 空表示 */
+/* empty */
 .cardEmpty{
-  padding: 12px 10px;
+  padding: 14px 12px;
   border-radius: 12px;
-  background: rgba(0,0,0,.25);
+  background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.14);
-  color:#fff;
-  font-weight: 1000;
   font-size: 14px;
-  opacity: .9;
-  text-shadow: var(--textShadow);
-}
-
-/* 行（ボタン） */
-.cardRow{
-  width: 100%;
-  border: 0;
-  border-radius: 12px;
-  padding: 12px 12px;
-  background: rgba(255,255,255,.10);
-  color:#fff;
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  gap: 10px;
-  text-align:left;
-  font-weight: 1000;
-  touch-action: manipulation;
-}
-.cardRow:active{ transform: translateY(1px); opacity:.95; }
-
-.cardRowLeft{
-  min-width: 0;
-  flex: 1;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 15px;
-  text-shadow: var(--textShadow);
-}
-.cardRowRight{
-  flex: 0 0 auto;
-  font-size: 14px;
+  font-weight: 900;
   opacity: .95;
   text-shadow: var(--textShadow);
 }
 
-/* プレビュー（modalCardを使う） */
-#cardPreview{
-  display:none;
-  z-index: calc(var(--popZ) + 5);
-}
-#cardPreviewImg{
+/* row button */
+.cardRow{
   width: 100%;
-  height: auto;
-  display:block;
-  border-radius: 12px;
-  box-shadow: 0 14px 26px rgba(0,0,0,.45);
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 12px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  color:#fff;
+  text-shadow: var(--textShadow);
+  font-weight: 1000;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align:left;
+  touch-action: manipulation;
+}
+.cardRow:active{ transform: translateY(1px); opacity:.95; }
+
+/* left: rarity + name */
+.cardRowLeft{
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 
-/* スマホ調整 */
+/* right: count + bonus stacked */
+.cardRowRight{
+  display:flex;
+  flex-direction: column;
+  align-items:flex-end;
+  justify-content:center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 84px;
+}
+
+.cardRowCount{
+  font-size: 14px;
+  font-weight: 1000;
+  opacity: .98;
+}
+
+.cardRowBonus{
+  font-size: 13px;
+  font-weight: 1000;
+  opacity: .95;
+}
+
+/* =========================
+   PREVIEW
+========================= */
+
+/* 既存 modalCard をそのまま使うが、カード用に少し調整 */
+#cardPreview{
+  display:none; /* JSで block */
+  width: min(520px, 86vw);
+  padding: 16px;
+}
+
+/* 画像はJSでも width 指定しているが、CSSでも保険 */
+#cardPreviewImg{
+  width: min(320px, 72vw);
+  height: auto;
+  display:block;
+  margin: 10px auto 0;
+  border-radius: 12px;
+  box-shadow: 0 14px 30px rgba(0,0,0,.45);
+}
+
+/* プレビュー内のタイトル */
+#cardPreview .modalTitle{
+  margin-bottom: 6px;
+}
+
+/* プレビュー内の閉じるボタン */
+#btnCloseCardPreview{
+  margin-top: 14px;
+}
+
+/* responsive */
 @media (max-width: 520px){
-  #cardList{
-    max-height: min(58svh, 470px);
-  }
   .cardRowLeft{ font-size: 14px; }
-  .cardRowRight{ font-size: 13px; }
+  .cardRowRight{ min-width: 78px; }
+  .cardRowCount{ font-size: 13px; }
+  .cardRowBonus{ font-size: 12px; }
 }
