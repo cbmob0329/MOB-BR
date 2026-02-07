@@ -1,14 +1,14 @@
 'use strict';
 
 /*
-  MOB BR - ui_team.js v15（カード効果込み総合% + リセット時全ポップアップ閉じ）
-
-  目的（追加分）：
-  - チーム画面で「総合戦闘力%」の右に
-      赤文字：カード効果込み総合%
-      小文字：カード効果！
-    を表示する
-  - セーブ削除（完全リセット）時に、残っているポップアップ/モーダル/スクリーンを全て閉じる
+  MOB BR - ui_team.js v16（フル）
+  追加：
+  - コーチスキルの「装備 / 取り外し」(最大3枠)
+    所持：mobbr_coachSkillsOwned（shopで増える）
+    装備：mobbr_coachSkillsEquipped（このファイルで管理）
+  - 既存機能は維持：
+    ・カード効果込み総合% 表示（赤文字 +「カード効果！」）
+    ・セーブ削除（完全リセット）時に全ポップアップ/スクリーンを閉じる
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -19,7 +19,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const S  = window.MOBBR?.storage;
   const DP = window.MOBBR?.data?.player;
-  const DC = window.MOBBR?.data?.cards; // あればカードボーナス計算に使う
+  const DC = window.MOBBR?.data?.cards; // あればカードボーナス計算
 
   if (!S || !S.KEYS){
     console.warn('[ui_team] storage.js not found');
@@ -30,10 +30,63 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
+  // ===== keys =====
+  const K = S.KEYS;
+
+  // ===== Coach Skills Storage =====
+  const COACH_OWNED_KEY = 'mobbr_coachSkillsOwned';     // { id: count }
+  const COACH_EQUIP_KEY = 'mobbr_coachSkillsEquipped';  // [id|null, id|null, id|null]
+
+  // ===== Coach Skills Master =====
+  const COACH_SKILLS = [
+    {
+      id: 'tactics_note',
+      name: '戦術ノート',
+      effectLabel: 'この試合、総合戦闘力が1%アップする',
+      coachLine: '基本を徹底。丁寧に戦おう！'
+    },
+    {
+      id: 'mental_care',
+      name: 'メンタル整備',
+      effectLabel: 'この試合、チームの雰囲気が安定する',
+      coachLine: '全員で勝つぞ！'
+    },
+    {
+      id: 'endgame_power',
+      name: '終盤の底力',
+      effectLabel: 'この試合、終盤の勝負で総合戦闘力が3%アップする',
+      coachLine: '終盤一気に押すぞ！'
+    },
+    {
+      id: 'clearing',
+      name: 'クリアリング徹底',
+      effectLabel: 'この試合、ファイトに勝った後に人数が残りやすい',
+      coachLine: '周辺をしっかり見ろ！'
+    },
+    {
+      id: 'score_mind',
+      name: 'スコア意識',
+      effectLabel: 'この試合、お宝やフラッグを取りやすい',
+      coachLine: 'この試合はポイント勝負だ！'
+    },
+    {
+      id: 'igl_call',
+      name: 'IGL強化コール',
+      effectLabel: 'この試合、総合戦闘力が4%アップする',
+      coachLine: 'コールを信じろ！チャンピオン取るぞ！'
+    },
+    {
+      id: 'protagonist',
+      name: '主人公ムーブ',
+      effectLabel: 'この試合、総合戦闘力が6%アップし、アシストも出やすくなる',
+      coachLine: 'チームの力を信じろ！'
+    }
+  ];
+  const COACH_BY_ID = Object.fromEntries(COACH_SKILLS.map(s => [s.id, s]));
+
   // ===== DOM =====
   const dom = {
-    // open/close
-    btnTeam: $('btnTeam'),
+    // screen
     teamScreen: $('teamScreen'),
     btnCloseTeam: $('btnCloseTeam'),
 
@@ -46,10 +99,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tNameB: $('tNameB'),
     tNameC: $('tNameC'),
 
-    // =====（任意）総合%表示（存在すれば使う）
-    // 既存IDが分からないので、以下のどれかがあれば拾う：
-    //  - tTeamPower （ベース総合%表示の要素）
-    //  - tTeamPowerRow / tTeamPowerWrap （行コンテナ）
+    // team power（任意）
     tTeamPower: $('tTeamPower'),
     tTeamPowerRow: $('tTeamPowerRow'),
     tTeamPowerWrap: $('tTeamPowerWrap'),
@@ -87,13 +137,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tC_passive: $('tC_passive'),
     tC_ult: $('tC_ult'),
 
-    // save buttons（あなたのHTML）
+    // save buttons
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
-
-  // ===== keys =====
-  const K = S.KEYS;
 
   // ===== utils =====
   function safeText(el, text){
@@ -112,7 +159,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function normalize(stats){ return DP.normalizeStats(stats); }
 
   function getPlayerTeam(){
-    // 育成で保存される mobbr_playerTeam があればそちらを優先
     try{
       const raw = localStorage.getItem(K.playerTeam);
       if (raw){
@@ -123,13 +169,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return DP.buildDefaultTeam();
   }
 
-  // ===== render all UI names (main + team) =====
+  // ===== reflect names everywhere =====
   function reflectNamesEverywhere(){
     safeText(dom.tNameA, getNameA());
     safeText(dom.tNameB, getNameB());
     safeText(dom.tNameC, getNameC());
 
-    // main screen member popup（存在すれば）
     const uiM1 = $('uiM1');
     const uiM2 = $('uiM2');
     const uiM3 = $('uiM3');
@@ -138,7 +183,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (uiM3) uiM3.textContent = getNameC();
   }
 
-  // ===== チーム総合%計算（カード無しベース / カード込み） =====
+  // ===== Team Power (base + cards) =====
   const WEIGHT = {
     aim: 0.25,
     mental: 0.15,
@@ -157,7 +202,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function calcCharBasePower(stats){
-    // stats に armor が無ければ「100固定」を採用（仕様上：アーマー100が前提）
     const s = {
       hp: clamp01to100(stats?.hp),
       mental: clamp01to100(stats?.mental),
@@ -179,22 +223,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     total += s.armor * WEIGHT.armor;
     total += s.hp * WEIGHT.hp;
 
-    // 0-100に丸め
     return Math.max(0, Math.min(100, total));
   }
 
   function calcTeamBasePercent(team){
-    // 3人平均 → round(平均 + 3)
     const members = Array.isArray(team?.members) ? team.members : [];
     if (members.length === 0) return 0;
-
     const vals = members.slice(0,3).map(m => calcCharBasePower(m?.stats || {}));
     const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-
     return Math.round(avg + 3);
   }
 
-  // 所持カードから CollectionBonus% を合計（例：SSR×5 -> 0.27）
   function getOwnedCardsMap(){
     try{
       return JSON.parse(localStorage.getItem('mobbr_cards')) || {};
@@ -216,31 +255,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const card = DC.getById(id);
       if (!card) continue;
 
-      // 1..10 の範囲で効果計算（11枚目以降はG変換で残らない前提だが保険）
       const effCnt = Math.max(0, Math.min(10, cnt));
       sum += DC.calcSingleCardPercent(card.rarity, effCnt);
     }
 
-    // 小数が大きくなりすぎないよう保険
     if (!Number.isFinite(sum)) return 0;
     return Math.max(0, sum);
   }
 
-  // ===== 総合%表示（DOMが分からなくても壊れないように “後付けUI”） =====
   function ensureCardPowerUI(){
-    // 置き場所候補：tTeamPower（ベース%の要素） → その直後に追加
-    // もしくは tTeamPowerRow / tTeamPowerWrap があればそこに追加
     const baseEl = dom.tTeamPower;
     const rowEl = dom.tTeamPowerRow || dom.tTeamPowerWrap || (baseEl ? baseEl.parentElement : null);
-
     if (!rowEl) return { baseEl: null, cardEl: null, labelEl: null };
 
-    // 既に作ってあれば返す
     const existingCard = rowEl.querySelector?.('.teamPowerCard');
     const existingLabel = rowEl.querySelector?.('.teamPowerCardLabel');
     if (existingCard && existingLabel) return { baseEl, cardEl: existingCard, labelEl: existingLabel };
 
-    // 作る（赤文字：カード込み総合% / 小文字：カード効果！）
     const cardEl = document.createElement('span');
     cardEl.className = 'teamPowerCard';
     cardEl.style.marginLeft = '8px';
@@ -257,9 +288,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     labelEl.style.color = '#ff3b30';
     labelEl.style.whiteSpace = 'nowrap';
 
-    // baseEl があるならその直後へ、無ければrow末尾へ
     if (baseEl && baseEl.parentElement === rowEl){
-      // baseElがrow直下の想定。直後に追加
       if (baseEl.nextSibling){
         rowEl.insertBefore(cardEl, baseEl.nextSibling);
       }else{
@@ -275,27 +304,308 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function renderTeamPower(){
-    // ベース%（カード無し）と、カード込み% を表示
     const team = getPlayerTeam();
     const base = calcTeamBasePercent(team);
 
-    // ベース表示（既存要素がある場合だけ）
     if (dom.tTeamPower){
       dom.tTeamPower.textContent = `${base}%`;
     }
 
-    // カード込み表示（後付け）
     const ui = ensureCardPowerUI();
     if (ui.cardEl){
       const bonus = calcCollectionBonusPercent(); // 例 0.27
       const total = base + bonus;
-
-      // 表示は「小数2桁」固定（カードが0なら .00 になるが、赤表示の意味はある）
-      // 嫌なら後で .00 の時だけ整数表示に変える
       ui.cardEl.textContent = `${total.toFixed(2)}%`;
     }
   }
 
+  // ===== Coach Skills: load/save =====
+  function readCoachOwned(){
+    try{
+      const obj = JSON.parse(localStorage.getItem(COACH_OWNED_KEY) || '{}');
+      return (obj && typeof obj === 'object') ? obj : {};
+    }catch{
+      return {};
+    }
+  }
+
+  function writeCoachOwned(obj){
+    localStorage.setItem(COACH_OWNED_KEY, JSON.stringify(obj || {}));
+  }
+
+  function readCoachEquipped(){
+    try{
+      const arr = JSON.parse(localStorage.getItem(COACH_EQUIP_KEY) || '[]');
+      if (Array.isArray(arr)){
+        const out = [arr[0] ?? null, arr[1] ?? null, arr[2] ?? null].slice(0,3);
+        return out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
+      }
+      return [null,null,null];
+    }catch{
+      return [null,null,null];
+    }
+  }
+
+  function writeCoachEquipped(arr){
+    const out = Array.isArray(arr) ? arr.slice(0,3) : [null,null,null];
+    const norm = out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
+    while (norm.length < 3) norm.push(null);
+    localStorage.setItem(COACH_EQUIP_KEY, JSON.stringify(norm));
+  }
+
+  function countEquipped(id, equipped){
+    return equipped.filter(x => x === id).length;
+  }
+
+  // ===== Coach Skills UI (injected) =====
+  let coachUI = null;
+
+  function findTeamPanel(){
+    if (!dom.teamScreen) return null;
+    // teamPanel がある想定（team.cssの構造）
+    return dom.teamScreen.querySelector?.('.teamPanel') || dom.teamScreen;
+  }
+
+  function ensureCoachUI(){
+    const panel = findTeamPanel();
+    if (!panel) return null;
+
+    const existing = panel.querySelector?.('#coachSkillSection');
+    if (existing){
+      coachUI = {
+        root: existing,
+        equipRow: existing.querySelector('.coachEquipRow'),
+        ownedList: existing.querySelector('.coachOwnedList')
+      };
+      return coachUI;
+    }
+
+    // なるべく下の方に追加：.teamSection の最後の後ろ
+    const lastSection = panel.querySelector?.('.teamSection:last-of-type');
+
+    const section = document.createElement('div');
+    section.id = 'coachSkillSection';
+    section.className = 'teamSection';
+    section.style.marginTop = '12px';
+
+    const title = document.createElement('div');
+    title.className = 'teamSectionTitle';
+    title.textContent = 'コーチスキル（装備：最大3つ）';
+
+    const sub = document.createElement('div');
+    sub.style.marginTop = '6px';
+    sub.style.fontSize = '13px';
+    sub.style.opacity = '0.92';
+    sub.style.lineHeight = '1.35';
+    sub.textContent = '所持スキルをタップで装備。装備中枠をタップで取り外し。';
+
+    // equipped row
+    const equipWrap = document.createElement('div');
+    equipWrap.style.marginTop = '10px';
+
+    const equipLabel = document.createElement('div');
+    equipLabel.style.fontWeight = '1000';
+    equipLabel.style.fontSize = '14px';
+    equipLabel.style.opacity = '0.95';
+    equipLabel.textContent = '装備中（3枠）';
+
+    const equipRow = document.createElement('div');
+    equipRow.className = 'coachEquipRow';
+    equipRow.style.display = 'grid';
+    equipRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+    equipRow.style.gap = '10px';
+    equipRow.style.marginTop = '8px';
+
+    // owned list
+    const ownedWrap = document.createElement('div');
+    ownedWrap.style.marginTop = '14px';
+
+    const ownedLabel = document.createElement('div');
+    ownedLabel.style.fontWeight = '1000';
+    ownedLabel.style.fontSize = '14px';
+    ownedLabel.style.opacity = '0.95';
+    ownedLabel.textContent = '所持一覧（タップで装備）';
+
+    const ownedList = document.createElement('div');
+    ownedList.className = 'coachOwnedList';
+    ownedList.style.display = 'flex';
+    ownedList.style.flexDirection = 'column';
+    ownedList.style.gap = '10px';
+    ownedList.style.marginTop = '8px';
+
+    section.appendChild(title);
+    section.appendChild(sub);
+
+    equipWrap.appendChild(equipLabel);
+    equipWrap.appendChild(equipRow);
+    section.appendChild(equipWrap);
+
+    ownedWrap.appendChild(ownedLabel);
+    ownedWrap.appendChild(ownedList);
+    section.appendChild(ownedWrap);
+
+    if (lastSection && lastSection.parentElement){
+      lastSection.parentElement.insertBefore(section, lastSection.nextSibling);
+    }else{
+      panel.appendChild(section);
+    }
+
+    coachUI = { root: section, equipRow, ownedList };
+    return coachUI;
+  }
+
+  function createPillButton(text){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.width = '100%';
+    btn.style.border = '0';
+    btn.style.borderRadius = '12px';
+    btn.style.padding = '10px 10px';
+    btn.style.background = 'rgba(255,255,255,.12)';
+    btn.style.color = '#fff';
+    btn.style.fontWeight = '1000';
+    btn.style.fontSize = '13px';
+    btn.style.textAlign = 'left';
+    btn.style.touchAction = 'manipulation';
+    btn.textContent = text;
+    btn.addEventListener('touchstart', ()=>{}, {passive:true});
+    btn.onmousedown = ()=>{};
+    return btn;
+  }
+
+  function renderCoachUI(){
+    const ui = ensureCoachUI();
+    if (!ui) return;
+
+    const owned = readCoachOwned();
+    const equipped = readCoachEquipped();
+
+    // ===== equipped 3 slots =====
+    ui.equipRow.innerHTML = '';
+    for (let i=0;i<3;i++){
+      const id = equipped[i];
+      const skill = id ? COACH_BY_ID[id] : null;
+
+      const btn = createPillButton('');
+      btn.style.background = id ? 'rgba(255,59,48,.18)' : 'rgba(255,255,255,.10)';
+      btn.style.border = id ? '1px solid rgba(255,59,48,.38)' : '1px solid rgba(255,255,255,.14)';
+
+      const name = skill ? skill.name : '（空き）';
+      const line1 = document.createElement('div');
+      line1.style.fontSize = '13px';
+      line1.style.fontWeight = '1000';
+      line1.textContent = `枠${i+1}：${name}`;
+
+      const line2 = document.createElement('div');
+      line2.style.fontSize = '11px';
+      line2.style.opacity = '0.92';
+      line2.style.marginTop = '4px';
+      line2.textContent = skill ? 'タップで取り外し' : '所持一覧から装備';
+
+      btn.textContent = '';
+      btn.appendChild(line1);
+      btn.appendChild(line2);
+
+      btn.addEventListener('click', ()=>{
+        const cur = readCoachEquipped();
+        if (!cur[i]) return; // 空は何もしない
+        cur[i] = null;
+        writeCoachEquipped(cur);
+        renderCoachUI();
+        alert('取り外しました。');
+      });
+
+      ui.equipRow.appendChild(btn);
+    }
+
+    // ===== owned list =====
+    ui.ownedList.innerHTML = '';
+
+    // 表示順：マスター順
+    const hasAny = COACH_SKILLS.some(s => (Number(owned[s.id])||0) > 0);
+    if (!hasAny){
+      const note = document.createElement('div');
+      note.style.opacity = '0.92';
+      note.style.fontSize = '13px';
+      note.textContent = '所持しているコーチスキルがありません（ショップで購入できます）';
+      ui.ownedList.appendChild(note);
+      return;
+    }
+
+    COACH_SKILLS.forEach(skill=>{
+      const cnt = Number(owned[skill.id]) || 0;
+      if (cnt <= 0) return;
+
+      const equippedNow = readCoachEquipped();
+      const already = countEquipped(skill.id, equippedNow) > 0;
+
+      const btn = createPillButton('');
+      btn.style.border = '1px solid rgba(255,255,255,.14)';
+      btn.style.background = already ? 'rgba(255,59,48,.16)' : 'rgba(255,255,255,.10)';
+
+      const top = document.createElement('div');
+      top.style.display = 'flex';
+      top.style.justifyContent = 'space-between';
+      top.style.alignItems = 'baseline';
+      top.style.gap = '10px';
+
+      const left = document.createElement('div');
+      left.style.fontSize = '14px';
+      left.style.fontWeight = '1000';
+      left.textContent = skill.name;
+
+      const right = document.createElement('div');
+      right.style.fontSize = '12px';
+      right.style.opacity = '0.95';
+      right.textContent = already ? '装備中' : `所持：${cnt}`;
+
+      top.appendChild(left);
+      top.appendChild(right);
+
+      const eff = document.createElement('div');
+      eff.style.marginTop = '6px';
+      eff.style.fontSize = '12px';
+      eff.style.opacity = '0.92';
+      eff.textContent = skill.effectLabel;
+
+      const line = document.createElement('div');
+      line.style.marginTop = '6px';
+      line.style.fontSize = '12px';
+      line.style.opacity = '0.92';
+      line.textContent = `コーチ：「${skill.coachLine}」`;
+
+      btn.textContent = '';
+      btn.appendChild(top);
+      btn.appendChild(eff);
+      btn.appendChild(line);
+
+      btn.addEventListener('click', ()=>{
+        const curEq = readCoachEquipped();
+
+        // 同一スキル2枠禁止
+        if (curEq.includes(skill.id)){
+          alert('このスキルはすでに装備中です。');
+          return;
+        }
+
+        // 空き枠を探す
+        const emptyIdx = curEq.findIndex(v => !v);
+        if (emptyIdx === -1){
+          alert('装備枠が埋まっています。先にどれか取り外してください。');
+          return;
+        }
+
+        curEq[emptyIdx] = skill.id;
+        writeCoachEquipped(curEq);
+        renderCoachUI();
+        alert(`装備しました（枠${emptyIdx+1}）。`);
+      });
+
+      ui.ownedList.appendChild(btn);
+    });
+  }
+
+  // ===== main render =====
   function render(){
     // meta
     safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
@@ -351,11 +661,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tC_ult, C.ult || '未定');
     }
 
-    // names
     reflectNamesEverywhere();
-
-    // team power (base + card total)
     renderTeamPower();
+
+    // coach skills
+    renderCoachUI();
   }
 
   // ===== open/close =====
@@ -373,7 +683,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== rename handlers =====
+  let renameBound = false;
   function bindRename(){
+    if (renameBound) return;
+    renameBound = true;
+
     if (dom.tNameA){
       dom.tNameA.addEventListener('click', ()=>{
         const cur = getNameA();
@@ -383,7 +697,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (!nv) return;
         setNameA(nv);
 
-        // playerTeam の name も同期（main/team/trainingなど全画面用）
         try{
           const raw = localStorage.getItem(K.playerTeam);
           if (raw){
@@ -454,7 +767,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ===== save =====
   function manualSave(){
     const snap = {
-      ver: 'v15',
+      ver: 'v16',
       ts: Date.now(),
       company: S.getStr(K.company, 'CB Memory'),
       team: S.getStr(K.team, 'PLAYER TEAM'),
@@ -468,7 +781,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       rank: S.getNum(K.rank, 10),
       nextTour: S.getStr(K.nextTour, '未定'),
       nextTourW: S.getStr(K.nextTourW, '未定'),
-      recent: S.getStr(K.recent, '未定')
+      recent: S.getStr(K.recent, '未定'),
+
+      coachOwned: readCoachOwned(),
+      coachEquipped: readCoachEquipped()
     };
 
     localStorage.setItem('mobbr_save1', JSON.stringify(snap));
@@ -489,17 +805,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       'teamScreen',
       'trainingScreen',
       'shopScreen',
-      'cardScreen'
+      'cardScreen',
+      'scheduleScreen'
     ];
 
-    // modalBack
     const back = $('modalBack');
     if (back){
       back.style.display = 'none';
+      back.style.pointerEvents = 'none';
       back.setAttribute('aria-hidden', 'true');
     }
 
-    // display none
     idsHideDisplay.forEach(id=>{
       const el = $(id);
       if (el){
@@ -508,7 +824,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     });
 
-    // remove .show
     idsRemoveShow.forEach(id=>{
       const el = $(id);
       if (el){
@@ -517,11 +832,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     });
 
-    // shop result area
     const shopResult = $('shopResult');
     if (shopResult) shopResult.style.display = 'none';
 
-    // training result section（古いDOMが残ってる保険）
     const trainingResultSection = $('trainingResultSection');
     if (trainingResultSection) trainingResultSection.style.display = 'none';
   }
@@ -529,10 +842,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function deleteSaveAndReset(){
     if (!confirm('セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？')) return;
 
-    // ★ここが今回の重要修正：先に全部閉じる
     closeAllOverlays();
 
-    // ★完全リセット → タイトルへ
     if (window.MOBBR?.storage?.resetAll){
       window.MOBBR.storage.resetAll();
     }else{
@@ -541,7 +852,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  let saveBound = false;
   function bindSave(){
+    if (saveBound) return;
+    saveBound = true;
+
     if (dom.btnManualSave){
       dom.btnManualSave.addEventListener('click', manualSave);
     }
@@ -550,16 +865,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function bindOpenClose(){
-    if (dom.btnTeam) dom.btnTeam.addEventListener('click', open);
-    if (dom.btnCloseTeam) dom.btnCloseTeam.addEventListener('click', close);
+  let closeBound = false;
+  function bindClose(){
+    if (closeBound) return;
+    closeBound = true;
+
+    // open は ui_main のルーティングが担当（ここでは close だけ確実に）
+    if (dom.btnCloseTeam){
+      dom.btnCloseTeam.addEventListener('click', close);
+    }
   }
 
   // ===== init =====
   function initTeamUI(){
-    bindOpenClose();
+    bindClose();
     bindRename();
     bindSave();
+
+    // 初回：装備配列の形を安定化
+    writeCoachEquipped(readCoachEquipped());
+
     render();
   }
 
