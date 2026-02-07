@@ -10,11 +10,10 @@
   - modalBack（暗いフタ）の残留で押せなくなる事故を排除
   - gacha/catalog は core に登録して動く
 
-  依存：
-  - storage.js（あれば使用）
-  - data_player.js（あればEXP/LV処理に使用）
-  - index.html：#shopScreen / #btnCloseShop / #shopGold / #shopCDP
-               既存ガチャDOM（btnGacha1等）は残っててOK（core側で見せ/隠しする）
+  v17 修正（今回）：
+  - ポップが「重なって裏に出る」問題を解消：
+    openPop() する前に必ず他ポップを閉じる（重ねない）
+  - z-index を画面より確実に上へ（modalBack / pop 全て引き上げ）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -89,9 +88,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = document.createElement('style');
     st.id = 'shopCoreStyleV17';
     st.textContent = `
-      /* Z LAYER（事故防止） */
-      #modalBack { z-index: 2500 !important; }
-      #shopConfirmPop, #shopMemberPickPop, #shopResultPop { z-index: 3000 !important; }
+      /* =========================================================
+         Z LAYER（事故防止：画面より必ず上に）
+         ※「ポップが裏に出る」対策として大きめに固定
+      ========================================================= */
+      #modalBack { z-index: 9000 !important; }
+      #shopConfirmPop, #shopMemberPickPop, #shopResultPop { z-index: 10000 !important; }
 
       /* 上部の閉じるボタンが大きすぎる問題 */
       #shopScreen .teamCloseBtn,
@@ -349,7 +351,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function showHome(){
     ensureContainers();
-    hideBack(); // ここで暗いフタが残らないように必ず消す
+    hideBack(); // 暗いフタ残留防止
 
     if (homeWrap) homeWrap.style.display = '';
     if (dynWrap) dynWrap.style.display = 'none';
@@ -494,17 +496,37 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function openPop(pop){
-    if (!pop) return;
-    showBack();
-    pop.classList.add('show');
-    pop.setAttribute('aria-hidden','false');
-  }
   function closePop(pop){
     if (!pop) return;
     pop.classList.remove('show');
     pop.setAttribute('aria-hidden','true');
-    hideBack();
+  }
+
+  // ★重ねない：新しいポップを出す前に必ず全部閉じる
+  function closeAllPops(){
+    if (popConfirm) closePop(popConfirm);
+    if (popPick) closePop(popPick);
+    if (popResult) closePop(popResult);
+  }
+
+  function openPop(pop){
+    if (!pop) return;
+    // 先に全部閉じて、必ず一枚だけにする
+    closeAllPops();
+    showBack();
+    pop.classList.add('show');
+    pop.setAttribute('aria-hidden','false');
+  }
+
+  function closePopAndBack(pop){
+    if (!pop) return;
+    closePop(pop);
+    // どれも開いてないならBackも消す
+    const anyOpen =
+      (popConfirm && popConfirm.classList.contains('show')) ||
+      (popPick && popPick.classList.contains('show')) ||
+      (popResult && popResult.classList.contains('show'));
+    if (!anyOpen) hideBack();
   }
 
   function confirmPop(text, onYes){
@@ -513,16 +535,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (tx) tx.textContent = text || '';
 
     const yes = $('shopConfirmYes');
-    const no = $('shopConfirmNo');
+    const no  = $('shopConfirmNo');
 
     if (yes){
       yes.onclick = () => {
-        closePop(popConfirm);
+        closePopAndBack(popConfirm);
         if (typeof onYes === 'function') onYes();
       };
     }
     if (no){
-      no.onclick = () => closePop(popConfirm);
+      no.onclick = () => closePopAndBack(popConfirm);
     }
 
     openPop(popConfirm);
@@ -538,10 +560,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const ok = $('shopResultOk');
     if (ok){
       ok.onclick = () => {
-        closePop(popResult);
+        closePopAndBack(popResult);
         if (typeof onOk === 'function') onOk();
       };
     }
+
     openPop(popResult);
   }
 
@@ -563,7 +586,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       btn.className = 'memberPickBtn';
       btn.textContent = names[id] || id;
       btn.addEventListener('click', ()=>{
-        closePop(popPick);
+        closePopAndBack(popPick);
         if (typeof onPick === 'function') onPick(id, names[id] || id);
       });
       list.appendChild(btn);
@@ -623,6 +646,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // 透明フタ事故の保険
     hideBack();
+    closeAllPops();
     if (dom.shopResult) dom.shopResult.style.display = 'none';
 
     // show screen
@@ -636,11 +660,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function close(){
-    // popups close
-    if (popConfirm) closePop(popConfirm);
-    if (popPick) closePop(popPick);
-    if (popResult) closePop(popResult);
-
+    closeAllPops();
     hideBack();
 
     if (dom.shopResult) dom.shopResult.style.display = 'none';
@@ -674,7 +694,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.modalBack.addEventListener('click', (e)=> e.preventDefault(), { passive:false });
     }
 
-    // result OK
+    // result OK（既存の結果欄はそのまま）
     if (dom.btnShopOk){
       dom.btnShopOk.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -728,5 +748,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     close
   };
 
-  document.addEventListener('DOMContentLoaded', initShopUI);
+  // 動的ロード対応
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initShopUI);
+  }else{
+    initShopUI();
+  }
 })();
