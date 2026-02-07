@@ -1,183 +1,342 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.gacha.js v17（フル）
-  - カードガチャ部分のみ
-  - 既存DOM（btnGacha1/10/SR, shopResultList）を使用
+  MOB BR - ui_shop.gacha.js v17（フル / 修正版）
+
+  修正内容：
+  - ブラウザ標準 confirm() を一切使わない（バグ原因）
+  - shopCore.confirmPop/resultPop に統一（暗くなるだけ問題も回避）
+  - クリック無反応/二重反応対策：stopPropagation + preventDefault
+  - ガチャボタンの横に「値段表示」を追加（ボタン文言に追記）
+  - 既存仕様：CDP加算 / 同名10枚まで / 11枚目以降はG変換 / 結果表示
+
+  依存：
+  - ui_shop.core.js（window.MOBBR.ui.shopCore）
+  - data_cards.js（カード定義があればそれを使う）
 */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  const core = window.MOBBR?.ui?.shopCore;
+  const core = window.MOBBR?.ui?.shopCore || null;
   if (!core){
-    console.warn('[ui_shop.gacha] shopCore not found');
+    console.warn('[ui_shop.gacha] ui_shop.core.js not found');
     return;
   }
 
-  const DC = window.MOBBR?.data?.cards || null;
+  const dom = core.dom || {};
+  const KEY_OWNED = 'mobbr_cardsOwned';
 
-  // ===== constants =====
-  const GACHA_COST_1  = 1000;
-  const GACHA_COST_10 = 9000;
+  // ===== ガチャ価格（ここを変えればOK）=====
+  const COST_1  = 100;   // 1回
+  const COST_10 = 900;   // 10連
+  // SR確定は「CDP100消費」でGは取らない仕様のまま（必要ならここで加算）
+  const COST_SR = 0;
 
-  const KEY_OWNED_CARDS = 'mobbr_cards'; // { "c001": 2, ... }
+  // ===== 11枚目以降のG変換（ここを変えればOK）=====
+  const CONVERT_G = {
+    N:   50,
+    R:  150,
+    SR: 500,
+    SSR:1500
+  };
 
-  function readJSON(key, def){
+  // ===== 通常ガチャの出現比（％表示はしない：内部のみ）=====
+  // ※確率を表示しない仕様なので、ここは“内部処理”として固定
+  const WEIGHT = {
+    SSR: 2,
+    SR:  8,
+    R:  30,
+    N:  60
+  };
+
+  // SR以上確定時の比率（内部のみ）
+  const WEIGHT_SRPLUS = {
+    SSR: 20,
+    SR:  80
+  };
+
+  function readOwned(){
     try{
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : def;
+      const raw = localStorage.getItem(KEY_OWNED);
+      return raw ? JSON.parse(raw) : {};
     }catch{
-      return def;
+      return {};
     }
   }
-  function writeJSON(key, obj){
-    localStorage.setItem(key, JSON.stringify(obj));
+  function writeOwned(obj){
+    localStorage.setItem(KEY_OWNED, JSON.stringify(obj || {}));
   }
 
-  function readOwnedCards(){ return readJSON(KEY_OWNED_CARDS, {}); }
-  function writeOwnedCards(obj){ writeJSON(KEY_OWNED_CARDS, obj || {}); }
+  // ===== data_cards からカード配列を取得（複数形に対応）=====
+  function getAllCards(){
+    const dc = window.MOBBR?.data?.cards || null;
+    if (!dc) return [];
 
-  function pickRandomCard(){
-    let list = null;
+    // よくある候補を全部見る
+    const cand =
+      dc.CARDS ||
+      dc.cards ||
+      dc.list ||
+      dc.LIST ||
+      dc.DATA ||
+      null;
 
-    if (Array.isArray(DC?.ALL)) list = DC.ALL;
-    else if (Array.isArray(DC?.all)) list = DC.all;
-    else if (Array.isArray(DC?.LIST)) list = DC.LIST;
-    else if (Array.isArray(DC?.list)) list = DC.list;
-    else if (typeof DC?.getAll === 'function') list = DC.getAll();
-    else if (typeof DC?.getList === 'function') list = DC.getList();
+    if (Array.isArray(cand)) return cand;
 
-    if (!Array.isArray(list) || list.length === 0){
-      return { id:'dummy', name:'カード', rarity:'R', img:null };
+    // object map の場合
+    if (cand && typeof cand === 'object'){
+      const arr = Object.values(cand);
+      return Array.isArray(arr) ? arr : [];
     }
 
-    const weightByRarity = { N:70, R:22, SR:7, SSR:1 };
-    const rarities = Object.keys(weightByRarity);
-    const totalW = rarities.reduce((a,k)=>a+(weightByRarity[k]||0),0);
+    return [];
+  }
 
-    let r = Math.random() * totalW;
-    let pickR = 'R';
-    for (const k of rarities){
-      r -= (weightByRarity[k] || 0);
-      if (r <= 0){ pickR = k; break; }
+  function normRarity(r){
+    const s = String(r || '').toUpperCase();
+    if (s.includes('SSR')) return 'SSR';
+    if (s.includes('SR'))  return 'SR';
+    if (s.includes('R'))   return 'R';
+    return 'N';
+  }
+
+  function normCard(c){
+    // id/name/img/rarity を揃える（元データの形式が多少違っても動くように）
+    const id =
+      c?.id ??
+      c?.cardId ??
+      c?.key ??
+      c?.code ??
+      null;
+
+    const name =
+      c?.name ??
+      c?.title ??
+      c?.label ??
+      (id ? String(id) : 'CARD');
+
+    const rarity =
+      normRarity(c?.rarity ?? c?.rank ?? c?.rare);
+
+    const img =
+      c?.img ??
+      c?.image ??
+      c?.src ??
+      c?.path ??
+      '';
+
+    if (!id) return null;
+    return { id:String(id), name:String(name), rarity, img:String(img||'') };
+  }
+
+  function splitByRarity(cards){
+    const by = { SSR:[], SR:[], R:[], N:[] };
+    cards.forEach(c=>{
+      const nc = normCard(c);
+      if (!nc) return;
+      by[nc.rarity].push(nc);
+    });
+    return by;
+  }
+
+  function pickByWeight(weightMap){
+    const entries = Object.entries(weightMap);
+    let sum = 0;
+    entries.forEach(([,w])=> sum += (Number(w)||0));
+    let r = Math.random() * sum;
+    for (const [k,w] of entries){
+      r -= (Number(w)||0);
+      if (r <= 0) return k;
+    }
+    return entries[entries.length-1]?.[0] || 'N';
+  }
+
+  function pickRandomFrom(arr){
+    if (!arr || arr.length === 0) return null;
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function ensureCards(){
+    const cards = getAllCards().map(normCard).filter(Boolean);
+    if (cards.length === 0) return null;
+    return splitByRarity(cards);
+  }
+
+  function addOwnedCard(owned, card){
+    const id = card.id;
+    const cur = Number(owned[id] || 0);
+
+    // 10枚まで有効、11枚目以降はG変換（10に固定）
+    if (cur >= 10){
+      const g = CONVERT_G[card.rarity] ?? 100;
+      core.addGold(g);
+      return { kept:false, convertedG:g, newCount:10 };
     }
 
-    const pool = list.filter(c => (c.rarity || c.R || c.rare || c.rank) === pickR);
-    const from = (pool.length ? pool : list);
-    const c = from[Math.floor(Math.random() * from.length)];
-
-    return {
-      id: c.id || c.cardId || c.key || 'unknown',
-      name: c.name || c.title || 'カード',
-      rarity: c.rarity || c.R || c.rare || c.rank || 'R',
-      img: c.img || c.image || c.src || null
-    };
-  }
-
-  function convertDupToGold(rarity){
-    const table = { N:50, R:100, SR:300, SSR:800 };
-    return table[String(rarity || 'R')] ?? 100;
-  }
-
-  function addCardToOwned(card){
-    const owned = readOwnedCards();
-    const id = String(card.id);
-    const cur = Number(owned[id]) || 0;
     const next = cur + 1;
+    owned[id] = next;
 
-    if (next <= 10){
-      owned[id] = next;
-      writeOwnedCards(owned);
-      return { kept:true, count: next, convertedGold:0 };
-    }
-
-    owned[id] = 10;
-    writeOwnedCards(owned);
-
-    const g = convertDupToGold(card.rarity);
-    core.addGold(g);
-    return { kept:false, count: 10, convertedGold: g };
+    // 11枚目に到達した瞬間もG変換したいならここを変えるが、
+    // 仕様文「11枚目以降」でOKなので、10超のときのみ変換にしている
+    return { kept:true, convertedG:0, newCount:next };
   }
 
-  function doGacha(times, mode){
-    const t = Number(times) || 1;
+  // ===== ボタンに「価格」を表示する =====
+  function applyPriceLabels(){
+    if (dom.btnGacha1)  dom.btnGacha1.textContent  = `1回引く（${COST_1}G）`;
+    if (dom.btnGacha10) dom.btnGacha10.textContent = `10連（${COST_10}G）`;
+    if (dom.btnGachaSR) dom.btnGachaSR.textContent = `SR以上確定（CDP100）${COST_SR ? `（${COST_SR}G）` : ''}`;
+  }
 
-    if (mode === 'normal'){
-      const cost = (t === 10) ? GACHA_COST_10 : GACHA_COST_1;
-      if (!core.spendGold(cost)){
-        core.resultPop('Gが足りません。', `必要：${cost}G`, ()=>{});
-        return;
-      }
-      core.setCDP(core.getCDP() + t);
-    }else if (mode === 'sr'){
+  // ===== ガチャ本体 =====
+  function doGacha(times, mode){
+    // mode: 'normal' | 'srplus'
+    const pool = ensureCards();
+    if (!pool){
+      core.resultPop('カードデータが見つかりません', 'data_cards.js を確認してください。', ()=>{});
+      return;
+    }
+
+    // コスト処理
+    const cost = (times === 10) ? COST_10 : COST_1;
+    if (mode === 'srplus'){
+      // CDP100消費
       const cdp = core.getCDP();
       if (cdp < 100){
-        core.resultPop('CDPが足りません。', 'SR以上確定にはCDP100が必要です。', ()=>{});
+        core.resultPop('CDPが足りません', 'SR以上確定はCDP100が必要です。', ()=>{});
         return;
       }
-      core.setCDP(cdp - 100);
+      if (COST_SR > 0 && core.getGold() < COST_SR){
+        core.resultPop('Gが足りません', '所持Gを確認してください。', ()=>{});
+        return;
+      }
+    }else{
+      if (core.getGold() < cost){
+        core.resultPop('Gが足りません', '所持Gを確認してください。', ()=>{});
+        return;
+      }
     }
 
-    const rows = [];
-    let convertedSum = 0;
+    // 確認（custom popup）
+    const label =
+      (mode === 'srplus')
+        ? `SR以上確定を実行しますか？（CDP100${COST_SR ? ` / ${COST_SR}G` : ''}）`
+        : `${cost}Gです。${times}回引きますか？`;
 
-    for (let i=0; i<t; i++){
-      let card = pickRandomCard();
-
-      if (mode === 'sr'){
-        let guard = 0;
-        while (guard++ < 50){
-          const rr = String(card.rarity || 'R');
-          if (rr === 'SR' || rr === 'SSR') break;
-          card = pickRandomCard();
-        }
-      }
-
-      const add = addCardToOwned(card);
-      convertedSum += add.convertedGold;
-
-      const rarity = String(card.rarity || 'R');
-      const name = String(card.name || 'カード');
-
-      if (add.kept){
-        rows.push({ text: `[${rarity}] ${name}（所持 ${add.count}/10）`, sub: '' });
+    core.confirmPop(label, ()=>{
+      // 実行
+      if (mode === 'srplus'){
+        core.setCDP(core.getCDP() - 100);
+        if (COST_SR > 0) core.spendGold(COST_SR);
       }else{
-        rows.push({ text: `[${rarity}] ${name}（11枚目→G変換）`, sub: `+${add.convertedGold}G` });
+        core.spendGold(cost);
       }
-    }
 
-    if (convertedSum > 0) core.setRecent(`ガチャ：重複をG変換（+${convertedSum}G）`);
-    else core.setRecent(`ガチャ：${t}回引いた`);
+      // CDP加算（通常ガチャのみ）
+      if (mode === 'normal'){
+        core.setCDP(core.getCDP() + times);
+      }
 
-    core.showListResult(rows);
-    core.renderMeta();
+      const owned = readOwned();
+
+      const rows = [];
+      let convertedTotal = 0;
+
+      for (let i=0; i<times; i++){
+        let rar;
+        if (mode === 'srplus'){
+          rar = pickByWeight(WEIGHT_SRPLUS);
+        }else{
+          rar = pickByWeight(WEIGHT);
+        }
+
+        // そのレアリティのカードが空なら下位に落とす
+        const pick = (r)=>{
+          if (pool[r] && pool[r].length) return pickRandomFrom(pool[r]);
+          if (r === 'SSR') return pick('SR');
+          if (r === 'SR')  return pick('R');
+          if (r === 'R')   return pick('N');
+          return pickRandomFrom(pool.N) || null;
+        };
+
+        const card = pick(rar);
+        if (!card) continue;
+
+        const res = addOwnedCard(owned, card);
+        if (!res.kept) convertedTotal += res.convertedG;
+
+        const tag = card.rarity;
+        const sub = res.kept
+          ? `所持：${res.newCount}/10`
+          : `11枚目以降 → ${res.convertedG}G に変換`;
+
+        rows.push({ text: `[${tag}] ${card.name}`, sub });
+      }
+
+      writeOwned(owned);
+
+      // 結果表示（既存の結果枠を使用）
+      core.showListResult(rows);
+
+      const extra =
+        (mode === 'srplus')
+          ? 'SR以上確定を実行した'
+          : `${times}回ガチャを引いた`;
+
+      core.setRecent(`ショップ：${extra}${convertedTotal ? `（変換+${convertedTotal}G）` : ''}`);
+      core.renderMeta();
+    });
   }
 
-  function bindGachaButtons(){
-    const dom = core.dom;
+  // ===== shop home から呼ばれる「カードガチャを開く」 =====
+  function openGacha(){
+    core.openGachaView();
+  }
+
+  // ===== bind =====
+  let bound = false;
+  function bind(){
+    if (bound) return;
+    bound = true;
+
+    applyPriceLabels();
 
     if (dom.btnGacha1){
-      dom.btnGacha1.addEventListener('click', ()=> doGacha(1, 'normal'));
+      dom.btnGacha1.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        doGacha(1, 'normal');
+      });
     }
+
     if (dom.btnGacha10){
-      dom.btnGacha10.addEventListener('click', ()=> doGacha(10, 'normal'));
+      dom.btnGacha10.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        doGacha(10, 'normal');
+      });
     }
+
     if (dom.btnGachaSR){
-      dom.btnGachaSR.addEventListener('click', ()=> doGacha(1, 'sr'));
+      dom.btnGachaSR.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        doGacha(1, 'srplus');
+      });
     }
   }
 
-  function openGacha(){
-    core.showGachaSection();
-    core.setRecent('ショップ：カードガチャを開いた');
+  function init(){
+    bind();
+
+    // core に登録（2.カードガチャ の無反応対策）
+    core.registerGacha({ openGacha });
+
+    // shop画面が開かれるたびに価格表示が戻らないよう保険
+    applyPriceLabels();
   }
 
-  // register
-  core.registerGacha({ openGacha });
-
-  document.addEventListener('DOMContentLoaded', ()=>{
-    bindGachaButtons();
-  });
+  document.addEventListener('DOMContentLoaded', init);
 })();
