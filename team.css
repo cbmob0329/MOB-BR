@@ -1,9 +1,10 @@
 /* =========================
-   team.css v17（案A：スコアボード型）
+   team.css v18（暗さ改善：modalBack薄め + パネル明るめ）
+   - 左メニューから開く team/shop/card/schedule/training の “暗い” 問題をまとめて改善
    - ui_team.js が参照するIDはHTML側で保持
-   - 見やすさ最優先（数字が読める）
 ========================= */
 
+/* ===== 共通：オーバーレイ画面 ===== */
 .teamScreen{
   position:fixed;
   inset:0;
@@ -18,24 +19,33 @@
   display:flex;
 }
 
-/* 既存の teamPanel をベースに、無い環境でも最低限動くよう保険 */
+/* ===== パネル（暗すぎ対策：背景を明るく・文字を読みやすく） ===== */
 .teamPanel{
   width:min(720px, 96vw);
   max-height:86vh;
   overflow:auto;
   border-radius:16px;
-  background:rgba(20,22,28,.92);
-  border:1px solid rgba(255,255,255,.14);
-  box-shadow:0 20px 60px rgba(0,0,0,.55);
+
+  /* ★暗さ改善：少し明るく */
+  background:rgba(32, 35, 44, .92);
+
+  /* ★境界が見えるように */
+  border:1px solid rgba(255,255,255,.18);
+
+  /* 影は残すが重くしすぎない */
+  box-shadow:0 20px 60px rgba(0,0,0,.45);
+
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+
+  color: rgba(255,255,255,.94);
 }
 
 .teamPanelWide{
   padding:10px;
 }
 
-/* ヘッダ（既存クラスがある前提だが、無くても崩れない） */
+/* ヘッダ */
 .teamHead{
   display:flex;
   align-items:center;
@@ -56,7 +66,7 @@
   border-radius:12px;
 }
 
-/* ====== A: スコアボード型 レイアウト ====== */
+/* ====== 案A：スコアボード型 ====== */
 .teamPanel.teamPanelWide{
   display:flex;
   flex-direction:column;
@@ -70,7 +80,7 @@
   justify-content:space-between;
   gap:12px;
   padding:10px 10px 8px;
-  border-bottom:1px solid rgba(255,255,255,.12);
+  border-bottom:1px solid rgba(255,255,255,.14);
 }
 
 .teamHeaderA .teamHeaderLeft{
@@ -82,7 +92,7 @@
 
 .teamHeaderA .teamHeaderLeft .line{
   font-size:13px;
-  opacity:.95;
+  opacity:.96;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -133,8 +143,11 @@
 }
 
 .memberCardA{
-  border:1px solid rgba(255,255,255,.14);
-  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.16);
+
+  /* ★暗さ改善：カード自体も明るく */
+  background:rgba(255,255,255,.10);
+
   border-radius:14px;
   padding:10px;
   display:flex;
@@ -159,13 +172,14 @@
 
 .memberCardA .memberTag{
   font-size:11px;
-  opacity:.85;
-  border:1px solid rgba(255,255,255,.16);
+  opacity:.88;
+  border:1px solid rgba(255,255,255,.18);
   border-radius:999px;
   padding:3px 8px;
   white-space:nowrap;
 }
 
+/* ステータスは読みやすさ最優先で “セル背景を少し明るく” */
 .memberStatsGridA{
   display:grid;
   grid-template-columns:repeat(4, 1fr);
@@ -179,15 +193,20 @@
   gap:6px;
   padding:6px 8px;
   border-radius:10px;
-  background:rgba(0,0,0,.18);
-  border:1px solid rgba(255,255,255,.08);
+
+  /* ★暗さ改善：黒ベタをやめて少し明るいガラス感に */
+  background:rgba(255,255,255,.08);
+
+  border:1px solid rgba(255,255,255,.10);
   min-width:0;
 }
+
 .statCellA .k{
   font-size:11px;
-  opacity:.9;
+  opacity:.92;
   white-space:nowrap;
 }
+
 .statCellA .v{
   font-size:14px;
   font-weight:1000;
@@ -202,9 +221,10 @@
   gap:10px;
   padding-top:2px;
 }
+
 .teamMiniSkill{
   font-size:12px;
-  opacity:.92;
+  opacity:.94;
   line-height:1.35;
   white-space:nowrap;
   overflow:hidden;
@@ -217,7 +237,7 @@
   display:flex;
   flex-direction:column;
   gap:10px;
-  border-top:1px solid rgba(255,255,255,.12);
+  border-top:1px solid rgba(255,255,255,.14);
 }
 
 .teamSaveRowA{
@@ -232,7 +252,6 @@
   font-weight:1000;
 }
 
-/* danger が無い環境でも見えるように */
 .teamSaveRowA .danger{
   background:rgba(255,59,48,.18);
   border:1px solid rgba(255,59,48,.35);
@@ -240,11 +259,31 @@
 
 .teamFooterNote{
   font-size:12px;
-  opacity:.88;
+  opacity:.90;
   line-height:1.35;
 }
 
-/* スマホでさらに読みやすく */
+/* ====== ここが本命：全体が暗くなる原因対策 ======
+   modalBack は base.css 側に定義があるはずなので、
+   team.css で “上書き”して薄くする（全画面共通で効く）
+*/
+#modalBack.modalBack{
+  /* ★暗さ改善：濃度を大幅に薄く */
+  background: rgba(0,0,0,.28) !important;
+
+  /* さらに“画面全体がモヤる”感じを抑える */
+  backdrop-filter: blur(1px) !important;
+  -webkit-backdrop-filter: blur(1px) !important;
+}
+
+/* modalCard（メンバー名や各種ポップ）も暗すぎる場合に備えて少し明るく */
+.modalCard{
+  background: rgba(32, 35, 44, .94) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  color: rgba(255,255,255,.95) !important;
+}
+
+/* スマホ */
 @media (max-width: 420px){
   .teamPowerBig{ font-size:24px; }
   .memberStatsGridA{ grid-template-columns:repeat(2, 1fr); }
