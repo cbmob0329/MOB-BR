@@ -8,6 +8,7 @@
     スキル選択 → 確認 → 購入完了表示（効果/セリフは表示しない）→ メニューへ戻る
   - confirm()は一切使わない（core.confirmPop/resultPopのみ）
   - 「購入できない」問題：クリック伝播停止＋modalBack制御をcoreに統一
+  - ★重要：NEXT後の動的ロードでも必ず動くように init を「即実行」方式に変更
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -25,24 +26,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ===== 育成アイテム（EXP+5）=====
   const TRAINING_ITEMS = [
-    { id:'hp',      stat:'hp',      label:'体力',    name:'タフネス極意の巻物', price:20000 },
-    { id:'mental',  stat:'mental',  label:'メンタル',name:'感動的な絵本',       price:10000 },
-    { id:'aim',     stat:'aim',     label:'エイム',  name:'秘伝の目薬',         price:20000 },
-    { id:'agi',     stat:'agi',     label:'敏捷性',  name:'カモシカのステーキ', price:10000 },
-    { id:'tech',    stat:'tech',    label:'テクニック',name:'高級なそろばん',   price:10000 },
-    { id:'support', stat:'support', label:'サポート',name:'サポートディスク',   price:10000 }
+    { id:'hp',      stat:'hp',      label:'体力',      name:'タフネス極意の巻物', price:20000 },
+    { id:'mental',  stat:'mental',  label:'メンタル',  name:'感動的な絵本',       price:10000 },
+    { id:'aim',     stat:'aim',     label:'エイム',    name:'秘伝の目薬',         price:20000 },
+    { id:'agi',     stat:'agi',     label:'敏捷性',    name:'カモシカのステーキ', price:10000 },
+    { id:'tech',    stat:'tech',    label:'テクニック',name:'高級なそろばん',     price:10000 },
+    { id:'support', stat:'support', label:'サポート',  name:'サポートディスク',   price:10000 }
   ];
 
   // ===== コーチスキル（購入のみ）=====
   const KEY_COACH_OWNED = 'mobbr_coachSkillsOwned';
   const COACH_SKILLS = [
-    { id:'tactics_note',     name:'戦術ノート',       price:500 },
-    { id:'mental_care',      name:'メンタル整備',     price:500 },
-    { id:'clutch_endgame',   name:'終盤の底力',       price:800 },
-    { id:'clearing',         name:'クリアリング徹底', price:1000 },
-    { id:'score_mind',       name:'スコア意識',       price:3000 },
-    { id:'igl_call',         name:'IGL強化コール',     price:5000 },
-    { id:'protagonist_move', name:'主人公ムーブ',     price:50000 }
+    { id:'tactics_note',     name:'戦術ノート',        price:500 },
+    { id:'mental_care',      name:'メンタル整備',      price:500 },
+    { id:'clutch_endgame',   name:'終盤の底力',        price:800 },
+    { id:'clearing',         name:'クリアリング徹底',  price:1000 },
+    { id:'score_mind',       name:'スコア意識',        price:3000 },
+    { id:'igl_call',         name:'IGL強化コール',      price:5000 },
+    { id:'protagonist_move', name:'主人公ムーブ',      price:50000 }
   ];
 
   function readJSON(key, def){
@@ -244,7 +245,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
                 `${memberName} は ${statLabel(item.stat)}の能力経験値が5上がった！${lvText}`,
                 `EXP ${r.beforeExp}/20 → ${r.afterExp}/20`,
                 ()=>{
-                  // 要件：その後メニューを閉じる（=ショップのホームへ戻す）
+                  // 要件：その後メニューへ戻す
                   core.showHome();
                 }
               );
@@ -254,7 +255,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       };
     });
 
-    // 「閉じる」も欲しい場合（要件にある）
+    // 閉じる（仕様に合わせる）
     rows.push({
       name:'閉じる',
       sub:'',
@@ -331,5 +332,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // ★ここが重要：NEXT後に動的ロードされても必ず init が動く
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  }else{
+    init();
+  }
 })();
