@@ -1,0 +1,74 @@
+/* shop.css v15
+   - ショップ（カードガチャ）画面の見た目
+   - 既存の team.css の雰囲気を壊さず、必要分だけ追加
+*/
+
+#shopScreen .teamPanel{
+  /* teamPanel を流用。ここでは追加だけ */
+}
+
+#shopScreen .teamMeta{
+  gap: 8px;
+}
+
+/* ガチャ周り */
+#shopScreen .saveRow{
+  margin-top: 8px;
+}
+
+/* 1回/10連ボタンをスマホでも押しやすく */
+#shopScreen #btnGacha1,
+#shopScreen #btnGacha10,
+#shopScreen #btnGachaSR{
+  min-height: 46px;
+}
+
+/* 結果エリア */
+#shopResult{
+  margin-top: 14px;
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  padding: 12px;
+}
+
+/* 10連でも見やすいリスト */
+#shopResultList{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(52svh, 440px);
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+}
+
+/* 1行 */
+.shopResultRow{
+  padding: 10px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #fff;
+  font-weight: 1000;
+  font-size: 14px;
+  text-shadow: var(--textShadow);
+  line-height: 1.2;
+}
+
+/* OKボタン */
+#btnShopOk{
+  margin-top: 12px;
+  width: 100%;
+}
+
+/* 画面幅が狭い時 */
+@media (max-width: 520px){
+  #shopResultList{
+    max-height: min(50svh, 380px);
+  }
+  .shopResultRow{
+    font-size: 13px;
+  }
+}
