@@ -2,18 +2,11 @@
 
 /*
   MOB BR - ui_shop.core.js v17（フル / 統一仕様）
-  仕様：
-  - SHOPボタン → shop.png をポップアップ表示（ホーム）
-  - shop.png 前面に 4ボタン（円形・少し大きめ）
-    1.育成アイテム / 2.カードガチャ / 3.コーチスキル / 4.閉じる
-  - confirm() は一切使わない（必ず confirmPop/resultPop を使う）
-  - modalBack（暗いフタ）の残留で押せなくなる事故を排除
-  - gacha/catalog は core に登録して動く
 
-  v17 修正（今回）：
-  - ポップが「重なって裏に出る」問題を解消：
-    openPop() する前に必ず他ポップを閉じる（重ねない）
-  - z-index を画面より確実に上へ（modalBack / pop 全て引き上げ）
+  修正（今回）：
+  - 他UI（メンバー名ポップ等）と modalBack の z-index が干渉して
+    「暗くなって押せない」を起こしていたため、
+    shop用の z-index 強制を "ショップが開いている時だけ" に限定する（bodyクラスでスコープ）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -57,6 +50,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ===== constants =====
   const KEY_CDP = 'mobbr_cdp';
+  const BODY_SHOP_CLASS = 'mobbrShopActive';
 
   // ===== DOM cache =====
   const dom = {
@@ -89,11 +83,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     st.id = 'shopCoreStyleV17';
     st.textContent = `
       /* =========================================================
-         Z LAYER（事故防止：画面より必ず上に）
-         ※「ポップが裏に出る」対策として大きめに固定
+         Z LAYER（事故防止）
+         ★重要：modalBackのz-index強制は「ショップが開いている時だけ」
+         他UIのポップと干渉しないように bodyクラスでスコープ化
       ========================================================= */
-      #modalBack { z-index: 9000 !important; }
-      #shopConfirmPop, #shopMemberPickPop, #shopResultPop { z-index: 10000 !important; }
+      body.${BODY_SHOP_CLASS} #modalBack { z-index: 9000 !important; }
+      body.${BODY_SHOP_CLASS} #shopConfirmPop,
+      body.${BODY_SHOP_CLASS} #shopMemberPickPop,
+      body.${BODY_SHOP_CLASS} #shopResultPop { z-index: 10000 !important; }
 
       /* 上部の閉じるボタンが大きすぎる問題 */
       #shopScreen .teamCloseBtn,
@@ -224,6 +221,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.modalBack.setAttribute('aria-hidden', 'true');
   }
 
+  function setShopBodyActive(on){
+    if (!document.body) return;
+    if (on) document.body.classList.add(BODY_SHOP_CLASS);
+    else document.body.classList.remove(BODY_SHOP_CLASS);
+  }
+
   // ===== recent =====
   function setRecent(text){
     setStr(K.recent, text);
@@ -274,7 +277,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     if (built) return;
 
-    // existing gacha section（btnGacha1 を含む teamSection）
     const sections = Array.from(panel.querySelectorAll('.teamSection'));
     gachaSection = sections.find(s => s.querySelector('#btnGacha1')) || sections[0] || null;
 
@@ -335,7 +337,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dynWrap.appendChild(dynTitle);
     dynWrap.appendChild(dynBody);
 
-    // panel内に挿入：meta の直後が一番安全
     const meta = panel.querySelector('.teamMeta');
     if (meta && meta.parentElement === panel){
       if (meta.nextSibling) panel.insertBefore(homeWrap, meta.nextSibling);
@@ -351,7 +352,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function showHome(){
     ensureContainers();
-    hideBack(); // 暗いフタ残留防止
+    hideBack();
 
     if (homeWrap) homeWrap.style.display = '';
     if (dynWrap) dynWrap.style.display = 'none';
@@ -398,7 +399,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setRecent('ショップ：カードガチャを開いた');
   }
 
-  // ===== popups（confirm / member pick / result）=====
+  // ===== popups =====
   let popConfirm = null;
   let popPick = null;
   let popResult = null;
@@ -502,7 +503,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     pop.setAttribute('aria-hidden','true');
   }
 
-  // ★重ねない：新しいポップを出す前に必ず全部閉じる
   function closeAllPops(){
     if (popConfirm) closePop(popConfirm);
     if (popPick) closePop(popPick);
@@ -511,7 +511,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function openPop(pop){
     if (!pop) return;
-    // 先に全部閉じて、必ず一枚だけにする
     closeAllPops();
     showBack();
     pop.classList.add('show');
@@ -521,7 +520,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function closePopAndBack(pop){
     if (!pop) return;
     closePop(pop);
-    // どれも開いてないならBackも消す
     const anyOpen =
       (popConfirm && popConfirm.classList.contains('show')) ||
       (popPick && popPick.classList.contains('show')) ||
@@ -644,18 +642,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureContainers();
     renderMeta();
 
-    // 透明フタ事故の保険
+    // shop専用z-index強制を有効化
+    setShopBodyActive(true);
+
     hideBack();
     closeAllPops();
     if (dom.shopResult) dom.shopResult.style.display = 'none';
 
-    // show screen
     if (dom.screen){
       dom.screen.classList.add('show');
       dom.screen.setAttribute('aria-hidden', 'false');
     }
 
-    // 初期はホーム
     showHome();
   }
 
@@ -673,6 +671,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.screen.setAttribute('aria-hidden', 'true');
     }
 
+    // shop専用z-index強制を解除（他UIに干渉しない）
+    setShopBodyActive(false);
+
     setRecent('ショップを閉じた');
   }
 
@@ -682,19 +683,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (bound) return;
     bound = true;
 
-    // close
     if (dom.close) dom.close.addEventListener('click', (e)=>{
       e.preventDefault();
       e.stopPropagation();
       close();
     });
 
-    // modalBack：押して閉じない（誤爆防止）
     if (dom.modalBack){
       dom.modalBack.addEventListener('click', (e)=> e.preventDefault(), { passive:false });
     }
 
-    // result OK（既存の結果欄はそのまま）
     if (dom.btnShopOk){
       dom.btnShopOk.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -709,46 +707,36 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     renderMeta();
   }
 
-  // expose（ui_main.js は window.MOBBR.ui.shop.open を呼ぶ）
   window.MOBBR.initShopUI = initShopUI;
   window.MOBBR.ui.shop = { open, close, render: renderMeta };
 
-  // core API（gacha/catalog が呼ぶ）
   window.MOBBR.ui.shopCore = {
     VERSION: 'v17',
     dom, K, DP,
 
-    // meta
     fmtG,
     getGold, setGold, addGold, spendGold,
     getCDP, setCDP,
     renderMeta,
 
-    // views
     showHome,
     showDynamic,
     openGachaView,
 
-    // popups
     confirmPop,
     resultPop,
     openMemberPick,
 
-    // gacha result list
     showListResult,
 
-    // recent
     setRecent,
 
-    // register
     registerCatalog,
     registerGacha,
 
-    // close
     close
   };
 
-  // 動的ロード対応
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', initShopUI);
   }else{
