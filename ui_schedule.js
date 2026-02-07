@@ -2,10 +2,8 @@
 
 /*
   MOB BR - ui_schedule.js v1（フル）
-
-  役割：
-  - 年間スケジュール画面の制御
-  - 次の大会を赤文字で強調表示
+  - 年間スケジュール画面
+  - 次の大会を赤文字で強調
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -22,58 +20,46 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const K = S.KEYS;
 
-  /* =========================
-     DOM
-  ========================= */
   const dom = {
     screen: $('scheduleScreen'),
     close: $('btnCloseSchedule'),
     list: $('scheduleList')
   };
 
-  /* =========================
-     年間スケジュール定義（確定）
-  ========================= */
   const SCHEDULE = [
-    { split:'スプリット1', y:null, m:2, w:1, name:'ローカル大会' },
-    { split:'スプリット1', y:null, m:3, w:1, name:'ナショナル大会' },
-    { split:'スプリット1', y:null, m:3, w:2, name:'ナショナル大会後半' },
-    { split:'スプリット1', y:null, m:3, w:3, name:'ナショナルラストチャンス' },
-    { split:'スプリット1', y:null, m:4, w:1, name:'ワールドファイナル' },
+    { split:'スプリット1', m:2, w:1, name:'ローカル大会' },
+    { split:'スプリット1', m:3, w:1, name:'ナショナル大会' },
+    { split:'スプリット1', m:3, w:2, name:'ナショナル大会後半' },
+    { split:'スプリット1', m:3, w:3, name:'ナショナルラストチャンス' },
+    { split:'スプリット1', m:4, w:1, name:'ワールドファイナル' },
 
-    { split:'スプリット2', y:null, m:7, w:1, name:'ローカル大会' },
-    { split:'スプリット2', y:null, m:8, w:1, name:'ナショナル大会' },
-    { split:'スプリット2', y:null, m:8, w:2, name:'ナショナル大会後半' },
-    { split:'スプリット2', y:null, m:8, w:3, name:'ナショナルラストチャンス' },
-    { split:'スプリット2', y:null, m:9, w:1, name:'ワールドファイナル' },
+    { split:'スプリット2', m:7, w:1, name:'ローカル大会' },
+    { split:'スプリット2', m:8, w:1, name:'ナショナル大会' },
+    { split:'スプリット2', m:8, w:2, name:'ナショナル大会後半' },
+    { split:'スプリット2', m:8, w:3, name:'ナショナルラストチャンス' },
+    { split:'スプリット2', m:9, w:1, name:'ワールドファイナル' },
 
-    { split:'チャンピオンシップリーグ', y:null, m:11, w:1, name:'ローカル大会' },
-    { split:'チャンピオンシップリーグ', y:null, m:12, w:1, name:'ナショナル大会' },
-    { split:'チャンピオンシップリーグ', y:null, m:12, w:2, name:'ナショナル大会後半' },
-    { split:'チャンピオンシップリーグ', y:null, m:12, w:3, name:'ナショナルラストチャンス' },
-    { split:'チャンピオンシップリーグ', y:null, m:1,  w:2, name:'チャンピオンシップ ワールドファイナル' }
+    { split:'チャンピオンシップリーグ', m:11, w:1, name:'ローカル大会' },
+    { split:'チャンピオンシップリーグ', m:12, w:1, name:'ナショナル大会' },
+    { split:'チャンピオンシップリーグ', m:12, w:2, name:'ナショナル大会後半' },
+    { split:'チャンピオンシップリーグ', m:12, w:3, name:'ナショナルラストチャンス' },
+    { split:'チャンピオンシップリーグ', m:1,  w:2, name:'チャンピオンシップ ワールドファイナル' }
   ];
 
-  /* =========================
-     現在日時
-  ========================= */
   function getNow(){
     return {
-      y: S.getNum(K.year, 1989),
       m: S.getNum(K.month, 1),
       w: S.getNum(K.week, 1)
     };
   }
 
-  function isNextTournament(item, now){
+  // 「今の週以降で最初の1件」を次の大会として赤くする
+  function isFutureOrNow(item, now){
     if (item.m < now.m) return false;
     if (item.m === now.m && item.w < now.w) return false;
     return true;
   }
 
-  /* =========================
-     render
-  ========================= */
   function render(){
     if (!dom.list) return;
 
@@ -96,6 +82,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const row = document.createElement('div');
       row.style.display = 'flex';
       row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'baseline';
+      row.style.gap = '10px';
       row.style.padding = '6px 4px';
       row.style.borderBottom = '1px solid rgba(255,255,255,.12)';
       row.style.fontSize = '14px';
@@ -106,8 +94,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const right = document.createElement('div');
       right.textContent = item.name;
 
-      // 次の大会を赤強調（最初の1件だけ）
-      if (!nextFound && isNextTournament(item, now)){
+      if (!nextFound && isFutureOrNow(item, now)){
         row.style.color = '#ff3b30';
         row.style.fontWeight = '1000';
         nextFound = true;
@@ -119,9 +106,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
   }
 
-  /* =========================
-     open / close
-  ========================= */
   function open(){
     if (!dom.screen) return;
     render();
@@ -135,21 +119,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.screen.setAttribute('aria-hidden', 'true');
   }
 
-  /* =========================
-     bind
-  ========================= */
+  let bound = false;
   function bind(){
+    if (bound) return;
+    bound = true;
+
     if (dom.close){
       dom.close.addEventListener('click', close);
     }
   }
 
-  function init(){
+  function initScheduleUI(){
     bind();
   }
 
-  // expose
-  window.MOBBR.ui.schedule = { open, close };
+  window.MOBBR.initScheduleUI = initScheduleUI;
+  window.MOBBR.ui.schedule = { open, close, render };
 
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', initScheduleUI);
 })();
