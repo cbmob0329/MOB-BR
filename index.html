@@ -314,6 +314,50 @@
     </div>
 
     <!-- =========================
+         TRAINING SCREEN（追加：これが無いと開かない）
+         ※ui_training.js が参照するIDに合わせる
+    ========================== -->
+    <div id="trainingScreen" class="teamScreen" aria-label="育成（修行）" aria-hidden="true">
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">育成（修行）</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTraining" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div class="dateLine" style="font-weight:900;">
+            <span id="trY">1989</span>年
+            <span id="trM">1</span>月
+            第<span id="trW">1</span>週
+          </div>
+          <div style="opacity:.9;font-size:13px;line-height:1.35;margin-top:6px;">
+            ※3人分の修行を選択して実行<br />
+            ※結果OKでのみ確定（EXP反映＋週進行）
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">修行メニュー</div>
+
+          <!-- ui_training.js がここにカードUIを生成 -->
+          <div id="trainingCards"></div>
+
+          <div style="height:12px;"></div>
+
+          <button class="saveBtn" id="btnTrainingStart" type="button" disabled>
+            修行を実行
+          </button>
+
+          <div class="saveNote">
+            共通：全能力 EXP +1<br />
+            専門：対象能力 EXP +4（共通+1 +追加+3）<br />
+            総合：全能力 EXP +2（共通+1 +追加+1）
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================
          SHOP SCREEN
          ※ui_shop が参照するIDに合わせる
     ========================== -->
