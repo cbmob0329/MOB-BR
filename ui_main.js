@@ -2,7 +2,6 @@
 
 /*
   MOB BR - ui_main.js v17（フル）
-
   目的：
   - メイン画面の表示/タップ処理
   - TEAM/TRAINING/SHOP/CARD/SCHEDULE のルーティングを「各UIの open() 優先」に統一
@@ -10,8 +9,7 @@
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
 
   v17 変更点：
-  - SCHEDULE を safeOpenByUI に追加（scheduleScreen を開けるように）
-  - scheduleScreen / btnCloseSchedule のDOM直開きルート追加
+  - schedule ルート追加（ui_schedule.js が open を持てばそれを優先）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -126,7 +124,6 @@ window.MOBBR = window.MOBBR || {};
       cardScreen: $('cardScreen'),
       btnCloseCard: $('btnCloseCard'),
 
-      // ★schedule
       scheduleScreen: $('scheduleScreen'),
       btnCloseSchedule: $('btnCloseSchedule')
     };
@@ -151,9 +148,7 @@ window.MOBBR = window.MOBBR || {};
       if (bySlot[2]) bySlot[2].name = nm3;
 
       localStorage.setItem(K.playerTeam, JSON.stringify(team));
-    }catch(e){
-      // 壊れてても落とさない
-    }
+    }catch(e){}
   }
 
   function notifyTeamRender(){
@@ -330,7 +325,6 @@ window.MOBBR = window.MOBBR || {};
       return openScreenEl(ui.cardScreen, 'cardScreen');
     }
 
-    // ★SCHEDULE追加
     if (key === 'schedule'){
       if (u?.schedule?.open){ u.schedule.open(); return true; }
       return openScreenEl(ui.scheduleScreen, 'scheduleScreen');
@@ -351,7 +345,7 @@ window.MOBBR = window.MOBBR || {};
     if (bound) return;
     bound = true;
 
-    // modalBack：押して閉じない（誤爆防止）
+    // modalBack：押して閉じない
     if (ui.modalBack){
       ui.modalBack.addEventListener('click', (e) => e.preventDefault(), { passive:false });
     }
@@ -380,7 +374,7 @@ window.MOBBR = window.MOBBR || {};
       ui.btnWeekNext.classList.remove('show');
     }
 
-    // ===== 左メニュー：open() 優先ルーティング =====
+    // ===== 左メニュー =====
     if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => {
       render();
       if (!safeOpenByUI('team')) setRecent('TEAM：画面DOMが見つかりません（index.htmlを確認）');
@@ -389,7 +383,7 @@ window.MOBBR = window.MOBBR || {};
 
     if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => {
       render();
-      if (!safeOpenByUI('training')) setRecent('修行：画面DOMが見つかりません（index.htmlを確認）');
+      if (!safeOpenByUI('training')) setRecent('育成：画面DOMが見つかりません（index.htmlを確認）');
     });
 
     if (ui.btnShop) ui.btnShop.addEventListener('click', () => {
@@ -402,10 +396,9 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('card')) setRecent('カード：画面DOMが見つかりません（index.htmlを確認）');
     });
 
-    // ★SCHEDULE：開く
     if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => {
       render();
-      if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.htmlを確認）');
+      if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
@@ -423,8 +416,6 @@ window.MOBBR = window.MOBBR || {};
     if (ui.btnCloseCard && ui.cardScreen){
       ui.btnCloseCard.addEventListener('click', () => closeScreenEl(ui.cardScreen));
     }
-
-    // ★schedule close
     if (ui.btnCloseSchedule && ui.scheduleScreen){
       ui.btnCloseSchedule.addEventListener('click', () => closeScreenEl(ui.scheduleScreen));
     }
@@ -437,7 +428,7 @@ window.MOBBR = window.MOBBR || {};
     // 起動時点で playerTeam があるなら、storageの名前に寄せる
     syncPlayerTeamNamesFromStorage();
 
-    // 透明フタ事故の保険（ここで必ず無効化）
+    // 透明フタ事故の保険
     hideBack();
 
     render();
@@ -446,6 +437,6 @@ window.MOBBR = window.MOBBR || {};
   // expose
   window.MOBBR.initMainUI = initMainUI;
 
-  // 動的ロードでも確実に起動（app.js から呼ばれても二重bindしない）
+  // 動的ロードでも確実に起動
   initMainUI();
 })();
