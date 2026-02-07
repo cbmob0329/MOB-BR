@@ -2,10 +2,16 @@
 
 /*
   MOB BR - ui_shop.gacha.js v17（フル）
-  - confirm() を絶対に使わない（core.confirmPop に統一）
-  - 「2.カードガチャ」無反応を解消：core.openGachaView を必ず呼ぶ
-  - ガチャボタンに価格表示を追加
-  - ★重要：NEXT後の動的ロードでも必ず動くように init を「即実行」方式に変更
+  修正点（今回）：
+  - 「カードデータが見つかりません」対策：
+    data_cards.js は配列を直接公開しておらず window.MOBBR.data.cards.getAll() が正。
+    → getAllCards() を getAll() 優先に修正。
+  - レアリティは R / SR / SSR のみで運用（あなたのデータ仕様に合わせる）
+    ※Nは使わない（データに存在しないため）
+  - 排出率は data_cards.js の定義を優先（GACHA_RATE_NORMAL / GACHA_RATE_SR_PLUS）
+    無い場合のみフォールバックの比率で動作。
+  - confirm() は絶対に使わない（core.confirmPop に統一）
+  - NEXT後の動的ロードでも必ず動くように init を「即実行」方式
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -26,12 +32,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const COST_10 = 900;   // 10連
   const COST_SR = 0;     // SR確定はCDP100消費（Gは取らない仕様のまま）
 
-  // ===== 11枚目以降のG変換 =====
-  const CONVERT_G = { N:50, R:150, SR:500, SSR:1500 };
+  // ===== 11枚目以降のG変換（R/SR/SSRのみ）=====
+  const CONVERT_G = { R:150, SR:500, SSR:1500 };
 
-  // ===== 内部比率（表示しない仕様）=====
-  const WEIGHT = { SSR:2, SR:8, R:30, N:60 };
-  const WEIGHT_SRPLUS = { SSR:20, SR:80 };
+  // ===== フォールバック排出率（data_cards側が無い場合のみ）=====
+  // 通常：R 85% / SR 12% / SSR 3%
+  const FALLBACK_RATE_NORMAL = [
+    { rarity:'R',   p:0.85 },
+    { rarity:'SR',  p:0.12 },
+    { rarity:'SSR', p:0.03 }
+  ];
+  // SR以上確定：SR 80% / SSR 20%
+  const FALLBACK_RATE_SRPLUS = [
+    { rarity:'SR',  p:0.80 },
+    { rarity:'SSR', p:0.20 }
+  ];
 
   function readOwned(){
     try{
@@ -45,10 +60,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     localStorage.setItem(KEY_OWNED, JSON.stringify(obj || {}));
   }
 
+  // ===== data_cards.js 読み込み（getAll() 優先）=====
+  function getCardsData(){
+    return window.MOBBR?.data?.cards || null;
+  }
+
   function getAllCards(){
-    const dc = window.MOBBR?.data?.cards || null;
+    const dc = getCardsData();
     if (!dc) return [];
 
+    // ★最優先：あなたの data_cards.js は getAll() が正
+    if (typeof dc.getAll === 'function'){
+      try{
+        const arr = dc.getAll();
+        return Array.isArray(arr) ? arr : [];
+      }catch(e){
+        console.warn('[ui_shop.gacha] dc.getAll() failed', e);
+      }
+    }
+
+    // 互換（古い/別形式の保険）
     const cand = dc.CARDS || dc.cards || dc.list || dc.LIST || dc.DATA || null;
     if (Array.isArray(cand)) return cand;
 
@@ -63,8 +94,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const s = String(r || '').toUpperCase();
     if (s.includes('SSR')) return 'SSR';
     if (s.includes('SR'))  return 'SR';
-    if (s.includes('R'))   return 'R';
-    return 'N';
+    return 'R'; // Rのみ残す（Nは使わない）
   }
 
   function normCard(c){
@@ -73,31 +103,45 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const name = c?.name ?? c?.title ?? c?.label ?? String(id);
     const rarity = normRarity(c?.rarity ?? c?.rank ?? c?.rare);
-    const img = String(c?.img ?? c?.image ?? c?.src ?? c?.path ?? '');
+
+    // data_cards.js は imagePath を持つ（cards/配下）
+    const img =
+      String(
+        c?.imagePath ??
+        c?.img ??
+        c?.image ??
+        c?.src ??
+        c?.path ??
+        ''
+      );
 
     return { id:String(id), name:String(name), rarity, img };
   }
 
   function splitByRarity(cards){
-    const by = { SSR:[], SR:[], R:[], N:[] };
+    const by = { SSR:[], SR:[], R:[] };
     cards.forEach(c=>{
       const nc = normCard(c);
       if (!nc) return;
-      by[nc.rarity].push(nc);
+      if (nc.rarity === 'SSR') by.SSR.push(nc);
+      else if (nc.rarity === 'SR') by.SR.push(nc);
+      else by.R.push(nc);
     });
     return by;
   }
 
-  function pickByWeight(weightMap){
-    const entries = Object.entries(weightMap);
+  function pickByRate(rateList){
+    // rateList: [{rarity:'R'|'SR'|'SSR', p:0..1}, ...]
     let sum = 0;
-    entries.forEach(([,w])=> sum += (Number(w)||0));
+    (rateList || []).forEach(o => sum += (Number(o?.p) || 0));
+    if (sum <= 0) return 'R';
+
     let r = Math.random() * sum;
-    for (const [k,w] of entries){
-      r -= (Number(w)||0);
-      if (r <= 0) return k;
+    for (const o of rateList){
+      r -= (Number(o?.p) || 0);
+      if (r <= 0) return String(o?.rarity || 'R');
     }
-    return entries[entries.length-1]?.[0] || 'N';
+    return String(rateList[rateList.length-1]?.rarity || 'R');
   }
 
   function pickRandomFrom(arr){
@@ -131,10 +175,34 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnGachaSR) dom.btnGachaSR.textContent = `SR以上確定（CDP100）${COST_SR ? `（${COST_SR}G）` : ''}`;
   }
 
+  function getRates(mode){
+    const dc = getCardsData();
+
+    // data_cards.js 定義を優先
+    if (dc){
+      if (mode === 'srplus' && Array.isArray(dc.GACHA_RATE_SR_PLUS) && dc.GACHA_RATE_SR_PLUS.length){
+        return dc.GACHA_RATE_SR_PLUS.map(o => ({ rarity: normRarity(o?.rarity), p: Number(o?.p)||0 }));
+      }
+      if (mode !== 'srplus' && Array.isArray(dc.GACHA_RATE_NORMAL) && dc.GACHA_RATE_NORMAL.length){
+        return dc.GACHA_RATE_NORMAL.map(o => ({ rarity: normRarity(o?.rarity), p: Number(o?.p)||0 }));
+      }
+    }
+
+    // フォールバック
+    return (mode === 'srplus') ? FALLBACK_RATE_SRPLUS : FALLBACK_RATE_NORMAL;
+  }
+
   function doGacha(times, mode){
     const pools = ensurePools();
     if (!pools){
-      core.resultPop('カードデータが見つかりません', 'data_cards.js を確認してください。', ()=>{});
+      core.resultPop('カードデータが見つかりません', 'data_cards.js を確認してください（getAllの公開が必要）。', ()=>{});
+      return;
+    }
+
+    // プールの健全性チェック（R/SR/SSRのみ）
+    const hasAny = (pools.R.length + pools.SR.length + pools.SSR.length) > 0;
+    if (!hasAny){
+      core.resultPop('カードデータが空です', 'data_cards.js の CARDS 定義を確認してください。', ()=>{});
       return;
     }
 
@@ -174,20 +242,30 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         core.setCDP(core.getCDP() + t); // 通常：引くたびCDP+1
       }
 
+      const rates = getRates(mode);
       const owned = readOwned();
       const rows = [];
       let convertedTotal = 0;
 
+      // rarity -> card pick（不足時は下位へ落とす）
       const pick = (rar)=>{
-        if (pools[rar] && pools[rar].length) return pickRandomFrom(pools[rar]);
-        if (rar === 'SSR') return pick('SR');
-        if (rar === 'SR')  return pick('R');
-        if (rar === 'R')   return pick('N');
-        return pickRandomFrom(pools.N) || null;
+        if (rar === 'SSR'){
+          if (pools.SSR.length) return pickRandomFrom(pools.SSR);
+          rar = 'SR';
+        }
+        if (rar === 'SR'){
+          if (pools.SR.length) return pickRandomFrom(pools.SR);
+          rar = 'R';
+        }
+        if (pools.R.length) return pickRandomFrom(pools.R);
+
+        // 最後の保険：どれか1枚
+        const any = pools.SSR[0] || pools.SR[0] || pools.R[0] || null;
+        return any;
       };
 
       for (let i=0; i<t; i++){
-        const rar = (mode === 'srplus') ? pickByWeight(WEIGHT_SRPLUS) : pickByWeight(WEIGHT);
+        const rar = pickByRate(rates);
         const card = pick(rar);
         if (!card) continue;
 
@@ -252,7 +330,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     applyPriceLabels();
   }
 
-  // ★ここが重要：NEXT後に動的ロードされても必ず init が動く
+  // ★NEXT後に動的ロードされても必ず init が動く
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', init);
   }else{
