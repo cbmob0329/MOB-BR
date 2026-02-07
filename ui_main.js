@@ -1,13 +1,21 @@
 'use strict';
 
 /*
-  MOB BR - ui_main.js v14（フル）
+  MOB BR - ui_main.js v15（フル）
+
+  v15 変更点：
+  - btnShop / btnCard を「存在すれば open()」にルーティング
+    - shop: window.MOBBR.ui.shop.open()
+    - card: window.MOBBR.ui.card.open()
+  - btnTraining / btnTeam も同様に open() 優先（存在しない場合は従来通り）
+  - それ以外の仕様は v14 を維持
+
+  前提：
   - app.js の loadModules() で NEXT後に読み込まれる前提
   - 右下ログ(rog)タップでNEXTを出す機能は廃止（NEXTはここでは使わない）
   - 左メニューは「ループ無し」＝通常の上下スクロールのみ（JS側は何もしない）
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
-  - btra.png（btnTraining）で育成画面へ
-    ★重要：ui_training.js がある場合は必ず MOBBR.ui.training.open() を呼ぶ（中身生成のため）
+  - btra.png（btnTraining）で育成画面へ（#trainingScreen があれば開く／無ければログに出す）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -23,7 +31,6 @@ window.MOBBR = window.MOBBR || {};
     gold: 'mobbr_gold',
     rank: 'mobbr_rank',
 
-    // storage.js に合わせて year/month/week
     year: 'mobbr_year',
     month: 'mobbr_month',
     week: 'mobbr_week',
@@ -32,7 +39,6 @@ window.MOBBR = window.MOBBR || {};
     nextTourW: 'mobbr_nextTourW',
     recent: 'mobbr_recent',
 
-    // team detail（ui_team.js と揃える）
     playerTeam: 'mobbr_playerTeam'
   };
 
@@ -109,7 +115,7 @@ window.MOBBR = window.MOBBR || {};
       uiM3: $('uiM3'),
       btnCloseMembers: $('btnCloseMembers'),
 
-      // team overlay
+      // team overlay（メイン側にDOMがある場合）
       teamScreen: $('teamScreen'),
       btnCloseTeam: $('btnCloseTeam'),
       tCompany: $('tCompany'),
@@ -118,7 +124,7 @@ window.MOBBR = window.MOBBR || {};
       tM2: $('tM2'),
       tM3: $('tM3'),
 
-      // training overlay
+      // training overlay（DOMがあれば開く）
       trainingScreen: $('trainingScreen'),
       btnCloseTraining: $('btnCloseTraining')
     };
@@ -181,7 +187,7 @@ window.MOBBR = window.MOBBR || {};
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
 
-    // team overlay quick header
+    // team overlay quick header（存在すれば）
     if (ui.tCompany) ui.tCompany.textContent = company;
     if (ui.tTeam) ui.tTeam.textContent = team;
     if (ui.tM1) ui.tM1.textContent = m1;
@@ -285,7 +291,7 @@ window.MOBBR = window.MOBBR || {};
     }
   }
 
-  // ===== overlays =====
+  // ===== overlays（メインDOMがある場合のみ）=====
   function showTeamScreen(){
     if (!ui.teamScreen) return;
     ui.teamScreen.classList.add('show');
@@ -299,14 +305,7 @@ window.MOBBR = window.MOBBR || {};
   }
 
   function showTrainingScreen(){
-    // ★最重要：ui_training.js があれば open() を呼ぶ（中身生成＋画面表示まで任せる）
-    const openFn = window.MOBBR?.ui?.training?.open;
-    if (typeof openFn === 'function'){
-      openFn();
-      return;
-    }
-
-    // フォールバック：DOMだけ開く（旧挙動）
+    // #trainingScreen がまだ無いなら、今はログだけ出す（壊さない）
     if (!ui.trainingScreen){
       setStr(K.recent, '育成：未実装（次フェーズ）');
       render();
@@ -324,6 +323,61 @@ window.MOBBR = window.MOBBR || {};
   function setRecent(text){
     setStr(K.recent, text);
     render();
+  }
+
+  // ===== open helpers（存在すれば ui側の open() を優先）=====
+  function openIfExists(pathArr){
+    try{
+      let cur = window;
+      for (const k of pathArr){
+        cur = cur?.[k];
+        if (!cur) return null;
+      }
+      return cur;
+    }catch{
+      return null;
+    }
+  }
+
+  function openTeam(){
+    // 優先：ui_team.js の open()
+    const fn = openIfExists(['MOBBR','ui','team','open']);
+    if (typeof fn === 'function'){
+      fn();
+      return;
+    }
+    // フォールバック：メインDOMの overlay
+    render();
+    showTeamScreen();
+  }
+
+  function openTraining(){
+    // 優先：ui_training.js の open()
+    const fn = openIfExists(['MOBBR','ui','training','open']);
+    if (typeof fn === 'function'){
+      fn();
+      return;
+    }
+    // フォールバック：メインDOMの overlay / ログ
+    showTrainingScreen();
+  }
+
+  function openShop(){
+    const fn = openIfExists(['MOBBR','ui','shop','open']);
+    if (typeof fn === 'function'){
+      fn();
+      return;
+    }
+    setRecent('ショップ：未実装（次フェーズ）');
+  }
+
+  function openCard(){
+    const fn = openIfExists(['MOBBR','ui','card','open']);
+    if (typeof fn === 'function'){
+      fn();
+      return;
+    }
+    setRecent('カードコレクション：未実装（次フェーズ）');
   }
 
   // ===== loop scroll（ループ廃止：何もしない）=====
@@ -360,25 +414,32 @@ window.MOBBR = window.MOBBR || {};
     if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
     if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
 
+    // rogタップでNEXT表示 → 廃止（何も付けない）
+
     // btnWeekNext はここでは使わないので無効化（誤爆防止）
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
       ui.btnWeekNext.classList.remove('show');
     }
 
-    // 左メニュー
-    if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => { render(); showTeamScreen(); });
-    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
-    if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => showTrainingScreen());
-    if (ui.btnShop) ui.btnShop.addEventListener('click', () => setRecent('ショップ：未実装（次フェーズ）'));
-    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
-    if (ui.btnCard) ui.btnCard.addEventListener('click', () => setRecent('カードコレクション：未実装（次フェーズ）'));
+    // ===== 左メニュー（v15：存在すれば open()）=====
+    if (ui.btnTeam) ui.btnTeam.addEventListener('click', openTeam);
 
+    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
+
+    if (ui.btnTraining) ui.btnTraining.addEventListener('click', openTraining);
+
+    if (ui.btnShop) ui.btnShop.addEventListener('click', openShop);
+
+    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
+
+    if (ui.btnCard) ui.btnCard.addEventListener('click', openCard);
+
+    // ===== close buttons（メインDOMがある場合のみ）=====
     if (ui.btnCloseTeam) ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
-    // ※training の閉じるは ui_training.js 側でも制御するが、DOMだけのフォールバック用に残す
     if (ui.btnCloseTraining) ui.btnCloseTraining.addEventListener('click', hideTrainingScreen);
 
-    // 週進行（必要なら btnWeekNext を表示して使う仕様にする。現状は非表示/無効。）
+    // 週進行（現状は非表示/無効）
     // if (ui.btnWeekNext) ui.btnWeekNext.addEventListener('click', advanceWeek);
 
     setupLoopScroll();
