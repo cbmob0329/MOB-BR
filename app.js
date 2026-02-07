@@ -1,18 +1,18 @@
 'use strict';
 
 /*
-  MOB BR - app.js v15（フル）
+  MOB BR - app.js v16（フル）
 
   役割：
   - タイトル → メイン遷移制御
   - 分割JSの順序ロード
   - 各UI init の一元管理
 
-  v15 変更点：
-  - data_cards.js / ui_card.js / ui_shop.js を loadModules に追加
+  v16 変更点：
+  - ui_schedule.js を loadModules / boot に追加
 */
 
-const APP_VER = 15;
+const APP_VER = 16;
 
 // ===== DOM helpers =====
 const $ = (id) => document.getElementById(id);
@@ -75,7 +75,7 @@ async function loadModules(){
     `storage.js${v}`,
     `data_player.js${v}`,
 
-    // cards (NEW)
+    // cards
     `data_cards.js${v}`,
 
     // UI
@@ -83,9 +83,12 @@ async function loadModules(){
     `ui_team.js${v}`,
     `ui_training.js${v}`,
 
-    // cards UI (NEW)
+    // cards UI
     `ui_card.js${v}`,
-    `ui_shop.js${v}`
+    `ui_shop.js${v}`,
+
+    // schedule UI（NEW）
+    `ui_schedule.js${v}`
   ];
 
   for (const f of files){
@@ -130,6 +133,11 @@ async function bootAfterNext(){
   // shop
   if (window.MOBBR?.initShopUI){
     window.MOBBR.initShopUI();
+  }
+
+  // schedule（NEW）
+  if (window.MOBBR?.initScheduleUI){
+    window.MOBBR.initScheduleUI();
   }
 }
 
