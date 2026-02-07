@@ -1,15 +1,3 @@
------
-
-まずはこの順で送ってください
-
-✅ index.html → ui_main.js → main.css
-（ここまででほぼ確定できます）
-
-貼ってくれたら、**「原因の断定」→「どのファイルをどう直すかの説明」→「生成していい？」**の順で進めます。
-------
-
-あなたの指示通り、まずは一つ目を送ります
-
 <!doctype html>
 <html lang="ja">
 <head>
@@ -29,7 +17,7 @@
   <link rel="stylesheet" href="main.css?v=15" />
   <link rel="stylesheet" href="team.css?v=15" />
   <link rel="stylesheet" href="training.css?v=15" />
-  <!-- ★追加（④で作る想定：未作成ならコメントアウトでOK） -->
+  <!-- shop/card のCSSを作成済みならコメント解除 -->
   <!-- <link rel="stylesheet" href="shop.css?v=15" /> -->
   <!-- <link rel="stylesheet" href="card.css?v=15" /> -->
 </head>
@@ -185,7 +173,7 @@
     <!-- =========================
          MODALS / OVERLAYS
     ========================== -->
-    <div class="modalBack" id="modalBack"></div>
+    <div class="modalBack" id="modalBack" aria-hidden="true"></div>
 
     <!-- メンバー名 -->
     <div class="modalCard" id="membersPop" aria-hidden="true">
@@ -208,7 +196,129 @@
     </div>
 
     <!-- =========================
-         SHOP SCREEN（★追加）
+         TEAM SCREEN（★復活：ui_team.js が参照するIDを全部用意）
+    ========================== -->
+    <div id="teamScreen" class="teamScreen" aria-label="チーム" aria-hidden="true">
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">TEAM</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTeam" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div>企業名：<span id="tCompany">CB Memory</span></div>
+          <div>チーム名：<span id="tTeam">PLAYER TEAM</span></div>
+          <div class="saveNote">※名前（A/B/C）はタップで変更できます</div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">メンバー</div>
+
+          <div class="teamCards3">
+            <!-- A -->
+            <div class="teamCard">
+              <button class="teamNameBtn" id="tNameA" type="button">A</button>
+              <div class="teamStats">
+                <div class="stRow"><span class="stKey">HP</span><span class="stVal" id="tA_hp">0</span></div>
+                <div class="stRow"><span class="stKey">メンタル</span><span class="stVal" id="tA_mental">0</span></div>
+                <div class="stRow"><span class="stKey">エイム</span><span class="stVal" id="tA_aim">0</span></div>
+                <div class="stRow"><span class="stKey">敏捷</span><span class="stVal" id="tA_agi">0</span></div>
+                <div class="stRow"><span class="stKey">技術</span><span class="stVal" id="tA_tech">0</span></div>
+                <div class="stRow"><span class="stKey">サポ</span><span class="stVal" id="tA_support">0</span></div>
+                <div class="stRow"><span class="stKey">探知</span><span class="stVal" id="tA_scan">0</span></div>
+              </div>
+              <div class="teamSkill">
+                <div class="skRow"><span class="skKey">パッシブ</span><span class="skVal" id="tA_passive">未定</span></div>
+                <div class="skRow"><span class="skKey">ウルト</span><span class="skVal" id="tA_ult">未定</span></div>
+              </div>
+            </div>
+
+            <!-- B -->
+            <div class="teamCard">
+              <button class="teamNameBtn" id="tNameB" type="button">B</button>
+              <div class="teamStats">
+                <div class="stRow"><span class="stKey">HP</span><span class="stVal" id="tB_hp">0</span></div>
+                <div class="stRow"><span class="stKey">メンタル</span><span class="stVal" id="tB_mental">0</span></div>
+                <div class="stRow"><span class="stKey">エイム</span><span class="stVal" id="tB_aim">0</span></div>
+                <div class="stRow"><span class="stKey">敏捷</span><span class="stVal" id="tB_agi">0</span></div>
+                <div class="stRow"><span class="stKey">技術</span><span class="stVal" id="tB_tech">0</span></div>
+                <div class="stRow"><span class="stKey">サポ</span><span class="stVal" id="tB_support">0</span></div>
+                <div class="stRow"><span class="stKey">探知</span><span class="stVal" id="tB_scan">0</span></div>
+              </div>
+              <div class="teamSkill">
+                <div class="skRow"><span class="skKey">パッシブ</span><span class="skVal" id="tB_passive">未定</span></div>
+                <div class="skRow"><span class="skKey">ウルト</span><span class="skVal" id="tB_ult">未定</span></div>
+              </div>
+            </div>
+
+            <!-- C -->
+            <div class="teamCard">
+              <button class="teamNameBtn" id="tNameC" type="button">C</button>
+              <div class="teamStats">
+                <div class="stRow"><span class="stKey">HP</span><span class="stVal" id="tC_hp">0</span></div>
+                <div class="stRow"><span class="stKey">メンタル</span><span class="stVal" id="tC_mental">0</span></div>
+                <div class="stRow"><span class="stKey">エイム</span><span class="stVal" id="tC_aim">0</span></div>
+                <div class="stRow"><span class="stKey">敏捷</span><span class="stVal" id="tC_agi">0</span></div>
+                <div class="stRow"><span class="stKey">技術</span><span class="stVal" id="tC_tech">0</span></div>
+                <div class="stRow"><span class="stKey">サポ</span><span class="stVal" id="tC_support">0</span></div>
+                <div class="stRow"><span class="stKey">探知</span><span class="stVal" id="tC_scan">0</span></div>
+              </div>
+              <div class="teamSkill">
+                <div class="skRow"><span class="skKey">パッシブ</span><span class="skVal" id="tC_passive">未定</span></div>
+                <div class="skRow"><span class="skKey">ウルト</span><span class="skVal" id="tC_ult">未定</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="saveRow">
+            <button class="saveBtn" id="btnManualSave" type="button">セーブ</button>
+            <button class="saveBtn danger" id="btnDeleteSave" type="button">セーブ削除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================
+         TRAINING SCREEN（★復活：ui_training.js が参照するIDを全部用意）
+    ========================== -->
+    <div id="trainingScreen" class="teamScreen" aria-label="育成（修行）" aria-hidden="true">
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">TRAINING</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTraining" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div>
+            <span id="trY">1989</span>年
+            <span id="trM">1</span>月
+            <span id="trW">1</span>週
+          </div>
+          <div class="saveNote">
+            3人分の修行を選んで「修行開始」→ 結果OKで確定
+          </div>
+        </div>
+
+        <!-- メニューカード生成先 -->
+        <div class="teamSection">
+          <div class="teamSectionTitle">修行メニュー</div>
+          <div id="trainingCards"></div>
+
+          <div style="height:12px;"></div>
+          <button class="saveBtn" id="btnTrainingStart" type="button" disabled>修行開始</button>
+        </div>
+
+        <!-- 結果 -->
+        <div id="trainingResultSection" class="teamSection" style="display:none;">
+          <div class="teamSectionTitle" id="trainingResultTop">修行完了！</div>
+          <div id="trainingResultList" class="recordsList"></div>
+          <button class="closeBtn" id="btnTrainingOk" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================
+         SHOP SCREEN
          ※ui_shop.js が参照するIDに合わせる
     ========================== -->
     <div id="shopScreen" class="teamScreen" aria-label="ショップ" aria-hidden="true">
@@ -247,7 +357,6 @@
           </div>
         </div>
 
-        <!-- 結果エリア（ui_shop.js: shopResult/shopResultList/btnShopOk） -->
         <div id="shopResult" class="teamSection" style="display:none;">
           <div class="teamSectionTitle">結果</div>
           <div id="shopResultList" class="recordsList"></div>
@@ -257,7 +366,7 @@
     </div>
 
     <!-- =========================
-         CARD SCREEN（★追加）
+         CARD SCREEN
          ※ui_card.js が参照するIDに合わせる
     ========================== -->
     <div id="cardScreen" class="teamScreen" aria-label="カードコレクション" aria-hidden="true">
@@ -280,7 +389,6 @@
         </div>
       </div>
 
-      <!-- プレビュー（ui_card.js: cardPreview/cardPreviewImg/btnCloseCardPreview） -->
       <div id="cardPreview" class="modalCard" style="display:none;" aria-hidden="true">
         <div class="modalTitle">カード</div>
         <img
@@ -293,8 +401,6 @@
       </div>
     </div>
 
-    <!-- TEAM / TRAINING は既存DOMをそのまま使用（すでにある前提） -->
-
     <div class="safePad" aria-hidden="true"></div>
   </div>
 
@@ -304,5 +410,3 @@
   <script src="app.js?v=15" defer></script>
 </body>
 </html>
-
-続いて二つ目を送るので待ってください
