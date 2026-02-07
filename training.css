@@ -1,9 +1,6 @@
 /* =========================================================
    training.css  (MOB BR / v15)
-   役割：
-   - 修行（トレーニング）画面専用スタイル
-   - 修行カード / 修行メニュー / 結果ポップアップ
-   - ui_training.js v15 専用
+   修行画面フルCSS（アイコン対応版）
 ========================================================= */
 
 /* =========================
@@ -24,7 +21,7 @@
 }
 
 /* =========================
-   HEADER / DATE
+   DATE
 ========================= */
 .trainingDate{
   display:flex;
@@ -34,7 +31,7 @@
 }
 
 /* =========================
-   CARDS WRAP
+   CARDS
 ========================= */
 #trainingCards{
   display: flex;
@@ -42,9 +39,6 @@
   gap: 18px;
 }
 
-/* =========================
-   EACH MEMBER CARD
-========================= */
 .trainingCard{
   background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.14);
@@ -59,8 +53,7 @@
 }
 
 /* =========================
-   TRAINING MENU LIST
-   ★ここが今回の本命
+   MENU GRID
 ========================= */
 .trainingMenuList{
   display: grid;
@@ -68,11 +61,14 @@
   gap: 10px;
 }
 
-/* 修行ボタン */
+/* =========================
+   MENU BUTTON
+========================= */
 .trainingMenuBtn{
+  position: relative;
   width: 100%;
   min-height: 58px;
-  padding: 8px 6px;
+  padding: 10px 8px 8px 8px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,.18);
   background: rgba(0,0,0,.35);
@@ -83,6 +79,7 @@
   touch-action: manipulation;
 }
 
+/* text */
 .trainingMenuBtn div:first-child{
   font-size: 14px;
   line-height: 1.1;
@@ -92,20 +89,71 @@
   opacity: .9;
 }
 
-/* 選択中 */
+/* selected */
 .trainingMenuBtn.selected{
   background: rgba(255,255,255,.85);
   color: #111;
   border-color: rgba(255,255,255,.9);
 }
 
-/* 押下 */
+/* press */
 .trainingMenuBtn:active{
   transform: translateY(1px);
   opacity: .95;
 }
 
-/* 7番目：総合演習を横長で配置 */
+/* =========================
+   ICON（疑似要素）
+========================= */
+.trainingMenuBtn::before{
+  content:"";
+  position:absolute;
+  top:6px;
+  left:6px;
+  width:18px;
+  height:18px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity:.9;
+}
+
+/* 1 射撃練習 */
+.trainingMenuBtn:nth-child(1)::before{
+  background-image: url("syageki.png");
+}
+
+/* 2 ダッシュ */
+.trainingMenuBtn:nth-child(2)::before{
+  background-image: url("dash.png");
+}
+
+/* 3 パズル */
+.trainingMenuBtn:nth-child(3)::before{
+  background-image: url("paz.png");
+}
+
+/* 4 実戦練習 */
+.trainingMenuBtn:nth-child(4)::before{
+  background-image: url("zitugi.png");
+}
+
+/* 5 滝修行 */
+.trainingMenuBtn:nth-child(5)::before{
+  background-image: url("taki.png");
+}
+
+/* 6 研究 */
+.trainingMenuBtn:nth-child(6)::before{
+  background-image: url("kenq.png");
+}
+
+/* 7 総合演習 */
+.trainingMenuBtn:nth-child(7)::before{
+  background-image: url("sougou.png");
+}
+
+/* 総合演習は横長 */
 .trainingMenuBtn:nth-child(7){
   grid-column: 2 / span 2;
 }
@@ -122,18 +170,17 @@
 }
 
 /* =========================
-   RESULT POPUP（動的生成）
+   RESULT POP
 ========================= */
 #trainingResultPop{
   box-shadow: 0 18px 40px rgba(0,0,0,.55);
 }
-
 #trainingResultListPop{
   margin-top: 12px;
 }
 
 /* =========================
-   WEEK POPUP
+   WEEK POP
 ========================= */
 #trainingWeekPop{
   box-shadow: 0 18px 40px rgba(0,0,0,.55);
