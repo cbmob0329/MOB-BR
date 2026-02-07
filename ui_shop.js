@@ -1,20 +1,22 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.js v14（SSR最高レア版 / CDP統一）
+  MOB BR - ui_shop.js v15（SSR最高レア版 / CDP統一 / G消費あり）
 
   役割：
-  - ショップ画面の制御
-  - 通常コレクションカードガチャ
-    ・1回 / 10連
-  - CDP（カードポイント）蓄積
-  - SR以上確定ガチャ（CDP100消費）
-  - 排出結果ログ（％や内部補正値は表示しない）
-  - 11枚目以降は即G変換（結果内にも表示）
+  - ショップ画面の制御（カードガチャのみ）
+  - 通常コレクションカードガチャ：1回 / 10連（G消費あり）
+  - CDP（カードポイント）蓄積：通常ガチャ1回ごとに +1（10連なら +10）
+  - SR以上確定ガチャ：CDP100消費（G消費なし）
+  - 排出結果ログ表示（確率・％は表示しない）
 
-  重要：
-  - 表記は CP ではなく CDP に統一
-  - 旧キー mobbr_cp が残っていても初回のみ mobbr_cdp へ移行
+  前提：
+  - storage.js 読み込み済み（window.MOBBR.storage）
+  - data_cards.js 読み込み済み（window.MOBBR.data.cards）
+  - index.html に shopScreen / btnGacha1 / btnGacha10 / btnGachaSR / shopResult 等のDOMが存在
+
+  注意：
+  - 所持カード一覧UIは ui_card.js 側
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -31,37 +33,54 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
-  // ===== keys =====
   const K = S.KEYS;
 
-  // 所持カード {id: count}
-  const K_CARDS = 'mobbr_cards';
+  // =========================
+  // 設定：ガチャのGコスト（いつでも数字だけ変えられる）
+  // =========================
+  const COST_G = {
+    one: 1000,
+    ten: 10000
+    // SR以上確定はCDPのみ消費（Gは0）
+  };
 
-  // CDP 統一キー（新）
-  const K_CDP = 'mobbr_cdp';
-  // 旧キー（移行用）
-  const K_CP_OLD = 'mobbr_cp';
+  // =========================
+  // localStorage keys
+  // =========================
+  const K_CARDS = 'mobbr_cards';   // 所持カード { id: count }
+  const K_CDP   = 'mobbr_cdp';     // CDP（統一）
 
-  // ===== DOM（既存HTML前提）=====
+  // 旧キー互換（過去にCPで保存していた場合の救済）
+  const K_OLD_CP = 'mobbr_cp';
+
+  // =========================
+  // DOM
+  // =========================
   const dom = {
     btnShop: $('btnShop'),
 
-    shopScreen: $('shopScreen'),          // あれば表示
+    shopScreen: $('shopScreen'),
     btnClose: $('btnCloseShop'),
 
+    // 表示（任意。なければ無視）
+    shopGold: $('shopGold'),
+    shopCDP: $('shopCDP'),
+
+    // ガチャボタン
     btnGacha1: $('btnGacha1'),
     btnGacha10: $('btnGacha10'),
     btnGachaSR: $('btnGachaSR'),
 
+    // 結果表示
     resultArea: $('shopResult'),
     resultList: $('shopResultList'),
     btnOk: $('btnShopOk')
   };
 
   // =========================
-  // storage helpers
+  // utils: storage
   // =========================
-  function getCards(){
+  function getOwnedCards(){
     try{
       return JSON.parse(localStorage.getItem(K_CARDS)) || {};
     }catch{
@@ -69,26 +88,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function setCards(cards){
-    localStorage.setItem(K_CARDS, JSON.stringify(cards));
+  function setOwnedCards(obj){
+    localStorage.setItem(K_CARDS, JSON.stringify(obj || {}));
   }
 
   function migrateCPtoCDPIfNeeded(){
-    // 旧 mobbr_cp があり、新 mobbr_cdp が無い場合だけ移行
-    const hasNew = localStorage.getItem(K_CDP);
-    const oldRaw = localStorage.getItem(K_CP_OLD);
-    if ((hasNew === null || hasNew === undefined) && oldRaw !== null && oldRaw !== undefined){
-      const v = Number(oldRaw) || 0;
+    const hasCDP = localStorage.getItem(K_CDP) != null;
+    const hasOld = localStorage.getItem(K_OLD_CP) != null;
+    if (!hasCDP && hasOld){
+      const v = Number(localStorage.getItem(K_OLD_CP)) || 0;
       localStorage.setItem(K_CDP, String(v));
-      // 旧キーは残してもいいが、混乱防止で削除する
-      localStorage.removeItem(K_CP_OLD);
+      // 旧キーは残しても良いが混乱回避で削除
+      localStorage.removeItem(K_OLD_CP);
     }
   }
 
   function getCDP(){
     migrateCPtoCDPIfNeeded();
-    const v = Number(localStorage.getItem(K_CDP));
-    return Number.isFinite(v) ? v : 0;
+    return Number(localStorage.getItem(K_CDP)) || 0;
   }
 
   function setCDP(v){
@@ -101,17 +118,43 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setCDP(v);
   }
 
+  function getGold(){
+    return S.getNum(K.gold, 0);
+  }
+
+  function setGold(v){
+    S.setNum(K.gold, Math.max(0, Number(v)||0));
+  }
+
+  // =========================
+  // utils: UI refresh
+  // =========================
+  function refreshTopUI(){
+    if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
+  }
+
+  function refreshShopHeader(){
+    if (dom.shopGold) dom.shopGold.textContent = `${getGold()}`;
+    if (dom.shopCDP) dom.shopCDP.textContent = `${getCDP()}`;
+  }
+
+  function setRecent(text){
+    S.setStr(K.recent, String(text || ''));
+    refreshTopUI();
+  }
+
   // =========================
   // gacha helpers
   // =========================
   function pickByRate(rateTable){
+    // rateTable: [{rarity:'R', p:0.85}, ...] 合計1.0想定
     const r = Math.random();
     let acc = 0;
     for (const row of rateTable){
       acc += row.p;
       if (r <= acc) return row.rarity;
     }
-    return rateTable[rateTable.length - 1].rarity;
+    return rateTable[rateTable.length - 1]?.rarity || 'R';
   }
 
   function pickCard(rarity){
@@ -120,86 +163,102 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return list[i];
   }
 
-  // 1枚加算（11枚目以降の変換含む）
-  // 戻り値：{ card, converted:boolean, convertedG:number }
-  function addCard(card){
-    const cards = getCards();
-    const cur = cards[card.id] || 0;
+  function addCardToInventory(card){
+    const owned = getOwnedCards();
+    const cur = owned[card.id] || 0;
 
-    const maxCount = DC.BONUS?.[card.rarity]?.maxCount ?? 10;
+    const rule = DC.BONUS?.[card.rarity];
+    const maxCount = rule?.maxCount ?? 10;
 
     if (cur >= maxCount){
       // 11枚目以降 → G変換
       const g = DC.CONVERT_G?.[card.rarity] ?? 0;
-      const gold = S.getNum(K.gold, 0);
-      S.setNum(K.gold, gold + g);
+      setGold(getGold() + g);
 
-      return { card, converted:true, convertedG:g };
+      // 中央ログ表示は別実装想定だが、最低限 recent に残す
+      setRecent(`余剰カードがGに変換された（+${g}G）`);
+      return { convertedG: g, added: false };
     }else{
-      cards[card.id] = cur + 1;
-      setCards(cards);
-      return { card, converted:false, convertedG:0 };
+      owned[card.id] = cur + 1;
+      setOwnedCards(owned);
+      return { convertedG: 0, added: true };
     }
   }
 
-  // =========================
-  // draw
-  // =========================
   function gachaOnce(rateTable){
     const rarity = pickByRate(rateTable);
     const card = pickCard(rarity);
-    const added = addCard(card);
-    return added;
+    const info = addCardToInventory(card);
+    return { card, info };
+  }
+
+  // =========================
+  // draws
+  // =========================
+  function ensureGold(cost){
+    const g = getGold();
+    if (g < cost){
+      alert('所持Gが足りません');
+      return false;
+    }
+    return true;
+  }
+
+  function spendGold(cost){
+    setGold(getGold() - cost);
   }
 
   function drawNormal(times){
-    const addedList = [];
-    let totalConvertedG = 0;
-    let convertedCount = 0;
+    const cost = (times === 10) ? COST_G.ten : COST_G.one;
+    if (!ensureGold(cost)) return null;
 
-    for (let i=0;i<times;i++){
-      const added = gachaOnce(DC.GACHA_RATE_NORMAL);
-      addedList.push(added.card);
+    // 先に消費（途中事故で無料にならないように）
+    spendGold(cost);
 
-      if (added.converted){
-        convertedCount++;
-        totalConvertedG += added.convertedG;
-      }
+    const results = [];
+    let convertedTotal = 0;
+
+    for (let i=0; i<times; i++){
+      const r = gachaOnce(DC.GACHA_RATE_NORMAL);
+      results.push(r.card);
+      convertedTotal += (r.info?.convertedG || 0);
     }
 
+    // CDP加算
     addCDP(times);
 
-    return {
-      cards: addedList,
-      cdpGain: times,
-      convertedCount,
-      convertedG: totalConvertedG
-    };
+    // 表示更新
+    refreshShopHeader();
+
+    return { cards: results, convertedTotal, gainedCDP: times };
   }
 
   function drawSRPlus(){
-    const cost = DC.CP?.exchangeCost ?? 100; // data_cards 側の値はそのまま利用
     const cdp = getCDP();
-    if (cdp < cost){
+    const need = DC.CP?.exchangeCost ?? 100;
+
+    if (cdp < need){
       alert('CDPが足りません');
       return null;
     }
 
-    setCDP(cdp - cost);
+    // CDP消費（Gは消費しない）
+    setCDP(cdp - need);
 
-    const added = gachaOnce(DC.GACHA_RATE_SR_PLUS);
+    const results = [];
+    let convertedTotal = 0;
 
-    return {
-      cards: [added.card],
-      cdpGain: 0,
-      cdpSpend: cost,
-      convertedCount: added.converted ? 1 : 0,
-      convertedG: added.converted ? added.convertedG : 0
-    };
+    const r = gachaOnce(DC.GACHA_RATE_SR_PLUS);
+    results.push(r.card);
+    convertedTotal += (r.info?.convertedG || 0);
+
+    refreshShopHeader();
+
+    return { cards: results, convertedTotal, spentCDP: need };
   }
 
   // =========================
-  // UI: result
+  // result UI
   // =========================
   function showResult(payload, title){
     if (!dom.resultArea || !dom.resultList) return;
@@ -207,13 +266,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.resultArea.style.display = 'block';
     dom.resultList.innerHTML = '';
 
-    // タイトル行
-    const top = document.createElement('div');
-    top.className = 'shopResultTop';
-    top.textContent = title;
-    dom.resultList.appendChild(top);
+    // タイトルはrecentに残す（文章演出）
+    setRecent(title);
 
-    // カード行
+    // 取得一覧
     payload.cards.forEach(c=>{
       const div = document.createElement('div');
       div.className = 'shopResultRow';
@@ -221,46 +277,33 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.resultList.appendChild(div);
     });
 
-    // CDP増加/消費
-    if (payload.cdpGain && payload.cdpGain > 0){
-      const div = document.createElement('div');
-      div.className = 'shopResultSub';
-      div.textContent = `CDP +${payload.cdpGain}`;
-      dom.resultList.appendChild(div);
+    // 追加情報（数値や確率は表示しない方針だが、CDPは仕様上UI表示OK）
+    // ここは控えめに文字だけ
+    const info = document.createElement('div');
+    info.className = 'shopResultRow';
+    info.style.opacity = '0.9';
+    info.style.fontSize = '13px';
+    info.style.marginTop = '10px';
+
+    const parts = [];
+    if (payload.gainedCDP){
+      parts.push(`CDP +${payload.gainedCDP}`);
     }
-    if (payload.cdpSpend && payload.cdpSpend > 0){
-      const div = document.createElement('div');
-      div.className = 'shopResultSub';
-      div.textContent = `CDP -${payload.cdpSpend}`;
-      dom.resultList.appendChild(div);
+    if (payload.spentCDP){
+      parts.push(`CDP -${payload.spentCDP}`);
     }
-
-    // 変換ログ（あれば）
-    if (payload.convertedCount > 0 && payload.convertedG > 0){
-      const div1 = document.createElement('div');
-      div1.className = 'shopResultSub';
-      div1.textContent = '余剰カードがGに変換された！';
-      dom.resultList.appendChild(div1);
-
-      const div2 = document.createElement('div');
-      div2.className = 'shopResultSub';
-      div2.textContent = `+${payload.convertedG}G`;
-      dom.resultList.appendChild(div2);
-
-      // 中央ログにも残す（G変換だけ中央表示ルールに合わせる）
-      S.setStr(K.recent, `余剰カードがGに変換された（+${payload.convertedG}G）`);
-    }else{
-      // 通常の最近ログ
-      S.setStr(K.recent, title);
+    if (payload.convertedTotal){
+      parts.push(`余剰→G変換あり`);
     }
+    info.textContent = parts.length ? `（${parts.join(' / ')}）` : '';
+    if (info.textContent) dom.resultList.appendChild(info);
 
-    // OK
     if (dom.btnOk){
       dom.btnOk.onclick = closeResult;
     }
 
-    // メイン画面更新
-    if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
+    refreshShopHeader();
+    refreshTopUI();
   }
 
   function closeResult(){
@@ -272,17 +315,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================
   function open(){
     migrateCPtoCDPIfNeeded();
+    refreshShopHeader();
+    closeResult();
+
     if (dom.shopScreen){
       dom.shopScreen.classList.add('show');
+      dom.shopScreen.setAttribute('aria-hidden', 'false');
     }else{
-      S.setStr(K.recent, 'ショップを開いた');
-      if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
+      setRecent('ショップを開いた');
     }
   }
 
   function close(){
+    closeResult();
     if (dom.shopScreen){
       dom.shopScreen.classList.remove('show');
+      dom.shopScreen.setAttribute('aria-hidden', 'true');
     }
   }
 
@@ -296,6 +344,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnGacha1){
       dom.btnGacha1.addEventListener('click', ()=>{
         const payload = drawNormal(1);
+        if (!payload) return;
         showResult(payload, 'コレクションカードを1枚獲得！');
       });
     }
@@ -303,6 +352,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnGacha10){
       dom.btnGacha10.addEventListener('click', ()=>{
         const payload = drawNormal(10);
+        if (!payload) return;
         showResult(payload, 'コレクションカードを10枚獲得！');
       });
     }
@@ -310,14 +360,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnGachaSR){
       dom.btnGachaSR.addEventListener('click', ()=>{
         const payload = drawSRPlus();
-        if (payload){
-          showResult(payload, 'SR以上確定！コレクションカードを獲得！');
-        }
+        if (!payload) return;
+        showResult(payload, 'SR以上確定！コレクションカードを獲得！');
       });
-    }
-
-    if (dom.btnOk){
-      dom.btnOk.addEventListener('click', closeResult);
     }
   }
 
@@ -326,7 +371,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   window.MOBBR.initShopUI = initShopUI;
-  window.MOBBR.ui.shop = { open, close };
+  window.MOBBR.ui.shop = { open, close, refreshShopHeader };
 
   document.addEventListener('DOMContentLoaded', initShopUI);
 })();
