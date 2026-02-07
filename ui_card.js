@@ -1,17 +1,18 @@
 'use strict';
 
 /*
-  MOB BR - ui_card.js v14（data_cards.js v14準拠）
+  MOB BR - ui_card.js v15（SSR最高レア版 / 補正%表示 / ID順 / プレビュー小さめ）
 
   役割：
   - カードコレクション画面の制御
-  - 所持カードを ID順で一覧表示（テキスト）
-  - レア度 / カード名 / 重ね数（％は表示しない）
-  - カードタップでカード画像を表示
+  - 所持カードを ID順で一覧表示（R→SR→SSR、番号昇順）
+  - レア度 / カード名 / 重ね数 / 補正% を表示（←今回追加）
+  - 行タップでカード画像プレビュー表示（←サイズ小さめ）
 
   前提：
   - storage.js 読み込み済み
-  - data_cards.js 読み込み済み（window.MOBBR.data.cards）
+  - data_cards.js 読み込み済み
+  - index.html に cardScreen / cardList / cardPreview / cardPreviewImg などのDOMがある
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -23,16 +24,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const S  = window.MOBBR?.storage;
   const DC = window.MOBBR?.data?.cards;
 
-  if (!S || !DC || typeof DC.getAll !== 'function'){
-    console.warn('[ui_card] storage.js / data_cards.js not found or invalid');
+  if (!S || !DC){
+    console.warn('[ui_card] storage.js / data_cards.js not found');
     return;
   }
 
   // ===== storage key =====
-  // 所持データ：{ "R1": 2, "SR3": 1, ... }
-  const K_CARDS = 'mobbr_cards';
+  const K_CARDS = 'mobbr_cards'; // 所持カード {id: count}
 
-  // ===== DOM（HTMLに存在する前提）=====
+  // ===== DOM =====
   const dom = {
     btnCard: $('btnCard'),
 
@@ -47,10 +47,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   };
 
   // ===== utils =====
-  function getOwned(){
+  function getCards(){
     try{
-      const o = JSON.parse(localStorage.getItem(K_CARDS)) || {};
-      return (o && typeof o === 'object') ? o : {};
+      return JSON.parse(localStorage.getItem(K_CARDS)) || {};
     }catch{
       return {};
     }
@@ -60,31 +59,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.list) dom.list.innerHTML = '';
   }
 
-  function parseId(id){
-    // "R38" / "SR12" / "SSR24" -> {prefix:'R'|'SR'|'SSR', num:38}
-    const m = String(id).match(/^(SSR|SR|R)(\d+)$/);
-    if (!m) return { prefix:'', num: 0 };
-    return { prefix: m[1], num: Number(m[2]) || 0 };
-  }
-
-  function idOrderKey(id){
-    const p = parseId(id);
-    const order = { R: 1, SR: 2, SSR: 3 };
-    return { g: order[p.prefix] || 99, n: p.num || 0 };
-  }
-
-  function sortById(a, b){
-    const A = idOrderKey(a.id);
-    const B = idOrderKey(b.id);
-    if (A.g !== B.g) return A.g - B.g;
-    return A.n - B.n;
-  }
-
-  function safeImagePath(card){
-    // data_cards.js v14 は imagePath を付与済み
-    if (card && card.imagePath) return card.imagePath;
-    if (card && card.image) return `cards/${card.image}`;
-    return '';
+  function fmtPercent(p){
+    // 例: 0.27% -> "0.27%"
+    // 小数点2桁目まで（必要なら変更可）
+    const v = Number(p) || 0;
+    return `${v.toFixed(2)}%`;
   }
 
   // ===== render =====
@@ -93,14 +72,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     clearList();
 
-    const owned = getOwned();
-    const all = DC.getAll(); // これが唯一の正
+    const owned = getCards();
+    const all = DC.getAll ? DC.getAll() : [];
 
     const rows = [];
     for (const card of all){
-      const cnt = Number(owned[card.id] || 0);
-      if (!Number.isFinite(cnt) || cnt <= 0) continue;
-      rows.push({ ...card, count: cnt });
+      const cnt = owned[card.id] || 0;
+      if (cnt <= 0) continue;
+
+      // 補正%（最大10枚まで有効）
+      const bonusP = DC.calcSingleCardPercent
+        ? DC.calcSingleCardPercent(card.rarity, cnt)
+        : 0;
+
+      rows.push({
+        id: card.id,
+        name: card.name,
+        rarity: card.rarity,
+        imagePath: card.imagePath,
+        count: cnt,
+        bonusP
+      });
     }
 
     if (rows.length === 0){
@@ -111,21 +103,36 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // 念のため ID順に揃える（data_cards側がソート済みでも安全策）
-    rows.sort(sortById);
+    // data_cards.js側で ID順にソート済みの getAll を使っているので、
+    // rows はその順になる想定だが、念のため id の並びを維持して再整列する。
+    const orderIndex = {};
+    all.forEach((c,i)=>{ orderIndex[c.id] = i; });
+    rows.sort((a,b)=>(orderIndex[a.id] ?? 999999) - (orderIndex[b.id] ?? 999999));
 
     rows.forEach(c=>{
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'cardRow';
 
+      // 左：レア度＋名前
       const left = document.createElement('div');
       left.className = 'cardRowLeft';
-      left.textContent = `【${c.rarity}】${c.name}（${c.id}）`;
+      left.textContent = `【${c.rarity}】${c.name}`;
 
+      // 右：×枚数 ＋ 補正%
       const right = document.createElement('div');
       right.className = 'cardRowRight';
-      right.textContent = `×${c.count}`;
+
+      const cnt = document.createElement('div');
+      cnt.className = 'cardRowCount';
+      cnt.textContent = `×${c.count}`;
+
+      const bonus = document.createElement('div');
+      bonus.className = 'cardRowBonus';
+      bonus.textContent = `+${fmtPercent(c.bonusP)}`;
+
+      right.appendChild(cnt);
+      right.appendChild(bonus);
 
       row.appendChild(left);
       row.appendChild(right);
@@ -142,13 +149,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function showPreview(card){
     if (!dom.preview || !dom.previewImg) return;
 
-    const path = safeImagePath(card);
-    if (!path){
-      alert('画像パスが見つかりません');
-      return;
-    }
+    dom.previewImg.src = card.imagePath || '';
+    dom.previewImg.alt = card.name || 'カード';
 
-    dom.previewImg.src = path;
+    // ★小さめ表示（JS側で直接指定して確実に効かせる）
+    dom.previewImg.style.width = 'min(320px, 72vw)';
+    dom.previewImg.style.height = 'auto';
+    dom.previewImg.style.display = 'block';
+    dom.previewImg.style.margin = '10px auto 0';
+    dom.previewImg.style.borderRadius = '12px';
+
     dom.preview.style.display = 'block';
   }
 
@@ -165,8 +175,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.screen.classList.add('show');
       dom.screen.setAttribute('aria-hidden', 'false');
     }else{
-      // cardScreenが無い場合はログだけ
-      if (S?.KEYS?.recent) S.setStr(S.KEYS.recent, 'カードコレクションを確認した');
+      // 画面が無い場合でもrecentだけ残す
+      S.setStr(S.KEYS.recent, 'カードコレクションを確認した');
       if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
     }
   }
@@ -184,8 +194,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnCard) dom.btnCard.addEventListener('click', open);
     if (dom.btnClose) dom.btnClose.addEventListener('click', close);
     if (dom.btnPreviewClose) dom.btnPreviewClose.addEventListener('click', closePreview);
-
-    // 画面外タップでプレビュー閉じたい等があればCSS/HTML側で対応（ここでは触らない）
   }
 
   function initCardUI(){
