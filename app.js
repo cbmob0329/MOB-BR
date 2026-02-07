@@ -1,18 +1,18 @@
 'use strict';
 
 /*
-  MOB BR - app.js v16（フル）
-
+  MOB BR - app.js v17（フル）
   役割：
   - タイトル → メイン遷移制御
   - 分割JSの順序ロード
   - 各UI init の一元管理
 
-  v16 変更点：
-  - ui_schedule.js を loadModules / boot に追加
+  v17 変更点：
+  - ui_shop.js を分割（ui_shop.core.js / ui_shop.gacha.js / ui_shop.catalog.js）
+  - ui_schedule.js 継続
 */
 
-const APP_VER = 16;
+const APP_VER = 17;
 
 // ===== DOM helpers =====
 const $ = (id) => document.getElementById(id);
@@ -85,9 +85,13 @@ async function loadModules(){
 
     // cards UI
     `ui_card.js${v}`,
-    `ui_shop.js${v}`,
 
-    // schedule UI（NEW）
+    // shop UI（SPLIT）
+    `ui_shop.core.js${v}`,
+    `ui_shop.gacha.js${v}`,
+    `ui_shop.catalog.js${v}`,
+
+    // schedule UI
     `ui_schedule.js${v}`
   ];
 
@@ -130,12 +134,12 @@ async function bootAfterNext(){
     window.MOBBR.initCardUI();
   }
 
-  // shop
+  // shop（coreが initShopUI を持つ）
   if (window.MOBBR?.initShopUI){
     window.MOBBR.initShopUI();
   }
 
-  // schedule（NEW）
+  // schedule
   if (window.MOBBR?.initScheduleUI){
     window.MOBBR.initScheduleUI();
   }
