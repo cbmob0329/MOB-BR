@@ -1,24 +1,23 @@
 'use strict';
 
 /*
-  MOB BR - ui_main.js v16（フル）
+  MOB BR - ui_main.js v17（フル）
 
   目的：
   - メイン画面の表示/タップ処理
-  - TEAM/TRAINING/SHOP/CARD のルーティングを「各UIの open() 優先」に統一
+  - TEAM/TRAINING/SHOP/CARD/SCHEDULE のルーティングを「各UIの open() 優先」に統一
   - modalBack（透明フタ）が残ってボタンが押せなくなる事故を徹底排除
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
 
-  v16 変更点：
-  - modalBack を show/hide 時に pointer-events も必ず制御（クリック殺し対策）
-  - safeOpenByUI：DOM不足や open 未実装時に console.warn を出して原因特定しやすく
-  - teamScreen / trainingScreen のDOM直開きルートを強化（aria-hidden更新も統一）
+  v17 変更点：
+  - SCHEDULE を safeOpenByUI に追加（scheduleScreen を開けるように）
+  - scheduleScreen / btnCloseSchedule のDOM直開きルート追加
 */
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v16';
+  const VERSION = 'v17';
 
   // ===== Storage Keys（storage.js / ui_team.js と揃える）=====
   const K = {
@@ -125,7 +124,11 @@ window.MOBBR = window.MOBBR || {};
       btnCloseShop: $('btnCloseShop'),
 
       cardScreen: $('cardScreen'),
-      btnCloseCard: $('btnCloseCard')
+      btnCloseCard: $('btnCloseCard'),
+
+      // ★schedule
+      scheduleScreen: $('scheduleScreen'),
+      btnCloseSchedule: $('btnCloseSchedule')
     };
   }
 
@@ -190,7 +193,7 @@ window.MOBBR = window.MOBBR || {};
     if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
   }
 
-  // ===== modal back helper（v16：pointer-events まで制御）=====
+  // ===== modal back helper（pointer-events まで制御）=====
   function showBack(){
     if (!ui.modalBack) return;
     ui.modalBack.style.display = 'block';
@@ -327,6 +330,12 @@ window.MOBBR = window.MOBBR || {};
       return openScreenEl(ui.cardScreen, 'cardScreen');
     }
 
+    // ★SCHEDULE追加
+    if (key === 'schedule'){
+      if (u?.schedule?.open){ u.schedule.open(); return true; }
+      return openScreenEl(ui.scheduleScreen, 'scheduleScreen');
+    }
+
     console.warn(`[ui_main ${VERSION}] unknown route: ${key}`);
     return false;
   }
@@ -342,7 +351,7 @@ window.MOBBR = window.MOBBR || {};
     if (bound) return;
     bound = true;
 
-    // modalBack：押して閉じない（誤爆防止）＋クリック殺し対策は hideBack/showBack 側で制御
+    // modalBack：押して閉じない（誤爆防止）
     if (ui.modalBack){
       ui.modalBack.addEventListener('click', (e) => e.preventDefault(), { passive:false });
     }
@@ -380,7 +389,7 @@ window.MOBBR = window.MOBBR || {};
 
     if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => {
       render();
-      if (!safeOpenByUI('training')) setRecent('育成：画面DOMが見つかりません（index.htmlを確認）');
+      if (!safeOpenByUI('training')) setRecent('修行：画面DOMが見つかりません（index.htmlを確認）');
     });
 
     if (ui.btnShop) ui.btnShop.addEventListener('click', () => {
@@ -393,8 +402,13 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('card')) setRecent('カード：画面DOMが見つかりません（index.htmlを確認）');
     });
 
+    // ★SCHEDULE：開く
+    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => {
+      render();
+      if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.htmlを確認）');
+    });
+
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
-    if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
 
     // ===== DOM直開き保険の閉じる =====
     if (ui.btnCloseTeam && ui.teamScreen){
@@ -408,6 +422,11 @@ window.MOBBR = window.MOBBR || {};
     }
     if (ui.btnCloseCard && ui.cardScreen){
       ui.btnCloseCard.addEventListener('click', () => closeScreenEl(ui.cardScreen));
+    }
+
+    // ★schedule close
+    if (ui.btnCloseSchedule && ui.scheduleScreen){
+      ui.btnCloseSchedule.addEventListener('click', () => closeScreenEl(ui.scheduleScreen));
     }
   }
 
