@@ -3,16 +3,10 @@
 /*
   MOB BR - ui_card.js v15（SSR最高レア版 / 補正%表示 / ID順 / プレビュー小さめ）
 
-  役割：
-  - カードコレクション画面の制御
-  - 所持カードを ID順で一覧表示（R→SR→SSR、番号昇順）
-  - レア度 / カード名 / 重ね数 / 補正% を表示（←今回追加）
-  - 行タップでカード画像プレビュー表示（←サイズ小さめ）
-
-  前提：
-  - storage.js 読み込み済み
-  - data_cards.js 読み込み済み
-  - index.html に cardScreen / cardList / cardPreview / cardPreviewImg などのDOMがある
+  修正（今回）：
+  - ガチャ側とキー統一：mobbr_cards を正として扱う
+  - 旧キー mobbr_cardsOwned しか残っていない人を救済（自動で mobbr_cards に移行）
+  - 補正%表示が 0.05% になっていたので、実際の仕様（0.05=5%）として×100して表示
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -30,7 +24,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== storage key =====
-  const K_CARDS = 'mobbr_cards'; // 所持カード {id: count}
+  const K_CARDS = 'mobbr_cards';       // 正：所持カード {id: count}
+  const K_OLD   = 'mobbr_cardsOwned';  // 旧：ガチャ側が使っていたキー（救済用）
 
   // ===== DOM =====
   const dom = {
@@ -47,12 +42,38 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   };
 
   // ===== utils =====
-  function getCards(){
+  function readJSON(key){
     try{
-      return JSON.parse(localStorage.getItem(K_CARDS)) || {};
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
     }catch{
-      return {};
+      return null;
     }
+  }
+  function writeJSON(key, obj){
+    localStorage.setItem(key, JSON.stringify(obj || {}));
+  }
+
+  function migrateIfNeeded(){
+    const cur = readJSON(K_CARDS) || {};
+    const hasCur = Object.keys(cur).length > 0;
+
+    if (hasCur) return;
+
+    const old = readJSON(K_OLD) || {};
+    const hasOld = Object.keys(old).length > 0;
+
+    if (!hasOld) return;
+
+    // 旧→新へ移行
+    writeJSON(K_CARDS, old);
+    // 旧キーは残しても害はないけど、混乱防止で消したい場合は下を有効化
+    // localStorage.removeItem(K_OLD);
+  }
+
+  function getCards(){
+    migrateIfNeeded();
+    return readJSON(K_CARDS) || {};
   }
 
   function clearList(){
@@ -60,10 +81,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function fmtPercent(p){
-    // 例: 0.27% -> "0.27%"
-    // 小数点2桁目まで（必要なら変更可）
+    // data_cards.js は 0.05 = 5% のような「小数」で持っている
     const v = Number(p) || 0;
-    return `${v.toFixed(2)}%`;
+    return `${(v * 100).toFixed(2)}%`;
   }
 
   // ===== render =====
@@ -77,10 +97,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const rows = [];
     for (const card of all){
-      const cnt = owned[card.id] || 0;
+      const cnt = Number(owned[card.id] || 0);
       if (cnt <= 0) continue;
 
-      // 補正%（最大10枚まで有効）
       const bonusP = DC.calcSingleCardPercent
         ? DC.calcSingleCardPercent(card.rarity, cnt)
         : 0;
@@ -103,8 +122,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // data_cards.js側で ID順にソート済みの getAll を使っているので、
-    // rows はその順になる想定だが、念のため id の並びを維持して再整列する。
     const orderIndex = {};
     all.forEach((c,i)=>{ orderIndex[c.id] = i; });
     rows.sort((a,b)=>(orderIndex[a.id] ?? 999999) - (orderIndex[b.id] ?? 999999));
@@ -114,12 +131,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       row.type = 'button';
       row.className = 'cardRow';
 
-      // 左：レア度＋名前
       const left = document.createElement('div');
       left.className = 'cardRowLeft';
       left.textContent = `【${c.rarity}】${c.name}`;
 
-      // 右：×枚数 ＋ 補正%
       const right = document.createElement('div');
       right.className = 'cardRowRight';
 
@@ -152,7 +167,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.previewImg.src = card.imagePath || '';
     dom.previewImg.alt = card.name || 'カード';
 
-    // ★小さめ表示（JS側で直接指定して確実に効かせる）
     dom.previewImg.style.width = 'min(320px, 72vw)';
     dom.previewImg.style.height = 'auto';
     dom.previewImg.style.display = 'block';
@@ -175,7 +189,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.screen.classList.add('show');
       dom.screen.setAttribute('aria-hidden', 'false');
     }else{
-      // 画面が無い場合でもrecentだけ残す
       S.setStr(S.KEYS.recent, 'カードコレクションを確認した');
       if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
     }
