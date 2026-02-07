@@ -1,19 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.catalog.js v17（フル / 育成アイテム + コーチスキル購入）
+  MOB BR - ui_shop.catalog.js v17（フル / 修正版）
 
-  仕様：
-  - 入口は core が作る shop.pngホーム（4ボタン）
-  - 育成アイテム：
-      購入→確認→メンバー選択→対象EXP+5→結果→OKでショップ自動クローズ（B）
-  - コーチスキル：
-      ショップでは「実際の効果」「コーチのセリフ」は表示しない
-      名前 + 価格のみ表示 / 購入→確認→「〇を購入した！」表示
-      所持は mobbr_coachSkillsOwned に加算
-
-  依存：
-  - ui_shop.core.js が先に読み込まれている（app.jsの順序でOK）
+  修正内容：
+  - 購入ボタンのクリックが確実に発火するよう保険（stopPropagation）
+  - 価格に応じたdisabled判定を毎回最新Gで行う
+  - 確認ポップは core 側で最前面化済み（暗いのに何も出ない対策）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -29,31 +22,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const DP = core.DP || null;
   const K  = core.K;
 
-  // ===== keys =====
   const KEY_COACH_SKILLS_OWNED = 'mobbr_coachSkillsOwned';
 
-  // ===== items (EXP+5) =====
   const TRAINING_ITEMS = [
-    { id:'hp',      stat:'hp',      label:'体力',     name:'タフネス極意の巻物', price:20000 },
-    { id:'mental',  stat:'mental',  label:'メンタル', name:'感動的な絵本',       price:10000 },
-    { id:'aim',     stat:'aim',     label:'エイム',   name:'秘伝の目薬',         price:20000 },
-    { id:'agi',     stat:'agi',     label:'敏捷性',   name:'カモシカのステーキ', price:10000 },
-    { id:'tech',    stat:'tech',    label:'テクニック', name:'高級なそろばん',   price:10000 },
-    { id:'support', stat:'support', label:'サポート', name:'サポートディスク',   price:10000 }
+    { id:'hp',      stat:'hp',      label:'体力',       name:'タフネス極意の巻物',  price:20000 },
+    { id:'mental',  stat:'mental',  label:'メンタル',   name:'感動的な絵本',        price:10000 },
+    { id:'aim',     stat:'aim',     label:'エイム',     name:'秘伝の目薬',          price:20000 },
+    { id:'agi',     stat:'agi',     label:'敏捷性',     name:'カモシカのステーキ',  price:10000 },
+    { id:'tech',    stat:'tech',    label:'テクニック', name:'高級なそろばん',      price:10000 },
+    { id:'support', stat:'support', label:'サポート',   name:'サポートディスク',    price:10000 }
   ];
 
-  // ===== coach skills (名前+価格のみ表示) =====
   const COACH_SKILLS = [
-    { id:'tactics_note',      name:'戦術ノート',       price:500   },
-    { id:'mental_care',       name:'メンタル整備',     price:500   },
-    { id:'clutch_endgame',    name:'終盤の底力',       price:800   },
-    { id:'clearing',          name:'クリアリング徹底', price:1000  },
-    { id:'score_mind',        name:'スコア意識',       price:3000  },
-    { id:'igl_call',          name:'IGL強化コール',     price:5000  },
-    { id:'protagonist_move',  name:'主人公ムーブ',     price:50000 }
+    { id:'tactics_note',      name:'戦術ノート',        price:500   },
+    { id:'mental_care',       name:'メンタル整備',      price:500   },
+    { id:'clutch_endgame',    name:'終盤の底力',        price:800   },
+    { id:'clearing',          name:'クリアリング徹底',  price:1000  },
+    { id:'score_mind',        name:'スコア意識',        price:3000  },
+    { id:'igl_call',          name:'IGL強化コール',      price:5000  },
+    { id:'protagonist_move',  name:'主人公ムーブ',      price:50000 }
   ];
 
-  // ===== utils =====
   function readJSON(key, def){
     try{
       const raw = localStorage.getItem(key);
@@ -64,14 +53,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
   function writeJSON(key, obj){
     localStorage.setItem(key, JSON.stringify(obj));
-  }
-
-  function getMemberNames(){
-    return {
-      A: localStorage.getItem(K.m1) || 'A',
-      B: localStorage.getItem(K.m2) || 'B',
-      C: localStorage.getItem(K.m3) || 'C'
-    };
   }
 
   function readPlayerTeam(){
@@ -87,7 +68,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       { id:'C', slot:3, name:(localStorage.getItem(K.m3)||'C'), exp:{}, lv:{} }
     ]};
   }
-
   function writePlayerTeam(team){
     localStorage.setItem(K.playerTeam, JSON.stringify(team));
   }
@@ -140,8 +120,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     writeJSON(KEY_COACH_SKILLS_OWNED, obj || {});
   }
 
-  // ===== UI builders =====
-  function makeListRow(leftTitle, leftSub, priceG, onBuy){
+  function makeListRow(title, sub, priceG, onBuy){
     const row = document.createElement('div');
     row.className = 'shopItemRow';
     row.style.display = 'flex';
@@ -165,15 +144,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     t.style.whiteSpace = 'nowrap';
     t.style.overflow = 'hidden';
     t.style.textOverflow = 'ellipsis';
-    t.textContent = leftTitle;
+    t.textContent = title;
 
     left.appendChild(t);
 
-    if (leftSub){
+    if (sub){
       const s = document.createElement('div');
       s.style.fontSize = '12px';
       s.style.opacity = '0.9';
-      s.textContent = leftSub;
+      s.textContent = sub;
       left.appendChild(s);
     }
 
@@ -193,8 +172,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     btn.style.padding = '10px 12px';
     btn.style.fontWeight = '1000';
     btn.textContent = '購入';
+
+    // ★毎回最新の所持Gで判定
     btn.disabled = (core.getGold() < priceG);
-    btn.addEventListener('click', onBuy);
+
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      onBuy();
+    });
 
     right.appendChild(p);
     right.appendChild(btn);
@@ -211,12 +197,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     btn.type = 'button';
     btn.className = 'closeBtn';
     btn.textContent = '閉じる';
-    btn.addEventListener('click', onClose);
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    });
     wrap.appendChild(btn);
     return wrap;
   }
 
-  // ===== open item shop =====
   function openItemShop(){
     core.renderMeta();
     core.showDynamic('育成アイテム');
@@ -246,7 +235,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               const r = applyExpPlus(team, memberId, item.stat, 5);
               writePlayerTeam(team);
 
-              // UI更新
               if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
               if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
 
@@ -257,7 +245,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
                 `${memberName} は ${item.label}の能力経験値が5上がった！${lvText}`,
                 `EXP ${r.beforeExp}/20 → ${r.afterExp}/20`,
                 ()=>{
-                  // ★B：ショップ自体を閉じる
+                  // B：ショップ自体を閉じる
                   core.close();
                 }
               );
@@ -273,7 +261,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     core.setRecent('ショップ：育成アイテムを開いた');
   }
 
-  // ===== open coach shop =====
   function openCoachShop(){
     core.renderMeta();
     core.showDynamic('コーチスキル');
@@ -311,7 +298,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               `${skill.name} を購入した！`,
               `所持：${o[skill.id]}`,
               ()=>{
-                // コーチスキルは「閉じない」：そのまま一覧更新
+                // 一覧を更新して続行
                 openCoachShop();
               }
             );
@@ -326,7 +313,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     core.setRecent('ショップ：コーチスキルを開いた');
   }
 
-  // ===== register to core =====
   core.registerCatalog({
     openItemShop,
     openCoachShop
