@@ -1,12 +1,13 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.catalog.js v17（フル / 修正版）
-
-  修正内容：
-  - 購入ボタンのクリックが確実に発火するよう保険（stopPropagation）
-  - 価格に応じたdisabled判定を毎回最新Gで行う
-  - 確認ポップは core 側で最前面化済み（暗いのに何も出ない対策）
+  MOB BR - ui_shop.catalog.js v17（フル）
+  - 育成アイテム購入：
+    選択 → 確認 → メンバー選択 → 対象能力EXP +5 → 結果表示 → 自動でショップメニューへ戻る
+  - コーチスキル購入：
+    スキル選択 → 確認 → 購入完了表示（効果/セリフは表示しない）→ メニューへ戻る
+  - confirm()は一切使わない（core.confirmPop/resultPopのみ）
+  - 「購入できない」問題：クリック伝播停止＋modalBack制御をcoreに統一
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -19,28 +20,29 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
-  const DP = core.DP || null;
-  const K  = core.K;
+  const K = core.K;
+  const DP = core.DP;
 
-  const KEY_COACH_SKILLS_OWNED = 'mobbr_coachSkillsOwned';
-
+  // ===== 育成アイテム（EXP+5）=====
   const TRAINING_ITEMS = [
-    { id:'hp',      stat:'hp',      label:'体力',       name:'タフネス極意の巻物',  price:20000 },
-    { id:'mental',  stat:'mental',  label:'メンタル',   name:'感動的な絵本',        price:10000 },
-    { id:'aim',     stat:'aim',     label:'エイム',     name:'秘伝の目薬',          price:20000 },
-    { id:'agi',     stat:'agi',     label:'敏捷性',     name:'カモシカのステーキ',  price:10000 },
-    { id:'tech',    stat:'tech',    label:'テクニック', name:'高級なそろばん',      price:10000 },
-    { id:'support', stat:'support', label:'サポート',   name:'サポートディスク',    price:10000 }
+    { id:'hp',      stat:'hp',      label:'体力',    name:'タフネス極意の巻物', price:20000 },
+    { id:'mental',  stat:'mental',  label:'メンタル',name:'感動的な絵本',       price:10000 },
+    { id:'aim',     stat:'aim',     label:'エイム',  name:'秘伝の目薬',         price:20000 },
+    { id:'agi',     stat:'agi',     label:'敏捷性',  name:'カモシカのステーキ', price:10000 },
+    { id:'tech',    stat:'tech',    label:'テクニック',name:'高級なそろばん',   price:10000 },
+    { id:'support', stat:'support', label:'サポート',name:'サポートディスク',   price:10000 }
   ];
 
+  // ===== コーチスキル（購入のみ）=====
+  const KEY_COACH_OWNED = 'mobbr_coachSkillsOwned';
   const COACH_SKILLS = [
-    { id:'tactics_note',      name:'戦術ノート',        price:500   },
-    { id:'mental_care',       name:'メンタル整備',      price:500   },
-    { id:'clutch_endgame',    name:'終盤の底力',        price:800   },
-    { id:'clearing',          name:'クリアリング徹底',  price:1000  },
-    { id:'score_mind',        name:'スコア意識',        price:3000  },
-    { id:'igl_call',          name:'IGL強化コール',      price:5000  },
-    { id:'protagonist_move',  name:'主人公ムーブ',      price:50000 }
+    { id:'tactics_note',     name:'戦術ノート',       price:500 },
+    { id:'mental_care',      name:'メンタル整備',     price:500 },
+    { id:'clutch_endgame',   name:'終盤の底力',       price:800 },
+    { id:'clearing',         name:'クリアリング徹底', price:1000 },
+    { id:'score_mind',       name:'スコア意識',       price:3000 },
+    { id:'igl_call',         name:'IGL強化コール',     price:5000 },
+    { id:'protagonist_move', name:'主人公ムーブ',     price:50000 }
   ];
 
   function readJSON(key, def){
@@ -52,7 +54,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
   function writeJSON(key, obj){
-    localStorage.setItem(key, JSON.stringify(obj));
+    localStorage.setItem(key, JSON.stringify(obj || {}));
+  }
+
+  // ===== チーム読み書き（EXP/LV）=====
+  function getStr(key, def){
+    const v = localStorage.getItem(key);
+    return (v === null || v === undefined || v === '') ? def : v;
   }
 
   function readPlayerTeam(){
@@ -61,13 +69,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const team = raw ? JSON.parse(raw) : null;
       if (team && Array.isArray(team.members)) return team;
     }catch(e){}
+
     if (DP?.buildDefaultTeam) return DP.buildDefaultTeam();
-    return { members:[
-      { id:'A', slot:1, name:(localStorage.getItem(K.m1)||'A'), exp:{}, lv:{} },
-      { id:'B', slot:2, name:(localStorage.getItem(K.m2)||'B'), exp:{}, lv:{} },
-      { id:'C', slot:3, name:(localStorage.getItem(K.m3)||'C'), exp:{}, lv:{} }
-    ]};
+
+    // fallback
+    return {
+      members:[
+        { id:'A', slot:1, name:getStr(K.m1,'A'), exp:{}, lv:{} },
+        { id:'B', slot:2, name:getStr(K.m2,'B'), exp:{}, lv:{} },
+        { id:'C', slot:3, name:getStr(K.m3,'C'), exp:{}, lv:{} }
+      ]
+    };
   }
+
   function writePlayerTeam(team){
     localStorage.setItem(K.playerTeam, JSON.stringify(team));
   }
@@ -88,7 +102,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function applyExpPlus(team, memberId, stat, amount){
-    const amt = Number(amount) || 0;
     const mem = (team.members || []).find(m => m.id === memberId);
     if (!mem) return { lvUp:false, beforeExp:0, afterExp:0, beforeLv:1, afterLv:1 };
 
@@ -98,7 +111,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const beforeExp = mem.exp[stat] || 0;
     const beforeLv  = mem.lv[stat]  || 1;
 
-    mem.exp[stat] = (mem.exp[stat] || 0) + amt;
+    mem.exp[stat] = (mem.exp[stat] || 0) + (Number(amount) || 0);
 
     let lvUp = false;
     while (mem.exp[stat] >= 20){
@@ -107,126 +120,112 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       lvUp = true;
     }
 
-    const afterExp = mem.exp[stat] || 0;
-    const afterLv  = mem.lv[stat]  || 1;
-
-    return { lvUp, beforeExp, afterExp, beforeLv, afterLv };
+    return {
+      lvUp,
+      beforeExp,
+      afterExp: mem.exp[stat] || 0,
+      beforeLv,
+      afterLv: mem.lv[stat] || 1
+    };
   }
 
-  function readCoachOwned(){
-    return readJSON(KEY_COACH_SKILLS_OWNED, {});
-  }
-  function writeCoachOwned(obj){
-    writeJSON(KEY_COACH_SKILLS_OWNED, obj || {});
-  }
-
-  function makeListRow(title, sub, priceG, onBuy){
-    const row = document.createElement('div');
-    row.className = 'shopItemRow';
-    row.style.display = 'flex';
-    row.style.justifyContent = 'space-between';
-    row.style.alignItems = 'center';
-    row.style.gap = '10px';
-    row.style.padding = '10px';
-    row.style.borderRadius = '12px';
-    row.style.background = 'rgba(255,255,255,.08)';
-    row.style.border = '1px solid rgba(255,255,255,.12)';
-
-    const left = document.createElement('div');
-    left.style.display = 'flex';
-    left.style.flexDirection = 'column';
-    left.style.gap = '4px';
-    left.style.minWidth = '0';
-
-    const t = document.createElement('div');
-    t.style.fontWeight = '1000';
-    t.style.fontSize = '14px';
-    t.style.whiteSpace = 'nowrap';
-    t.style.overflow = 'hidden';
-    t.style.textOverflow = 'ellipsis';
-    t.textContent = title;
-
-    left.appendChild(t);
-
-    if (sub){
-      const s = document.createElement('div');
-      s.style.fontSize = '12px';
-      s.style.opacity = '0.9';
-      s.textContent = sub;
-      left.appendChild(s);
-    }
-
-    const right = document.createElement('div');
-    right.style.display = 'flex';
-    right.style.flexDirection = 'column';
-    right.style.alignItems = 'flex-end';
-    right.style.gap = '6px';
-
-    const p = document.createElement('div');
-    p.style.fontWeight = '1000';
-    p.textContent = `${core.fmtG(priceG)}G`;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'saveBtn';
-    btn.style.padding = '10px 12px';
-    btn.style.fontWeight = '1000';
-    btn.textContent = '購入';
-
-    // ★毎回最新の所持Gで判定
-    btn.disabled = (core.getGold() < priceG);
-
-    btn.addEventListener('click', (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      onBuy();
-    });
-
-    right.appendChild(p);
-    right.appendChild(btn);
-
-    row.appendChild(left);
-    row.appendChild(right);
-    return row;
+  function statLabel(stat){
+    if (DP?.STAT_LABEL?.[stat]) return DP.STAT_LABEL[stat];
+    const map = { hp:'体力', mental:'メンタル', aim:'エイム', agi:'敏捷性', tech:'テクニック', support:'サポート', scan:'索敵' };
+    return map[stat] || stat;
   }
 
-  function makeCloseRow(onClose){
-    const wrap = document.createElement('div');
-    wrap.style.marginTop = '12px';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'closeBtn';
-    btn.textContent = '閉じる';
-    btn.addEventListener('click', (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      onClose();
-    });
-    wrap.appendChild(btn);
-    return wrap;
+  function notifyTeamRender(){
+    if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
   }
 
-  function openItemShop(){
-    core.renderMeta();
-    core.showDynamic('育成アイテム');
+  // ===== UI builders =====
+  function buildList(title, rows){
+    core.showDynamic(title);
 
     const body = document.getElementById('shopDynamicBody');
     if (!body) return;
 
     const list = document.createElement('div');
-    list.style.display = 'flex';
-    list.style.flexDirection = 'column';
-    list.style.gap = '10px';
+    list.className = 'shopList';
 
-    TRAINING_ITEMS.forEach(item=>{
-      list.appendChild(makeListRow(
-        `${item.label}：${item.name}`,
-        `対象能力EXP +5`,
-        item.price,
-        ()=>{
+    rows.forEach(r=>{
+      const row = document.createElement('div');
+      row.className = 'shopRow';
+
+      const left = document.createElement('div');
+      left.className = 'shopRowLeft';
+
+      const nm = document.createElement('div');
+      nm.className = 'shopRowName';
+      nm.textContent = r.name;
+
+      const sub = document.createElement('div');
+      sub.className = 'shopRowSub';
+      sub.textContent = r.sub || '';
+
+      left.appendChild(nm);
+      if (r.sub) left.appendChild(sub);
+
+      const right = document.createElement('div');
+      right.className = 'shopRowRight';
+
+      const price = document.createElement('div');
+      price.className = 'shopPrice';
+      price.textContent = `${core.fmtG(r.price)}G`;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'shopBuyBtn';
+      btn.textContent = r.btnText || '購入';
+      btn.disabled = !!r.disabled;
+
+      btn.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        r.onClick && r.onClick();
+      });
+
+      right.appendChild(price);
+      right.appendChild(btn);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      list.appendChild(row);
+    });
+
+    body.appendChild(list);
+
+    // 戻る（メニュー）
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'shopBuyBtn';
+    back.style.marginTop = '12px';
+    back.style.width = '100%';
+    back.textContent = '戻る';
+    back.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      core.showHome();
+    });
+    body.appendChild(back);
+  }
+
+  // ===== 育成アイテム =====
+  function openItemShop(){
+    core.renderMeta();
+
+    const rows = TRAINING_ITEMS.map(item=>{
+      return {
+        name: `${item.label}：${item.name}`,
+        sub: '能力EXP +5',
+        price: item.price,
+        disabled: core.getGold() < item.price,
+        btnText: '購入',
+        onClick: ()=>{
           core.confirmPop(`${item.price}Gです購入しますか？`, ()=>{
             if (!core.spendGold(item.price)){
-              core.resultPop('Gが足りません。', '所持Gを確認してください。', ()=>{});
+              core.resultPop('Gが足りません', '所持Gを確認してください。', ()=>{});
               return;
             }
 
@@ -235,86 +234,102 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               const r = applyExpPlus(team, memberId, item.stat, 5);
               writePlayerTeam(team);
 
-              if (window.MOBBR?.ui?.team?.render) window.MOBBR.ui.team.render();
+              notifyTeamRender();
               if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
 
-              core.setRecent(`ショップ：${memberName} が ${item.label}EXP +5 を得た`);
-
               const lvText = r.lvUp ? `（LvUP! ${r.beforeLv}→${r.afterLv}）` : '';
+              core.setRecent(`ショップ：${memberName} が ${statLabel(item.stat)}EXP +5`);
+
               core.resultPop(
-                `${memberName} は ${item.label}の能力経験値が5上がった！${lvText}`,
+                `${memberName} は ${statLabel(item.stat)}の能力経験値が5上がった！${lvText}`,
                 `EXP ${r.beforeExp}/20 → ${r.afterExp}/20`,
                 ()=>{
-                  // B：ショップ自体を閉じる
-                  core.close();
+                  // 要件：その後メニューを閉じる（=ショップのホームへ戻す）
+                  core.showHome();
                 }
               );
             });
           });
         }
-      ));
+      };
     });
 
-    body.appendChild(list);
-    body.appendChild(makeCloseRow(()=> core.showHome()));
+    // 「閉じる」も欲しい場合（要件にある）
+    rows.push({
+      name:'閉じる',
+      sub:'',
+      price: 0,
+      disabled:false,
+      btnText:'閉じる',
+      onClick: ()=> core.close()
+    });
 
+    buildList('育成アイテム', rows);
     core.setRecent('ショップ：育成アイテムを開いた');
+  }
+
+  // ===== コーチスキル =====
+  function readCoachOwned(){
+    return readJSON(KEY_COACH_OWNED, {});
+  }
+  function writeCoachOwned(obj){
+    writeJSON(KEY_COACH_OWNED, obj || {});
   }
 
   function openCoachShop(){
     core.renderMeta();
-    core.showDynamic('コーチスキル');
-
-    const body = document.getElementById('shopDynamicBody');
-    if (!body) return;
 
     const owned = readCoachOwned();
 
-    const list = document.createElement('div');
-    list.style.display = 'flex';
-    list.style.flexDirection = 'column';
-    list.style.gap = '10px';
-
-    COACH_SKILLS.forEach(skill=>{
-      const cnt = Number(owned[skill.id]) || 0;
-
-      list.appendChild(makeListRow(
-        `${skill.name}`,
-        `所持：${cnt}`,
-        skill.price,
-        ()=>{
-          core.confirmPop(`${skill.price}Gです購入しますか？`, ()=>{
-            if (!core.spendGold(skill.price)){
-              core.resultPop('Gが足りません。', '所持Gを確認してください。', ()=>{});
+    const rows = COACH_SKILLS.map(s=>{
+      const cnt = Number(owned[s.id] || 0);
+      return {
+        name: s.name,
+        sub: `所持：${cnt}`,
+        price: s.price,
+        disabled: core.getGold() < s.price,
+        btnText: '購入',
+        onClick: ()=>{
+          core.confirmPop(`${s.price}Gです購入しますか？`, ()=>{
+            if (!core.spendGold(s.price)){
+              core.resultPop('Gが足りません', '所持Gを確認してください。', ()=>{});
               return;
             }
 
             const o = readCoachOwned();
-            o[skill.id] = (Number(o[skill.id]) || 0) + 1;
+            o[s.id] = (Number(o[s.id] || 0) + 1);
             writeCoachOwned(o);
 
-            core.setRecent(`ショップ：コーチスキル「${skill.name}」を購入した`);
-            core.resultPop(
-              `${skill.name} を購入した！`,
-              `所持：${o[skill.id]}`,
-              ()=>{
-                // 一覧を更新して続行
-                openCoachShop();
-              }
-            );
+            core.setRecent(`ショップ：${s.name} を購入した`);
+            core.resultPop(`${s.name} を購入した！`, `所持：${o[s.id]}`, ()=>{
+              // 購入後はメニューに戻す（要件）
+              core.showHome();
+            });
           });
         }
-      ));
+      };
     });
 
-    body.appendChild(list);
-    body.appendChild(makeCloseRow(()=> core.showHome()));
+    // 閉じる
+    rows.push({
+      name:'閉じる',
+      sub:'',
+      price: 0,
+      disabled:false,
+      btnText:'閉じる',
+      onClick: ()=> core.close()
+    });
 
+    buildList('コーチスキル', rows);
     core.setRecent('ショップ：コーチスキルを開いた');
   }
 
-  core.registerCatalog({
-    openItemShop,
-    openCoachShop
-  });
+  function init(){
+    core.registerCatalog({
+      openItemShop,
+      openCoachShop
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 })();
