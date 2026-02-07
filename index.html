@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="main.css?v=15" />
   <link rel="stylesheet" href="team.css?v=15" />
   <link rel="stylesheet" href="training.css?v=15" />
-  <!-- ★追加（次の④で作る想定：現時点で未作成なら一旦コメントアウトでもOK） -->
+  <!-- ★追加（④で作る想定：未作成ならコメントアウトでOK） -->
   <!-- <link rel="stylesheet" href="shop.css?v=15" /> -->
   <!-- <link rel="stylesheet" href="card.css?v=15" /> -->
 </head>
@@ -176,7 +176,7 @@
     <div class="modalBack" id="modalBack"></div>
 
     <!-- メンバー名 -->
-    <div class="modalCard" id="membersPop">
+    <div class="modalCard" id="membersPop" aria-hidden="true">
       <div class="modalTitle">メンバー名</div>
       <div class="membersList">
         <button class="nameRow" id="rowM1" type="button">
@@ -207,8 +207,8 @@
         </div>
 
         <div class="teamMeta">
-          <div>所持G：<span id="shopGold">（表示は任意）</span></div>
-          <div>CDP：<span id="shopCDP">（表示は任意）</span></div>
+          <div>所持G：<span id="shopGold">0</span></div>
+          <div>CDP：<span id="shopCDP">0</span></div>
           <div style="opacity:.9;font-size:13px;line-height:1.3;">
             ※ここは「カードガチャのみ」<br />
             ※確率・％表示はしない（仕様）
@@ -269,10 +269,14 @@
       </div>
 
       <!-- プレビュー（ui_card.js: cardPreview/cardPreviewImg/btnCloseCardPreview） -->
-      <div id="cardPreview" class="modalCard" style="display:none;">
+      <div id="cardPreview" class="modalCard" style="display:none;" aria-hidden="true">
         <div class="modalTitle">カード</div>
- hooking hj=0;0}
-        <img id="cardPreviewImg" src="" alt="カード画像" style="width:100%;height:auto;display:block;border-radius:12px;" />
+        <img
+          id="cardPreviewImg"
+          src=""
+          alt="カード画像"
+          style="width:100%;height:auto;display:block;border-radius:12px;"
+        />
         <button class="closeBtn" id="btnCloseCardPreview" type="button">閉じる</button>
       </div>
     </div>
