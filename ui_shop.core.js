@@ -1,18 +1,14 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.core.js v17（フル / shop.pngホーム+4ボタン版）
+  MOB BR - ui_shop.core.js v17（フル / 修正版）
 
-  目的：
-  - shop.png を背景にした「ホームポップアップ」を表示
-  - ホームに 4ボタン（育成アイテム/カードガチャ/コーチスキル/閉じる）
-  - 選択後、各サブUI（catalog/gacha）へルーティング
-  - confirm/result/memberPick を共通提供
-  - modalBack の取り残し事故を防ぐ
-
-  前提：
-  - index.html に #shopScreen がある（現在の teamScreen構造でもOK）
-  - 既存ガチャDOM（btnGacha1/10/SR, shopResult 等）は shopScreen 内に存在（今の仕様のまま）
+  修正内容：
+  - 上部「閉じる」ボタンを小さめ（横幅固定化）に調整
+  - shop.pngホームの 1〜4ボタンを「円形（ピル）」で少し大きく
+  - 2.カードガチャ：確実に openGachaView() に入るよう保険（クリック無反応対策）
+  - confirm/result/memberPick のポップを最前面に固定（z-index）し
+    「周辺だけ暗いのに何も出ない」問題を解消（modalBackより前に出す）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -86,6 +82,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.modalBack.style.display = 'block';
     dom.modalBack.style.pointerEvents = 'auto';
     dom.modalBack.setAttribute('aria-hidden', 'false');
+
+    // ここが暗くなる「黒フタ」。z-index を低め固定（ポップを必ず前に出す）
+    dom.modalBack.style.zIndex = '99990';
   }
   function hideBack(){
     if (!dom.modalBack) return;
@@ -135,12 +134,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   let homeWrap = null;
   let homeButtons = null;
 
-  let dynamicWrap = null;   // catalog etc
+  let dynamicWrap = null;
   let dynamicTitle = null;
   let dynamicBody = null;
 
-  let gachaSection = null;  // existing section that contains btnGacha1
-  let gachaHeadTitle = null;
+  let gachaSection = null;
 
   function ensureLayout(){
     if (!dom.screen) return;
@@ -148,11 +146,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     panel = dom.screen.querySelector('.teamPanel') || dom.screen;
 
-    // existing gacha section
+    // 既存ガチャセクション（btnGacha1 を含む teamSection）
     const sections = Array.from(panel.querySelectorAll('.teamSection'));
     gachaSection = sections.find(s => s.querySelector('#btnGacha1')) || null;
 
-    // ===== Home (shop.png + 4 buttons) =====
+    // ===== 上部「閉じる」ボタンを小さく（CSSに依存しない安全策）=====
+    if (dom.close){
+      dom.close.style.width = 'min(220px, 70vw)';
+      dom.close.style.padding = '12px 14px';
+      dom.close.style.borderRadius = '14px';
+      dom.close.style.fontWeight = '1000';
+      dom.close.style.marginLeft = 'auto';
+      dom.close.style.marginRight = '0';
+    }
+
+    // ===== Home（shop.png + 4ボタン）=====
     homeWrap = document.createElement('div');
     homeWrap.id = 'shopHomeWrap';
     homeWrap.style.marginTop = '10px';
@@ -182,23 +190,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     overlay.style.flexDirection = 'column';
     overlay.style.justifyContent = 'center';
     overlay.style.alignItems = 'center';
-    overlay.style.gap = '10px';
+    overlay.style.gap = '12px';
     overlay.style.padding = '14px';
-    overlay.style.background = 'linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,.55))';
+    overlay.style.background = 'linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,.55))';
 
     const title = document.createElement('div');
     title.textContent = 'ショップ';
     title.style.fontWeight = '1000';
     title.style.fontSize = '18px';
     title.style.letterSpacing = '0.06em';
-    title.style.marginBottom = '4px';
+    title.style.marginBottom = '2px';
 
     homeButtons = document.createElement('div');
     homeButtons.id = 'shopHomeButtons';
-    homeButtons.style.width = 'min(420px, 92%)';
+    homeButtons.style.width = 'min(460px, 94%)';
     homeButtons.style.display = 'grid';
     homeButtons.style.gridTemplateColumns = '1fr 1fr';
-    homeButtons.style.gap = '10px';
+    homeButtons.style.gap = '12px';
 
     overlay.appendChild(title);
     overlay.appendChild(homeButtons);
@@ -206,7 +214,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     homeWrap.appendChild(bg);
     homeWrap.appendChild(overlay);
 
-    // ===== Dynamic section (catalog/coach lists etc) =====
+    // ===== Dynamic section（育成アイテム/コーチ）=====
     dynamicWrap = document.createElement('div');
     dynamicWrap.id = 'shopDynamicWrap';
     dynamicWrap.className = 'teamSection';
@@ -223,7 +231,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dynamicWrap.appendChild(dynamicTitle);
     dynamicWrap.appendChild(dynamicBody);
 
-    // Insert order: after .teamMeta (if exists) => homeWrap => dynamicWrap => (keep existing gacha section where it is)
+    // 挿入位置：teamMeta の直後
     const meta = panel.querySelector('.teamMeta');
     if (meta && meta.parentElement === panel){
       if (meta.nextSibling) panel.insertBefore(homeWrap, meta.nextSibling);
@@ -235,10 +243,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       panel.insertBefore(dynamicWrap, homeWrap.nextSibling);
     }
 
-    // rename shop head title if exists (optional)
-    gachaHeadTitle = panel.querySelector('#shopScreen .teamTitle');
-
-    // build home buttons
     buildHomeButtons();
 
     built = true;
@@ -248,11 +252,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'saveBtn';
+
+    // ★丸く（ピル）・少し大きく
     btn.style.width = '100%';
-    btn.style.padding = '12px 10px';
+    btn.style.padding = '14px 12px';
+    btn.style.borderRadius = '999px';
     btn.style.fontWeight = '1000';
+    btn.style.fontSize = '15px';
+    btn.style.lineHeight = '1.1';
+    btn.style.boxShadow = '0 6px 16px rgba(0,0,0,.25)';
+    btn.style.border = '1px solid rgba(255,255,255,.18)';
+
     btn.textContent = text;
-    btn.addEventListener('click', onClick);
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
     return btn;
   }
 
@@ -268,15 +284,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     homeButtons.innerHTML = '';
 
     homeButtons.appendChild(makeHomeBtn('1. 育成アイテム', ()=>{
-      hideBack(); // 念のため
+      hideBack();
       if (hooks.openItemShop) hooks.openItemShop();
       else setRecent('育成アイテム：ui_shop.catalog.js が未読み込み');
     }));
 
+    // ★無反応対策：必ず openGachaView へ落ちる保険
     homeButtons.appendChild(makeHomeBtn('2. カードガチャ', ()=>{
       hideBack();
-      if (hooks.openGacha) hooks.openGacha();
-      else openGachaView();
+      try{
+        if (hooks.openGacha) hooks.openGacha();
+        else openGachaView();
+      }catch(e){
+        console.warn(e);
+        openGachaView();
+      }
     }));
 
     homeButtons.appendChild(makeHomeBtn('3. コーチスキル', ()=>{
@@ -298,8 +320,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (homeWrap) homeWrap.style.display = '';
     hideDynamic();
     hideGacha();
-
-    if (gachaHeadTitle) gachaHeadTitle.textContent = 'ショップ';
   }
 
   function showDynamic(titleText){
@@ -311,8 +331,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dynamicBody) dynamicBody.innerHTML = '';
 
     hideGacha();
-
-    if (gachaHeadTitle) gachaHeadTitle.textContent = titleText || 'ショップ';
   }
 
   function hideDynamic(){
@@ -329,7 +347,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hideDynamic();
     showGacha();
 
-    if (gachaHeadTitle) gachaHeadTitle.textContent = 'ショップ（カードガチャ）';
     setRecent('ショップ：カードガチャを開いた');
   }
 
@@ -341,10 +358,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.shopResult) dom.shopResult.style.display = 'none';
   }
 
-  // ===== popups =====
+  // ===== popups（最前面固定）=====
   let popConfirm = null;
   let popPick = null;
   let popResult = null;
+
+  function applyPopBaseStyle(pop){
+    if (!pop) return;
+    pop.style.position = 'fixed';
+    pop.style.left = '50%';
+    pop.style.top = '50%';
+    pop.style.transform = 'translate(-50%, -50%)';
+    pop.style.zIndex = '100000'; // ★modalBackより前
+    pop.style.maxWidth = 'min(520px, 92vw)';
+    pop.style.width = 'min(520px, 92vw)';
+    pop.style.boxSizing = 'border-box';
+  }
 
   function ensurePopups(){
     if (!popConfirm){
@@ -382,6 +411,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       popConfirm.appendChild(t);
       popConfirm.appendChild(tx);
       popConfirm.appendChild(act);
+
+      applyPopBaseStyle(popConfirm);
       document.body.appendChild(popConfirm);
     }
 
@@ -401,6 +432,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       popPick.appendChild(t);
       popPick.appendChild(list);
+
+      applyPopBaseStyle(popPick);
       document.body.appendChild(popPick);
     }
 
@@ -433,6 +466,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       popResult.appendChild(big);
       popResult.appendChild(tiny);
       popResult.appendChild(ok);
+
+      applyPopBaseStyle(popResult);
       document.body.appendChild(popResult);
     }
   }
@@ -504,8 +539,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'memberPickBtn';
+      btn.style.borderRadius = '999px';
+      btn.style.padding = '14px 12px';
+      btn.style.fontWeight = '1000';
       btn.textContent = names[id] || id;
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
         closePop(popPick);
         if (typeof onPick === 'function') onPick(id, names[id] || id);
       });
@@ -560,12 +600,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureLayout();
     renderMeta();
 
-    // 保険：透明フタ事故
+    // 透明フタ事故防止
     hideBack();
-
     if (dom.shopResult) dom.shopResult.style.display = 'none';
 
-    // homeを最初に出す
     showHome();
 
     if (dom.screen){
@@ -577,14 +615,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function close(){
-    // popups close
     if (popConfirm) closePop(popConfirm);
     if (popPick) closePop(popPick);
     if (popResult) closePop(popResult);
 
     hideBack();
 
-    // view reset
     hideDynamic();
     if (homeWrap) homeWrap.style.display = '';
     hideGacha();
@@ -623,7 +659,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function initShopUI(){
     bind();
     renderMeta();
-    // layoutは open 時に作る
   }
 
   // expose
