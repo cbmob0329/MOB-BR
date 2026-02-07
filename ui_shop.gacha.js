@@ -5,6 +5,7 @@
   - confirm() を絶対に使わない（core.confirmPop に統一）
   - 「2.カードガチャ」無反応を解消：core.openGachaView を必ず呼ぶ
   - ガチャボタンに価格表示を追加
+  - ★重要：NEXT後の動的ロードでも必ず動くように init を「即実行」方式に変更
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -251,5 +252,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     applyPriceLabels();
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // ★ここが重要：NEXT後に動的ロードされても必ず init が動く
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  }else{
+    init();
+  }
 })();
