@@ -3,19 +3,14 @@
 /*
   MOB BR - ui_main.js v15（フル）
 
-  v15 変更点：
-  - btnShop / btnCard を「存在すれば open()」にルーティング
-    - shop: window.MOBBR.ui.shop.open()
-    - card: window.MOBBR.ui.card.open()
-  - btnTraining / btnTeam も同様に open() 優先（存在しない場合は従来通り）
-  - それ以外の仕様は v14 を維持
+  目的：
+  - メイン画面の表示/タップ処理
+  - TEAM/TRAINING/SHOP/CARD のルーティングを「各UIの open() 優先」に統一
+  - modalBack（透明フタ）が残ってボタンが押せなくなる事故を防止
+  - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
 
   前提：
-  - app.js の loadModules() で NEXT後に読み込まれる前提
-  - 右下ログ(rog)タップでNEXTを出す機能は廃止（NEXTはここでは使わない）
-  - 左メニューは「ループ無し」＝通常の上下スクロールのみ（JS側は何もしない）
-  - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
-  - btra.png（btnTraining）で育成画面へ（#trainingScreen があれば開く／無ければログに出す）
+  - app.js の loadModules() で NEXT後に読み込まれる
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -115,18 +110,18 @@ window.MOBBR = window.MOBBR || {};
       uiM3: $('uiM3'),
       btnCloseMembers: $('btnCloseMembers'),
 
-      // team overlay（メイン側にDOMがある場合）
+      // overlays（DOMがあれば保険で開く）
       teamScreen: $('teamScreen'),
       btnCloseTeam: $('btnCloseTeam'),
-      tCompany: $('tCompany'),
-      tTeam: $('tTeam'),
-      tM1: $('tM1'),
-      tM2: $('tM2'),
-      tM3: $('tM3'),
 
-      // training overlay（DOMがあれば開く）
       trainingScreen: $('trainingScreen'),
-      btnCloseTraining: $('btnCloseTraining')
+      btnCloseTraining: $('btnCloseTraining'),
+
+      shopScreen: $('shopScreen'),
+      btnCloseShop: $('btnCloseShop'),
+
+      cardScreen: $('cardScreen'),
+      btnCloseCard: $('btnCloseCard')
     };
   }
 
@@ -139,9 +134,9 @@ window.MOBBR = window.MOBBR || {};
       const team = JSON.parse(raw);
       if (!team || !Array.isArray(team.members)) return;
 
-      const nm1 = getStr(K.m1, '○○○');
-      const nm2 = getStr(K.m2, '○○○');
-      const nm3 = getStr(K.m3, '○○○');
+      const nm1 = getStr(K.m1, 'A');
+      const nm2 = getStr(K.m2, 'B');
+      const nm3 = getStr(K.m3, 'C');
 
       const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
       if (bySlot[0]) bySlot[0].name = nm1;
@@ -164,9 +159,9 @@ window.MOBBR = window.MOBBR || {};
 
     const company = getStr(K.company, 'CB Memory');
     const team = getStr(K.team, 'PLAYER TEAM');
-    const m1 = getStr(K.m1, '○○○');
-    const m2 = getStr(K.m2, '○○○');
-    const m3 = getStr(K.m3, '○○○');
+    const m1 = getStr(K.m1, 'A');
+    const m2 = getStr(K.m2, 'B');
+    const m3 = getStr(K.m3, 'C');
 
     if (ui.company) ui.company.textContent = company;
     if (ui.team) ui.team.textContent = team;
@@ -186,13 +181,6 @@ window.MOBBR = window.MOBBR || {};
     if (ui.uiM1) ui.uiM1.textContent = m1;
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
-
-    // team overlay quick header（存在すれば）
-    if (ui.tCompany) ui.tCompany.textContent = company;
-    if (ui.tTeam) ui.tTeam.textContent = team;
-    if (ui.tM1) ui.tM1.textContent = m1;
-    if (ui.tM2) ui.tM2.textContent = m2;
-    if (ui.tM3) ui.tM3.textContent = m3;
 
     // NEXTボタンはここでは使わない（常に隠す）
     if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
@@ -250,7 +238,7 @@ window.MOBBR = window.MOBBR || {};
     notifyTeamRender();
   }
 
-  // ===== week progression（今の仕様のまま）=====
+  // ===== week progression（今の仕様のまま：使わないなら呼ばれない）=====
   function advanceWeek(){
     const y = getNum(K.year, 1989);
     const m = getNum(K.month, 1);
@@ -291,33 +279,56 @@ window.MOBBR = window.MOBBR || {};
     }
   }
 
-  // ===== overlays（メインDOMがある場合のみ）=====
-  function showTeamScreen(){
-    if (!ui.teamScreen) return;
-    ui.teamScreen.classList.add('show');
-    ui.teamScreen.setAttribute('aria-hidden', 'false');
-    notifyTeamRender();
-  }
-  function hideTeamScreen(){
-    if (!ui.teamScreen) return;
-    ui.teamScreen.classList.remove('show');
-    ui.teamScreen.setAttribute('aria-hidden', 'true');
-  }
+  // ===== safe open helpers =====
+  function safeOpenByUI(key){
+    // 透明フタ事故防止：何か開く前に必ず閉じる
+    hideBack();
 
-  function showTrainingScreen(){
-    // #trainingScreen がまだ無いなら、今はログだけ出す（壊さない）
-    if (!ui.trainingScreen){
-      setStr(K.recent, '育成：未実装（次フェーズ）');
-      render();
-      return;
+    // 各UIの open() を最優先（ここがバグりにくい）
+    const u = window.MOBBR?.ui;
+
+    if (key === 'team'){
+      if (u?.team?.open){ u.team.open(); return true; }
+      if (ui.teamScreen){
+        ui.teamScreen.classList.add('show');
+        ui.teamScreen.setAttribute('aria-hidden', 'false');
+        notifyTeamRender();
+        return true;
+      }
+      return false;
     }
-    ui.trainingScreen.classList.add('show');
-    ui.trainingScreen.setAttribute('aria-hidden', 'false');
-  }
-  function hideTrainingScreen(){
-    if (!ui.trainingScreen) return;
-    ui.trainingScreen.classList.remove('show');
-    ui.trainingScreen.setAttribute('aria-hidden', 'true');
+
+    if (key === 'training'){
+      if (u?.training?.open){ u.training.open(); return true; }
+      if (ui.trainingScreen){
+        ui.trainingScreen.classList.add('show');
+        ui.trainingScreen.setAttribute('aria-hidden', 'false');
+        return true;
+      }
+      return false;
+    }
+
+    if (key === 'shop'){
+      if (u?.shop?.open){ u.shop.open(); return true; }
+      if (ui.shopScreen){
+        ui.shopScreen.classList.add('show');
+        ui.shopScreen.setAttribute('aria-hidden', 'false');
+        return true;
+      }
+      return false;
+    }
+
+    if (key === 'card'){
+      if (u?.card?.open){ u.card.open(); return true; }
+      if (ui.cardScreen){
+        ui.cardScreen.classList.add('show');
+        ui.cardScreen.setAttribute('aria-hidden', 'false');
+        return true;
+      }
+      return false;
+    }
+
+    return false;
   }
 
   function setRecent(text){
@@ -325,65 +336,8 @@ window.MOBBR = window.MOBBR || {};
     render();
   }
 
-  // ===== open helpers（存在すれば ui側の open() を優先）=====
-  function openIfExists(pathArr){
-    try{
-      let cur = window;
-      for (const k of pathArr){
-        cur = cur?.[k];
-        if (!cur) return null;
-      }
-      return cur;
-    }catch{
-      return null;
-    }
-  }
-
-  function openTeam(){
-    // 優先：ui_team.js の open()
-    const fn = openIfExists(['MOBBR','ui','team','open']);
-    if (typeof fn === 'function'){
-      fn();
-      return;
-    }
-    // フォールバック：メインDOMの overlay
-    render();
-    showTeamScreen();
-  }
-
-  function openTraining(){
-    // 優先：ui_training.js の open()
-    const fn = openIfExists(['MOBBR','ui','training','open']);
-    if (typeof fn === 'function'){
-      fn();
-      return;
-    }
-    // フォールバック：メインDOMの overlay / ログ
-    showTrainingScreen();
-  }
-
-  function openShop(){
-    const fn = openIfExists(['MOBBR','ui','shop','open']);
-    if (typeof fn === 'function'){
-      fn();
-      return;
-    }
-    setRecent('ショップ：未実装（次フェーズ）');
-  }
-
-  function openCard(){
-    const fn = openIfExists(['MOBBR','ui','card','open']);
-    if (typeof fn === 'function'){
-      fn();
-      return;
-    }
-    setRecent('カードコレクション：未実装（次フェーズ）');
-  }
-
   // ===== loop scroll（ループ廃止：何もしない）=====
-  function setupLoopScroll(){
-    return;
-  }
+  function setupLoopScroll(){ return; }
 
   // ===== bind =====
   let bound = false;
@@ -410,37 +364,65 @@ window.MOBBR = window.MOBBR || {};
       ui.btnCloseMembers.addEventListener('click', hideMembersPop);
     }
 
-    if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', '○○○'));
-    if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', '○○○'));
-    if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', '○○○'));
+    if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', 'A'));
+    if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', 'B'));
+    if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', 'C'));
 
-    // rogタップでNEXT表示 → 廃止（何も付けない）
-
-    // btnWeekNext はここでは使わないので無効化（誤爆防止）
+    // btnWeekNext はこの画面では使わない（誤爆防止）
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
       ui.btnWeekNext.classList.remove('show');
     }
 
-    // ===== 左メニュー（v15：存在すれば open()）=====
-    if (ui.btnTeam) ui.btnTeam.addEventListener('click', openTeam);
+    // ===== 左メニュー：open() 優先ルーティング =====
+    if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => {
+      render();
+      if (!safeOpenByUI('team')) setRecent('TEAM：未実装（次フェーズ）');
+    });
+
+    if (ui.btnTraining) ui.btnTraining.addEventListener('click', () => {
+      render();
+      if (!safeOpenByUI('training')) setRecent('育成：未実装（次フェーズ）');
+    });
+
+    if (ui.btnShop) ui.btnShop.addEventListener('click', () => {
+      render();
+      if (!safeOpenByUI('shop')) setRecent('ショップ：未実装（次フェーズ）');
+    });
+
+    if (ui.btnCard) ui.btnCard.addEventListener('click', () => {
+      render();
+      if (!safeOpenByUI('card')) setRecent('カードコレクション：未実装（次フェーズ）');
+    });
 
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
-
-    if (ui.btnTraining) ui.btnTraining.addEventListener('click', openTraining);
-
-    if (ui.btnShop) ui.btnShop.addEventListener('click', openShop);
-
     if (ui.btnSchedule) ui.btnSchedule.addEventListener('click', () => setRecent('スケジュール：未実装（次フェーズ）'));
 
-    if (ui.btnCard) ui.btnCard.addEventListener('click', openCard);
-
-    // ===== close buttons（メインDOMがある場合のみ）=====
-    if (ui.btnCloseTeam) ui.btnCloseTeam.addEventListener('click', hideTeamScreen);
-    if (ui.btnCloseTraining) ui.btnCloseTraining.addEventListener('click', hideTrainingScreen);
-
-    // 週進行（現状は非表示/無効）
-    // if (ui.btnWeekNext) ui.btnWeekNext.addEventListener('click', advanceWeek);
+    // ===== 既存の閉じるボタン（DOM直開き保険の時だけ効く） =====
+    if (ui.btnCloseTeam && ui.teamScreen){
+      ui.btnCloseTeam.addEventListener('click', () => {
+        ui.teamScreen.classList.remove('show');
+        ui.teamScreen.setAttribute('aria-hidden', 'true');
+      });
+    }
+    if (ui.btnCloseTraining && ui.trainingScreen){
+      ui.btnCloseTraining.addEventListener('click', () => {
+        ui.trainingScreen.classList.remove('show');
+        ui.trainingScreen.setAttribute('aria-hidden', 'true');
+      });
+    }
+    if (ui.btnCloseShop && ui.shopScreen){
+      ui.btnCloseShop.addEventListener('click', () => {
+        ui.shopScreen.classList.remove('show');
+        ui.shopScreen.setAttribute('aria-hidden', 'true');
+      });
+    }
+    if (ui.btnCloseCard && ui.cardScreen){
+      ui.btnCloseCard.addEventListener('click', () => {
+        ui.cardScreen.classList.remove('show');
+        ui.cardScreen.setAttribute('aria-hidden', 'true');
+      });
+    }
 
     setupLoopScroll();
   }
@@ -449,8 +431,11 @@ window.MOBBR = window.MOBBR || {};
     collectDom();
     bind();
 
-    // 念のため：起動時点で playerTeam があるなら、storageの名前に寄せる
+    // 起動時点で playerTeam があるなら、storageの名前に寄せる
     syncPlayerTeamNamesFromStorage();
+
+    // 透明フタ事故の保険
+    hideBack();
 
     render();
   }
