@@ -6,7 +6,7 @@
    - world01〜world40
    ---------------------------------------------------------
    注意：
-   ・teamId は画像名に直結（assets/<teamId>.png）
+   ・teamId は画像名に直結（<ASSET_BASE>/<teamId>.png）
    ・総合力/個人%レンジは内部用データとして保持（UIに%は出さない）
 ========================================================= */
 
@@ -15,6 +15,9 @@
 
   const DataCPU = {};
   window.DataCPU = DataCPU;
+
+  // 画像の置き場所が assets/ 以外ならここだけ変更
+  const ASSET_BASE = 'cpu';
 
   /* =========================
      TEAM DATA (確定)
@@ -528,18 +531,33 @@
     ]),
   ];
 
+  // teamId 重複チェック（開発中の事故防止）
+  (function assertUniqueTeamId(){
+    const set = new Set();
+    for(const t of TEAMS){
+      if(set.has(t.teamId)){
+        console.error('[DataCPU] Duplicate teamId:', t.teamId);
+      }
+      set.add(t.teamId);
+    }
+  })();
+
   /* =========================
      PUBLIC API
   ========================== */
 
+  // player は含めない（DataPlayer 側で扱う）
   DataCPU.getAllTeams = function(){
-    // player は含めない（DataPlayer 側で扱う）
     return TEAMS.map(t => clone(t));
   };
 
   DataCPU.getById = function(teamId){
     const t = TEAMS.find(x => x.teamId === teamId);
     return t ? clone(t) : null;
+  };
+
+  DataCPU.getAssetBase = function(){
+    return ASSET_BASE;
   };
 
   /* =========================
@@ -550,7 +568,7 @@
       isPlayer: false,
       teamId,
       name,
-      image: `assets/${teamId}.png`,
+      image: `${ASSET_BASE}/${teamId}.png`,
       basePower,           // 総合力（内部用）
       members: members || []
     };
