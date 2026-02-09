@@ -1,864 +1,474 @@
 'use strict';
 
-/*
-  MOB BR - ui_tournament.js v2（フル）
-  STEP4：大会UI（見た目＋NEXT進行の器）
-
-  変更点（重要）
-  - あなたが指定した「直下画像」をこのUIで使えるように反映
-    tent.png / ido.png / winner.png / bdeba.png / bup.png / bgeta.png / bgetb.png
-  - マップ背景（neonmain.png 等）は maps/ をデフォルトに変更
-  - flow側から「キー指定」で背景を切り替えられるAPIを追加
-    setScene({ bgKey:'TENT' }) など
-*/
+/* =========================================================
+   MOB BR - ui_tournament.js（FULL v1.0 / CSS前提整理）
+   ---------------------------------------------------------
+   前提：
+   - tournament.css（共通CSS）を使う
+   - “大会画面”は overlay として固定表示（body直下）
+   - 背景は body.tournament-mode + neonmain.png（CSS側）
+   - 中央：正方形ステージ画像（既定 tent.png）
+   - 前面：プレイヤー画像（P1.png 等）
+   - RESULT/OVERALL/メッセージは HUD パネルで表示
+   ---------------------------------------------------------
+   公開API（sim_tournament_flow.js から呼ばれる前提）：
+   window.MOBBR.ui.tournament = {
+     open(scene),
+     close(),
+     setScene(scene),
+     showMessage(title, lines, nextLabel),
+     showResult({title, sub, rows, highlightTeamId}),
+     setNextHandler(fn),
+     setNextEnabled(bool)
+   }
+========================================================= */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  // =========================
-  // Optional deps
-  // =========================
-  const S = window.MOBBR?.storage || null;
+  const T = {};
+  window.MOBBR.ui.tournament = T;
 
-  // =========================
-  // Assets（あなたの構成に合わせる）
-  // =========================
-  const ASSET = {
-    // マップ系は maps/ が基本（neonmain.png など）
-    MAP_BASE: (window.RULES?.MAP?.areaImgBase || 'maps/'),
+  // -----------------------------
+  // INTERNAL
+  // -----------------------------
+  const DEFAULT_BG = 'neonmain.png';
+  const DEFAULT_STAGE = 'tent.png';
+  const DEFAULT_PLAYER = 'P1.png';
 
-    // 大会UIで使う「直下」画像（←あなた指定）
-    TENT:    'tent.png',
-    IDO:     'ido.png',
-    WINNER:  'winner.png',
+  let dom = null;
+  let nextHandler = null;
+  let nextEnabled = true;
 
-    B_DEBA:  'bdeba.png',
-    B_UP:    'bup.png',
-    B_GETA:  'bgeta.png',
-    B_GETB:  'bgetb.png',
+  function $(id){ return document.getElementById(id); }
 
-    // デフォルト大会背景（マップ画像扱い）
-    TOURNAMENT_BG: 'neonmain.png'
-  };
+  function ensureDom(){
+    if (dom) return dom;
 
-  function mapImg(file){
-    if (!file) return ASSET.MAP_BASE + ASSET.TOURNAMENT_BG;
-    // すでにパスっぽい場合はそのまま
-    if (/^(https?:)?\/\//.test(file) || file.includes('/') ) return file;
-    return ASSET.MAP_BASE + file;
-  }
+    // root
+    const root = document.createElement('div');
+    root.className = 'mobbrTourRoot';
+    root.id = 'mobbrTournamentUI';
+    root.setAttribute('aria-label', '大会');
+    root.style.display = 'none';
 
-  // =========================
-  // z-index（ショップ等と衝突しないよう上に）
-  // =========================
-  const Z = {
-    back: 12000,
-    panel: 13000,
-    pop: 14000
-  };
+    // stage area
+    const stage = document.createElement('div');
+    stage.className = 'mobbrTourStage';
+    stage.id = 'mobbrTourStage';
 
-  // =========================
-  // State（UI側）
-  // =========================
-  const state = {
-    isOpen: false,
-    mode: 'tournament',
-    phase: 'intro',
-    title: '',
-    subtitle: '',
-    playerImage: 'P1.png',
-    enemyImage: '',
+    const stageImg = document.createElement('img');
+    stageImg.className = 'mobbrTourStageImg';
+    stageImg.id = 'mobbrTourStageImg';
+    stageImg.alt = '';
+    stageImg.draggable = false;
 
-    // 背景（フルパス or ファイル名）
-    bg: mapImg(ASSET.TOURNAMENT_BG),
-    bgKey: 'MAP', // MAP / TENT / IDO / WINNER / B_DEBA / B_UP / B_GETA / B_GETB / CUSTOM
+    const playerImg = document.createElement('img');
+    playerImg.className = 'mobbrTourPlayerImg';
+    playerImg.id = 'mobbrTourPlayerImg';
+    playerImg.alt = 'PLAYER';
+    playerImg.draggable = false;
 
-    // message
-    messageLines: [],
-    nextLabel: 'NEXT',
-    nextEnabled: true,
-    onNext: null,
+    const enemyImg = document.createElement('img');
+    enemyImg.className = 'mobbrTourEnemyImg';
+    enemyImg.id = 'mobbrTourEnemyImg';
+    enemyImg.alt = 'ENEMY';
+    enemyImg.draggable = false;
 
-    // result
-    resultTitle: '',
-    resultLobbyLabel: '',
-    resultRows: [],
-    highlightTeamId: '',
-    showResult: false,
+    const overlay = document.createElement('div');
+    overlay.className = 'mobbrTourOverlay';
+    overlay.id = 'mobbrTourOverlay';
 
-    lockBack: false
-  };
+    stage.appendChild(stageImg);
+    stage.appendChild(playerImg);
+    stage.appendChild(enemyImg);
+    stage.appendChild(overlay);
 
-  // =========================
-  // Build DOM（index.html 変更なしで動く）
-  // =========================
-  let built = false;
+    // HUD
+    const hud = document.createElement('div');
+    hud.className = 'mobbrTourHud';
+    hud.id = 'mobbrTourHud';
 
-  const dom = {
-    root: null,
-    back: null,
-    panel: null,
-    bg: null,
+    const hudHead = document.createElement('div');
+    hudHead.className = 'mobbrTourHudHead';
 
-    layerTent: null,
-    tentImg: null,
+    const ttl = document.createElement('div');
+    ttl.className = 'mobbrTourTitle';
+    ttl.id = 'mobbrTourTitle';
+    ttl.textContent = '大会';
 
-    layerChars: null,
-    playerImg: null,
-    enemyImg: null,
+    const sub = document.createElement('div');
+    sub.className = 'mobbrTourSub';
+    sub.id = 'mobbrTourSub';
+    sub.textContent = '';
 
-    msgWrap: null,
-    msgTitle: null,
-    msgBody: null,
-    btnNext: null,
+    hudHead.appendChild(ttl);
+    hudHead.appendChild(sub);
 
-    resultWrap: null,
-    resultHeader: null,
-    resultSub: null,
-    resultList: null,
-    resultClose: null
-  };
-
-  function injectStyle(){
-    if (document.getElementById('uiTournamentStyleV2')) return;
-
-    const st = document.createElement('style');
-    st.id = 'uiTournamentStyleV2';
-    st.textContent = `
-      #tournamentBack{
-        position:fixed; inset:0;
-        background: rgba(0,0,0,.55);
-        z-index:${Z.back};
-        display:none;
-        pointer-events:none;
-      }
-      #tournamentRoot{
-        position:fixed; inset:0;
-        z-index:${Z.panel};
-        display:none;
-        pointer-events:none;
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
-      }
-      #tournamentRoot.show{ display:block; pointer-events:auto; }
-      #tournamentBack.show{ display:block; pointer-events:auto; }
-
-      .tntBg{ position:absolute; inset:0; background:#000; }
-      .tntBgImg{
-        position:absolute; inset:0;
-        width:100%; height:100%;
-        object-fit: cover;
-        user-select:none;
-        -webkit-user-drag:none;
-      }
-
-      .tntPanel{
-        position:absolute;
-        left:50%; top:50%;
-        transform: translate(-50%,-50%);
-        width: min(94vw, 560px);
-        height: min(90vh, 780px);
-        border-radius: 22px;
-        overflow: hidden;
-        background: rgba(0,0,0,.20);
-        box-shadow: 0 20px 70px rgba(0,0,0,.65);
-      }
-
-      .tntTent{
-        position:absolute;
-        left:50%;
-        top: 34%;
-        transform: translate(-50%, -50%);
-        width: min(74vw, 420px);
-        aspect-ratio: 1 / 1;
-        border-radius: 18px;
-        overflow:hidden;
-        background: rgba(0,0,0,.25);
-        box-shadow: 0 10px 40px rgba(0,0,0,.45);
-        display:none;
-      }
-      .tntTent.show{ display:block; }
-      .tntTentImg{
-        width:100%; height:100%;
-        object-fit: cover;
-        display:block;
-        user-select:none;
-        -webkit-user-drag:none;
-      }
-
-      .tntChars{
-        position:absolute;
-        left:50%;
-        top: 58%;
-        transform: translate(-50%, -50%);
-        width: min(92vw, 520px);
-        display:flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        gap: 12px;
-        pointer-events:none;
-      }
-      .tntCharImg{
-        width: min(40vw, 220px);
-        height:auto;
-        object-fit: contain;
-        filter: drop-shadow(0 10px 18px rgba(0,0,0,.6));
-        user-select:none;
-        -webkit-user-drag:none;
-      }
-      .tntCharImg.enemy{ opacity:0.98; }
-
-      .tntMsg{
-        position:absolute;
-        left:50%;
-        bottom: 14px;
-        transform: translateX(-50%);
-        width: min(92vw, 520px);
-        border-radius: 20px;
-        background: rgba(15,15,15,.88);
-        box-shadow: 0 14px 40px rgba(0,0,0,.65);
-        padding: 14px 14px 12px;
-      }
-      .tntMsgTitle{
-        font-weight: 1000;
-        letter-spacing: .02em;
-        font-size: 15px;
-        color: rgba(255,255,255,.95);
-        margin-bottom: 6px;
-      }
-      .tntMsgBody{
-        font-size: 14px;
-        line-height: 1.35;
-        white-space: pre-wrap;
-        color: rgba(255,255,255,.92);
-        min-height: 44px;
-      }
-      .tntNextRow{ display:flex; justify-content:flex-end; margin-top:10px; }
-      .tntNextBtn{
-        border:0;
-        border-radius: 9999px;
-        padding: 10px 14px;
-        min-height: 40px;
-        font-weight: 1000;
-        background: rgba(255,255,255,.92);
-        box-shadow: 0 10px 18px rgba(0,0,0,.35);
-        animation: tntFloat 1.7s ease-in-out infinite;
-      }
-      .tntNextBtn:disabled{ opacity:.5; animation:none; }
-      @keyframes tntFloat{
-        0%{ transform: translateY(0px); }
-        50%{ transform: translateY(-3px); }
-        100%{ transform: translateY(0px); }
-      }
-
-      .tntResult{
-        position:absolute;
-        left:50%;
-        top:50%;
-        transform: translate(-50%,-50%);
-        width: min(94vw, 560px);
-        height: min(88vh, 760px);
-        border-radius: 22px;
-        background: rgba(15,15,15,.96);
-        box-shadow: 0 24px 80px rgba(0,0,0,.75);
-        display:none;
-        overflow:hidden;
-      }
-      .tntResult.show{ display:block; }
-
-      .tntResultHeader{
-        padding: 14px 14px 10px;
-        border-bottom: 1px solid rgba(255,255,255,.10);
-      }
-      .tntResultTitle{
-        font-weight: 1000;
-        font-size: 16px;
-        color: rgba(255,255,255,.96);
-        margin-bottom: 4px;
-      }
-      .tntResultSub{
-        font-size: 12px;
-        color: rgba(255,255,255,.78);
-        white-space: pre-wrap;
-      }
-
-      .tntResultList{
-        height: calc(100% - 128px);
-        overflow:auto;
-        padding: 10px 12px 12px;
-      }
-      .tntRow{
-        display:flex;
-        align-items:center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 10px 10px;
-        border-radius: 16px;
-        background: rgba(255,255,255,.06);
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
-        margin-bottom: 8px;
-      }
-      .tntRank{ width: 42px; font-weight:1000; color: rgba(255,255,255,.92); }
-      .tntName{
-        flex: 1;
-        font-weight:1000;
-        color: rgba(255,255,255,.92);
-        overflow:hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .tntPts{ width: 70px; text-align:right; font-weight:1000; color: rgba(255,255,255,.92); }
-      .tntMini{ width: 120px; text-align:right; font-size: 11px; color: rgba(255,255,255,.78); white-space: nowrap; }
-      .tntRow.isPlayer{
-        background: rgba(255,215,0,.16);
-        box-shadow: inset 0 0 0 1px rgba(255,215,0,.28);
-      }
-
-      .tntResultFooter{
-        position:absolute; left:0; right:0; bottom:0;
-        padding: 12px 14px 14px;
-        border-top: 1px solid rgba(255,255,255,.10);
-        background: rgba(0,0,0,.18);
-      }
-      .tntCloseBtn{
-        width:100%;
-        border:0;
-        border-radius: 16px;
-        padding: 12px 14px;
-        min-height: 44px;
-        font-weight: 1000;
-        background: rgba(255,255,255,.92);
-      }
-    `;
-    document.head.appendChild(st);
-  }
-
-  function build(){
-    if (built) return;
-    built = true;
-
-    injectStyle();
-
-    dom.back = document.createElement('div');
-    dom.back.id = 'tournamentBack';
-    dom.back.setAttribute('aria-hidden', 'true');
-
-    dom.root = document.createElement('div');
-    dom.root.id = 'tournamentRoot';
-    dom.root.setAttribute('aria-hidden', 'true');
-
-    dom.bg = document.createElement('div');
-    dom.bg.className = 'tntBg';
-    const bgImg = document.createElement('img');
-    bgImg.className = 'tntBgImg';
-    bgImg.alt = 'TOURNAMENT BG';
-    bgImg.draggable = false;
-    dom.bg.appendChild(bgImg);
-
-    dom.panel = document.createElement('div');
-    dom.panel.className = 'tntPanel';
-
-    dom.layerTent = document.createElement('div');
-    dom.layerTent.className = 'tntTent';
-
-    dom.tentImg = document.createElement('img');
-    dom.tentImg.className = 'tntTentImg';
-    dom.tentImg.alt = 'TENT';
-    dom.tentImg.draggable = false;
-    dom.layerTent.appendChild(dom.tentImg);
-
-    dom.layerChars = document.createElement('div');
-    dom.layerChars.className = 'tntChars';
-
-    dom.playerImg = document.createElement('img');
-    dom.playerImg.className = 'tntCharImg player';
-    dom.playerImg.alt = 'PLAYER';
-    dom.playerImg.draggable = false;
-
-    dom.enemyImg = document.createElement('img');
-    dom.enemyImg.className = 'tntCharImg enemy';
-    dom.enemyImg.alt = 'ENEMY';
-    dom.enemyImg.draggable = false;
-
-    dom.layerChars.appendChild(dom.playerImg);
-    dom.layerChars.appendChild(dom.enemyImg);
-
-    dom.msgWrap = document.createElement('div');
-    dom.msgWrap.className = 'tntMsg';
-
-    dom.msgTitle = document.createElement('div');
-    dom.msgTitle.className = 'tntMsgTitle';
-    dom.msgTitle.textContent = '';
-
-    dom.msgBody = document.createElement('div');
-    dom.msgBody.className = 'tntMsgBody';
-    dom.msgBody.textContent = '';
+    const hudBody = document.createElement('div');
+    hudBody.className = 'mobbrTourHudBody';
+    hudBody.id = 'mobbrTourBody';
 
     const nextRow = document.createElement('div');
-    nextRow.className = 'tntNextRow';
+    nextRow.className = 'mobbrTourNextRow';
 
-    dom.btnNext = document.createElement('button');
-    dom.btnNext.type = 'button';
-    dom.btnNext.className = 'tntNextBtn';
-    dom.btnNext.textContent = 'NEXT';
+    const btnNext = document.createElement('button');
+    btnNext.className = 'mobbrTourNextBtn';
+    btnNext.id = 'mobbrTourNextBtn';
+    btnNext.type = 'button';
+    btnNext.textContent = 'NEXT';
 
-    nextRow.appendChild(dom.btnNext);
+    btnNext.addEventListener('click', (e)=>{
+      e.preventDefault();
+      if (!nextEnabled) return;
+      if (typeof nextHandler === 'function') nextHandler();
+    });
 
-    dom.msgWrap.appendChild(dom.msgTitle);
-    dom.msgWrap.appendChild(dom.msgBody);
-    dom.msgWrap.appendChild(nextRow);
+    nextRow.appendChild(btnNext);
 
-    dom.resultWrap = document.createElement('div');
-    dom.resultWrap.className = 'tntResult';
+    hud.appendChild(hudHead);
+    hud.appendChild(hudBody);
+    hud.appendChild(nextRow);
 
-    const rh = document.createElement('div');
-    rh.className = 'tntResultHeader';
+    // mount
+    root.appendChild(stage);
+    root.appendChild(hud);
 
-    dom.resultHeader = document.createElement('div');
-    dom.resultHeader.className = 'tntResultTitle';
-    dom.resultHeader.textContent = 'RESULT';
+    document.body.appendChild(root);
 
-    dom.resultSub = document.createElement('div');
-    dom.resultSub.className = 'tntResultSub';
-    dom.resultSub.textContent = '';
+    // iOS: prevent double tap zoom on next button area (念のため)
+    root.addEventListener('touchend', ()=>{}, { passive:true });
 
-    rh.appendChild(dom.resultHeader);
-    rh.appendChild(dom.resultSub);
+    dom = {
+      root,
+      stage,
+      stageImg,
+      playerImg,
+      enemyImg,
+      overlay,
+      hud,
+      ttl,
+      sub,
+      body: hudBody,
+      btnNext
+    };
 
-    dom.resultList = document.createElement('div');
-    dom.resultList.className = 'tntResultList';
-
-    const rf = document.createElement('div');
-    rf.className = 'tntResultFooter';
-
-    dom.resultClose = document.createElement('button');
-    dom.resultClose.type = 'button';
-    dom.resultClose.className = 'tntCloseBtn';
-    dom.resultClose.textContent = '閉じる';
-
-    rf.appendChild(dom.resultClose);
-
-    dom.resultWrap.appendChild(rh);
-    dom.resultWrap.appendChild(dom.resultList);
-    dom.resultWrap.appendChild(rf);
-
-    dom.panel.appendChild(dom.layerTent);
-    dom.panel.appendChild(dom.layerChars);
-    dom.panel.appendChild(dom.msgWrap);
-
-    dom.root.appendChild(dom.bg);
-    dom.root.appendChild(dom.panel);
-    dom.root.appendChild(dom.resultWrap);
-
-    document.body.appendChild(dom.back);
-    document.body.appendChild(dom.root);
-
-    bind();
+    return dom;
   }
 
-  // =========================
-  // Background by key
-  // =========================
-  function resolveBgByKey(key, custom){
-    const k = String(key || '').toUpperCase();
+  function setBodyTournamentMode(on){
+    try{
+      document.body.classList.toggle('tournament-mode', !!on);
+    }catch(e){}
+  }
 
-    if (k === 'TENT')   return ASSET.TENT;          // 直下
-    if (k === 'IDO')    return ASSET.IDO;           // 直下
-    if (k === 'WINNER') return ASSET.WINNER;        // 直下
-    if (k === 'B_DEBA') return ASSET.B_DEBA;        // 直下
-    if (k === 'B_UP')   return ASSET.B_UP;          // 直下
-    if (k === 'B_GETA') return ASSET.B_GETA;        // 直下
-    if (k === 'B_GETB') return ASSET.B_GETB;        // 直下
+  function setBg(bg){
+    const b = String(bg || DEFAULT_BG);
 
-    if (k === 'MAP')    return mapImg(ASSET.TOURNAMENT_BG);
+    // tournament.css は :root --tour-bg を見てる想定
+    // CSS変数で差し替え（bodyにセット）
+    try{
+      document.documentElement.style.setProperty('--tour-bg', b);
+    }catch(e){}
+  }
 
-    // CUSTOM：そのまま
-    if (k === 'CUSTOM') return String(custom || '');
+  function setStageImage(src){
+    const d = ensureDom();
+    const s = String(src || DEFAULT_STAGE);
+    d.stageImg.src = s;
+  }
 
-    // 互換：bgにファイル名だけが来た場合は MAP扱いで maps/ を付ける
-    if (custom && !String(custom).includes('/') && !/^(https?:)?\/\//.test(String(custom))){
-      return mapImg(String(custom));
+  function setPlayerImage(src){
+    const d = ensureDom();
+    const s = String(src || DEFAULT_PLAYER);
+    d.playerImg.src = s;
+  }
+
+  function setEnemyImage(src){
+    const d = ensureDom();
+    const s = String(src || '').trim();
+    if (!s){
+      d.enemyImg.style.display = 'none';
+      d.enemyImg.src = '';
+      return;
     }
-
-    return String(custom || mapImg(ASSET.TOURNAMENT_BG));
+    d.enemyImg.src = s;
+    d.enemyImg.style.display = 'block';
   }
 
-  function shouldShowTentLayer(bgKey){
-    const k = String(bgKey || '').toUpperCase();
-    // テント演出は「tent.png」を使うので、テント枠も表示
-    return (k === 'TENT');
+  function clearBody(){
+    const d = ensureDom();
+    d.body.innerHTML = '';
   }
 
-  // =========================
-  // Render
-  // =========================
-  function setBackVisible(on){
-    if (!dom.back) return;
-    dom.back.classList.toggle('show', !!on);
-    dom.back.setAttribute('aria-hidden', on ? 'false' : 'true');
-  }
+  function putMessageLines(lines){
+    const d = ensureDom();
+    clearBody();
 
-  function setRootVisible(on){
-    if (!dom.root) return;
-    dom.root.classList.toggle('show', !!on);
-    dom.root.setAttribute('aria-hidden', on ? 'false' : 'true');
-  }
-
-  function render(){
-    if (!built) build();
-
-    // background
-    const bgImg = dom.bg?.querySelector('.tntBgImg');
-    if (bgImg) bgImg.src = state.bg || mapImg(ASSET.TOURNAMENT_BG);
-
-    // tent layer (only when bgKey === TENT)
-    if (dom.layerTent){
-      dom.layerTent.classList.toggle('show', shouldShowTentLayer(state.bgKey));
+    const arr = Array.isArray(lines) ? lines : [String(lines || '')];
+    for (const line of arr){
+      const div = document.createElement('div');
+      div.className = 'mobbrTourMsgLine';
+      div.textContent = String(line ?? '');
+      d.body.appendChild(div);
     }
-    if (dom.tentImg) dom.tentImg.src = ASSET.TENT;
-
-    // chars
-    if (dom.playerImg) dom.playerImg.src = state.playerImage || 'P1.png';
-    if (dom.enemyImg){
-      const hasEnemy = !!state.enemyImage;
-      dom.enemyImg.style.display = hasEnemy ? '' : 'none';
-      if (hasEnemy) dom.enemyImg.src = state.enemyImage;
-    }
-
-    // message
-    const title = state.title || '';
-    const lines = Array.isArray(state.messageLines) ? state.messageLines : [];
-    const body = lines.join('\n');
-
-    if (dom.msgTitle) dom.msgTitle.textContent = title;
-    if (dom.msgBody) dom.msgBody.textContent = body;
-
-    // next button
-    if (dom.btnNext){
-      dom.btnNext.textContent = state.nextLabel || 'NEXT';
-      dom.btnNext.disabled = !state.nextEnabled;
-    }
-
-    // result visibility
-    if (dom.resultWrap){
-      dom.resultWrap.classList.toggle('show', !!state.showResult);
-    }
-
-    setBackVisible(state.isOpen);
-    setRootVisible(state.isOpen);
   }
 
-  // =========================
-  // Result rendering（Apex風：20/40対応）
-  // =========================
-  function clearResult(){
-    if (dom.resultList) dom.resultList.innerHTML = '';
-  }
-
-  function fmtMini(row){
-    const k = row.kills ?? row.kill ?? 0;
-    const a = row.assists ?? row.assist ?? 0;
-    const t = row.treasure ?? 0;
-    const f = row.flag ?? 0;
-    return `K${k} A${a} T${t} F${f}`;
-  }
-
-  function renderResultList(rows){
-    clearResult();
-    if (!dom.resultList) return;
-
+  function normalizeRows(rows){
     const arr = Array.isArray(rows) ? rows : [];
+    return arr.map((r, idx)=>{
+      const rank = Number(r.rank ?? r.place ?? (idx+1));
+      const teamId = String(r.teamId ?? '');
+      const teamName = String(r.teamName ?? r.name ?? teamId ?? '');
+      const points = Number(r.points ?? r.total ?? 0);
 
-    if (arr.length === 0){
-      const empty = document.createElement('div');
-      empty.style.padding = '14px';
-      empty.style.opacity = '0.85';
-      empty.textContent = '結果データがありません';
-      dom.resultList.appendChild(empty);
+      const kills = Number(r.kills ?? r.kp ?? 0);
+      const assists = Number(r.assists ?? r.ap ?? 0);
+      const treasure = Number(r.treasure ?? 0);
+      const flag = Number(r.flag ?? 0);
+
+      return { rank, teamId, teamName, points, kills, assists, treasure, flag };
+    });
+  }
+
+  function renderResultTable(rows, highlightTeamId){
+    const d = ensureDom();
+    clearBody();
+
+    const table = document.createElement('table');
+    table.className = 'mobbrTourTable';
+
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+
+    const headers = [
+      { key:'rank', label:'#' },
+      { key:'teamName', label:'TEAM' },
+      { key:'points', label:'PT' },
+      { key:'kills', label:'K' },
+      { key:'assists', label:'A' },
+      { key:'treasure', label:'TR' },
+      { key:'flag', label:'FLAG' }
+    ];
+
+    for (const h of headers){
+      const th = document.createElement('th');
+      th.textContent = h.label;
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+
+    const tbody = document.createElement('tbody');
+
+    const arr = normalizeRows(rows);
+    const hi = String(highlightTeamId || '').trim();
+
+    for (const r of arr){
+      const tr = document.createElement('tr');
+      if (hi && r.teamId && String(r.teamId) === hi){
+        tr.className = 'mobbrTourRowHi';
+      }
+
+      const tdRank = document.createElement('td');
+      tdRank.textContent = String(r.rank ?? '');
+      tr.appendChild(tdRank);
+
+      const tdName = document.createElement('td');
+      tdName.textContent = String(r.teamName ?? '');
+      tr.appendChild(tdName);
+
+      const tdPt = document.createElement('td');
+      tdPt.textContent = String(r.points ?? 0);
+      tr.appendChild(tdPt);
+
+      const tdK = document.createElement('td');
+      tdK.textContent = String(r.kills ?? 0);
+      tr.appendChild(tdK);
+
+      const tdA = document.createElement('td');
+      tdA.textContent = String(r.assists ?? 0);
+      tr.appendChild(tdA);
+
+      const tdTr = document.createElement('td');
+      tdTr.textContent = String(r.treasure ?? 0);
+      tr.appendChild(tdTr);
+
+      const tdF = document.createElement('td');
+      tdF.textContent = String(r.flag ?? 0);
+      tr.appendChild(tdF);
+
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    d.body.appendChild(table);
+  }
+
+  function setTitle(title, sub){
+    const d = ensureDom();
+    d.ttl.textContent = String(title || '');
+    d.sub.textContent = String(sub || '');
+  }
+
+  function setNextLabel(label){
+    const d = ensureDom();
+    d.btnNext.textContent = String(label || 'NEXT');
+  }
+
+  function setNextEnabledInternal(on){
+    nextEnabled = !!on;
+    const d = ensureDom();
+    d.btnNext.disabled = !nextEnabled;
+  }
+
+  // -----------------------------
+  // PUBLIC API
+  // -----------------------------
+
+  /**
+   * open(scene)
+   * scene:
+   *  - bg: neonmain.png 等（省略可）
+   *  - stageImage: tent.png 等（省略可 / 既定 tent.png）
+   *  - playerImage: P1.png 等
+   *  - enemyImage: 任意（空なら非表示）
+   *  - title: 見出し
+   *  - messageLines: 配列
+   *  - nextLabel: 文字
+   *  - nextEnabled: bool
+   *  - onNext: function
+   *  - highlightTeamId: （showResultで使うが、保持してもOK）
+   */
+  T.open = function(scene){
+    const d = ensureDom();
+    const s = scene || {};
+
+    setBodyTournamentMode(true);
+    setBg(s.bg || DEFAULT_BG);
+    setStageImage(s.stageImage || DEFAULT_STAGE);
+    setPlayerImage(s.playerImage || DEFAULT_PLAYER);
+    setEnemyImage(s.enemyImage || '');
+
+    // scene title + message
+    setTitle(s.title || '大会', '');
+    putMessageLines(Array.isArray(s.messageLines) ? s.messageLines : ['NEXTで進行します']);
+
+    // next
+    if (typeof s.onNext === 'function') nextHandler = s.onNext;
+    setNextLabel(s.nextLabel || 'NEXT');
+    setNextEnabledInternal(s.nextEnabled !== false);
+
+    d.root.style.display = 'grid';
+    d.root.setAttribute('aria-hidden','false');
+  };
+
+  T.close = function(){
+    const d = ensureDom();
+
+    d.root.style.display = 'none';
+    d.root.setAttribute('aria-hidden','true');
+
+    // overlayなども消す
+    d.overlay.classList.remove('is-on');
+    d.overlay.innerHTML = '';
+
+    setBodyTournamentMode(false);
+
+    // next handler は残してもいいが、事故防止でnullに寄せる
+    nextHandler = null;
+    setNextEnabledInternal(true);
+  };
+
+  /**
+   * setScene(scene)
+   * open後に差し替える（フェーズ切替など）
+   */
+  T.setScene = function(scene){
+    const d = ensureDom();
+    const s = scene || {};
+
+    // 表示してなければopen相当
+    if (d.root.style.display === 'none'){
+      T.open(scene);
       return;
     }
 
-    arr.forEach((r, idx)=>{
-      const rank = r.rank ?? (idx + 1);
-      const teamId = String(r.teamId ?? r.id ?? '');
-      const name = String(r.teamName ?? r.name ?? teamId || `TEAM${rank}`);
-      const pts = Number(r.points ?? r.totalPoints ?? 0);
+    setBodyTournamentMode(true);
+    if (s.bg) setBg(s.bg);
+    if (s.stageImage) setStageImage(s.stageImage);
+    if (s.playerImage) setPlayerImage(s.playerImage);
+    if ('enemyImage' in s) setEnemyImage(s.enemyImage);
 
-      const row = document.createElement('div');
-      row.className = 'tntRow';
-      if (state.highlightTeamId && teamId && teamId === state.highlightTeamId){
-        row.classList.add('isPlayer');
-      }
+    if (s.title) setTitle(s.title, '');
+    if (Array.isArray(s.messageLines)) putMessageLines(s.messageLines);
 
-      const leftRank = document.createElement('div');
-      leftRank.className = 'tntRank';
-      leftRank.textContent = `${rank}位`;
-
-      const nm = document.createElement('div');
-      nm.className = 'tntName';
-      nm.textContent = name;
-
-      const mini = document.createElement('div');
-      mini.className = 'tntMini';
-      mini.textContent = fmtMini(r);
-
-      const p = document.createElement('div');
-      p.className = 'tntPts';
-      p.textContent = `${pts}pt`;
-
-      row.appendChild(leftRank);
-      row.appendChild(nm);
-      row.appendChild(mini);
-      row.appendChild(p);
-
-      dom.resultList.appendChild(row);
-    });
-  }
-
-  // =========================
-  // Public UI API（flowが呼ぶ）
-  // =========================
-  function open(opts){
-    build();
-
-    state.isOpen = true;
-
-    // bgKey優先（なければbg）
-    const bgKey = (opts?.bgKey !== undefined) ? String(opts.bgKey || '') : state.bgKey;
-    state.bgKey = bgKey || 'MAP';
-    state.bg = (opts?.bg !== undefined)
-      ? resolveBgByKey(state.bgKey, opts.bg)
-      : resolveBgByKey(state.bgKey, mapImg(ASSET.TOURNAMENT_BG));
-
-    state.playerImage = String(opts?.playerImage || 'P1.png');
-    state.enemyImage  = String(opts?.enemyImage  || '');
-
-    state.title = String(opts?.title || '');
-    state.subtitle = String(opts?.subtitle || '');
-    state.messageLines = Array.isArray(opts?.messageLines) ? opts.messageLines : (opts?.message ? [String(opts.message)] : []);
-    state.nextLabel = String(opts?.nextLabel || 'NEXT');
-    state.nextEnabled = (opts?.nextEnabled !== false);
-    state.onNext = (typeof opts?.onNext === 'function') ? opts.onNext : null;
-
-    state.showResult = false;
-    state.resultTitle = '';
-    state.resultLobbyLabel = '';
-    state.resultRows = [];
-    state.highlightTeamId = String(opts?.highlightTeamId || '');
-
-    state.lockBack = true;
-
-    render();
-  }
-
-  function close(){
-    state.isOpen = false;
-    state.onNext = null;
-    state.showResult = false;
-    state.lockBack = false;
-    render();
-  }
-
-  function setScene(opts){
-    // bgKey / bg
-    if (opts?.bgKey !== undefined){
-      state.bgKey = String(opts.bgKey || 'MAP');
-      // bg未指定でもキーに沿って切り替える
-      if (opts?.bg === undefined){
-        state.bg = resolveBgByKey(state.bgKey, mapImg(ASSET.TOURNAMENT_BG));
-      }
-    }
-
-    if (opts?.bg !== undefined){
-      state.bg = resolveBgByKey(state.bgKey, opts.bg);
-    }
-
-    state.playerImage = (opts?.playerImage !== undefined) ? String(opts.playerImage) : state.playerImage;
-    state.enemyImage  = (opts?.enemyImage  !== undefined) ? String(opts.enemyImage)  : state.enemyImage;
-
-    state.title = (opts?.title !== undefined) ? String(opts.title) : state.title;
-    state.subtitle = (opts?.subtitle !== undefined) ? String(opts.subtitle) : state.subtitle;
-
-    if (opts?.messageLines !== undefined){
-      state.messageLines = Array.isArray(opts.messageLines) ? opts.messageLines : [];
-    }else if (opts?.message !== undefined){
-      state.messageLines = [String(opts.message)];
-    }
-
-    state.nextLabel = (opts?.nextLabel !== undefined) ? String(opts.nextLabel) : state.nextLabel;
-    if (opts?.nextEnabled !== undefined) state.nextEnabled = !!opts.nextEnabled;
-    if (opts?.onNext !== undefined) state.onNext = (typeof opts.onNext === 'function') ? opts.onNext : null;
-
-    if (opts?.highlightTeamId !== undefined) state.highlightTeamId = String(opts.highlightTeamId || '');
-
-    render();
-  }
-
-  // 便利：イベント背景キーを使って表示
-  function showEventScene(eventKey, title, lines, nextLabel){
-    setScene({
-      bgKey: eventKey,
-      title: title || '',
-      messageLines: Array.isArray(lines) ? lines : [String(lines || '')],
-      nextLabel: (nextLabel !== undefined) ? String(nextLabel) : state.nextLabel
-    });
-  }
-
-  function showMessage(title, lines, nextLabel){
-    state.showResult = false;
-    state.title = String(title || '');
-    state.messageLines = Array.isArray(lines) ? lines : [String(lines || '')];
-    if (nextLabel !== undefined) state.nextLabel = String(nextLabel || 'NEXT');
-    render();
-  }
-
-  function showResult(opts){
-    state.showResult = true;
-    state.resultTitle = String(opts?.title || 'RESULT');
-    state.resultLobbyLabel = String(opts?.sub || '');
-
-    if (dom.resultHeader) dom.resultHeader.textContent = state.resultTitle;
-    if (dom.resultSub) dom.resultSub.textContent = state.resultLobbyLabel;
-
-    state.highlightTeamId = String(opts?.highlightTeamId ?? state.highlightTeamId ?? '');
-    state.resultRows = Array.isArray(opts?.rows) ? opts.rows : [];
-
-    renderResultList(state.resultRows);
-    render();
-  }
-
-  function hideResult(){
-    state.showResult = false;
-    render();
-  }
-
-  function setNextHandler(fn){
-    state.onNext = (typeof fn === 'function') ? fn : null;
-    render();
-  }
-
-  function setNextEnabled(on){
-    state.nextEnabled = !!on;
-    render();
-  }
-
-  // =========================
-  // Bind
-  // =========================
-  let bound = false;
-  function bind(){
-    if (bound) return;
-    bound = true;
-
-    if (dom.back){
-      dom.back.addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-      }, { passive:false });
-    }
-
-    if (dom.btnNext){
-      dom.btnNext.addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        if (!state.nextEnabled) return;
-
-        state.nextEnabled = false;
-        render();
-
-        try{
-          if (typeof state.onNext === 'function') state.onNext();
-        }finally{
-          setTimeout(()=>{
-            if (!state.isOpen) return;
-            if (state.nextEnabled === false){
-              state.nextEnabled = true;
-              render();
-            }
-          }, 120);
-        }
-      });
-    }
-
-    if (dom.resultClose){
-      dom.resultClose.addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        hideResult();
-      });
-    }
-
-    window.addEventListener('keydown', (e)=>{
-      if (!state.isOpen) return;
-      if (e.key === 'Escape'){
-        e.preventDefault();
-      }
-    });
-  }
-
-  // =========================
-  // Debug
-  // =========================
-  function demoResult20(){
-    const rows = [];
-    for (let i=1; i<=20; i++){
-      rows.push({
-        rank: i,
-        teamId: `team${String(i).padStart(2,'0')}`,
-        teamName: `TEAM ${i}`,
-        points: Math.max(0, 50 - i),
-        kills: Math.floor(Math.random()*8),
-        assists: Math.floor(Math.random()*10),
-        treasure: Math.floor(Math.random()*2),
-        flag: Math.floor(Math.random()*2)
-      });
-    }
-    showResult({
-      title: 'RESULT',
-      sub: 'A & B 第1試合',
-      rows,
-      highlightTeamId: 'team01'
-    });
-  }
-
-  // =========================
-  // Expose
-  // =========================
-  window.MOBBR.ui.tournament = {
-    VERSION: 'v2',
-
-    open,
-    close,
-    setScene,
-    showMessage,
-    showResult,
-    hideResult,
-    setNextHandler,
-    setNextEnabled,
-
-    // 追加：イベント用
-    showEventScene,
-
-    // assets keys（flow側で使う用）
-    BG_KEYS: {
-      MAP: 'MAP',
-      TENT: 'TENT',
-      IDO: 'IDO',
-      WINNER: 'WINNER',
-      B_DEBA: 'B_DEBA',
-      B_UP: 'B_UP',
-      B_GETA: 'B_GETA',
-      B_GETB: 'B_GETB',
-      CUSTOM: 'CUSTOM'
-    },
-
-    // debug
-    _demoResult20: demoResult20
+    if (typeof s.onNext === 'function') nextHandler = s.onNext;
+    if (s.nextLabel) setNextLabel(s.nextLabel);
+    if ('nextEnabled' in s) setNextEnabledInternal(s.nextEnabled !== false);
   };
 
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', build);
-  }else{
-    build();
-  }
+  /**
+   * showMessage(title, lines, nextLabel)
+   */
+  T.showMessage = function(title, lines, nextLabel){
+    const d = ensureDom();
+
+    // openされてない場合も、最低限見せる（既定シーンで）
+    if (d.root.style.display === 'none'){
+      T.open({
+        bg: DEFAULT_BG,
+        stageImage: DEFAULT_STAGE,
+        playerImage: DEFAULT_PLAYER,
+        title: '大会',
+        messageLines: ['NEXTで進行します'],
+        nextLabel: 'NEXT',
+        nextEnabled: true
+      });
+    }
+
+    setTitle(String(title || '大会'), '');
+    putMessageLines(lines);
+    if (nextLabel) setNextLabel(nextLabel);
+  };
+
+  /**
+   * showResult({title, sub, rows, highlightTeamId})
+   */
+  T.showResult = function(opt){
+    const d = ensureDom();
+    const o = opt || {};
+
+    // openされてない場合も、最低限見せる（既定シーンで）
+    if (d.root.style.display === 'none'){
+      T.open({
+        bg: DEFAULT_BG,
+        stageImage: DEFAULT_STAGE,
+        playerImage: DEFAULT_PLAYER,
+        title: '大会',
+        messageLines: ['NEXTで進行します'],
+        nextLabel: 'NEXT',
+        nextEnabled: true
+      });
+    }
+
+    setTitle(String(o.title || 'RESULT'), String(o.sub || ''));
+    renderResultTable(o.rows || [], o.highlightTeamId || '');
+  };
+
+  /**
+   * setNextHandler(fn)
+   */
+  T.setNextHandler = function(fn){
+    nextHandler = (typeof fn === 'function') ? fn : null;
+  };
+
+  /**
+   * setNextEnabled(bool)
+   */
+  T.setNextEnabled = function(on){
+    setNextEnabledInternal(!!on);
+  };
+
 })();
