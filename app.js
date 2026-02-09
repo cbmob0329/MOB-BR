@@ -7,9 +7,9 @@
   - 分割JSの順序ロード
   - 各UI init の一元管理
 
-  v17 変更点：
-  - ui_shop.js を分割（ui_shop.core.js / ui_shop.gacha.js / ui_shop.catalog.js）
-  - ui_schedule.js 継続
+  v17 変更点（今回）：
+  - 大会実装に必要なモジュールをロード順に追加
+    ui_tournament.js / sim_tournament_* / sim_battle.js
 */
 
 const APP_VER = 17;
@@ -68,17 +68,18 @@ async function loadModules(){
 
   /*
     読み込み順は超重要
-    - storage / data → ui
+    - storage / data → ui → sim
+    - Flow は「sim_tournament_local.js」等に依存するので後ろ
   */
   const files = [
     // core
     `storage.js${v}`,
     `data_player.js${v}`,
 
-    // cards
+    // cards data
     `data_cards.js${v}`,
 
-    // UI
+    // UI（メイン系）
     `ui_main.js${v}`,
     `ui_team.js${v}`,
     `ui_training.js${v}`,
@@ -92,7 +93,30 @@ async function loadModules(){
     `ui_shop.catalog.js${v}`,
 
     // schedule UI
-    `ui_schedule.js${v}`
+    `ui_schedule.js${v}`,
+
+    // =========================
+    // TOURNAMENT UI（追加）
+    // =========================
+    `ui_tournament.js${v}`,
+
+    // =========================
+    // SIM（追加）
+    // - battle計算は今後の統合で使う（今は読み込みだけでもOK）
+    // =========================
+    `sim_battle.js${v}`,
+
+    // 5大会シム（ローカル→ナショナル→ラストチャンス→ワールド→ファイナル）
+    // ※存在しないファイルがあると読み込み失敗するので、
+    //   まだ無いものは「ファイルを用意してから」or ここを一時コメントアウトでOK
+    `sim_tournament_local.js${v}`,
+    `sim_tournament_national.js${v}`,
+    `sim_tournament_lastchance.js${v}`,
+    `sim_tournament_world.js${v}`,
+    `sim_tournament_final.js${v}`,
+
+    // Flow（最後：上記に依存）
+    `sim_tournament_flow.js${v}`
   ];
 
   for (const f of files){
@@ -143,6 +167,8 @@ async function bootAfterNext(){
   if (window.MOBBR?.initScheduleUI){
     window.MOBBR.initScheduleUI();
   }
+
+  // tournament UI / flow は「ロードされていれば」使える状態になる（initは不要）
 }
 
 // ===== global events =====
