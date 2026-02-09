@@ -1,22 +1,23 @@
 /* =========================================================
-   MOB BR - sim_tournament_flow.js (FULL / UPDATED)
+   MOB BR - sim_tournament_flow.js (FULL / UPDATED v3.0)
    ---------------------------------------------------------
    役割：
-   ・大会中の「NEXT進行」を一元管理する
+   ・大会中の「NEXT進行」を一元管理する（段階制STEP）
    ・各大会フェーズ（local / national / world / final）を切り替える
-   ・UI → sim_tournament_xxx を“順番通り”に呼ぶだけの司令塔
+   ・結果/総合の表示は ui_tournament に統一（sim側UIは呼ばない）
    ---------------------------------------------------------
-   追加（要件）：
+   要件：
    ・試合前コーチスキル使用（使う/使わない選択）
    ・消耗品：使用したら所持から削除（0なら装備からも外す）
    ・使えるスキルが無い時：
      「コーチスキルはもう使い切っている！選手を信じよう！」
    ---------------------------------------------------------
-   依存：
-   ・sim_tournament_local.js
-   ・（将来）sim_tournament_national.js
-   ・（将来）sim_tournament_world.js
-   ・（将来）sim_tournament_final.js
+   依存（存在前提）：
+   ・ui_tournament.js（window.MOBBR.ui.tournament）
+   ・sim_tournament_local.js    （window.MOBBR.sim.tournamentLocal）
+   ・sim_tournament_national.js （window.MOBBR.sim.tournamentNational）
+   ・sim_tournament_world.js    （window.MOBBR.sim.tournamentWorld）
+   ・sim_tournament_final.js    （window.MOBBR.sim.tournamentFinal）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -31,10 +32,40 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   /* =========================
      INTERNAL STATE
   ========================== */
+
+  const STEP = {
+    NONE: 'NONE',
+    INTRO: 'INTRO',
+    PREMATCH: 'PREMATCH',
+    PLAY: 'PLAY',
+    SHOW_MATCH_RESULT: 'SHOW_MATCH_RESULT',
+    SHOW_OVERALL: 'SHOW_OVERALL',
+    FINISH: 'FINISH'
+  };
+
+  const PHASES = ['local','national','world','final'];
+
+  const PHASE_META = {
+    local:    { jp:'ローカル大会',   bg:'neonmain.png' },
+    national: { jp:'ナショナル大会', bg:'neonmain.png' },
+    world:    { jp:'ワールド大会',   bg:'neonmain.png' },
+    final:    { jp:'ファイナル',     bg:'neonmain.png' }
+  };
+
+  const SIM_BY_PHASE = {
+    local:    () => window.MOBBR?.sim?.tournamentLocal,
+    national: () => window.MOBBR?.sim?.tournamentNational,
+    world:    () => window.MOBBR?.sim?.tournamentWorld,
+    final:    () => window.MOBBR?.sim?.tournamentFinal
+  };
+
   let current = {
-    phase: null,        // 'local' | 'national' | 'world' | 'final'
-    state: null,        // 各 sim_tournament_xxx の state
-    busy: false         // NEXT多重防止
+    phase: null,        // local/national/world/final
+    sim: null,          // module
+    state: null,        // module state
+    busy: false,        // NEXT連打防止
+    step: STEP.NONE,    // 段階制STEP
+    pending: null       // coachSkillなど
   };
 
   /* =========================
@@ -59,163 +90,504 @@ window.MOBBR.sim = window.MOBBR.sim || {};
      PUBLIC API
   ========================== */
 
-  /**
-   * 大会開始（ローカルから）
-   */
-  Flow.startLocalTournament = function(){
-    const Local = window.MOBBR?.sim?.tournamentLocal;
-    if (!Local){
-      console.error('[Flow] sim_tournament_local.js not found');
-      return;
-    }
+  // 互換：既存呼び出し
+  Flow.startLocalTournament = () => startTournament('local');
+  Flow.startNationalTournament = () => startTournament('national');
+  Flow.startWorldTournament = () => startTournament('world');
+  Flow.startFinalTournament = () => startTournament('final');
 
-    current.phase = 'local';
-    current.state = Local.create({ keepStorage: true });
+  // 推奨：任意フェーズ開始
+  Flow.startTournament = (phase) => startTournament(phase);
 
-    // 大会UIがあるなら最初から NEXT を Flow.next に繋ぐ
-    const tUI = window.MOBBR?.ui?.tournament;
-    if (tUI && typeof tUI.open === 'function'){
-      tUI.open({
-        bg: 'neonmain.png',
-        playerImage: 'P1.png',
-        enemyImage: '',
-        title: 'ローカル大会',
-        messageLines: ['ローカル大会 開始！'],
-        nextLabel: 'NEXT',
-        nextEnabled: true,
-        onNext: Flow.next
-      });
-    }else{
-      announce('ローカル大会 開始！');
-    }
-  };
-
-  /**
-   * NEXT ボタン押下時の共通入口
-   * UI側は必ずこれだけ呼ぶ
-   */
   Flow.next = function(){
     if (current.busy) return;
     current.busy = true;
 
     try{
-      if (!current.phase){
-        console.warn('[Flow] phase not set');
+      if (!current.phase || !current.sim || !current.state){
+        announce('大会が開始されていません');
         return;
       }
-
-      switch(current.phase){
-        case 'local':
-          nextLocal();
-          break;
-
-        case 'national':
-          console.warn('[Flow] national not implemented yet');
-          announce('ナショナル大会は未実装です');
-          break;
-
-        case 'world':
-          console.warn('[Flow] world not implemented yet');
-          announce('ワールド大会は未実装です');
-          break;
-
-        case 'final':
-          console.warn('[Flow] final not implemented yet');
-          announce('ファイナルは未実装です');
-          break;
-
-        default:
-          console.warn('[Flow] unknown phase', current.phase);
-      }
+      stepTournament(); // phase共通STEP
     }finally{
-      // UIの連打防止：少しだけ間を置いて戻す
       setTimeout(()=>{ current.busy = false; }, 40);
     }
   };
 
-  /**
-   * 現在のフェーズ取得（UI確認用）
-   */
-  Flow.getPhase = function(){
-    return current.phase;
-  };
+  Flow.getPhase = function(){ return current.phase; };
 
-  /**
-   * 強制リセット（デバッグ用）
-   */
   Flow.resetAll = function(){
     current.phase = null;
+    current.sim = null;
     current.state = null;
     current.busy = false;
+    current.step = STEP.NONE;
+    current.pending = null;
 
     hideCoachSelect();
 
-    const Local = window.MOBBR?.sim?.tournamentLocal;
-    if (Local && Local.reset) Local.reset();
+    // sim側 reset があれば呼ぶ（全フェーズ）
+    for (const p of PHASES){
+      const Sim = SIM_BY_PHASE[p]();
+      if (Sim && typeof Sim.reset === 'function'){
+        try{ Sim.reset(); }catch(e){}
+      }
+    }
+
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (tUI && typeof tUI.close === 'function') tUI.close();
   };
 
   /* =========================
-     LOCAL FLOW
+     START
   ========================== */
-  function nextLocal(){
-    const Local = window.MOBBR.sim.tournamentLocal;
+  function startTournament(phase){
+    phase = String(phase || '').toLowerCase();
+    if (!PHASES.includes(phase)) phase = 'local';
+
+    const Sim = SIM_BY_PHASE[phase]();
+    if (!Sim){
+      announce(`大会データがありません（sim_tournament_${phase}.js が見つかりません）`);
+      console.error('[Flow] sim missing:', phase);
+      return;
+    }
+    if (typeof Sim.create !== 'function'){
+      announce(`大会データの形式が違います（${phase}.create がありません）`);
+      console.error('[Flow] create missing:', phase, Sim);
+      return;
+    }
+
+    current.phase = phase;
+    current.sim = Sim;
+    current.state = Sim.create({ keepStorage: true });
+    current.step = STEP.INTRO;
+    current.pending = null;
+
+    openTournamentUIIntro();
+  }
+
+  function openTournamentUIIntro(){
+    const meta = PHASE_META[current.phase] || { jp:'大会', bg:'neonmain.png' };
+    const tUI = window.MOBBR?.ui?.tournament;
+
+    if (tUI && typeof tUI.open === 'function'){
+      tUI.open({
+        bg: meta.bg,
+        playerImage: 'P1.png',
+        enemyImage: '',
+        title: meta.jp,
+        messageLines: [
+          `${meta.jp} 開始！`,
+          'NEXTで進行します'
+        ],
+        nextLabel: 'NEXT',
+        nextEnabled: true,
+        onNext: Flow.next,
+        highlightTeamId: getPlayerTeamIdSafe(current.state)
+      });
+    }else{
+      announce(`${meta.jp} 開始！`);
+    }
+  }
+
+  /* =========================
+     STEP ENGINE (PHASE共通)
+  ========================== */
+  function stepTournament(){
+    const Sim = current.sim;
     const st = current.state;
 
-    if (!st){
-      console.error('[Flow] local state missing');
-      return;
-    }
+    ensureTournamentNextBound();
 
-    // まだ試合が残っている
-    if (!Local.isFinished(st)){
-      const matchNo = st.matchIndex + 1;
-
-      // ★試合前：コーチスキル選択（ある場合）
-      runPreMatchCoachSkill({
-        phase: 'local',
-        matchNo,
-        onDone: (coachUse)=>{
-
-          // coachUse は null（使わない/無し） or { id,name,...meta }
-          // sim側に渡せる形で添付（sim_tournament_local.js が拾うなら使える）
-          const matchOpt = {
-            title: 'RESULT',
-            subtitle: `ローカル大会 第${matchNo}試合`,
-            coachSkill: coachUse ? sanitizeCoachUse(coachUse) : null
-          };
-
-          current.state = Local.playNextMatch(st, matchOpt);
-
-          // 試合後に「現在の総合順位」を出したい場合はここ
-          Local.openOverallUI(current.state, {
-            title: 'OVERALL',
-            subtitle: `ローカル大会 現在順位（${current.state.matchIndex}/5）`
-          });
+    // finishedなら強制FINISHへ
+    if (typeof Sim.isFinished === 'function'){
+      try{
+        if (Sim.isFinished(st) && current.step !== STEP.FINISH){
+          current.step = STEP.FINISH;
         }
-      });
+      }catch(e){}
+    }
 
+    const meta = PHASE_META[current.phase] || { jp:'大会', bg:'neonmain.png' };
+    const jp = meta.jp;
+
+    switch(current.step){
+
+      case STEP.INTRO: {
+        current.step = STEP.PREMATCH;
+        const matchNo = getMatchNoForDisplay(st);
+        showMsg(jp, [
+          `第${matchNo}試合の準備をします`,
+          'コーチスキルを使うか選べます'
+        ]);
+        return;
+      }
+
+      case STEP.PREMATCH: {
+        const matchNo = getMatchNoForDisplay(st);
+
+        runPreMatchCoachSkill({
+          phase: current.phase,
+          matchNo,
+          onDone: (coachUse)=>{
+            current.pending = current.pending || {};
+            current.pending.coachSkill = coachUse ? sanitizeCoachUse(coachUse) : null;
+
+            current.step = STEP.PLAY;
+
+            showMsg(jp, [
+              `第${matchNo}試合`,
+              coachUse ? `コーチスキル使用：${COACH_BY_ID[coachUse.id]?.name || coachUse.id}` : 'コーチスキル：使わない',
+              'NEXTで試合開始'
+            ]);
+            setTournamentNextEnabled(true);
+          }
+        });
+        return;
+      }
+
+      case STEP.PLAY: {
+        const matchNo = getMatchNoForDisplay(st);
+
+        const matchOpt = {
+          title: 'RESULT',
+          subtitle: `${jp} 第${matchNo}試合`,
+          coachSkill: current.pending?.coachSkill || null
+        };
+
+        try{
+          if (typeof Sim.playNextMatch === 'function'){
+            current.state = Sim.playNextMatch(st, matchOpt);
+          }else{
+            announce(`試合進行ができません（${current.phase}.playNextMatch がありません）`);
+            return;
+          }
+        }catch(e){
+          console.error(e);
+          announce('試合進行でエラー（コンソール確認）');
+          return;
+        }finally{
+          if (current.pending) current.pending.coachSkill = null;
+        }
+
+        current.step = STEP.SHOW_MATCH_RESULT;
+        showMatchResultUI(); // 即表示
+        return;
+      }
+
+      case STEP.SHOW_MATCH_RESULT: {
+        current.step = STEP.SHOW_OVERALL;
+        showMsg(jp, ['次は現在の総合順位を表示します', 'NEXT']);
+        return;
+      }
+
+      case STEP.SHOW_OVERALL: {
+        showOverallUI();
+
+        // 次へ
+        let finished = false;
+        if (typeof Sim.isFinished === 'function'){
+          try{ finished = !!Sim.isFinished(current.state); }catch(e){ finished = false; }
+        }
+        current.step = finished ? STEP.FINISH : STEP.PREMATCH;
+        return;
+      }
+
+      case STEP.FINISH: {
+        showFinalOverallUI();
+
+        // 次のフェーズへ自動遷移（順番：local→national→world→final→終了）
+        const nextPhase = nextPhaseOf(current.phase);
+        if (nextPhase){
+          showMsg('大会', [
+            `${jp} 終了！`,
+            `次は ${PHASE_META[nextPhase]?.jp || nextPhase} です`,
+            'NEXTで開始'
+          ]);
+
+          current.phase = nextPhase;
+          current.sim = SIM_BY_PHASE[nextPhase]();
+          if (!current.sim || typeof current.sim.create !== 'function'){
+            announce(`次の大会データがありません（${nextPhase}）`);
+            return;
+          }
+          current.state = current.sim.create({ keepStorage: true });
+          current.step = STEP.INTRO;
+          current.pending = null;
+
+          // UIも次大会へ切替
+          const meta2 = PHASE_META[nextPhase] || { jp:'大会', bg:'neonmain.png' };
+          const tUI = window.MOBBR?.ui?.tournament;
+          if (tUI && typeof tUI.setScene === 'function'){
+            tUI.setScene({
+              bg: meta2.bg,
+              title: meta2.jp,
+              messageLines: [
+                `${meta2.jp} 開始！`,
+                'NEXTで進行します'
+              ],
+              nextLabel: 'NEXT',
+              nextEnabled: true,
+              onNext: Flow.next,
+              highlightTeamId: getPlayerTeamIdSafe(current.state)
+            });
+          }else{
+            announce(`${meta2.jp} 開始！`);
+          }
+        }else{
+          showMsg('大会', [
+            `${jp} 終了！`,
+            '全大会が完了しました'
+          ]);
+        }
+        return;
+      }
+
+      default: {
+        current.step = STEP.INTRO;
+        showMsg(jp, ['進行を再開します', 'NEXT']);
+        return;
+      }
+    }
+  }
+
+  function nextPhaseOf(phase){
+    const i = PHASES.indexOf(phase);
+    if (i < 0) return null;
+    if (i === PHASES.length - 1) return null;
+    return PHASES[i + 1];
+  }
+
+  function getMatchNoForDisplay(st){
+    const mi = Number(st?.matchIndex ?? 0);
+    return Math.max(1, mi + 1);
+  }
+
+  /* =========================
+     UI helpers（ui_tournament 統一）
+  ========================== */
+  function ensureTournamentNextBound(){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (!tUI) return;
+    if (typeof tUI.setNextHandler === 'function') tUI.setNextHandler(Flow.next);
+    if (typeof tUI.setNextEnabled === 'function') tUI.setNextEnabled(true);
+  }
+
+  function setTournamentNextEnabled(on){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (!tUI) return;
+    if (typeof tUI.setNextEnabled === 'function') tUI.setNextEnabled(!!on);
+  }
+
+  function showMsg(title, lines){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (tUI && typeof tUI.showMessage === 'function'){
+      tUI.showMessage(String(title||''), Array.isArray(lines)?lines:[String(lines||'')], 'NEXT');
+      ensureTournamentNextBound();
+      return;
+    }
+    announce(Array.isArray(lines)? lines.join(' / ') : String(lines||''));
+  }
+
+  function showMatchResultUI(){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (!tUI || typeof tUI.showResult !== 'function'){
+      announce('結果表示UIがありません（ui_tournament.js を確認）');
       return;
     }
 
-    // 5試合すべて終了
-    const finalOverall = Local.getFinalOverall(st);
+    const meta = PHASE_META[current.phase] || { jp:'大会' };
+    const jp = meta.jp;
 
-    announce('ローカル大会 終了！');
+    const st = current.state || {};
+    const matchNoShown = Number(st.matchIndex ?? 0) || getMatchNoForDisplay(st);
+    const subtitle = `${jp} 第${matchNoShown}試合`;
 
-    // ここで「上位10通過／敗退」を判定する（次フェーズ実装側）
-    console.log('[Flow] Local Final Overall', finalOverall);
+    const rows = pickRowsFromStateForMatch(st);
+    const hi = getPlayerTeamIdSafe(st);
 
-    // 次フェーズ（未実装）
-    announce('次はナショナル大会！（※未実装）');
-    current.phase = 'national';
+    tUI.showResult({
+      title: 'RESULT',
+      sub: subtitle,
+      rows,
+      highlightTeamId: hi
+    });
+
+    ensureTournamentNextBound();
+  }
+
+  function showOverallUI(){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (!tUI || typeof tUI.showResult !== 'function'){
+      announce('総合表示UIがありません（ui_tournament.js を確認）');
+      return;
+    }
+
+    const meta = PHASE_META[current.phase] || { jp:'大会' };
+    const jp = meta.jp;
+
+    const st = current.state || {};
+    const rows = pickRowsFromStateForOverall(st, current.sim);
+
+    const shownMatch = Number(st.matchIndex ?? 0) || 0;
+    const total = getTotalMatchesSafe(st, current.sim);
+    const subtitle = `${jp} 現在順位（${Math.min(shownMatch,total)}/${total}）`;
+
+    const hi = getPlayerTeamIdSafe(st);
+
+    tUI.showResult({
+      title: 'OVERALL',
+      sub: subtitle,
+      rows,
+      highlightTeamId: hi
+    });
+
+    ensureTournamentNextBound();
+  }
+
+  function showFinalOverallUI(){
+    const tUI = window.MOBBR?.ui?.tournament;
+    if (!tUI || typeof tUI.showResult !== 'function'){
+      announce('最終総合表示UIがありません（ui_tournament.js を確認）');
+      return;
+    }
+
+    const meta = PHASE_META[current.phase] || { jp:'大会' };
+    const jp = meta.jp;
+
+    const st = current.state || {};
+    const Sim = current.sim;
+
+    let rows = null;
+    if (Sim && typeof Sim.getFinalOverall === 'function'){
+      try{ rows = Sim.getFinalOverall(st); }catch(e){ rows = null; }
+    }
+    if (!rows) rows = pickRowsFromStateForOverall(st, Sim);
+
+    const hi = getPlayerTeamIdSafe(st);
+
+    tUI.showResult({
+      title: 'FINAL OVERALL',
+      sub: `${jp} 最終順位`,
+      rows: normalizeRowsForTournamentUI(rows),
+      highlightTeamId: hi
+    });
+
+    ensureTournamentNextBound();
+  }
+
+  function getTotalMatchesSafe(st, Sim){
+    const candidates = [
+      st?.totalMatches,
+      st?.matchTotal,
+      st?.maxMatches,
+      Sim?.TOTAL_MATCHES,
+      Sim?.MAX_MATCHES
+    ];
+    for (const v of candidates){
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 5;
+  }
+
+  /* =========================
+     State → rows 取得（頑丈に）
+  ========================== */
+  function normalizeRowsForTournamentUI(rows){
+    const arr = Array.isArray(rows) ? rows : [];
+    return arr.map((r, idx)=>{
+      const rank = Number(r.rank ?? r.place ?? r.placement ?? (idx+1));
+      const teamId = String(r.teamId ?? r.id ?? r.team ?? '');
+      const teamName = String(r.teamName ?? r.name ?? r.team_name ?? teamId || `TEAM${rank}`);
+      const pts = Number(r.points ?? r.totalPt ?? r.totalPoints ?? r.total ?? r.pt ?? 0);
+
+      const kills = Number(r.kills_total ?? r.kills ?? r.kill ?? 0);
+      const assists = Number(r.assists_total ?? r.assists ?? r.assist ?? 0);
+      const treasure = Number(r.treasure ?? 0);
+      const flag = Number(r.flag ?? 0);
+
+      return { rank, teamId, teamName, points: pts, kills, assists, treasure, flag };
+    });
+  }
+
+  function pickRowsFromStateForMatch(st){
+    const candidates = [
+      st.lastMatchResult,
+      st.lastMatchResults,
+      st.matchResult,
+      st.matchResults,
+      st.lastResult,
+      st.result,
+      st.lastMatch?.result,
+      st.lastMatch?.rows,
+      st.last?.result,
+      st.ui?.lastMatchResult
+    ];
+
+    for (const c of candidates){
+      if (Array.isArray(c) && c.length) return normalizeRowsForTournamentUI(c);
+      if (c && Array.isArray(c.rows) && c.rows.length) return normalizeRowsForTournamentUI(c.rows);
+    }
+    return [];
+  }
+
+  function pickRowsFromStateForOverall(st, Sim){
+    if (Sim){
+      const getterNames = ['getOverall', 'getOverallRows', 'buildOverall', 'buildOverallRows'];
+      for (const g of getterNames){
+        if (typeof Sim[g] === 'function'){
+          try{
+            const out = Sim[g](st);
+            if (Array.isArray(out) && out.length) return normalizeRowsForTournamentUI(out);
+          }catch(e){}
+        }
+      }
+    }
+
+    const candidates = [
+      st.overall,
+      st.overallRows,
+      st.overallResult,
+      st.overallResults,
+      st.currentOverall,
+      st.ui?.overall,
+      st.ui?.overallRows
+    ];
+    for (const c of candidates){
+      if (Array.isArray(c) && c.length) return normalizeRowsForTournamentUI(c);
+      if (c && Array.isArray(c.rows) && c.rows.length) return normalizeRowsForTournamentUI(c.rows);
+    }
+    return [];
+  }
+
+  function getPlayerTeamIdSafe(st){
+    const idCandidates = [
+      st?.playerTeamId,
+      st?.player?.teamId,
+      st?.playerTeam?.teamId
+    ];
+    for (const v of idCandidates){
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
+    }
+    try{
+      const rawId = localStorage.getItem('mobbr_playerTeamId');
+      if (rawId && rawId.trim()) return rawId.trim();
+    }catch{}
+    try{
+      const raw = localStorage.getItem('mobbr_playerTeam');
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (obj && obj.teamId != null) return String(obj.teamId);
+      }
+    }catch{}
+    return '';
   }
 
   /* =========================
      PRE-MATCH COACH SKILL
   ========================== */
-
   function sanitizeCoachUse(s){
-    // 余計な参照を持たない（stateを汚さない）
     const id = String(s.id || '');
     const base = COACH_BY_ID[id] || {};
     return {
@@ -234,44 +606,32 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const equipped = readCoachEquipped();
     const owned = readCoachOwned();
 
-    // 装備中で、かつ所持があるものだけ「使える」
     const usableIds = [];
     for (const id of equipped){
       if (!id) continue;
       const cnt = Number(owned[id] || 0);
       if (cnt > 0 && COACH_BY_ID[id]) usableIds.push(id);
     }
-
-    // 同一が複数枠に入っていても1回でOK（重複排除）
     const uniq = Array.from(new Set(usableIds));
 
     if (!uniq.length){
-      // 使えるスキル無し → 指定セリフ
       announce('コーチスキルはもう使い切っている！選手を信じよう！');
       ctx.onDone && ctx.onDone(null);
       return;
     }
 
-    // 選択UIを出す
     showCoachSelect({
       title: `試合前コーチスキル（第${ctx.matchNo}試合）`,
       list: uniq.map(id => {
         const s = COACH_BY_ID[id];
         const cnt = Number(owned[id] || 0);
-        return {
-          id,
-          name: s.name,
-          effect: s.effectLabel,
-          line: s.coachLine,
-          count: cnt
-        };
+        return { id, name:s.name, effect:s.effectLabel, line:s.coachLine, count:cnt };
       }),
       onSkip: ()=>{
         hideCoachSelect();
         ctx.onDone && ctx.onDone(null);
       },
       onPick: (id)=>{
-        // 使用：所持を1減らす / 0なら装備からも外す
         consumeCoachSkill(id);
         hideCoachSelect();
         ctx.onDone && ctx.onDone({ id });
@@ -323,7 +683,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (next <= 0){
       delete owned[id];
 
-      // 装備から外す（同ID全部）
       const eq = readCoachEquipped();
       for (let i=0;i<eq.length;i++){
         if (eq[i] === id) eq[i] = null;
@@ -332,7 +691,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }else{
       owned[id] = next;
     }
-
     writeCoachOwned(owned);
   }
 
@@ -426,24 +784,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     wrap.appendChild(card);
     document.body.appendChild(wrap);
 
-    // 背景クリック無効（閉じない）
     wrap.addEventListener('click', (e)=>{
       e.preventDefault();
       e.stopPropagation();
     }, { passive:false });
     card.addEventListener('click', (e)=>e.stopPropagation());
 
-    coachDom = {
-      wrap,
-      title: ttl,
-      sub,
-      list,
-      btnSkip,
-      onSkip: null,
-      onPick: null
-    };
+    coachDom = { wrap, title: ttl, sub, list, btnSkip, onSkip: null, onPick: null };
 
-    // bind
     btnSkip.addEventListener('click', (e)=>{
       e.preventDefault();
       e.stopPropagation();
@@ -543,8 +891,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const tUI = window.MOBBR?.ui?.tournament;
     if (tUI && typeof tUI.showMessage === 'function'){
       tUI.showMessage('大会', [String(text || '')], 'NEXT');
-      tUI.setNextHandler(Flow.next);
-      tUI.setNextEnabled(true);
+      ensureTournamentNextBound();
       return;
     }
 
