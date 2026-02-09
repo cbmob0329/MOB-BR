@@ -12,15 +12,19 @@
        CSS（分割読み込み）
        ※順番厳守
   ========================== -->
-  <link rel="stylesheet" href="base.css?v=17" />
-  <link rel="stylesheet" href="title.css?v=17" />
-  <link rel="stylesheet" href="main.css?v=17" />
-  <link rel="stylesheet" href="team.css?v=17" />
-  <link rel="stylesheet" href="training.css?v=17" />
+  <link rel="stylesheet" href="base.css?v=18" />
+  <link rel="stylesheet" href="title.css?v=18" />
+  <link rel="stylesheet" href="main.css?v=18" />
+  <link rel="stylesheet" href="team.css?v=18" />
+  <link rel="stylesheet" href="training.css?v=18" />
+
+  <!-- 大会専用（共通） -->
+  <link rel="stylesheet" href="tournament.css?v=18" />
+
   <!-- 追加CSS（未作成ならコメントアウトでOK） -->
-  <!-- <link rel="stylesheet" href="shop.css?v=17" /> -->
-  <!-- <link rel="stylesheet" href="card.css?v=17" /> -->
-  <!-- <link rel="stylesheet" href="schedule.css?v=17" /> -->
+  <!-- <link rel="stylesheet" href="shop.css?v=18" /> -->
+  <!-- <link rel="stylesheet" href="card.css?v=18" /> -->
+  <!-- <link rel="stylesheet" href="schedule.css?v=18" /> -->
 </head>
 
 <body class="no-callout">
@@ -109,7 +113,7 @@
           <img class="jobBg" src="job.png" alt="" draggable="false" />
           <div class="jobText">
             <div class="jobLine small">
-              VER <span id="uiVer">v17</span>
+              VER <span id="uiVer">v18</span>
             </div>
             <div class="jobLine tappable" id="tapCompany">
               企業名：<span id="uiCompany">CB Memory</span>
@@ -432,29 +436,37 @@
   </div>
 
   <!-- =========================
-       JS（重要：読み込みが無いと機能しない）
-       defer なので「上から順」に実行されます
+       JS
+       ※ app.js(v18) は “自分で順序ロード” する設計なので、
+         HTML直読み込みは app.js のみに寄せるのが安全。
+       ※ 既存の直読み込み群はコメントアウト（事故防止）
   ========================== -->
-  <script src="storage.js?v=17" defer></script>
 
-  <!-- data -->
-  <script src="data_player.js?v=17" defer></script>
-
-  <!-- ui -->
-  <script src="ui_team.js?v=17" defer></script>
-  <script src="ui_training.js?v=17" defer></script>
-  <script src="ui_shop.js?v=17" defer></script>
-  <script src="ui_card.js?v=17" defer></script>
-  <script src="ui_schedule.js?v=17" defer></script>
-  <script src="ui_main.js?v=18" defer></script>
-
-  <!-- sim (大会) -->
-  <script src="sim_tournament_flow.js?v=17" defer></script>
-  <script src="sim_tournament_local.js?v=17" defer></script>
-  <!-- 他に必要ならここに追加 -->
-  <!-- <script src="sim_battle.js?v=17" defer></script> -->
-
-  <!-- app（起動・NEXT制御） -->
+  <!-- app（起動・NEXT制御 / v18） -->
   <script src="app.js?v=18" defer></script>
+
+  <!--
+  旧：直読み込み（v18では app.js が loadModules() で順序ロードするため不要）
+  <script src="storage.js?v=18" defer></script>
+  <script src="data_player.js?v=18" defer></script>
+  <script src="data_cards.js?v=18" defer></script>
+  <script src="ui_team.js?v=18" defer></script>
+  <script src="ui_training.js?v=18" defer></script>
+  <script src="ui_shop.core.js?v=18" defer></script>
+  <script src="ui_shop.gacha.js?v=18" defer></script>
+  <script src="ui_shop.catalog.js?v=18" defer></script>
+  <script src="ui_card.js?v=18" defer></script>
+  <script src="ui_schedule.js?v=18" defer></script>
+  <script src="ui_main.js?v=18" defer></script>
+  <script src="ui_tournament.js?v=18" defer></script>
+  <script src="sim_battle.js?v=18" defer></script>
+  <script src="sim_tournament_local.js?v=18" defer></script>
+  <script src="sim_tournament_national.js?v=18" defer></script>
+  <script src="sim_tournament_lastchance.js?v=18" defer></script>
+  <script src="sim_tournament_world.js?v=18" defer></script>
+  <script src="sim_tournament_final.js?v=18" defer></script>
+  <script src="sim_tournament_flow.js?v=18" defer></script>
+  -->
+
 </body>
 </html>
