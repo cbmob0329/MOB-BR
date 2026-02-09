@@ -1,23 +1,11 @@
 /* =========================================================
-   MOB BR - sim_tournament_flow.js (FULL / UPDATED v3.0a)
+   MOB BR - sim_tournament_flow.js (FULL / UPDATED v3.0b)
    ---------------------------------------------------------
-   役割：
-   ・大会中の「NEXT進行」を一元管理する（段階制STEP）
-   ・各大会フェーズ（local / national / world / final）を切り替える
-   ・結果/総合の表示は ui_tournament に統一（sim側UIは呼ばない）
-   ---------------------------------------------------------
-   要件：
-   ・試合前コーチスキル使用（使う/使わない選択）
-   ・消耗品：使用したら所持から削除（0なら装備からも外す）
-   ・使えるスキルが無い時：
-     「コーチスキルはもう使い切っている！選手を信じよう！」
-   ---------------------------------------------------------
-   依存（存在前提）：
-   ・ui_tournament.js（window.MOBBR.ui.tournament）
-   ・sim_tournament_local.js    （window.MOBBR.sim.tournamentLocal）
-   ・sim_tournament_national.js （window.MOBBR.sim.tournamentNational）
-   ・sim_tournament_world.js    （window.MOBBR.sim.tournamentWorld）
-   ・sim_tournament_final.js    （window.MOBBR.sim.tournamentFinal）
+   v3.0b 修正点：
+   ✅ Local sim の state.last.matchRows / state.last.overallRows を拾えるように対応
+   ✅ Local sim の kp/ap を kills/assists として表示できるように対応
+   ✅ Flow から playNextMatch を呼ぶ際、openUI:false を渡して
+      sim側が ui.matchResult を勝手に開かないように統一（ui_tournament一本化）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -250,6 +238,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const matchNo = getMatchNoForDisplay(st);
 
         const matchOpt = {
+          // ★重要：sim側が ui.matchResult を開かないようにする（ui_tournament統一）
+          openUI: false,
+
           title: 'RESULT',
           subtitle: `${jp} 第${matchNo}試合`,
           coachSkill: current.pending?.coachSkill || null
@@ -370,7 +361,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!tUI) return;
     if (typeof tUI.setNextHandler === 'function') tUI.setNextHandler(Flow.next);
     if (typeof tUI.setNextEnabled === 'function') tUI.setNextEnabled(true);
-    // ★ここで自分自身を呼ばない（無限再帰防止）
   }
 
   function setTournamentNextEnabled(on){
@@ -500,10 +490,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const rank = Number(r.rank ?? r.place ?? r.placement ?? (idx+1));
       const teamId = String(r.teamId ?? r.id ?? r.team ?? '');
       const teamName = String(r.teamName ?? r.name ?? r.team_name ?? teamId || `TEAM${rank}`);
+
+      // points: total/points/pt 系を吸収
       const pts = Number(r.points ?? r.totalPt ?? r.totalPoints ?? r.total ?? r.pt ?? 0);
 
-      const kills = Number(r.kills_total ?? r.kills ?? r.kill ?? 0);
-      const assists = Number(r.assists_total ?? r.assists ?? r.assist ?? 0);
+      // ✅ Local sim の kp/ap を kills/assists として吸収
+      const kills = Number(r.kills_total ?? r.kills ?? r.kill ?? r.kp ?? 0);
+      const assists = Number(r.assists_total ?? r.assists ?? r.assist ?? r.ap ?? 0);
+
       const treasure = Number(r.treasure ?? 0);
       const flag = Number(r.flag ?? 0);
 
@@ -513,6 +507,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function pickRowsFromStateForMatch(st){
     const candidates = [
+      // 既存候補
       st.lastMatchResult,
       st.lastMatchResults,
       st.matchResult,
@@ -522,7 +517,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       st.lastMatch?.result,
       st.lastMatch?.rows,
       st.last?.result,
-      st.ui?.lastMatchResult
+      st.ui?.lastMatchResult,
+
+      // ✅ Local sim 互換（今回追加）
+      st.last?.matchRows,
+      st.last?.rows,
+      st.last?.matchResult
     ];
 
     for (const c of candidates){
@@ -546,13 +546,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     const candidates = [
+      // 既存候補
       st.overall,
       st.overallRows,
       st.overallResult,
       st.overallResults,
       st.currentOverall,
       st.ui?.overall,
-      st.ui?.overallRows
+      st.ui?.overallRows,
+
+      // ✅ Local sim 互換（今回追加）
+      st.last?.overallRows,
+      st.last?.overall
     ];
     for (const c of candidates){
       if (Array.isArray(c) && c.length) return normalizeRowsForTournamentUI(c);
