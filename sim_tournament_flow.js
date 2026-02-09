@@ -1,5 +1,5 @@
 /* =========================================================
-   MOB BR - sim_tournament_flow.js (FULL / UPDATED v3.0)
+   MOB BR - sim_tournament_flow.js (FULL / UPDATED v3.0a)
    ---------------------------------------------------------
    役割：
    ・大会中の「NEXT進行」を一元管理する（段階制STEP）
@@ -296,7 +296,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       case STEP.FINISH: {
         showFinalOverallUI();
 
-        // 次のフェーズへ自動遷移（順番：local→national→world→final→終了）
         const nextPhase = nextPhaseOf(current.phase);
         if (nextPhase){
           showMsg('大会', [
@@ -315,7 +314,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           current.step = STEP.INTRO;
           current.pending = null;
 
-          // UIも次大会へ切替
           const meta2 = PHASE_META[nextPhase] || { jp:'大会', bg:'neonmain.png' };
           const tUI = window.MOBBR?.ui?.tournament;
           if (tUI && typeof tUI.setScene === 'function'){
@@ -366,11 +364,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   /* =========================
      UI helpers（ui_tournament 統一）
   ========================== */
+
   function ensureTournamentNextBound(){
     const tUI = window.MOBBR?.ui?.tournament;
     if (!tUI) return;
     if (typeof tUI.setNextHandler === 'function') tUI.setNextHandler(Flow.next);
     if (typeof tUI.setNextEnabled === 'function') tUI.setNextEnabled(true);
+    // ★ここで自分自身を呼ばない（無限再帰防止）
   }
 
   function setTournamentNextEnabled(on){
@@ -400,7 +400,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const jp = meta.jp;
 
     const st = current.state || {};
-    const matchNoShown = Number(st.matchIndex ?? 0) || getMatchNoForDisplay(st);
+    const matchNoShown = Math.max(1, Number(st.matchIndex ?? 1)); // 試合後想定
     const subtitle = `${jp} 第${matchNoShown}試合`;
 
     const rows = pickRowsFromStateForMatch(st);
