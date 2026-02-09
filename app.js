@@ -69,7 +69,7 @@ async function loadModules(){
   /*
     読み込み順は超重要
     - storage / data → ui → sim
-    - Flow は「sim_tournament_local.js」等に依存するので後ろ
+    - Flow は sim_tournament_xxx に依存するので最後
   */
   const files = [
     // core
@@ -102,13 +102,16 @@ async function loadModules(){
 
     // =========================
     // SIM（追加）
-    // - battle計算は今後の統合で使う（今は読み込みだけでもOK）
     // =========================
+
+    // スコア計算（各大会・結果表示の共通で使う想定）
+    `sim_tournament_score.js${v}`,
+
+    // バトル計算（今後の統合で使う／現時点で参照があるなら必要）
     `sim_battle.js${v}`,
 
     // 5大会シム（ローカル→ナショナル→ラストチャンス→ワールド→ファイナル）
-    // ※存在しないファイルがあると読み込み失敗するので、
-    //   まだ無いものは「ファイルを用意してから」or ここを一時コメントアウトでOK
+    // ※ファイル名が実物と一致していること（ここがズレると全部ロード失敗）
     `sim_tournament_local.js${v}`,
     `sim_tournament_national.js${v}`,
     `sim_tournament_lastchance.js${v}`,
@@ -168,7 +171,7 @@ async function bootAfterNext(){
     window.MOBBR.initScheduleUI();
   }
 
-  // tournament UI / flow は「ロードされていれば」使える状態になる（initは不要）
+  // tournament UI / sim は「ロードされていれば」使える（init不要）
 }
 
 // ===== global events =====
