@@ -1,11 +1,12 @@
 /* =========================================================
-   MOB BR - ui_match_result.js (FULL)
+   MOB BR - ui_match_result.js (FULL / v2)
    ---------------------------------------------------------
    役割：
    ・Apex風「1試合ごとのresult表示」
    ・20チーム / 40チーム 両対応
    ・お宝 / フラッグ / KP / AP / 順位pt / 合計pt を表示
    ・DOMが無ければ自動生成して必ず動く
+   ・画像は基本 cpu/<teamId>.png（プレイヤーは payload.playerImg で上書き可）
    ---------------------------------------------------------
    使い方（例）：
      window.MOBBR.ui.matchResult.open({
@@ -13,16 +14,14 @@
        subtitle: 'ローカル大会 第1試合',
        matchIndex: 1,
        matchTotal: 5,
+       playerTeamId: 'player01',
+       playerImg: 'P1.png',
        rows: [
          { place:1, teamId:'local07', name:'三色坊ちゃんズ', placementP:12, kp:3, ap:1, treasure:1, flag:0, total:17 },
          ...
        ],
        championName: '三色坊ちゃんズ'
      });
-
-   注意：
-   ・試合処理は行わない（表示専用）
-   ・confirm() は使わない
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -34,10 +33,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const MatchResultUI = {};
   window.MOBBR.ui.matchResult = MatchResultUI;
 
-  // 画像フォルダ（ユーザー構成：cpu/）
-  const TEAM_IMG_BASE = 'cpu/';
+  const CONF = {
+    cpuImgBase: 'cpu/',       // 敵チーム画像
+    playerImgBase: '',        // プレイヤー画像（直下なら ''）
+    defaultCloseLabel: '閉じる'
+  };
 
-  // DOM ids（無ければ自動生成）
+  if (window.RULES?.UI){
+    if (typeof window.RULES.UI.cpuImgBase === 'string') CONF.cpuImgBase = window.RULES.UI.cpuImgBase;
+    if (typeof window.RULES.UI.playerImgBase === 'string') CONF.playerImgBase = window.RULES.UI.playerImgBase;
+  }
+
   const ID = {
     screen: 'matchResultScreen',
     title: 'matchResultTitle',
@@ -81,7 +87,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function ensureDOM(){
     if (dom.screen && dom.list) return;
 
-    // 既存DOMがあれば使う
     dom.screen = $(ID.screen);
     dom.title = $(ID.title);
     dom.subtitle = $(ID.subtitle);
@@ -89,7 +94,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.list = $(ID.list);
     dom.btnClose = $(ID.close);
 
-    // 無ければ自動生成
     if (!dom.screen){
       injectStyleOnce();
 
@@ -123,7 +127,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       btn.id = ID.close;
       btn.type = 'button';
       btn.className = 'mobbrResultClose';
-      btn.textContent = '閉じる';
+      btn.textContent = CONF.defaultCloseLabel;
 
       head.appendChild(h1);
       head.appendChild(sub);
@@ -147,7 +151,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.btnClose = btn;
     }
 
-    // bind close（1回だけ）
     if (!dom.btnClose._mobbrBound){
       dom.btnClose._mobbrBound = true;
       dom.btnClose.addEventListener('click', (e)=>{
@@ -157,19 +160,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // 背景タップで閉じない（誤操作防止）
     if (!dom.screen._mobbrBound){
       dom.screen._mobbrBound = true;
       dom.screen.addEventListener('click', (e)=>{
-        // card外をタップしても閉じない（暗幕クリック無効）
-        // ただしクリック吸収はする
         e.preventDefault();
       });
       const card = dom.screen.querySelector('.mobbrResultCard');
       if (card){
-        card.addEventListener('click', (e)=>{
-          e.stopPropagation();
-        });
+        card.addEventListener('click', (e)=>e.stopPropagation());
       }
     }
   }
@@ -266,6 +264,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       .mobbrResRow.top1{ background: rgba(255,215,64,.14); border-color: rgba(255,215,64,.24); }
       .mobbrResRow.top2{ background: rgba(210,210,210,.12); border-color: rgba(210,210,210,.20); }
       .mobbrResRow.top3{ background: rgba(205,127,50,.12); border-color: rgba(205,127,50,.20); }
+      .mobbrResRow.isPlayer{ background: rgba(0,200,255,.14); border-color: rgba(0,200,255,.24); }
 
       .mobbrResPlace{
         font-weight: 900;
@@ -330,11 +329,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function render(payload){
     const title = String(payload.title || 'RESULT');
     const subtitle = String(payload.subtitle || '');
+
     const matchIndex = payload.matchIndex != null ? Number(payload.matchIndex) : null;
     const matchTotal = payload.matchTotal != null ? Number(payload.matchTotal) : null;
-    const championName = String(payload.championName || payload.champion || '');
 
+    const championName = String(payload.championName || payload.champion || '');
     const rows = Array.isArray(payload.rows) ? payload.rows.slice() : [];
+
+    const playerTeamId = payload.playerTeamId != null ? String(payload.playerTeamId) : '';
+    const playerImg = (payload.playerImg != null && payload.playerImg !== '') ? String(payload.playerImg) : '';
 
     dom.title.textContent = title;
 
@@ -350,8 +353,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       : '';
 
     dom.list.innerHTML = '';
-
-    // header row
     dom.list.appendChild(buildHeaderRow());
 
     if (rows.length === 0){
@@ -362,11 +363,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // 並びをplace昇順へ
     rows.sort((a,b)=>(Number(a.place)||999)-(Number(b.place)||999));
 
     for (const r of rows){
-      dom.list.appendChild(buildRow(r));
+      dom.list.appendChild(buildRow(r, playerTeamId, playerImg));
     }
   }
 
@@ -395,7 +395,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return row;
   }
 
-  function buildRow(r){
+  function buildRow(r, playerTeamId, playerImg){
     const place = Number(r.place) || 0;
     const teamId = String(r.teamId || '');
     const name = String(r.name || teamId || '---');
@@ -405,30 +405,33 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const ap = num(r.ap);
     const treasure = num(r.treasure);
     const flag = num(r.flag);
-    const total = (r.total != null) ? num(r.total) : (placementP + kp + ap + treasure + flag*2);
+
+    const total = (r.total != null)
+      ? num(r.total)
+      : (placementP + kp + ap + treasure + flag * 2);
 
     const row = document.createElement('div');
     row.className = 'mobbrResRow' +
       (place===1?' top1':place===2?' top2':place===3?' top3':'');
 
-    // place
+    if (playerTeamId && teamId && teamId === playerTeamId){
+      row.classList.add('isPlayer');
+    }
+
     const c1 = document.createElement('div');
     c1.className = 'mobbrResPlace';
     c1.textContent = place ? String(place) : '-';
 
-    // icon
     const c2 = document.createElement('div');
     c2.className = 'mobbrResIcon';
 
     const img = document.createElement('img');
     img.alt = teamId || name;
     img.loading = 'lazy';
-    img.src = resolveTeamImage(teamId, r.image);
+    img.src = resolveTeamImage(teamId, r.image, playerTeamId, playerImg);
     img.onerror = ()=>{ img.style.display='none'; };
-
     c2.appendChild(img);
 
-    // name + chips
     const c3 = document.createElement('div');
 
     const nm = document.createElement('div');
@@ -447,7 +450,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     c3.appendChild(nm);
     c3.appendChild(sub);
 
-    // total
     const c4 = document.createElement('div');
     c4.className = 'mobbrResTotal';
     c4.textContent = String(total);
@@ -467,20 +469,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return d;
   }
 
-  function resolveTeamImage(teamId, explicit){
-    // explicit が assets/... のように来ても、ユーザー構成に合わせて cpu/ を優先
+  function resolveTeamImage(teamId, explicit, playerTeamId, playerImg){
+    // 明示画像が来ている場合（そのまま優先）
     if (explicit && typeof explicit === 'string'){
-      // すでに cpu/ ならそのまま
-      if (explicit.startsWith('cpu/')) return explicit;
-      // assets/xxx.png なら cpu/xxx.png に寄せる
+      // assets/ を cpu/ に寄せたい場合だけ変換
       if (explicit.startsWith('assets/')){
-        return 'cpu/' + explicit.slice('assets/'.length);
+        return CONF.cpuImgBase + explicit.slice('assets/'.length);
       }
-      // それ以外はそのまま
       return explicit;
     }
+
+    // プレイヤーチームは payload.playerImg を優先
+    if (playerTeamId && teamId && teamId === playerTeamId && playerImg){
+      if (playerImg.includes('/')) return playerImg;
+      return CONF.playerImgBase + playerImg;
+    }
+
     if (!teamId) return '';
-    return TEAM_IMG_BASE + teamId + '.png';
+    return CONF.cpuImgBase + teamId + '.png';
   }
 
   function num(v){
