@@ -196,10 +196,7 @@
       <button class="closeBtn" id="btnCloseMembers" type="button">閉じる</button>
     </div>
 
-    <!-- =========================
-         TEAM SCREEN（案A：スコアボード型）
-         ※ui_team.js が参照するIDを全部保持
-    ========================== -->
+    <!-- TEAM SCREEN -->
     <div id="teamScreen" class="teamScreen" aria-label="チーム" aria-hidden="true">
       <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
         <div class="teamHead">
@@ -207,7 +204,6 @@
           <button class="closeBtn teamCloseBtn" id="btnCloseTeam" type="button">閉じる</button>
         </div>
 
-        <!-- ===== Aヘッダー（企業/チーム + 総合%） ===== -->
         <div class="teamHeaderA">
           <div class="teamHeaderLeft">
             <div class="line">企業名：<b id="tCompany">CB Memory</b></div>
@@ -218,88 +214,71 @@
             <div class="teamPowerBig">
               総合 <span id="tTeamPower">0%</span>
             </div>
-            <!-- ※カード込み総合% は ui_team.js が後付けする（.teamPowerCard / .teamPowerCardLabel） -->
           </div>
         </div>
 
-        <!-- ===== メンバー3枚 ===== -->
         <div class="teamMembersA">
-
-          <!-- Member A -->
           <div class="memberCardA" aria-label="メンバーA">
             <div class="memberTop">
               <div class="memberName" id="tNameA">A</div>
               <div class="memberTag">A</div>
             </div>
-
             <div class="memberStatsGridA">
               <div class="statCellA"><div class="k">体力</div><div class="v" id="tA_hp">0</div></div>
               <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tA_mental">0</div></div>
               <div class="statCellA"><div class="k">エイム</div><div class="v" id="tA_aim">0</div></div>
               <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tA_agi">0</div></div>
-
               <div class="statCellA"><div class="k">技術</div><div class="v" id="tA_tech">0</div></div>
               <div class="statCellA"><div class="k">サポ</div><div class="v" id="tA_support">0</div></div>
               <div class="statCellA"><div class="k">索敵</div><div class="v" id="tA_scan">0</div></div>
               <div class="statCellA"><div class="k">ULT</div><div class="v" id="tA_ult">未定</div></div>
             </div>
-
             <div class="teamMiniSkillRow">
               <div class="teamMiniSkill">PAS：<span id="tA_passive">未定</span></div>
             </div>
           </div>
 
-          <!-- Member B -->
           <div class="memberCardA" aria-label="メンバーB">
             <div class="memberTop">
               <div class="memberName" id="tNameB">B</div>
               <div class="memberTag">B</div>
             </div>
-
             <div class="memberStatsGridA">
               <div class="statCellA"><div class="k">体力</div><div class="v" id="tB_hp">0</div></div>
               <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tB_mental">0</div></div>
               <div class="statCellA"><div class="k">エイム</div><div class="v" id="tB_aim">0</div></div>
               <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tB_agi">0</div></div>
-
               <div class="statCellA"><div class="k">技術</div><div class="v" id="tB_tech">0</div></div>
               <div class="statCellA"><div class="k">サポ</div><div class="v" id="tB_support">0</div></div>
               <div class="statCellA"><div class="k">索敵</div><div class="v" id="tB_scan">0</div></div>
               <div class="statCellA"><div class="k">ULT</div><div class="v" id="tB_ult">未定</div></div>
             </div>
-
             <div class="teamMiniSkillRow">
               <div class="teamMiniSkill">PAS：<span id="tB_passive">未定</span></div>
             </div>
           </div>
 
-          <!-- Member C -->
           <div class="memberCardA" aria-label="メンバーC">
             <div class="memberTop">
               <div class="memberName" id="tNameC">C</div>
               <div class="memberTag">C</div>
             </div>
-
             <div class="memberStatsGridA">
               <div class="statCellA"><div class="k">体力</div><div class="v" id="tC_hp">0</div></div>
               <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tC_mental">0</div></div>
               <div class="statCellA"><div class="k">エイム</div><div class="v" id="tC_aim">0</div></div>
               <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tC_agi">0</div></div>
-
               <div class="statCellA"><div class="k">技術</div><div class="v" id="tC_tech">0</div></div>
               <div class="statCellA"><div class="k">サポ</div><div class="v" id="tC_support">0</div></div>
               <div class="statCellA"><div class="k">索敵</div><div class="v" id="tC_scan">0</div></div>
               <div class="statCellA"><div class="k">ULT</div><div class="v" id="tC_ult">未定</div></div>
             </div>
-
             <div class="teamMiniSkillRow">
               <div class="teamMiniSkill">PAS：<span id="tC_passive">未定</span></div>
             </div>
           </div>
-
         </div>
 
-        <!-- ===== フッター（セーブ） ===== -->
         <div class="teamFooterA">
           <div class="teamSaveRowA">
             <button class="saveBtn" id="btnManualSave" type="button">セーブ</button>
@@ -309,14 +288,10 @@
             ※能力値は修行やアイテムで成長します（表示は読みやすさ最優先）
           </div>
         </div>
-
       </div>
     </div>
 
-    <!-- =========================
-         TRAINING SCREEN（追加：これが無いと開かない）
-         ※ui_training.js が参照するIDに合わせる
-    ========================== -->
+    <!-- TRAINING SCREEN -->
     <div id="trainingScreen" class="teamScreen" aria-label="育成（修行）" aria-hidden="true">
       <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
         <div class="teamHead">
@@ -338,10 +313,7 @@
 
         <div class="teamSection">
           <div class="teamSectionTitle">修行メニュー</div>
-
-          <!-- ui_training.js がここにカードUIを生成 -->
           <div id="trainingCards"></div>
-
           <div style="height:12px;"></div>
 
           <button class="saveBtn" id="btnTrainingStart" type="button" disabled>
@@ -357,10 +329,7 @@
       </div>
     </div>
 
-    <!-- =========================
-         SHOP SCREEN
-         ※ui_shop が参照するIDに合わせる
-    ========================== -->
+    <!-- SHOP SCREEN -->
     <div id="shopScreen" class="teamScreen" aria-label="ショップ" aria-hidden="true">
       <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
         <div class="teamHead">
@@ -405,10 +374,7 @@
       </div>
     </div>
 
-    <!-- =========================
-         CARD SCREEN
-         ※ui_card が参照するIDに合わせる
-    ========================== -->
+    <!-- CARD SCREEN -->
     <div id="cardScreen" class="teamScreen" aria-label="カードコレクション" aria-hidden="true">
       <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
         <div class="teamHead">
@@ -441,9 +407,7 @@
       </div>
     </div>
 
-    <!-- =========================
-         SCHEDULE SCREEN
-    ========================== -->
+    <!-- SCHEDULE SCREEN -->
     <div id="scheduleScreen" class="teamScreen" aria-label="年間スケジュール" aria-hidden="true">
       <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
         <div class="teamHead">
@@ -468,8 +432,29 @@
   </div>
 
   <!-- =========================
-       JS
+       JS（重要：読み込みが無いと機能しない）
+       defer なので「上から順」に実行されます
   ========================== -->
+  <script src="storage.js?v=17" defer></script>
+
+  <!-- data -->
+  <script src="data_player.js?v=17" defer></script>
+
+  <!-- ui -->
+  <script src="ui_team.js?v=17" defer></script>
+  <script src="ui_training.js?v=17" defer></script>
+  <script src="ui_shop.js?v=17" defer></script>
+  <script src="ui_card.js?v=17" defer></script>
+  <script src="ui_schedule.js?v=17" defer></script>
+  <script src="ui_main.js?v=18" defer></script>
+
+  <!-- sim (大会) -->
+  <script src="sim_tournament_flow.js?v=17" defer></script>
+  <script src="sim_tournament_local.js?v=17" defer></script>
+  <!-- 他に必要ならここに追加 -->
+  <!-- <script src="sim_battle.js?v=17" defer></script> -->
+
+  <!-- app（起動・NEXT制御） -->
   <script src="app.js?v=17" defer></script>
 </body>
 </html>
