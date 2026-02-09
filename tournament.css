@@ -1,0 +1,337 @@
+/* =========================================================
+   MOB BR - tournament.css（FULL v1.0）
+   ---------------------------------------------------------
+   目的：
+   - 大会画面の「共通レイアウト」をCSSだけで固定する
+   - 背景 neonmain.png + 正方形ステージ(tent.png等) + 前面プレイヤー(P1.png)
+   - 交戦/お宝/RESULT/OVERALL などは “上に被せる” 前提
+   ---------------------------------------------------------
+   使い方（推奨）：
+   1) index.html に追加
+      <link rel="stylesheet" href="tournament.css?v=18" />
+   2) ui_tournament.js 側で大会表示中に
+      document.body.classList.add('tournament-mode')
+      （閉じる時に remove）
+   3) ui_tournament.js が生成するDOMに
+      できれば以下のクラス名を付ける：
+      - .mobbrTourRoot（全体ルート）
+      - .mobbrTourStage（正方形ステージ枠）
+      - .mobbrTourStageImg（tent.png など）
+      - .mobbrTourPlayerImg（P1.png など）
+      - .mobbrTourHud（メッセージ/結果UI）
+      - .mobbrTourOverlay（交戦/お宝などの一時演出）
+   ---------------------------------------------------------
+   ※ui_tournament.js の既存DOM名が不明でも “効く確率” を上げるため、
+     複数セレクタ（id/クラス/データ属性）で拾うようにしてあります。
+========================================================= */
+
+:root{
+  /* safe area */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* tournament common */
+  --tour-z: 90000;
+  --tour-bg: neonmain.png;
+
+  /* stage (square) */
+  --stage-size: min(92vw, 520px);
+  --stage-aspect: 1 / 1; /* square */
+  --stage-border: rgba(255,255,255,.10);
+  --stage-shadow: 0 18px 60px rgba(0,0,0,.55);
+  --stage-radius: 18px;
+
+  /* player positioning inside square */
+  --player-width: min(64%, 320px);
+  --player-bottom: 6%;
+
+  /* HUD panel */
+  --hud-width: min(92vw, 560px);
+  --hud-radius: 16px;
+  --hud-border: rgba(255,255,255,.12);
+  --hud-bg: rgba(15,18,24,.92);
+  --hud-shadow: 0 16px 50px rgba(0,0,0,.55);
+
+  /* text */
+  --tour-text: #ffffff;
+  --tour-muted: rgba(255,255,255,.82);
+}
+
+/* =========================================================
+   BODY MODE
+========================================================= */
+
+body.tournament-mode{
+  /* 大会中は「大会背景」固定（neonmain.png） */
+  background: #000 url(var(--tour-bg)) center / cover no-repeat fixed;
+}
+
+/* 既存のメイン背景 .bg がある場合、上書きしたいケース用 */
+body.tournament-mode .bg{
+  background-image: url(var(--tour-bg)) !important;
+  background-size: cover !important;
+  background-position: center !important;
+}
+
+/* =========================================================
+   ROOT OVERLAY（大会UIの土台）
+   - ui_tournament.js が「画面を完全に切り替える」場合に使う
+========================================================= */
+
+/* いろんな命名を想定して拾う */
+#tournamentScreen,
+#mobbrTournament,
+#mobbrTournamentUI,
+[data-mobbr-ui="tournament"],
+.mobbrTourRoot{
+  position: fixed;
+  inset: 0;
+  z-index: var(--tour-z);
+  display: none;               /* ui側で表示切替 */
+  padding:
+    calc(10px + var(--safe-top))
+    calc(10px + var(--safe-right))
+    calc(12px + var(--safe-bottom))
+    calc(10px + var(--safe-left));
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--tour-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.tournament-mode #tournamentScreen,
+body.tournament-mode #mobbrTournament,
+body.tournament-mode #mobbrTournamentUI,
+body.tournament-mode [data-mobbr-ui="tournament"],
+body.tournament-mode .mobbrTourRoot{
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  justify-items: center;
+}
+
+/* =========================================================
+   STAGE（正方形：tent.png を置く場所）
+========================================================= */
+
+/* ステージ枠（中央の正方形） */
+.mobbrTourStage,
+#mobbrTourStage,
+[data-mobbr-tour="stage"]{
+  width: var(--stage-size);
+  aspect-ratio: var(--stage-aspect);
+  position: relative;
+  border-radius: var(--stage-radius);
+  overflow: hidden;
+  box-shadow: var(--stage-shadow);
+  border: 1px solid var(--stage-border);
+  background: rgba(0,0,0,.22);
+  transform: translateZ(0);
+}
+
+/* tent.png などのステージ画像（正方形） */
+.mobbrTourStageImg,
+#mobbrTourStageImg,
+[data-mobbr-tour="stage-img"]{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* 正方形を保って埋める */
+  display: block;
+  image-rendering: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* プレイヤー（P1.png 等）をステージ内で前面に */
+.mobbrTourPlayerImg,
+#mobbrTourPlayerImg,
+[data-mobbr-tour="player-img"]{
+  position: absolute;
+  left: 50%;
+  bottom: var(--player-bottom);
+  transform: translateX(-50%);
+  width: var(--player-width);
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.45));
+}
+
+/* もし「敵チーム画像」も置くなら（右寄せなど） */
+.mobbrTourEnemyImg,
+#mobbrTourEnemyImg,
+[data-mobbr-tour="enemy-img"]{
+  position: absolute;
+  right: 6%;
+  bottom: calc(var(--player-bottom) + 2%);
+  width: min(46%, 260px);
+  height: auto;
+  display: none; /* 基本は非表示、必要時のみui側でON */
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.45));
+}
+
+/* =========================================================
+   HUD（メッセージ/RESULT/OVERALL を置くパネル領域）
+========================================================= */
+
+.mobbrTourHud,
+#mobbrTourHud,
+[data-mobbr-tour="hud"]{
+  width: var(--hud-width);
+  margin-top: 12px;
+  border-radius: var(--hud-radius);
+  border: 1px solid var(--hud-border);
+  background: var(--hud-bg);
+  box-shadow: var(--hud-shadow);
+  overflow: hidden;
+}
+
+/* HUD header */
+.mobbrTourHudHead{
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+.mobbrTourTitle{
+  font-weight: 900;
+  letter-spacing: .04em;
+  font-size: 14px;
+  color: var(--tour-text);
+}
+
+.mobbrTourSub{
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--tour-muted);
+  line-height: 1.25;
+  white-space: pre-wrap;
+}
+
+/* HUD body */
+.mobbrTourHudBody{
+  padding: 10px 12px 12px;
+}
+
+/* メッセージ行 */
+.mobbrTourMsgLine{
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--tour-text);
+  opacity: .98;
+}
+.mobbrTourMsgLine + .mobbrTourMsgLine{
+  margin-top: 6px;
+}
+
+/* NEXTボタン（大会UI内のNEXT） */
+.mobbrTourNextRow{
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  display: flex;
+  gap: 10px;
+}
+.mobbrTourNextBtn{
+  flex: 1;
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: .04em;
+  touch-action: manipulation;
+}
+.mobbrTourNextBtn:disabled{
+  opacity: .45;
+}
+
+/* =========================================================
+   RESULT / OVERALL 表（ui_tournament.js のtable/rows想定）
+========================================================= */
+
+.mobbrTourTable{
+  width: 100%;
+  border-collapse: collapse;
+}
+.mobbrTourTable thead th{
+  font-size: 11px;
+  font-weight: 900;
+  color: rgba(255,255,255,.85);
+  padding: 8px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.mobbrTourTable tbody td{
+  font-size: 12px;
+  padding: 8px 8px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+}
+.mobbrTourRowHi{
+  background: rgba(255,255,255,.06);
+}
+.mobbrTourRowHi td{
+  color: #fff;
+  font-weight: 900;
+}
+
+/* =========================================================
+   OVERLAY（交戦/お宝など一時演出を“上に被せる”）
+========================================================= */
+
+.mobbrTourOverlay,
+#mobbrTourOverlay,
+[data-mobbr-tour="overlay"]{
+  position: absolute;
+  inset: 0;
+  display: none; /* 必要時にON */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.32);
+  z-index: 4;
+}
+
+.mobbrTourOverlay.is-on{
+  display: flex;
+}
+
+/* オーバーレイ内のカード/小窓 */
+.mobbrTourOverlayCard{
+  width: min(92vw, 520px);
+  max-height: min(80vh, 860px);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(15,18,24,.94);
+  box-shadow: 0 18px 60px rgba(0,0,0,.65);
+  overflow: hidden;
+}
+
+/* =========================================================
+   RESPONSIVE 微調整（小さい端末）
+========================================================= */
+@media (max-width: 360px){
+  :root{
+    --stage-size: min(94vw, 420px);
+    --player-width: min(70%, 300px);
+  }
+  .mobbrTourMsgLine{ font-size: 12px; }
+}
+
+/* =========================================================
+   OPTIONAL: もし大会UIが「main内に組み込み」方式の場合の補助
+   （#app 配下に置いた時に中央寄せしやすくする）
+========================================================= */
+#app .mobbrTourRoot,
+#app [data-mobbr-ui="tournament"]{
+  position: absolute;
+  inset: 0;
+}
