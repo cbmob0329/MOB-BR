@@ -4,7 +4,7 @@
   MOB BR - ui_schedule.js v2（フル）
   - 年間スケジュール画面
   - 次の大会を赤文字で強調
-  - ★追加：次の大会（nextTour / nextTourW）を storage に set する
+  - v2：翌年イベント（nextYear:true）を年込みで判定
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -27,6 +27,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     list: $('scheduleList')
   };
 
+  // ★最後だけ「翌年」扱いにする
   const SCHEDULE = [
     { split:'スプリット1', m:2, w:1, name:'ローカル大会' },
     { split:'スプリット1', m:3, w:1, name:'ナショナル大会' },
@@ -44,37 +45,41 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     { split:'チャンピオンシップリーグ', m:12, w:1, name:'ナショナル大会' },
     { split:'チャンピオンシップリーグ', m:12, w:2, name:'ナショナル大会後半' },
     { split:'チャンピオンシップリーグ', m:12, w:3, name:'ナショナルラストチャンス' },
-    { split:'チャンピオンシップリーグ', m:1,  w:2, name:'チャンピオンシップ ワールドファイナル' }
+
+    // ★ここが “翌年” なので nextYear:true
+    { split:'チャンピオンシップリーグ', m:1,  w:2, name:'チャンピオンシップ ワールドファイナル', nextYear:true }
   ];
 
   function getNow(){
     return {
+      y: S.getNum(K.year, 1989),
       m: S.getNum(K.month, 1),
-      w: S.getNum(K.week, 1)
+      w: S.getNum(K.week, 1),
+      startY: S.getNum(K.startYear, S.getNum(K.year, 1989))
     };
   }
 
-  // 「今の週以降で最初の1件」を次の大会として赤くする
+  function itemYear(item, now){
+    // nextYear:true は startYear+1 の年として扱う
+    if (item && item.nextYear) return now.startY + 1;
+    // 通常は startYear 年内のイベントとして扱う（表示用）
+    return now.startY;
+  }
+
+  // 「今以降で最初の1件」を次の大会として赤くする
   function isFutureOrNow(item, now){
+    const iy = itemYear(item, now);
+    const ny = now.y;
+
+    if (iy < ny) return false;
+    if (iy > ny) return true;
+
+    // 同一年なら月/週比較
     if (item.m < now.m) return false;
     if (item.m === now.m && item.w < now.w) return false;
     return true;
   }
 
-  // ★次の大会を storage に保存
-  function setNextTournamentToStorage(item){
-    if (!item) return;
-
-    // nextTour：大会名
-    try{ S.setStr(K.nextTour, String(item.name || '未定')); }catch(e){}
-
-    // nextTourW： "m-w" 形式（例: "2-1"）
-    const mw = `${Number(item.m || 0)}-${Number(item.w || 0)}`;
-    try{ S.setStr(K.nextTourW, mw); }catch(e){}
-  }
-
-  // ★「今が大会週かどうか」を判定するため、今週が大会ならそれを next にする
-  //    （＝isFutureOrNow の仕様上、今週が大会なら最初に選ばれる）
   function render(){
     if (!dom.list) return;
 
@@ -83,7 +88,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const now = getNow();
     let currentSplit = '';
     let nextFound = false;
-    let nextItem = null;
 
     SCHEDULE.forEach(item=>{
       if (item.split !== currentSplit){
@@ -105,32 +109,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       row.style.fontSize = '14px';
 
       const left = document.createElement('div');
-      left.textContent = `${item.m}月 第${item.w}週`;
+      const yLabel = item.nextYear ? '（翌年）' : '';
+      left.textContent = `${item.m}月 第${item.w}週${yLabel}`;
 
       const right = document.createElement('div');
       right.textContent = item.name;
 
-      // 次の大会（今週含む）を赤く＆1件だけ確定
       if (!nextFound && isFutureOrNow(item, now)){
         row.style.color = '#ff3b30';
         row.style.fontWeight = '1000';
         nextFound = true;
-        nextItem = item;
       }
 
       row.appendChild(left);
       row.appendChild(right);
       dom.list.appendChild(row);
     });
-
-    // ★レンダーの最後に nextTour / nextTourW を確定で保存
-    //   （次が無い場合は未定にする）
-    if (nextItem){
-      setNextTournamentToStorage(nextItem);
-    }else{
-      try{ S.setStr(K.nextTour, '未定'); }catch(e){}
-      try{ S.setStr(K.nextTourW, '未定'); }catch(e){}
-    }
   }
 
   function open(){
