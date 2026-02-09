@@ -1,17 +1,16 @@
 'use strict';
 
 /*
-  MOB BR - storage.js v15（フル）
+  MOB BR - storage.js v16（フル）
   役割：
   - localStorage の読み書き一元管理
   - 初期データ生成
   - セーブ削除（＝完全リセット）
   - リセット後にタイトル画面へ戻す
 
-  v15 追加：
-  - コーチスキル（所持 / 装備）キーを正式にKEYSへ追加
-    owned:   mobbr_coachSkillsOwned   ( { id: count } )
-    equipped:mobbr_coachSkillsEquipped( [id|null,id|null,id|null] )
+  v16 追加：
+  - startYear（ゲーム開始年）を保存
+    mobbr_startYear : 1989 など
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -31,6 +30,9 @@ const KEYS = {
   year: 'mobbr_year',
   month: 'mobbr_month',
   week: 'mobbr_week',
+
+  // ★追加：開始年
+  startYear: 'mobbr_startYear',
 
   nextTour: 'mobbr_nextTour',
   nextTourW: 'mobbr_nextTourW',
@@ -95,13 +97,15 @@ function setDefaults(){
   setNum(KEYS.month, 1);
   setNum(KEYS.week, 1);
 
+  // ★開始年を固定（新規開始の基準）
+  setNum(KEYS.startYear, 1989);
+
   setStr(KEYS.nextTour, '未定');
   setStr(KEYS.nextTourW, '未定');
 
   setStr(KEYS.recent, '未定');
 
   // coach skill defaults
-  // 所持：空 / 装備：3枠空（形だけ固定）
   if (!localStorage.getItem(KEYS.coachOwned)){
     setJSON(KEYS.coachOwned, {});
   }
@@ -116,6 +120,12 @@ function initStorage(){
   if (!localStorage.getItem(KEYS.year)){
     setDefaults();
     return;
+  }
+
+  // 既存ユーザー向け：startYear が無ければ「現在year」を開始年として補完
+  if (!localStorage.getItem(KEYS.startYear)){
+    const y = getNum(KEYS.year, 1989);
+    setNum(KEYS.startYear, y);
   }
 
   // 既存ユーザー向け：v15で追加したキーだけ補完
