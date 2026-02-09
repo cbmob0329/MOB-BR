@@ -1,43 +1,57 @@
 'use strict';
 
 /*
-  MOB BR - ui_tournament.js v1（フル）
+  MOB BR - ui_tournament.js v2（フル）
   STEP4：大会UI（見た目＋NEXT進行の器）
 
-  役割：
-  - 大会モードの画面（背景・テント・プレイヤー絵・中央メッセージ枠・NEXTボタン・順位表）を表示する
-  - tournament_flow.js（STEP2）から「今この画面をこうして」を呼ばれる前提の“受け皿UI”
-  - tournament_rank.js（STEP3）の出力（順位配列）を受けて、Apex風 result（20/40）を出せる
-
-  ※このファイルは「表示だけ」。大会の進行（state machine）や試合計算はここではしない。
-    ただし、デバッグ用に “ダミー表示” は呼べるようにしてある。
-
-  依存（あっても無くても動く）：
-  - window.MOBBR.storage（あればrecent等に使う）
-  - window.MOBBR.ui.main など（無くてもOK）
+  変更点（重要）
+  - あなたが指定した「直下画像」をこのUIで使えるように反映
+    tent.png / ido.png / winner.png / bdeba.png / bup.png / bgeta.png / bgetb.png
+  - マップ背景（neonmain.png 等）は maps/ をデフォルトに変更
+  - flow側から「キー指定」で背景を切り替えられるAPIを追加
+    setScene({ bgKey:'TENT' }) など
 */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  const $ = (id) => document.getElementById(id);
-
   // =========================
   // Optional deps
   // =========================
   const S = window.MOBBR?.storage || null;
 
   // =========================
-  // Assets / z-layer
+  // Assets（あなたの構成に合わせる）
   // =========================
   const ASSET = {
-    bgTournament: 'neonmain.png', // 大会背景
-    tent: 'tent.png'              // スタート前テント
-    // プレイヤー絵（P1.png等）は外から渡す
+    // マップ系は maps/ が基本（neonmain.png など）
+    MAP_BASE: (window.RULES?.MAP?.areaImgBase || 'maps/'),
+
+    // 大会UIで使う「直下」画像（←あなた指定）
+    TENT:    'tent.png',
+    IDO:     'ido.png',
+    WINNER:  'winner.png',
+
+    B_DEBA:  'bdeba.png',
+    B_UP:    'bup.png',
+    B_GETA:  'bgeta.png',
+    B_GETB:  'bgetb.png',
+
+    // デフォルト大会背景（マップ画像扱い）
+    TOURNAMENT_BG: 'neonmain.png'
   };
 
+  function mapImg(file){
+    if (!file) return ASSET.MAP_BASE + ASSET.TOURNAMENT_BG;
+    // すでにパスっぽい場合はそのまま
+    if (/^(https?:)?\/\//.test(file) || file.includes('/') ) return file;
+    return ASSET.MAP_BASE + file;
+  }
+
+  // =========================
   // z-index（ショップ等と衝突しないよう上に）
+  // =========================
   const Z = {
     back: 12000,
     panel: 13000,
@@ -49,13 +63,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================
   const state = {
     isOpen: false,
-    mode: 'tournament',  // 予約
-    phase: 'intro',      // intro / match / result / overall
+    mode: 'tournament',
+    phase: 'intro',
     title: '',
     subtitle: '',
     playerImage: 'P1.png',
     enemyImage: '',
-    bg: ASSET.bgTournament,
+
+    // 背景（フルパス or ファイル名）
+    bg: mapImg(ASSET.TOURNAMENT_BG),
+    bgKey: 'MAP', // MAP / TENT / IDO / WINNER / B_DEBA / B_UP / B_GETA / B_GETB / CUSTOM
 
     // message
     messageLines: [],
@@ -65,13 +82,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // result
     resultTitle: '',
-    resultLobbyLabel: '',     // 例 "A & B 第1試合"
-    resultRows: [],           // 20位まで or 40位まで
-    highlightTeamId: '',      // プレイヤーteamId等（あればハイライト）
+    resultLobbyLabel: '',
+    resultRows: [],
+    highlightTeamId: '',
     showResult: false,
-    showOverall: false,
 
-    // overlay lock (他モーダルの残留対策)
     lockBack: false
   };
 
@@ -83,11 +98,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const dom = {
     root: null,
     back: null,
-
     panel: null,
     bg: null,
 
-    // layers
     layerTent: null,
     tentImg: null,
 
@@ -95,13 +108,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     playerImg: null,
     enemyImg: null,
 
-    // center message
     msgWrap: null,
     msgTitle: null,
     msgBody: null,
     btnNext: null,
 
-    // result panel
     resultWrap: null,
     resultHeader: null,
     resultSub: null,
@@ -110,12 +121,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   };
 
   function injectStyle(){
-    if (document.getElementById('uiTournamentStyleV1')) return;
+    if (document.getElementById('uiTournamentStyleV2')) return;
 
     const st = document.createElement('style');
-    st.id = 'uiTournamentStyleV1';
+    st.id = 'uiTournamentStyleV2';
     st.textContent = `
-      /* ===== Tournament Screen Layer ===== */
       #tournamentBack{
         position:fixed; inset:0;
         background: rgba(0,0,0,.55);
@@ -130,20 +140,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         pointer-events:none;
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
       }
-      #tournamentRoot.show{
-        display:block;
-        pointer-events:auto;
-      }
-      #tournamentBack.show{
-        display:block;
-        pointer-events:auto;
-      }
+      #tournamentRoot.show{ display:block; pointer-events:auto; }
+      #tournamentBack.show{ display:block; pointer-events:auto; }
 
-      /* background */
-      .tntBg{
-        position:absolute; inset:0;
-        background: #000;
-      }
+      .tntBg{ position:absolute; inset:0; background:#000; }
       .tntBgImg{
         position:absolute; inset:0;
         width:100%; height:100%;
@@ -152,11 +152,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         -webkit-user-drag:none;
       }
 
-      /* main panel (center) */
       .tntPanel{
         position:absolute;
-        left:50%;
-        top:50%;
+        left:50%; top:50%;
         transform: translate(-50%,-50%);
         width: min(94vw, 560px);
         height: min(90vh, 780px);
@@ -166,7 +164,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         box-shadow: 0 20px 70px rgba(0,0,0,.65);
       }
 
-      /* tent layer */
       .tntTent{
         position:absolute;
         left:50%;
@@ -178,7 +175,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         overflow:hidden;
         background: rgba(0,0,0,.25);
         box-shadow: 0 10px 40px rgba(0,0,0,.45);
+        display:none;
       }
+      .tntTent.show{ display:block; }
       .tntTentImg{
         width:100%; height:100%;
         object-fit: cover;
@@ -187,7 +186,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         -webkit-user-drag:none;
       }
 
-      /* characters */
       .tntChars{
         position:absolute;
         left:50%;
@@ -208,11 +206,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         user-select:none;
         -webkit-user-drag:none;
       }
-      .tntCharImg.enemy{
-        opacity: 0.98;
-      }
+      .tntCharImg.enemy{ opacity:0.98; }
 
-      /* message box (RPG style) */
       .tntMsg{
         position:absolute;
         left:50%;
@@ -238,11 +233,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         color: rgba(255,255,255,.92);
         min-height: 44px;
       }
-      .tntNextRow{
-        display:flex;
-        justify-content: flex-end;
-        margin-top: 10px;
-      }
+      .tntNextRow{ display:flex; justify-content:flex-end; margin-top:10px; }
       .tntNextBtn{
         border:0;
         border-radius: 9999px;
@@ -253,17 +244,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         box-shadow: 0 10px 18px rgba(0,0,0,.35);
         animation: tntFloat 1.7s ease-in-out infinite;
       }
-      .tntNextBtn:disabled{
-        opacity:.5;
-        animation: none;
-      }
+      .tntNextBtn:disabled{ opacity:.5; animation:none; }
       @keyframes tntFloat{
         0%{ transform: translateY(0px); }
         50%{ transform: translateY(-3px); }
         100%{ transform: translateY(0px); }
       }
 
-      /* result panel */
       .tntResult{
         position:absolute;
         left:50%;
@@ -311,14 +298,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
         margin-bottom: 8px;
       }
-      .tntRow.left{
-        justify-content:flex-start;
-      }
-      .tntRank{
-        width: 42px;
-        font-weight:1000;
-        color: rgba(255,255,255,.92);
-      }
+      .tntRank{ width: 42px; font-weight:1000; color: rgba(255,255,255,.92); }
       .tntName{
         flex: 1;
         font-weight:1000;
@@ -327,27 +307,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .tntPts{
-        width: 70px;
-        text-align:right;
-        font-weight:1000;
-        color: rgba(255,255,255,.92);
-      }
-      .tntMini{
-        width: 120px;
-        text-align:right;
-        font-size: 11px;
-        color: rgba(255,255,255,.78);
-        white-space: nowrap;
-      }
+      .tntPts{ width: 70px; text-align:right; font-weight:1000; color: rgba(255,255,255,.92); }
+      .tntMini{ width: 120px; text-align:right; font-size: 11px; color: rgba(255,255,255,.78); white-space: nowrap; }
       .tntRow.isPlayer{
         background: rgba(255,215,0,.16);
         box-shadow: inset 0 0 0 1px rgba(255,215,0,.28);
       }
 
       .tntResultFooter{
-        position:absolute;
-        left:0; right:0; bottom:0;
+        position:absolute; left:0; right:0; bottom:0;
         padding: 12px 14px 14px;
         border-top: 1px solid rgba(255,255,255,.10);
         background: rgba(0,0,0,.18);
@@ -371,17 +339,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     injectStyle();
 
-    // back
     dom.back = document.createElement('div');
     dom.back.id = 'tournamentBack';
     dom.back.setAttribute('aria-hidden', 'true');
 
-    // root
     dom.root = document.createElement('div');
     dom.root.id = 'tournamentRoot';
     dom.root.setAttribute('aria-hidden', 'true');
 
-    // bg
     dom.bg = document.createElement('div');
     dom.bg.className = 'tntBg';
     const bgImg = document.createElement('img');
@@ -390,11 +355,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bgImg.draggable = false;
     dom.bg.appendChild(bgImg);
 
-    // panel shell (main)
     dom.panel = document.createElement('div');
     dom.panel.className = 'tntPanel';
 
-    // tent
     dom.layerTent = document.createElement('div');
     dom.layerTent.className = 'tntTent';
 
@@ -404,7 +367,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.tentImg.draggable = false;
     dom.layerTent.appendChild(dom.tentImg);
 
-    // chars
     dom.layerChars = document.createElement('div');
     dom.layerChars.className = 'tntChars';
 
@@ -421,7 +383,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.layerChars.appendChild(dom.playerImg);
     dom.layerChars.appendChild(dom.enemyImg);
 
-    // message
     dom.msgWrap = document.createElement('div');
     dom.msgWrap.className = 'tntMsg';
 
@@ -447,7 +408,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.msgWrap.appendChild(dom.msgBody);
     dom.msgWrap.appendChild(nextRow);
 
-    // result panel
     dom.resultWrap = document.createElement('div');
     dom.resultWrap.className = 'tntResult';
 
@@ -482,22 +442,51 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.resultWrap.appendChild(dom.resultList);
     dom.resultWrap.appendChild(rf);
 
-    // assemble panel
     dom.panel.appendChild(dom.layerTent);
     dom.panel.appendChild(dom.layerChars);
     dom.panel.appendChild(dom.msgWrap);
 
-    // assemble root
     dom.root.appendChild(dom.bg);
     dom.root.appendChild(dom.panel);
     dom.root.appendChild(dom.resultWrap);
 
-    // attach
     document.body.appendChild(dom.back);
     document.body.appendChild(dom.root);
 
-    // bind
     bind();
+  }
+
+  // =========================
+  // Background by key
+  // =========================
+  function resolveBgByKey(key, custom){
+    const k = String(key || '').toUpperCase();
+
+    if (k === 'TENT')   return ASSET.TENT;          // 直下
+    if (k === 'IDO')    return ASSET.IDO;           // 直下
+    if (k === 'WINNER') return ASSET.WINNER;        // 直下
+    if (k === 'B_DEBA') return ASSET.B_DEBA;        // 直下
+    if (k === 'B_UP')   return ASSET.B_UP;          // 直下
+    if (k === 'B_GETA') return ASSET.B_GETA;        // 直下
+    if (k === 'B_GETB') return ASSET.B_GETB;        // 直下
+
+    if (k === 'MAP')    return mapImg(ASSET.TOURNAMENT_BG);
+
+    // CUSTOM：そのまま
+    if (k === 'CUSTOM') return String(custom || '');
+
+    // 互換：bgにファイル名だけが来た場合は MAP扱いで maps/ を付ける
+    if (custom && !String(custom).includes('/') && !/^(https?:)?\/\//.test(String(custom))){
+      return mapImg(String(custom));
+    }
+
+    return String(custom || mapImg(ASSET.TOURNAMENT_BG));
+  }
+
+  function shouldShowTentLayer(bgKey){
+    const k = String(bgKey || '').toUpperCase();
+    // テント演出は「tent.png」を使うので、テント枠も表示
+    return (k === 'TENT');
   }
 
   // =========================
@@ -520,10 +509,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // background
     const bgImg = dom.bg?.querySelector('.tntBgImg');
-    if (bgImg) bgImg.src = state.bg || ASSET.bgTournament;
+    if (bgImg) bgImg.src = state.bg || mapImg(ASSET.TOURNAMENT_BG);
 
-    // tent
-    if (dom.tentImg) dom.tentImg.src = ASSET.tent;
+    // tent layer (only when bgKey === TENT)
+    if (dom.layerTent){
+      dom.layerTent.classList.toggle('show', shouldShowTentLayer(state.bgKey));
+    }
+    if (dom.tentImg) dom.tentImg.src = ASSET.TENT;
 
     // chars
     if (dom.playerImg) dom.playerImg.src = state.playerImage || 'P1.png';
@@ -552,7 +544,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.resultWrap.classList.toggle('show', !!state.showResult);
     }
 
-    // back/root visibility
     setBackVisible(state.isOpen);
     setRootVisible(state.isOpen);
   }
@@ -565,8 +556,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function fmtMini(row){
-    // 例：K/A/T/F（お宝/フラッグ）
-    // 表示は短く。必要ならUI側で切り替える
     const k = row.kills ?? row.kill ?? 0;
     const a = row.assists ?? row.assist ?? 0;
     const t = row.treasure ?? 0;
@@ -633,9 +622,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     build();
 
     state.isOpen = true;
-    state.bg = String(opts?.bg || ASSET.bgTournament);
+
+    // bgKey優先（なければbg）
+    const bgKey = (opts?.bgKey !== undefined) ? String(opts.bgKey || '') : state.bgKey;
+    state.bgKey = bgKey || 'MAP';
+    state.bg = (opts?.bg !== undefined)
+      ? resolveBgByKey(state.bgKey, opts.bg)
+      : resolveBgByKey(state.bgKey, mapImg(ASSET.TOURNAMENT_BG));
+
     state.playerImage = String(opts?.playerImage || 'P1.png');
-    state.enemyImage = String(opts?.enemyImage || '');
+    state.enemyImage  = String(opts?.enemyImage  || '');
+
     state.title = String(opts?.title || '');
     state.subtitle = String(opts?.subtitle || '');
     state.messageLines = Array.isArray(opts?.messageLines) ? opts.messageLines : (opts?.message ? [String(opts.message)] : []);
@@ -649,7 +646,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     state.resultRows = [];
     state.highlightTeamId = String(opts?.highlightTeamId || '');
 
-    // “残留フタ”事故を起こさない：他のmodalBackが残っててもここを最前面に固定
     state.lockBack = true;
 
     render();
@@ -664,10 +660,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function setScene(opts){
-    // openしたまま差し替え
-    state.bg = (opts?.bg !== undefined) ? String(opts.bg) : state.bg;
+    // bgKey / bg
+    if (opts?.bgKey !== undefined){
+      state.bgKey = String(opts.bgKey || 'MAP');
+      // bg未指定でもキーに沿って切り替える
+      if (opts?.bg === undefined){
+        state.bg = resolveBgByKey(state.bgKey, mapImg(ASSET.TOURNAMENT_BG));
+      }
+    }
+
+    if (opts?.bg !== undefined){
+      state.bg = resolveBgByKey(state.bgKey, opts.bg);
+    }
+
     state.playerImage = (opts?.playerImage !== undefined) ? String(opts.playerImage) : state.playerImage;
-    state.enemyImage = (opts?.enemyImage !== undefined) ? String(opts.enemyImage) : state.enemyImage;
+    state.enemyImage  = (opts?.enemyImage  !== undefined) ? String(opts.enemyImage)  : state.enemyImage;
 
     state.title = (opts?.title !== undefined) ? String(opts.title) : state.title;
     state.subtitle = (opts?.subtitle !== undefined) ? String(opts.subtitle) : state.subtitle;
@@ -687,6 +694,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     render();
   }
 
+  // 便利：イベント背景キーを使って表示
+  function showEventScene(eventKey, title, lines, nextLabel){
+    setScene({
+      bgKey: eventKey,
+      title: title || '',
+      messageLines: Array.isArray(lines) ? lines : [String(lines || '')],
+      nextLabel: (nextLabel !== undefined) ? String(nextLabel) : state.nextLabel
+    });
+  }
+
   function showMessage(title, lines, nextLabel){
     state.showResult = false;
     state.title = String(title || '');
@@ -696,11 +713,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function showResult(opts){
-    // opts:
-    // - title: "RESULT"
-    // - sub: "A & B 第1試合 / 現在(1/5) 総合順位"
-    // - rows: ranking array (20 or 40)
-    // - highlightTeamId
     state.showResult = true;
     state.resultTitle = String(opts?.title || 'RESULT');
     state.resultLobbyLabel = String(opts?.sub || '');
@@ -738,7 +750,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (bound) return;
     bound = true;
 
-    // back click: 誤爆防止（閉じない）
     if (dom.back){
       dom.back.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -746,25 +757,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }, { passive:false });
     }
 
-    // next
     if (dom.btnNext){
       dom.btnNext.addEventListener('click', (e)=>{
         e.preventDefault();
         e.stopPropagation();
         if (!state.nextEnabled) return;
 
-        // まずUI側で一瞬無効化（連打事故防止）
         state.nextEnabled = false;
         render();
 
         try{
           if (typeof state.onNext === 'function') state.onNext();
         }finally{
-          // flow側が setNextEnabled(true) するのが本来だが、
-          // 何も来ない場合でも復帰する保険（短いタイムアウト）
           setTimeout(()=>{
             if (!state.isOpen) return;
-            // flowがすでにenable制御してたら上書きしない
             if (state.nextEnabled === false){
               state.nextEnabled = true;
               render();
@@ -774,7 +780,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // result close
     if (dom.resultClose){
       dom.resultClose.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -783,18 +788,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // ESC（PC）
     window.addEventListener('keydown', (e)=>{
       if (!state.isOpen) return;
       if (e.key === 'Escape'){
-        // 大会中は勝手に閉じない（誤爆防止）
         e.preventDefault();
       }
     });
   }
 
   // =========================
-  // Debug helpers（任意）
+  // Debug
   // =========================
   function demoResult20(){
     const rows = [];
@@ -822,7 +825,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // Expose
   // =========================
   window.MOBBR.ui.tournament = {
-    VERSION: 'v1',
+    VERSION: 'v2',
+
     open,
     close,
     setScene,
@@ -832,11 +836,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextHandler,
     setNextEnabled,
 
+    // 追加：イベント用
+    showEventScene,
+
+    // assets keys（flow側で使う用）
+    BG_KEYS: {
+      MAP: 'MAP',
+      TENT: 'TENT',
+      IDO: 'IDO',
+      WINNER: 'WINNER',
+      B_DEBA: 'B_DEBA',
+      B_UP: 'B_UP',
+      B_GETA: 'B_GETA',
+      B_GETB: 'B_GETB',
+      CUSTOM: 'CUSTOM'
+    },
+
     // debug
     _demoResult20: demoResult20
   };
 
-  // Auto init
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', build);
   }else{
