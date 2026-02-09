@@ -1,12 +1,20 @@
 /* =========================================================
-   MOB BR - sim_battle.js (FULL)
+   MOB BR - sim_battle.js (FULL / UPDATED)
    - 交戦処理（必ず枠数ぶん成立）
    - 勝敗 / 脱落 / DB（deathBoxes）/ キル&アシスト配分
    - お宝/フラッグは sim_event.js が points に加算済み（ここでは触らない）
    ---------------------------------------------------------
+   追加（今回）：
+   ✅ カードコレクション効果（mobbr_cards + data.cards があれば）を
+      「プレイヤーチームの戦闘力」に反映
+   ✅ コーチスキル効果（mobbr_coachSkillsEquipped / mobbr_coachSkillChosen があれば）を
+      「プレイヤーチームの戦闘力/アシスト/DB」に反映
+      ※“消耗品削除”や“試合前選択UI”は大会側(sim_tournament_xxx)で行う
+   ---------------------------------------------------------
    依存：なし（あれば使う）
    - SimMap（任意）：areaName 表示用
    - RULES（任意）：外部設定
+   - window.MOBBR.data.cards（任意）：カード効果%計算用
 ========================================================= */
 
 (function(){
@@ -46,6 +54,10 @@
     // チーム獲得キル枠（交戦ごと）
     winnerKillRange: [0,3],
     loserKillRange:  [0,2],
+
+    // ===== 追加：カード/コーチ反映のON/OFF（任意） =====
+    enableCardBonus: true,
+    enableCoachSkill: true
   };
 
   if (window.RULES?.BATTLE){
@@ -64,6 +76,28 @@
   function getPlacementPt(rank){
     return PLACEMENT_PT[rank] || 0;
   }
+
+  /* =========================
+     コーチスキル（ui_team と同ID）
+     ※“選択して使う/消耗”は大会側で管理
+     ここでは「効果量」を参照して戦闘に反映するだけ
+  ========================== */
+  const COACH_EFFECTS = {
+    tactics_note:   { powerPct: 1 },              // この試合 +1%
+    mental_care:    { assistAdd: 0.08 },          // アシスト微増
+    endgame_power:  { powerPctEndgame: 3 },       // 終盤(目安R5-R6) +3%
+    clearing:       { winnerDbSafe: 0.12 },       // 勝者DBが減りやすい（db2確率↓）
+    score_mind:     { /* points側 */ },           // お宝/旗は sim_event 側なのでここでは触らない
+    igl_call:       { powerPct: 4 },              // この試合 +4%
+    protagonist:    { powerPct: 6, assistAdd: 0.12 } // この試合 +6% +アシスト増
+  };
+
+  // 参照キー（存在しなくてもOK）
+  const LS = {
+    cardsOwned: 'mobbr_cards',
+    coachEquipped: 'mobbr_coachSkillsEquipped',   // [id|null,id|null,id|null]
+    coachChosen:  'mobbr_coachSkillChosen'        // 1試合前に選んだ1つ（大会側が書く想定）
+  };
 
   /* =========================
      公開API
@@ -145,10 +179,7 @@
       .map(t => ({ teamId:t.teamId, atRound:null, note:'missing' }));
     elim.push(...missing);
 
-    // 上位側（rank小さいほど強い）
-    // 20チームの場合：1位 champion、2位＝最後に落ちた、…、20位＝最初に落ちた
     const ranked = [];
-
     ranked.push(makeResultRow(champion, 1));
 
     // elim を「脱落が遅い順」に並べる
@@ -161,7 +192,7 @@
       rank++;
     }
 
-    // 念のため 1〜20 を満たす（不足時）
+    // 念のため 1〜N を満たす（不足時）
     if (ranked.length < state.teams.length){
       const used = new Set(ranked.map(x => x.teamId));
       const rest = state.teams.filter(t => t && !used.has(t.teamId));
@@ -178,8 +209,6 @@
       row.totalPt = sumPoints(row.points);
     }
 
-    // totalPt などは「この試合の結果表示用」なのでここで確定
-    // ※大会の総合は sim_score.js 側で加算する想定
     return ranked.sort((a,b)=>a.rank-b.rank);
   };
 
@@ -192,11 +221,9 @@
     const teams = state.teams || [];
     const alive = teams.filter(t => t && !t.eliminated);
 
-    // 交戦枠が0なら何もしない
     const need = Math.max(0, Number(count) || 0);
     if (need === 0) return pairs;
 
-    // プレイヤー戦の扱い（確率で寄せる）
     const pId = state.playerTeamId || null;
     const pTeam = pId ? alive.find(t => t.teamId === pId) : null;
     const wantPlayerFight = !!pTeam && roll(CONF.playerFightRate[round] ?? 0);
@@ -206,7 +233,6 @@
       const overlapped = (opt && Array.isArray(opt.overlappedAreasR1)) ? opt.overlappedAreasR1.slice() : null;
       if (overlapped && overlapped.length){
         const used = new Set();
-        // まず被りエリアからペア化
         for (const aId of overlapped){
           if (pairs.length >= need) break;
           const inArea = alive.filter(t => !used.has(t.teamId) && t.areaId === aId);
@@ -231,16 +257,14 @@
       }
     }
 
-    // 残りは「同エリア優先」→足りなければランダム
     const usedIds = new Set();
     for (const [a,b] of pairs){ usedIds.add(a.teamId); usedIds.add(b.teamId); }
 
-    // 同エリアから作れるだけ作る
+    // 同エリア優先→足りなければランダム
     while (pairs.length < need){
       const pool = alive.filter(t => !usedIds.has(t.teamId));
       if (pool.length < 2) break;
 
-      // 同エリア候補を探す
       let found = null;
       for (let i=0; i<pool.length; i++){
         const a = pool[i];
@@ -252,7 +276,6 @@
       }
 
       if (!found){
-        // ランダムに2つ取る
         const a = pool[Math.floor(Math.random()*pool.length)];
         const rest = pool.filter(t => t.teamId !== a.teamId);
         const b = rest[Math.floor(Math.random()*rest.length)];
@@ -273,23 +296,18 @@
       pairs.push([a,b]);
     }
 
-    // 最終：同じペア重複を軽く避ける（完全回避はしない）
     return pairs;
   }
 
   function pickEnemyForPlayer(alive, pTeam){
-    // (1) 同エリア
     const same = alive.filter(t => t.teamId !== pTeam.teamId && t.areaId === pTeam.areaId);
     if (same.length) return same[Math.floor(Math.random()*same.length)];
-
-    // (2) 生存から
     const other = alive.filter(t => t.teamId !== pTeam.teamId);
     if (!other.length) return null;
     return other[Math.floor(Math.random()*other.length)];
   }
 
   function pickFinalPair(alive, playerTeamId){
-    // できればプレイヤーが残ってたら含める
     const p = playerTeamId ? alive.find(t => t.teamId === playerTeamId) : null;
     if (p){
       const other = alive.filter(t => t.teamId !== p.teamId);
@@ -305,12 +323,11 @@
   function resolveFight(state, A, B, round, logs){
     if (!A || !B) return { ok:false };
 
-    // battle log header（UI側で使える形）
     logs.push(makeLog('BATTLE_START', A, B, `交戦開始！`));
 
-    // 勝率計算（内部）
-    const aPow = calcTeamFightPower(A);
-    const bPow = calcTeamFightPower(B);
+    // 戦闘力（カード/コーチ反映込み）
+    const aPow = calcTeamFightPower(state, A, round);
+    const bPow = calcTeamFightPower(state, B, round);
     const diff = aPow - bPow;
 
     const aWinRate = clamp(50 + diff * CONF.winrateK, CONF.winrateMin, CONF.winrateMax);
@@ -319,16 +336,15 @@
     const winner = aWin ? A : B;
     const loser  = aWin ? B : A;
 
-    // キル/アシスト（両陣営に付与：集計用、ログはUI側で「プレイヤー交戦のみ表示」できる）
-    const kRes = assignKillsAndAssists(winner, loser, aPow, bPow);
+    // キル/アシスト
+    const kRes = assignKillsAndAssists(state, winner, loser, aPow, bPow, round);
 
     // 敗者：全滅（確定）
     eliminateTeam(state, loser, round);
 
-    // 勝者：DB抽選（勝者も削れる）
-    applyWinnerDb(winner);
+    // 勝者：DB抽選（勝者も削れる）※コーチ効果で少し補正
+    applyWinnerDb(state, winner, round);
 
-    // fight end
     logs.push(makeLog('BATTLE_END', winner, loser, `${winner.name}が勝利！`));
 
     return {
@@ -344,17 +360,12 @@
     };
   }
 
-  function calcTeamFightPower(team){
-    // 3人実戦戦闘力%の平均（内部）
-    // powerMin/powerMax からその場で抽選（「試合ごとに揺れる」）
+  function calcTeamFightPower(state, team, round){
     const members = Array.isArray(team.members) ? team.members : [];
     if (!members.length) return team.basePower || 60;
 
-    // alive人数に合わせてメンバー数を使う（0は除外）
     const alive = clampInt(Number(team.alive ?? 3), 0, 3);
-
-    // alive=2 は +40% 補正
-    const boost = (alive === 2) ? (1 + CONF.twoAliveBoost / 100) : 1;
+    const boostAlive = (alive === 2) ? (1 + CONF.twoAliveBoost / 100) : 1;
 
     const picks = [];
     for (let i=0; i<Math.min(3, members.length); i++){
@@ -365,15 +376,30 @@
       picks.push(v);
     }
 
-    // alive=1/2 でも平均の元は3人想定なので、単純に平均して補正だけ掛ける
     const avg = picks.reduce((s,v)=>s+v,0) / picks.length;
-    return avg * boost;
+    let pow = avg * boostAlive;
+
+    // ===== 追加：カード効果 / コーチ効果（プレイヤーだけ） =====
+    const isPlayer = isPlayerTeam(state, team);
+
+    if (isPlayer){
+      if (CONF.enableCardBonus){
+        const bonus = getCollectionBonusPercent(); // 例 0.27
+        if (bonus > 0) pow *= (1 + bonus / 100);
+      }
+      if (CONF.enableCoachSkill){
+        const eff = getCoachEffect(state, round);
+        if (eff.powerPct) pow *= (1 + eff.powerPct / 100);
+        if (eff.powerPctEndgame && (round >= 5)) pow *= (1 + eff.powerPctEndgame / 100);
+      }
+    }
+
+    return pow;
   }
 
-  function assignKillsAndAssists(winner, loser, aPow, bPow){
-    // 差が大きいほど「格下を倒した勝者＝2〜3寄り」「格上を倒した勝者＝0〜2寄り」
+  function assignKillsAndAssists(state, winner, loser, aPow, bPow, round){
     const diff = Math.abs(aPow - bPow);
-    const close = diff < 8; // 接戦判定
+    const close = diff < 8;
 
     const wKills = biasedInt(CONF.winnerKillRange[0], CONF.winnerKillRange[1], close ? 0 : (aPow > bPow ? 1 : -1));
     const lKills = biasedInt(CONF.loserKillRange[0],  CONF.loserKillRange[1],  close ? 0 : (aPow > bPow ? -1 : 1));
@@ -381,13 +407,24 @@
     addTeamPoints(winner, 'kill', wKills);
     addTeamPoints(loser,  'kill', lKills);
 
-    // 個人配分（kills）
     distributeMemberKills(winner, wKills);
     distributeMemberKills(loser,  lKills);
 
-    // アシスト：1キルにつき最大1（Assist ≤ Kill を保証）
-    const wAssists = roll(CONF.assistBase + (close ? CONF.assistCloseAdd : 0)) ? randInt(0, wKills) : 0;
-    const lAssists = roll(CONF.assistBase + (close ? CONF.assistCloseAdd : 0)) ? randInt(0, lKills) : 0;
+    // アシスト確率（コーチで増える）
+    let assistRate = CONF.assistBase + (close ? CONF.assistCloseAdd : 0);
+
+    // プレイヤーが関わる陣営のみ補正（“選手を信じよう”時は増えない）
+    const pEff = (CONF.enableCoachSkill) ? getCoachEffect(state, round) : {};
+    if (pEff.assistAdd){
+      // 勝者側がプレイヤーなら加算、敗者側がプレイヤーなら加算（両方は無い想定）
+      if (isPlayerTeam(state, winner) || isPlayerTeam(state, loser)){
+        assistRate += Number(pEff.assistAdd) || 0;
+      }
+    }
+    assistRate = clamp(assistRate, 0, 0.92);
+
+    const wAssists = roll(assistRate) ? randInt(0, wKills) : 0;
+    const lAssists = roll(assistRate) ? randInt(0, lKills) : 0;
 
     addTeamPoints(winner, 'assist', wAssists);
     addTeamPoints(loser,  'assist', lAssists);
@@ -456,7 +493,6 @@
     team.eliminated = true;
     team.alive = 0;
 
-    // elimOrder（脱落順）に追加
     state.elimOrder.push({
       teamId: team.teamId,
       atRound: round,
@@ -464,23 +500,114 @@
     });
   }
 
-  function applyWinnerDb(team){
-    // DB抽選（固定確率）
+  function applyWinnerDb(state, team, round){
+    // 基本確率
+    let dist = Object.assign({}, CONF.winnerDbDist);
+
+    // コーチ（クリアリング徹底）：db2 を下げて db0 に寄せる
+    if (CONF.enableCoachSkill && isPlayerTeam(state, team)){
+      const eff = getCoachEffect(state, round);
+      if (eff.winnerDbSafe){
+        const safe = clamp(Number(eff.winnerDbSafe)||0, 0, 0.35);
+        // db2 から safe 分だけ引いて db0 に足す（db1はそのまま）
+        const cut = Math.min(dist.db2, safe);
+        dist.db2 -= cut;
+        dist.db0 += cut;
+        // 正規化（微小誤差対策）
+        const s = dist.db0 + dist.db1 + dist.db2;
+        if (s > 0){
+          dist.db0 /= s; dist.db1 /= s; dist.db2 /= s;
+        }
+      }
+    }
+
     const r = Math.random();
     let db = 0;
-    if (r < CONF.winnerDbDist.db0){
+    if (r < dist.db0){
       db = 0;
-    }else if (r < CONF.winnerDbDist.db0 + CONF.winnerDbDist.db1){
+    }else if (r < dist.db0 + dist.db1){
       db = 1;
     }else{
       db = 2;
     }
 
-    // alive / deathBoxes
     const alive = clampInt(Number(team.alive ?? 3), 0, 3);
-    const loss = Math.min(db, alive); // 0〜alive
+    const loss = Math.min(db, alive);
     team.alive = alive - loss;
     team.deathBoxes = clampInt(Number(team.deathBoxes ?? 0) + loss, 0, 3);
+  }
+
+  /* =========================
+     カード効果（%）
+     - ui_team.js と同様に
+       window.MOBBR.data.cards があれば使う
+  ========================== */
+  function getCollectionBonusPercent(){
+    try{
+      if (!CONF.enableCardBonus) return 0;
+
+      const DC = window.MOBBR?.data?.cards || window.DataCards || null;
+      if (!DC || !DC.getById || !DC.calcSingleCardPercent) return 0;
+
+      const owned = JSON.parse(localStorage.getItem(LS.cardsOwned) || '{}') || {};
+      let sum = 0;
+
+      for (const id in owned){
+        const cnt = Number(owned[id]) || 0;
+        if (cnt <= 0) continue;
+
+        const card = DC.getById(id);
+        if (!card) continue;
+
+        const effCnt = Math.max(0, Math.min(10, cnt));
+        sum += DC.calcSingleCardPercent(card.rarity, effCnt);
+      }
+
+      if (!Number.isFinite(sum)) return 0;
+      return Math.max(0, sum);
+    }catch{
+      return 0;
+    }
+  }
+
+  /* =========================
+     コーチ効果（1試合で使う1つ）
+     - 大会側が「この試合で使う」を選ばせたら
+       localStorage.mobbr_coachSkillChosen に id を入れる想定
+     - まだ無ければ “装備中の1枠目” を暫定参照（無いよりマシ）
+  ========================== */
+  function getCoachEffect(state, round){
+    if (!CONF.enableCoachSkill) return {};
+
+    let chosen = null;
+
+    // (1) この試合で選択されたスキル（大会側がセット）
+    try{
+      chosen = String(localStorage.getItem(LS.coachChosen) || '').trim() || null;
+    }catch{}
+
+    // (2) 無ければ装備中の先頭を参照（暫定）
+    if (!chosen){
+      try{
+        const eq = JSON.parse(localStorage.getItem(LS.coachEquipped) || '[]');
+        if (Array.isArray(eq)){
+          const first = (typeof eq[0] === 'string') ? eq[0].trim() : '';
+          chosen = first || null;
+        }
+      }catch{}
+    }
+
+    if (!chosen) return {};
+    const eff = COACH_EFFECTS[chosen] || {};
+    // 返す時に id も持たせる（後段で参照）
+    return Object.assign({ id: chosen }, eff);
+  }
+
+  function isPlayerTeam(state, team){
+    if (!state || !team) return false;
+    const pId = state.playerTeamId || null;
+    if (pId && team.teamId === pId) return true;
+    return !!team.isPlayer;
   }
 
   /* =========================
@@ -496,7 +623,7 @@
       areaId: team.areaId,
       areaName: (window.SimMap?.getAreaName ? window.SimMap.getAreaName(team.areaId) : `Area${team.areaId}`),
       points: points,
-      placementPt: 0, // buildMatchResult で確定
+      placementPt: 0,
       totalPt: 0,
       kills_total: Number(team.kills_total || 0),
       assists_total: Number(team.assists_total || 0),
@@ -576,17 +703,14 @@
     min = Number(min)||0; max = Number(max)||0;
     if (max < min) [min,max] = [max,min];
     const span = max - min;
-
     if (span <= 0) return min;
 
     let r = Math.random();
     if (bias > 0){
-      // 高め寄り：r^0.6
       r = Math.pow(r, 0.6);
     }else if (bias < 0){
-      // 低め寄り：1-(1-r)^0.6
       r = 1 - Math.pow(1 - r, 0.6);
-      r = 1 - r; // 反転で低めへ
+      r = 1 - r;
     }
     return min + Math.round(r * span);
   }
