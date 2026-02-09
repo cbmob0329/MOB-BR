@@ -1,9 +1,10 @@
 'use strict';
 
 /*
-  MOB BR - ui_schedule.js v1（フル）
+  MOB BR - ui_schedule.js v2（フル）
   - 年間スケジュール画面
   - 次の大会を赤文字で強調
+  - ★追加：次の大会（nextTour / nextTourW）を storage に set する
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -60,6 +61,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return true;
   }
 
+  // ★次の大会を storage に保存
+  function setNextTournamentToStorage(item){
+    if (!item) return;
+
+    // nextTour：大会名
+    try{ S.setStr(K.nextTour, String(item.name || '未定')); }catch(e){}
+
+    // nextTourW： "m-w" 形式（例: "2-1"）
+    const mw = `${Number(item.m || 0)}-${Number(item.w || 0)}`;
+    try{ S.setStr(K.nextTourW, mw); }catch(e){}
+  }
+
+  // ★「今が大会週かどうか」を判定するため、今週が大会ならそれを next にする
+  //    （＝isFutureOrNow の仕様上、今週が大会なら最初に選ばれる）
   function render(){
     if (!dom.list) return;
 
@@ -68,6 +83,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const now = getNow();
     let currentSplit = '';
     let nextFound = false;
+    let nextItem = null;
 
     SCHEDULE.forEach(item=>{
       if (item.split !== currentSplit){
@@ -94,16 +110,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const right = document.createElement('div');
       right.textContent = item.name;
 
+      // 次の大会（今週含む）を赤く＆1件だけ確定
       if (!nextFound && isFutureOrNow(item, now)){
         row.style.color = '#ff3b30';
         row.style.fontWeight = '1000';
         nextFound = true;
+        nextItem = item;
       }
 
       row.appendChild(left);
       row.appendChild(right);
       dom.list.appendChild(row);
     });
+
+    // ★レンダーの最後に nextTour / nextTourW を確定で保存
+    //   （次が無い場合は未定にする）
+    if (nextItem){
+      setNextTournamentToStorage(nextItem);
+    }else{
+      try{ S.setStr(K.nextTour, '未定'); }catch(e){}
+      try{ S.setStr(K.nextTourW, '未定'); }catch(e){}
+    }
   }
 
   function open(){
