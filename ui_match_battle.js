@@ -1,34 +1,10 @@
 /* =========================================================
-   MOB BR - ui_match_battle.js (FULL)
-   - 交戦中レイアウト（画像の「バトルレイアウト.png」準拠）
-   - 背景(Area画像) + 上部BATTLEバナー + 左右チーム表示 + チーム名枠 + 中央ログ枠
-   ---------------------------------------------------------
-   役割：
-   ・SimBattle（sim_battle.js）が作る「戦闘ログ/交戦データ」を受け取り
-   ・“見た目”として表示するだけ（勝敗計算はしない）
-
-   想定フォルダ（ユーザー構成）：
-   - マップ背景：maps/
-   - CPUチーム画像：cpu/<teamId>.png
-   - プレイヤー画像：ルート or 任意（RULES.UI.playerImgBase で指定）
-
-   使い方（例）：
-     // 1) 初期化（表示したい親要素を渡す）
-     UIMatchBattle.mount(document.getElementById('gameView'));
-
-     // 2) 交戦開始の表示
-     UIMatchBattle.show({
-       bgImg: 'maps/neonmain.png',
-       player: { teamId:'player', name:'チームA', members:['A','B','C'], img:'P1.png' },
-       enemy:  { teamId:'local07', name:'ハンマーズ', members:['X','Y','Z'] }, // imgは自動でcpu/<teamId>.png
-       logText: 'ここにログ',
-     });
-
-     // 3) ログ更新（NEXTで進める等）
-     UIMatchBattle.setLog('IGLがコール！戦闘準備！');
-
-     // 4) 非表示
-     UIMatchBattle.hide();
+   MOB BR - ui_match_battle.js (FULL / v2)
+   - 交戦中レイアウト（画像「交戦中レイアウト」準拠）
+   - 背景：
+      1) payload.bgImg があればそれを使う（maps/でも直下でもOK）
+      2) 無ければ brbattle.png（直下）を使う
+   - 左右チーム表示 + チーム名枠 + 中央ログ枠 + 上部BATTLEバナー
 ========================================================= */
 
 (function(){
@@ -44,13 +20,16 @@
     // 画像ベース
     mapImgBase: 'maps/',
     cpuImgBase: 'cpu/',
-    playerImgBase: '', // 例: ''（ルート） or 'player/' など
+    playerImgBase: '',
 
-    // バナー
-    bannerImg: 'battle.png', // 無ければテキストで代替
+    // 交戦画面デフォ背景（あなた指定：直下）
+    defaultBattleBg: 'brbattle.png',
+
+    // バナー（無ければテキスト）
+    bannerImg: 'battle.png',
     bannerText: 'BATTLE!!',
 
-    // レイアウト（相対）
+    // レイアウト
     maxW: 620,
     maxH: 620,
     padding: 14,
@@ -116,7 +95,6 @@
       _mounted = true;
     }
 
-    // 初期は非表示
     hideRoot();
     return true;
   };
@@ -128,19 +106,18 @@
   UIMatchBattle.show = function(payload){
     ensureMounted();
 
-    // payload
     const bgImg = payload?.bgImg || '';
     const player = payload?.player || null;
     const enemy  = payload?.enemy  || null;
     const logText = payload?.logText ?? '';
 
-    // 背景
-    setBg(bgImg);
+    // 背景（bgImg が無ければ brbattle.png）
+    setBg(bgImg || CONF.defaultBattleBg);
 
     // バナー
     setBanner(payload?.bannerImg, payload?.bannerText);
 
-    // 左右チーム表示
+    // 左右チーム
     setTeam('left', player);
     setTeam('right', enemy);
 
@@ -168,29 +145,28 @@
 
   UIMatchBattle.setBackground = function(bgImg){
     ensureMounted();
-    setBg(bgImg);
+    setBg(bgImg || CONF.defaultBattleBg);
   };
 
   // -------------------------
   // DOM
   // -------------------------
   function buildDom(){
-    // root
     _root = document.createElement('div');
     _root.className = 'mobbr-battle-root';
     _root.style.zIndex = String(CONF.zBase);
 
-    // background
     _bg = document.createElement('div');
     _bg.className = 'mobbr-battle-bg';
     _root.appendChild(_bg);
 
-    // banner
     _bannerWrap = document.createElement('div');
     _bannerWrap.className = 'mobbr-battle-banner';
+
     _bannerImg = document.createElement('img');
     _bannerImg.className = 'mobbr-battle-banner-img';
     _bannerImg.alt = 'BATTLE';
+
     _bannerText = document.createElement('div');
     _bannerText.className = 'mobbr-battle-banner-text';
     _bannerText.textContent = CONF.bannerText;
@@ -199,7 +175,6 @@
     _bannerWrap.appendChild(_bannerText);
     _root.appendChild(_bannerWrap);
 
-    // name boxes
     _leftBox = document.createElement('div');
     _leftBox.className = 'mobbr-battle-namebox mobbr-left';
     _leftBox.innerHTML = `<div class="mobbr-battle-name">チーム名</div><div class="mobbr-battle-member">メンバー名</div>`;
@@ -210,7 +185,6 @@
     _rightBox.innerHTML = `<div class="mobbr-battle-name">チーム名</div><div class="mobbr-battle-member">メンバー名</div>`;
     _root.appendChild(_rightBox);
 
-    // team images
     _leftTeamImg = document.createElement('img');
     _leftTeamImg.className = 'mobbr-battle-teamimg mobbr-left';
     _leftTeamImg.alt = 'player';
@@ -221,16 +195,16 @@
     _rightTeamImg.alt = 'enemy';
     _root.appendChild(_rightTeamImg);
 
-    // log
     _logBox = document.createElement('div');
     _logBox.className = 'mobbr-battle-logbox';
+
     _logText = document.createElement('div');
     _logText.className = 'mobbr-battle-logtext';
     _logText.textContent = '';
+
     _logBox.appendChild(_logText);
     _root.appendChild(_logBox);
 
-    // attach
     _host.appendChild(_root);
   }
 
@@ -238,7 +212,7 @@
   // Setters
   // -------------------------
   function setBg(bgImg){
-    const url = resolveMapImg(bgImg);
+    const url = resolveBg(bgImg);
     _bg.style.backgroundImage = url ? `url("${url}")` : 'none';
   }
 
@@ -251,9 +225,8 @@
     if (bannerImg){
       _bannerImg.src = bannerImg;
       _bannerImg.style.display = 'block';
-      _bannerText.style.display = 'none'; // 画像があるならテキスト非表示
+      _bannerText.style.display = 'none';
       _bannerImg.onerror = function(){
-        // 画像無い場合：テキストにフォールバック
         _bannerImg.style.display = 'none';
         _bannerText.style.display = 'flex';
       };
@@ -297,40 +270,41 @@
   }
 
   function setLog(text){
-    const t = (text == null) ? '' : String(text);
-    _logText.textContent = t;
+    _logText.textContent = (text == null) ? '' : String(text);
   }
 
   // -------------------------
   // URL resolve
   // -------------------------
-  function resolveMapImg(bgImg){
+  function resolveBg(bgImg){
     if (!bgImg) return '';
-    // すでに maps/ が入ってる or http 等ならそのまま
-    if (/^(https?:)?\/\//.test(bgImg)) return bgImg;
-    if (bgImg.startsWith(CONF.mapImgBase)) return bgImg;
-    // ファイル名だけなら maps/ を付ける
-    if (!bgImg.includes('/')) return CONF.mapImgBase + bgImg;
-    return bgImg;
+    const s = String(bgImg);
+
+    // http / https / // はそのまま
+    if (/^(https?:)?\/\//.test(s)) return s;
+
+    // すでにパスが入ってるならそのまま（例: maps/xxx.png / cpu/xxx.png など）
+    if (s.includes('/')) return s;
+
+    // ファイル名だけなら：
+    // - mapsの画像っぽい時だけ maps/ を付けたいが判別は危険なので
+    //   「maps配下で使いたい時は show({bgImg:'maps/xxx.png'})」で渡す運用にする
+    // - 直下画像（brbattle.png 等）はそのまま返す
+    return s;
   }
 
   function resolveTeamImg(team, isPlayerSide){
     if (!team) return '';
     if (team.img) return team.img;
 
-    // 左＝プレイヤー想定
+    // 左＝プレイヤー
     if (isPlayerSide){
-      const tid = team.teamId || '';
-      // 明示で imgName / playerImg が来たら使う
       if (team.imgName) return CONF.playerImgBase + team.imgName;
       if (team.playerImg) return CONF.playerImgBase + team.playerImg;
-
-      // teamId が 'P1.png' 的に来ることは無い想定。なければ空。
-      // ルートに P1.png を置く運用なら、呼び出し側で {img:'P1.png'} を渡してOK
-      return '';
+      return ''; // 呼び出し側で {img:'P1.png'} を渡してOK
     }
 
-    // 右＝CPU（teamId.png を cpu/ から）
+    // 右＝CPU（cpu/<teamId>.png）
     const cpuId = team.teamId || '';
     if (!cpuId) return '';
     return CONF.cpuImgBase + cpuId + '.png';
@@ -339,12 +313,8 @@
   // -------------------------
   // Show/Hide
   // -------------------------
-  function hideRoot(){
-    if (_root) _root.style.display = 'none';
-  }
-  function showRoot(){
-    if (_root) _root.style.display = 'block';
-  }
+  function hideRoot(){ if (_root) _root.style.display = 'none'; }
+  function showRoot(){ if (_root) _root.style.display = 'block'; }
 
   function ensureMounted(){
     if (!_mounted || !_root) throw new Error('UIMatchBattle is not mounted. Call UIMatchBattle.mount(host) first.');
