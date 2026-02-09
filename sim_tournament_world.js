@@ -1,33 +1,548 @@
 /* =========================================================
-   MOB BR - sim_tournament_world.js (FULL)
-   - ワールドファイナル（40チーム）専用フェーズ
-   - グループ予選(AB/CD→AC/BD→AD/BC) 各5試合
-   - 予選総合40位まで確定 → 上位20=Winners / 下位20=Losers
-   - Winners(20) 5試合 → 上位10=FINAL / 下位10=Losers2へ
-   - Losers(20)  5試合 → 上位10=Losers2 / 下位10=敗退
-   - Losers2(20) 5試合 → 上位10=FINAL / 下位10=敗退
+   MOB BR - sim_tournament_world.js (FULL / FIXED)
    ---------------------------------------------------------
-   1試合ごとに：
-   ・result(20) を返す
-   ・そのブロックの「現在( n/5 )総合順位(20)」を返す
+   役割：
+   ・ワールド大会（既定：40チーム / 5試合）※20にも対応
+   ・1試合ごとに result を生成（ui_match_result.js が 20/40対応）
+   ・試合後に「現在の総合順位」を更新
+   ・戦闘ロジックは持たない（簡易シムで result を作るだけ）
    ---------------------------------------------------------
-   依存（あれば使う）：
-   - window.DataCPU.getById(teamId)
-   - window.DataPlayer.getTeam() / window.MOBBR.data.player 等（プレイヤーチーム取得）
-   - window.SimMatch.runMatch(teams, opt)  ※あれば優先
+   追加対応（あなたの懸念点）：
+   ✅ 試合前コーチスキル
+      - 使える時は選択UIが出る（使わない選択もあり）
+      - 消耗品：使ったら所持数を減らし、0なら装備枠からも外す
+      - 使えるスキルが無ければ
+        「コーチスキルはもう使い切っている！選手を信じよう！」
+   ✅ カードコレクション効果
+      - プレイヤーチームの「勝ちやすさ」に反映（簡易ウェイト）
+   ---------------------------------------------------------
+   依存（あれば使う / 無くても動く）：
+   ・window.MOBBR.ui.matchResult（ui_match_result.js）
+   ・window.MOBBR.ui.showMessage（任意）
+   ・window.MOBBR.data.cards（カード%算出用。なければ0）
+   ・window.DataCPU（data_cpu_teams.js）
+   ・window.MOBBR.data.player（任意：プレイヤーチーム取得）
 ========================================================= */
+
+window.MOBBR = window.MOBBR || {};
+window.MOBBR.sim = window.MOBBR.sim || {};
 
 (function(){
   'use strict';
 
-  const SimTournamentWorld = {};
-  window.SimTournamentWorld = SimTournamentWorld;
+  const World = {};
+  window.MOBBR.sim.tournamentWorld = World;
 
-  const GROUP_MATCHES_PER_BLOCK = 5;
-  const STAGE_MATCHES = 5;
+  // ---------------------------------------------------------
+  // CONFIG / KEYS
+  // ---------------------------------------------------------
+  const LS_KEY = 'mobbr_tournament_world_state_v1';
 
-  // ===== 順位ポイント（ユーザー確定）=====
-  function placementPoint(p){
+  const CPU_IMG_BASE = 'cpu/';
+  const COACH_OWNED_KEY = 'mobbr_coachSkillsOwned';
+  const COACH_EQUIP_KEY = 'mobbr_coachSkillsEquipped';
+
+  // ui_team.js v16 に合わせる（id固定）
+  const COACH_MASTER = [
+    { id:'tactics_note',  name:'戦術ノート',      powerPct:1, treasurePlus:0,    flagPlus:0 },
+    { id:'mental_care',   name:'メンタル整備',    powerPct:0, treasurePlus:0,    flagPlus:0 },
+    { id:'endgame_power', name:'終盤の底力',      powerPct:3, treasurePlus:0,    flagPlus:0 },
+    { id:'clearing',      name:'クリアリング徹底', powerPct:0, treasurePlus:0,   flagPlus:0 },
+    { id:'score_mind',    name:'スコア意識',      powerPct:0, treasurePlus:0.06, flagPlus:0.03 },
+    { id:'igl_call',      name:'IGL強化コール',   powerPct:4, treasurePlus:0,    flagPlus:0 },
+    { id:'protagonist',   name:'主人公ムーブ',    powerPct:6, treasurePlus:0,    flagPlus:0 }
+  ];
+  const COACH_BY_ID = Object.fromEntries(COACH_MASTER.map(s=>[s.id,s]));
+
+  // ---------------------------------------------------------
+  // PUBLIC API
+  // ---------------------------------------------------------
+  /**
+   * ワールド大会セッション作成
+   * opt:
+   *  - keepStorage (boolean) : 既存保存優先（既定true）
+   *  - teamCount (number) : 20 or 40（既定40）
+   *  - matchTotal (number) : 既定5
+   *  - teams (array) : 外部注入（任意）
+   *  - seed (number) : 任意
+   */
+  World.create = function(opt){
+    const o = opt || {};
+    if (o.keepStorage !== false){
+      const saved = readState();
+      if (saved && saved.kind === 'world' && saved.matchIndex < saved.matchTotal){
+        return saved;
+      }
+    }
+
+    const teamCount = (Number(o.teamCount) === 20) ? 20 : 40;
+    const matchTotal = Number.isFinite(Number(o.matchTotal)) ? Math.max(1, Number(o.matchTotal)) : 5;
+
+    const teams = normalizeTeams(o.teams || buildDefaultTeams(teamCount), teamCount);
+
+    const state = {
+      kind: 'world',
+      version: 1,
+      seed: Number.isFinite(Number(o.seed)) ? Number(o.seed) : Math.floor(Math.random()*1e9),
+      rngI: 0,
+
+      teamCount,
+      matchIndex: 0,
+      matchTotal,
+
+      teams: teams.map(t => ({
+        isPlayer: !!t.isPlayer,
+        teamId: String(t.teamId),
+        name: String(t.name),
+        image: String(t.image || (t.teamId ? (CPU_IMG_BASE + t.teamId + '.png') : ''))
+      })),
+
+      // 総合順位用
+      agg: initAgg(teams),
+
+      // 試合前コーチ選択待ち
+      step: 'idle',        // 'idle' | 'awaitCoach' | 'awaitCoachDone'
+      pending: null,       // { matchNo, selectedId|null, used:boolean }
+
+      // 最後の表示用
+      last: null
+    };
+
+    writeState(state);
+    return state;
+  };
+
+  /**
+   * 次の試合を進める（1試合分だけ）
+   * ※ 試合前にコーチスキル選択が必要な場合、UIが出てここで止まる
+   */
+  World.playNextMatch = function(state, opt){
+    const st = state || readState();
+    if (!st || st.kind !== 'world') return null;
+
+    if (st.matchIndex >= st.matchTotal){
+      return st;
+    }
+
+    const o = opt || {};
+    const matchNo = st.matchIndex + 1;
+
+    // ---- 試合前コーチ（必要ならここで止める） ----
+    if (st.step !== 'awaitCoachDone'){
+      const opened = openCoachSelectIfNeeded(st, matchNo);
+      writeState(st);
+      if (opened){
+        // UI操作で続きはもう一度 playNextMatch を呼べば進む
+        return st;
+      }
+      st.step = 'awaitCoachDone';
+    }
+
+    // ---- 1試合の result 生成 ----
+    const ctx = buildMatchContext(st);
+    const matchRows = simulateOneMatch(st, ctx);
+
+    // ---- 累積更新（総合順位） ----
+    applyAgg(st, matchRows);
+    const overallRows = buildOverallRows(st);
+
+    const championName = matchRows[0]?.name || '';
+
+    st.matchIndex = matchNo;
+    st.last = { matchNo, matchRows, overallRows, championName };
+
+    // 次に備えてリセット
+    st.step = 'idle';
+    st.pending = null;
+
+    writeState(st);
+
+    // UI表示（あれば）
+    if (o.openUI !== false){
+      const ui = window.MOBBR?.ui?.matchResult;
+      if (ui && typeof ui.open === 'function'){
+        ui.open({
+          title: String(o.title || 'RESULT'),
+          subtitle: String(o.subtitle || `ワールド大会 第${matchNo}試合`),
+          matchIndex: matchNo,
+          matchTotal: st.matchTotal,
+          rows: matchRows,
+          championName
+        });
+      }
+    }
+
+    return st;
+  };
+
+  /**
+   * 総合順位UI
+   */
+  World.openOverallUI = function(state, opt){
+    const st = state || readState();
+    if (!st || st.kind !== 'world') return;
+
+    const ui = window.MOBBR?.ui?.matchResult;
+    if (!ui || typeof ui.open !== 'function') return;
+
+    const rows = buildOverallRows(st);
+    const o = opt || {};
+
+    ui.open({
+      title: String(o.title || 'OVERALL'),
+      subtitle: String(o.subtitle || `ワールド大会 現在順位（${st.matchIndex}/${st.matchTotal}）`),
+      matchIndex: st.matchIndex,
+      matchTotal: st.matchTotal,
+      rows,
+      championName: rows[0]?.name || ''
+    });
+  };
+
+  World.isFinished = function(state){
+    const st = state || readState();
+    return !!(st && st.kind === 'world' && st.matchIndex >= st.matchTotal);
+  };
+
+  World.getFinalOverall = function(state){
+    const st = state || readState();
+    if (!st || st.kind !== 'world') return null;
+    return buildOverallRows(st);
+  };
+
+  World.reset = function(){
+    try{ localStorage.removeItem(LS_KEY); }catch{}
+  };
+
+  // ---------------------------------------------------------
+  // COACH: 試合前選択（消耗）
+  // ---------------------------------------------------------
+  function openCoachSelectIfNeeded(st, matchNo){
+    // すでに選択済みなら開かない
+    if (st.pending && st.pending.matchNo === matchNo && st.pending.used === true){
+      st.step = 'awaitCoachDone';
+      return false;
+    }
+    if (st.pending && st.pending.matchNo === matchNo && st.pending.used === false && st.pending.selectedId === null){
+      st.step = 'awaitCoachDone';
+      return false;
+    }
+
+    const owned = readCoachOwned();
+    const equipped = readCoachEquipped();
+
+    const usable = equipped
+      .filter(id => id && typeof id === 'string')
+      .filter(id => (Number(owned[id])||0) > 0)
+      .map(id => COACH_BY_ID[id])
+      .filter(Boolean);
+
+    if (usable.length === 0){
+      announce('コーチスキルはもう使い切っている！選手を信じよう！');
+      st.pending = { matchNo, selectedId: null, used: false };
+      st.step = 'awaitCoachDone';
+      return false;
+    }
+
+    st.step = 'awaitCoach';
+    st.pending = { matchNo, selectedId: null, used: false };
+
+    ensureCoachModal();
+    renderCoachModal(usable, matchNo, (selectedId)=>{
+      if (!selectedId){
+        st.pending = { matchNo, selectedId: null, used: false };
+        st.step = 'awaitCoachDone';
+        writeState(st);
+        closeCoachModal();
+        announce('コーチスキル：使わない');
+        return;
+      }
+
+      consumeCoachSkill(selectedId);
+
+      st.pending = { matchNo, selectedId, used: true };
+      st.step = 'awaitCoachDone';
+      writeState(st);
+      closeCoachModal();
+      announce(`コーチスキル使用：${COACH_BY_ID[selectedId]?.name || selectedId}`);
+    });
+
+    return true;
+  }
+
+  function consumeCoachSkill(id){
+    const owned = readCoachOwned();
+    const equipped = readCoachEquipped();
+
+    const cur = Number(owned[id]) || 0;
+    const next = Math.max(0, cur - 1);
+    if (next <= 0){
+      delete owned[id];
+      // 0になったら装備枠からも外す
+      for (let i=0;i<equipped.length;i++){
+        if (equipped[i] === id) equipped[i] = null;
+      }
+    }else{
+      owned[id] = next;
+    }
+
+    writeCoachOwned(owned);
+    writeCoachEquipped(equipped);
+  }
+
+  function buildMatchContext(st){
+    const cardBonus = calcCollectionBonusPercent();
+    const coach = (st.pending && st.pending.used && st.pending.selectedId)
+      ? COACH_BY_ID[st.pending.selectedId]
+      : null;
+
+    return {
+      cardBonusPct: cardBonus,
+      coach
+    };
+  }
+
+  // ---------------------------------------------------------
+  // CORE: One match simulation（簡易）
+  // ---------------------------------------------------------
+  function simulateOneMatch(st, ctx){
+    const teams = st.teams.slice();
+
+    const playerBoostPct = (ctx?.cardBonusPct||0) + (ctx?.coach?.powerPct||0);
+
+    const orderedTeams = weightedOrder(teams, st, (t)=>{
+      if (!t.isPlayer) return 1;
+      return 1 + (playerBoostPct * 0.08);
+    });
+
+    const placeById = {};
+    for (let i=0;i<orderedTeams.length;i++){
+      placeById[orderedTeams[i].teamId] = i + 1;
+    }
+
+    const baseTreasureRate = 0.18;
+    const baseFlagRate = 0.08;
+
+    const treasurePlus = (ctx?.coach?.treasurePlus||0);
+    const flagPlus = (ctx?.coach?.flagPlus||0);
+
+    const rows = teams.map(t=>{
+      const place = placeById[t.teamId] || st.teamCount;
+
+      const kpBase = place <= 3 ? 3 : place <= 10 ? 2 : 1;
+      const kp = randInt(st, 0, kpBase + 3);
+
+      const apMax = Math.max(0, kp + 3 + (t.isPlayer ? (ctx?.coach?.id === 'protagonist' ? 1 : 0) : 0));
+      const ap = randInt(st, 0, apMax);
+
+      const trRate = t.isPlayer ? (baseTreasureRate + treasurePlus) : baseTreasureRate;
+      const flRate = t.isPlayer ? (baseFlagRate + flagPlus) : baseFlagRate;
+
+      const treasure = (rand01(st) < trRate) ? 1 : 0;
+      const flag = (rand01(st) < flRate) ? 1 : 0;
+
+      const placementP = getPlacementPoint(place);
+      const total = placementP + kp + ap + treasure + flag*2;
+
+      return {
+        place,
+        teamId: t.teamId,
+        name: t.name,
+        image: t.image || (CPU_IMG_BASE + t.teamId + '.png'),
+        placementP,
+        kp,
+        ap,
+        treasure,
+        flag,
+        total
+      };
+    });
+
+    rows.sort((a,b)=>a.place-b.place);
+    return rows;
+  }
+
+  // ---------------------------------------------------------
+  // AGGREGATION
+  // ---------------------------------------------------------
+  function initAgg(teams){
+    const agg = {};
+    for (const t of teams){
+      agg[t.teamId] = {
+        teamId: t.teamId,
+        name: t.name,
+        image: t.image || (CPU_IMG_BASE + t.teamId + '.png'),
+
+        matches: 0,
+        sumPlace: 0,
+
+        totalPts: 0,
+        totalKP: 0,
+        totalAP: 0,
+        totalTreasure: 0,
+        totalFlag: 0
+      };
+    }
+    return agg;
+  }
+
+  function applyAgg(st, matchRows){
+    for (const r of matchRows){
+      const a = st.agg[r.teamId];
+      if (!a) continue;
+
+      a.matches += 1;
+      a.sumPlace += (Number(r.place)||st.teamCount);
+
+      a.totalPts += (Number(r.total)||0);
+      a.totalKP += (Number(r.kp)||0);
+      a.totalAP += (Number(r.ap)||0);
+      a.totalTreasure += (Number(r.treasure)||0);
+      a.totalFlag += (Number(r.flag)||0);
+    }
+  }
+
+  function buildOverallRows(st){
+    const list = Object.values(st.agg || {});
+    const rows = list.map(a=>{
+      const avgPlace = a.matches ? (a.sumPlace / a.matches) : 999;
+      return {
+        teamId: a.teamId,
+        name: a.name,
+        image: a.image,
+        place: 0,
+        placementP: 0,
+        kp: a.totalKP,
+        ap: a.totalAP,
+        treasure: a.totalTreasure,
+        flag: a.totalFlag,
+        total: a.totalPts,
+        _avgPlace: avgPlace
+      };
+    });
+
+    rows.sort((x,y)=>{
+      if (y.total !== x.total) return y.total - x.total;
+      if (y.kp !== x.kp) return y.kp - x.kp;
+      if (x._avgPlace !== y._avgPlace) return x._avgPlace - y._avgPlace;
+      if (y.ap !== x.ap) return y.ap - x.ap;
+      return (rand01(st) < 0.5) ? -1 : 1;
+    });
+
+    for (let i=0;i<rows.length;i++) rows[i].place = i + 1;
+    rows.forEach(r=>{ delete r._avgPlace; });
+    return rows;
+  }
+
+  // ---------------------------------------------------------
+  // TEAMS
+  // ---------------------------------------------------------
+  function buildDefaultTeams(teamCount){
+    const out = [];
+    const player = getPlayerTeamOrNull();
+    if (player) out.push(player);
+
+    const cpuPool = getWorldCpuTeams();
+    const need = teamCount - out.length;
+
+    const picked = pickUnique(cpuPool, need);
+    out.push(...picked);
+
+    while (out.length < teamCount){
+      out.push({ isPlayer:false, teamId:'cpu_dummy_'+out.length, name:'CPU', image:'' });
+    }
+    return out.slice(0, teamCount);
+  }
+
+  function getPlayerTeamOrNull(){
+    const DP = window.MOBBR?.data?.player || window.DataPlayer || null;
+    if (DP){
+      if (typeof DP.getTeam === 'function'){
+        const t = DP.getTeam();
+        if (t && t.teamId) return normalizeTeam(t, true);
+      }
+      if (typeof DP.getPlayerTeam === 'function'){
+        const t = DP.getPlayerTeam();
+        if (t && t.teamId) return normalizeTeam(t, true);
+      }
+      if (DP.team && DP.team.teamId){
+        return normalizeTeam(DP.team, true);
+      }
+    }
+    return { isPlayer:true, teamId:'player', name:'プレイヤーチーム', image:'' };
+  }
+
+  function getWorldCpuTeams(){
+    const DC = window.DataCPU || null;
+    let all = [];
+    if (DC && typeof DC.getAllTeams === 'function'){
+      all = DC.getAllTeams() || [];
+    }
+
+    // できるだけ “world” を拾う（命名揺れ対応）
+    const hit = (t)=>{
+      const id = String(t.teamId||'').toLowerCase();
+      if (!id) return false;
+      return id.startsWith('world') || id.includes('world') || id.startsWith('w_') || id.startsWith('wr');
+    };
+
+    let pool = all.filter(hit);
+    if (pool.length === 0){
+      // 何も無ければ広めに（final以外）
+      pool = all.filter(t=>{
+        const id = String(t.teamId||'').toLowerCase();
+        return id && !id.startsWith('final');
+      });
+    }
+    if (pool.length === 0) pool = all;
+
+    return pool.map(t=>normalizeTeam(t,false));
+  }
+
+  function normalizeTeams(arr, teamCount){
+    const list = Array.isArray(arr) ? arr : [];
+    const out = [];
+    const seen = new Set();
+    for (const t of list){
+      const nt = normalizeTeam(t, !!t.isPlayer);
+      if (!nt || !nt.teamId) continue;
+      if (seen.has(nt.teamId)) continue;
+      seen.add(nt.teamId);
+      out.push(nt);
+      if (out.length >= teamCount) break;
+    }
+    while (out.length < teamCount){
+      out.push({ isPlayer:false, teamId:'cpu_dummy_'+out.length, name:'CPU', image:'' });
+    }
+    return out.slice(0, teamCount);
+  }
+
+  function normalizeTeam(t, forcePlayer){
+    if (!t) return null;
+    const teamId = String(t.teamId || t.id || t.key || '');
+    if (!teamId) return null;
+    const name = String(t.name || t.teamName || teamId);
+
+    let image = String(t.image || t.img || '');
+    if (image.startsWith('assets/')) image = 'cpu/' + image.slice('assets/'.length);
+    if (!image && !forcePlayer) image = CPU_IMG_BASE + teamId + '.png';
+
+    return { isPlayer: !!forcePlayer || !!t.isPlayer, teamId, name, image };
+  }
+
+  function pickUnique(arr, n){
+    const a = (arr || []).slice();
+    for (let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      const tmp=a[i]; a[i]=a[j]; a[j]=tmp;
+    }
+    return a.slice(0, Math.max(0,n));
+  }
+
+  // ---------------------------------------------------------
+  // POINT TABLE（ユーザー確定）
+  // ---------------------------------------------------------
+  function getPlacementPoint(place){
+    const p = Number(place)||999;
     if (p === 1) return 12;
     if (p === 2) return 8;
     if (p === 3) return 6;
@@ -35,580 +550,295 @@
     if (p === 5) return 4;
     if (p === 6) return 3;
     if (p === 7) return 2;
-    if (p === 8) return 1;
-    if (p === 9) return 1;
-    if (p === 10) return 1;
+    if (p >= 8 && p <= 10) return 1;
     return 0;
   }
 
-  // ===== Team resolve =====
-  function resolvePlayerTeam(){
-    return (
-      window.DataPlayer?.getTeam?.() ||
-      window.MOBBR?.data?.player?.team ||
-      window.MOBBR?.data?.playerTeam ||
-      null
-    );
+  // ---------------------------------------------------------
+  // RNG (seeded)
+  // ---------------------------------------------------------
+  function rand01(st){
+    let x = (st.seed >>> 0) ^ ((st.rngI + 1) * 0x9e3779b9);
+    x ^= x << 13; x >>>= 0;
+    x ^= x >> 17; x >>>= 0;
+    x ^= x << 5;  x >>>= 0;
+    st.rngI = (st.rngI + 1) >>> 0;
+    return (x >>> 0) / 4294967296;
+  }
+  function randInt(st, min, max){
+    const a = Number(min)||0;
+    const b = Number(max)||0;
+    if (b <= a) return a;
+    return a + Math.floor(rand01(st) * (b - a + 1));
   }
 
-  function resolveTeamById(teamId){
-    const id = String(teamId || '');
-
-    // player
-    const p = resolvePlayerTeam();
-    if (p && String(p.teamId) === id){
-      return cloneTeam(p, true);
-    }
-
-    // cpu
-    const cpu = window.DataCPU?.getById?.(id) || null;
-    if (cpu) return cloneTeam(cpu, false);
-
-    // fallback
-    return {
-      isPlayer: false,
-      teamId: id,
-      name: id || 'TEAM',
-      image: `cpu/${id}.png`,
-      basePower: 50,
-      members: [
-        { role:'IGL', name:'IGL', powerMin:50, powerMax:50 },
-        { role:'ATTACKER', name:'ATK', powerMin:50, powerMax:50 },
-        { role:'SUPPORT', name:'SUP', powerMin:50, powerMax:50 },
-      ]
-    };
-  }
-
-  function cloneTeam(src, isPlayer){
-    const t = JSON.parse(JSON.stringify(src));
-    t.isPlayer = !!isPlayer;
-
-    // CPU画像は cpu/（ユーザー構成）
-    if (!t.isPlayer){
-      const id = t.teamId;
-      t.image = `cpu/${id}.png`;
-    }
-    return t;
-  }
-
-  // ===== Overall helpers =====
-  function newOverallRow(team){
-    return {
-      teamId: String(team.teamId),
-      name: team.name,
-      isPlayer: !!team.isPlayer,
-
-      totalPts: 0,
-      totalPlacementPts: 0,
-      totalKills: 0,
-      totalAssists: 0,
-      totalTreasure: 0,
-      totalFlag: 0,
-
-      sumPlace: 0,
-      matches: 0,
-      avgPlace: 0,
-
-      rank: 0
-    };
-  }
-
-  function applyMatchToOverall(overallMap, matchRows){
-    for (const r of (matchRows || [])){
-      const key = String(r.teamId);
-      const o = overallMap[key];
-      if (!o) continue;
-
-      const pp = placementPoint(Number(r.place) || 99);
-      const kp = Number(r.kp || 0);
-      const ap = Number(r.ap || 0);
-      const tr = Number(r.treasure || 0);
-      const fl = Number(r.flag || 0);
-
-      const total = pp + kp + ap + tr + (fl * 2);
-
-      o.totalPts += total;
-      o.totalPlacementPts += pp;
-      o.totalKills += kp;
-      o.totalAssists += ap;
-      o.totalTreasure += tr;
-      o.totalFlag += fl;
-
-      o.sumPlace += (Number(r.place) || 20);
-      o.matches += 1;
-      o.avgPlace = o.matches ? (o.sumPlace / o.matches) : 0;
-    }
-  }
-
-  function sortOverallRows(rows){
-    const a = rows.slice();
-
-    // 同点優先順位（ユーザー確定）
-    // 総合ポイント → 総合キル → 平均順位 → 総合アシスト → ランダム
-    a.sort((x,y)=>{
-      if (y.totalPts !== x.totalPts) return y.totalPts - x.totalPts;
-      if (y.totalKills !== x.totalKills) return y.totalKills - x.totalKills;
-      if (x.avgPlace !== y.avgPlace) return x.avgPlace - y.avgPlace; // 小さいほど上
-      if (y.totalAssists !== x.totalAssists) return y.totalAssists - x.totalAssists;
-      return Math.random() < 0.5 ? -1 : 1;
-    });
-
-    for (let i=0; i<a.length; i++) a[i].rank = i + 1;
-    return a;
-  }
-
-  function buildOverall20(overallMap, teamIds20){
-    const rows = [];
-    for (const id of teamIds20){
-      const r = overallMap[String(id)];
-      if (r) rows.push(r);
-    }
-    return sortOverallRows(rows);
-  }
-
-  // ===== Match runner adapter =====
-  function runOneMatch(teams20, opt){
-    const runner =
-      window.SimMatch?.runMatch ||
-      window.MOBBR?.simMatch?.runMatch ||
-      null;
-
-    if (typeof runner === 'function'){
-      const out = runner(teams20, opt || {});
-      const rows = out?.rows || out?.result || out?.matchRows || [];
-      const champion = out?.champion || rows?.[0]?.name || '';
-      return { rows, champion, raw: out };
-    }
-
-    // 暫定（UI確認用）
-    const list = teams20.slice();
-    list.sort((a,b)=>{
-      const pa = Number(a.basePower||0);
-      const pb = Number(b.basePower||0);
-      const wa = pa + (Math.random()*18 - 9);
-      const wb = pb + (Math.random()*18 - 9);
-      return wb - wa;
-    });
-
-    const rows = [];
-    for (let i=0;i<list.length;i++){
-      const t = list[i];
-      const place = i + 1;
-
-      const kp = Math.max(0, Math.floor((Math.random() * 3) + (place <= 5 ? 1 : 0) - (place >= 15 ? 1 : 0)));
-      const ap = Math.max(0, Math.floor(Math.random() * 3));
-      const treasure = (Math.random() < 0.12) ? 1 : 0;
-      const flag = (Math.random() < 0.06) ? 1 : 0;
-
-      rows.push({ place, teamId: t.teamId, name: t.name, kp, ap, treasure, flag });
-    }
-
-    return { rows, champion: rows[0]?.name || '', raw: null };
-  }
-
-  // ===== Grouping =====
-  function shuffleInPlace(a){
-    for (let i=a.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      const t=a[i]; a[i]=a[j]; a[j]=t;
-    }
-  }
-
-  function makeGroups40(allTeams40){
-    const player = allTeams40.find(t => t.isPlayer) || null;
-    if (!player){
-      console.warn('[world] プレイヤーチームが40内にいません（teamId指定を確認）');
-    }
-
-    const others = allTeams40.filter(t => !t.isPlayer);
-    shuffleInPlace(others);
-
-    // Aはプレイヤー固定 +9
-    const A = [];
-    if (player) A.push(player);
-    while (A.length < 10 && others.length) A.push(others.shift());
-
-    const B = others.splice(0,10);
-    const C = others.splice(0,10);
-    const D = others.splice(0,10);
-
-    // 念のため（不足時）埋める
-    while (B.length < 10 && others.length) B.push(others.shift());
-    while (C.length < 10 && others.length) C.push(others.shift());
-    while (D.length < 10 && others.length) D.push(others.shift());
-
-    return { A, B, C, D };
-  }
-
-  function idsOf(list){ return (list||[]).map(t=>String(t.teamId)); }
-
-  // ===== Schedule =====
-  const GROUP_BLOCKS = [
-    { stage:'groups', label:'予選リーグ1', matchup:'A&B', left:'A', right:'B', matches: GROUP_MATCHES_PER_BLOCK },
-    { stage:'groups', label:'予選リーグ1', matchup:'C&D', left:'C', right:'D', matches: GROUP_MATCHES_PER_BLOCK },
-
-    { stage:'groups', label:'予選リーグ2', matchup:'A&C', left:'A', right:'C', matches: GROUP_MATCHES_PER_BLOCK },
-    { stage:'groups', label:'予選リーグ2', matchup:'B&D', left:'B', right:'D', matches: GROUP_MATCHES_PER_BLOCK },
-
-    { stage:'groups', label:'予選リーグ3', matchup:'A&D', left:'A', right:'D', matches: GROUP_MATCHES_PER_BLOCK },
-    { stage:'groups', label:'予選リーグ3', matchup:'B&C', left:'B', right:'C', matches: GROUP_MATCHES_PER_BLOCK },
-  ];
-
-  // ===== PUBLIC API =====
-  /**
-   * initWorld
-   * @param {Object} ctx
-   *   - qualifiedTeamIds: 10チーム（ナショナル代表10） teamId配列
-   *   - worldPoolIds: 30チーム（world01〜world40等） teamId配列
-   *   - playerTeamId(optional): 明示したい場合
-   *   - teamResolver(optional): (teamId)=>team
-   */
-  SimTournamentWorld.initWorld = function(ctx){
-    const resolver = (typeof ctx?.teamResolver === 'function') ? ctx.teamResolver : resolveTeamById;
-
-    const q10 = Array.isArray(ctx?.qualifiedTeamIds) ? ctx.qualifiedTeamIds.map(String) : [];
-    const w30 = Array.isArray(ctx?.worldPoolIds) ? ctx.worldPoolIds.map(String) : [];
-
-    const allIds = q10.concat(w30);
-    if (allIds.length !== 40){
-      console.warn(`[world] 40チーム必要です（現在 ${allIds.length}） qualified10 + world30 を確認してください`);
-    }
-
-    // チーム生成
-    const teams40 = allIds.slice(0,40).map(id => resolver(id));
-
-    // プレイヤー固定（teamId指定があれば優先）
-    const explicitPlayerId = ctx?.playerTeamId ? String(ctx.playerTeamId) : null;
-    if (explicitPlayerId){
-      for (const t of teams40){
-        t.isPlayer = (String(t.teamId) === explicitPlayerId);
+  function weightedOrder(teams, st, weightFn){
+    const pool = teams.slice();
+    const out = [];
+    while (pool.length){
+      let sum = 0;
+      const ws = pool.map(t=>{
+        const w = Math.max(0.0001, Number(weightFn(t)) || 1);
+        sum += w;
+        return w;
+      });
+      let r = rand01(st) * sum;
+      let pick = 0;
+      for (; pick < pool.length; pick++){
+        r -= ws[pick];
+        if (r <= 0) break;
       }
+      out.push(pool.splice(Math.min(pick, pool.length-1),1)[0]);
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------
+  // CARD BONUS（あれば%を算出）
+  // ---------------------------------------------------------
+  function getOwnedCardsMap(){
+    try{ return JSON.parse(localStorage.getItem('mobbr_cards')) || {}; }catch{ return {}; }
+  }
+
+  function calcCollectionBonusPercent(){
+    const DC = window.MOBBR?.data?.cards;
+    if (!DC || !DC.getById || !DC.calcSingleCardPercent) return 0;
+
+    const owned = getOwnedCardsMap();
+    let sum = 0;
+
+    for (const id in owned){
+      const cnt = Number(owned[id]) || 0;
+      if (cnt <= 0) continue;
+
+      const card = DC.getById(id);
+      if (!card) continue;
+
+      const effCnt = Math.max(0, Math.min(10, cnt));
+      sum += DC.calcSingleCardPercent(card.rarity, effCnt);
+    }
+
+    return Number.isFinite(sum) ? Math.max(0, sum) : 0;
+  }
+
+  // ---------------------------------------------------------
+  // COACH STORAGE
+  // ---------------------------------------------------------
+  function readCoachOwned(){
+    try{
+      const obj = JSON.parse(localStorage.getItem(COACH_OWNED_KEY) || '{}');
+      return (obj && typeof obj === 'object') ? obj : {};
+    }catch{
+      return {};
+    }
+  }
+  function writeCoachOwned(obj){
+    localStorage.setItem(COACH_OWNED_KEY, JSON.stringify(obj || {}));
+  }
+  function readCoachEquipped(){
+    try{
+      const arr = JSON.parse(localStorage.getItem(COACH_EQUIP_KEY) || '[]');
+      if (!Array.isArray(arr)) return [null,null,null];
+      const out = [arr[0] ?? null, arr[1] ?? null, arr[2] ?? null].slice(0,3);
+      return out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
+    }catch{
+      return [null,null,null];
+    }
+  }
+  function writeCoachEquipped(arr){
+    const out = Array.isArray(arr) ? arr.slice(0,3) : [null,null,null];
+    const norm = out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
+    while (norm.length < 3) norm.push(null);
+    localStorage.setItem(COACH_EQUIP_KEY, JSON.stringify(norm));
+  }
+
+  // ---------------------------------------------------------
+  // COACH SELECT MODAL（confirm()禁止なので自前UI）
+  // ---------------------------------------------------------
+  let coachModal = null;
+
+  function ensureCoachModal(){
+    if (coachModal) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'mobbrCoachSelectModal';
+    wrap.style.position = 'fixed';
+    wrap.style.inset = '0';
+    wrap.style.zIndex = '99998';
+    wrap.style.display = 'none';
+    wrap.style.alignItems = 'center';
+    wrap.style.justifyContent = 'center';
+    wrap.style.background = 'rgba(0,0,0,.60)';
+    wrap.style.padding = '12px';
+    wrap.style.boxSizing = 'border-box';
+
+    const card = document.createElement('div');
+    card.style.width = 'min(560px, 96vw)';
+    card.style.maxHeight = 'min(86vh, 860px)';
+    card.style.background = 'rgba(15,18,24,.96)';
+    card.style.border = '1px solid rgba(255,255,255,.12)';
+    card.style.borderRadius = '16px';
+    card.style.overflow = 'hidden';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+
+    const head = document.createElement('div');
+    head.style.padding = '12px 12px 10px';
+    head.style.borderBottom = '1px solid rgba(255,255,255,.10)';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '900';
+    title.style.letterSpacing = '.06em';
+    title.style.fontSize = '14px';
+    title.style.color = '#fff';
+    title.textContent = '試合前：コーチスキルを使う？';
+
+    const sub = document.createElement('div');
+    sub.id = 'mobbrCoachSelectSub';
+    sub.style.marginTop = '6px';
+    sub.style.fontSize = '12px';
+    sub.style.color = 'rgba(255,255,255,.82)';
+    sub.style.lineHeight = '1.25';
+    sub.textContent = '';
+
+    head.appendChild(title);
+    head.appendChild(sub);
+
+    const list = document.createElement('div');
+    list.id = 'mobbrCoachSelectList';
+    list.style.padding = '10px';
+    list.style.overflow = 'auto';
+    list.style.webkitOverflowScrolling = 'touch';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '10px';
+
+    const foot = document.createElement('div');
+    foot.style.padding = '10px';
+    foot.style.borderTop = '1px solid rgba(255,255,255,.10)';
+    foot.style.display = 'flex';
+    foot.style.gap = '10px';
+
+    const btnSkip = document.createElement('button');
+    btnSkip.type = 'button';
+    btnSkip.id = 'mobbrCoachSelectSkip';
+    btnSkip.textContent = '使わない';
+    btnSkip.style.flex = '1';
+    btnSkip.style.padding = '10px';
+    btnSkip.style.borderRadius = '12px';
+    btnSkip.style.border = '1px solid rgba(255,255,255,.18)';
+    btnSkip.style.background = 'rgba(255,255,255,.06)';
+    btnSkip.style.color = '#fff';
+    btnSkip.style.fontWeight = '900';
+
+    foot.appendChild(btnSkip);
+
+    card.appendChild(head);
+    card.appendChild(list);
+    card.appendChild(foot);
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+
+    coachModal = { wrap, sub, list, btnSkip };
+  }
+
+  function renderCoachModal(usableSkills, matchNo, onPick){
+    if (!coachModal) return;
+
+    coachModal.sub.textContent = `第${matchNo}試合：使用すると所持品から消耗します`;
+    coachModal.list.innerHTML = '';
+
+    const owned = readCoachOwned();
+
+    usableSkills.forEach(sk=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.width = '100%';
+      btn.style.textAlign = 'left';
+      btn.style.padding = '10px 10px';
+      btn.style.borderRadius = '12px';
+      btn.style.border = '1px solid rgba(255,255,255,.14)';
+      btn.style.background = 'rgba(255,255,255,.10)';
+      btn.style.color = '#fff';
+      btn.style.fontWeight = '900';
+      btn.style.touchAction = 'manipulation';
+
+      const top = document.createElement('div');
+      top.style.display = 'flex';
+      top.style.justifyContent = 'space-between';
+      top.style.gap = '10px';
+      top.style.alignItems = 'baseline';
+
+      const left = document.createElement('div');
+      left.textContent = sk.name;
+      left.style.fontSize = '14px';
+
+      const right = document.createElement('div');
+      right.textContent = `所持：${Number(owned[sk.id])||0}`;
+      right.style.fontSize = '12px';
+      right.style.opacity = '0.92';
+
+      top.appendChild(left);
+      top.appendChild(right);
+
+      const eff = document.createElement('div');
+      eff.style.marginTop = '6px';
+      eff.style.fontSize = '12px';
+      eff.style.opacity = '0.90';
+      eff.textContent =
+        (sk.powerPct ? `総合戦闘力 +${sk.powerPct}%` : '') +
+        (sk.treasurePlus ? ` / 宝率+` : '') +
+        (sk.flagPlus ? ` / 旗率+` : '');
+
+      btn.appendChild(top);
+      btn.appendChild(eff);
+
+      btn.addEventListener('click', ()=>{
+        onPick(sk.id);
+      });
+
+      coachModal.list.appendChild(btn);
+    });
+
+    coachModal.btnSkip.onclick = ()=>{
+      onPick(null);
+    };
+
+    coachModal.wrap.style.display = 'flex';
+  }
+
+  function closeCoachModal(){
+    if (!coachModal) return;
+    coachModal.wrap.style.display = 'none';
+  }
+
+  // ---------------------------------------------------------
+  // UI announce helper
+  // ---------------------------------------------------------
+  function announce(text){
+    const ui = window.MOBBR?.ui;
+    if (ui && typeof ui.showMessage === 'function'){
+      ui.showMessage(text);
     }else{
-      // 既に player チームが resolver で isPlayer=true になってる想定
-      // もし無いなら、resolvePlayerTeam が含まれてるかだけは確認
-      const p = resolvePlayerTeam();
-      if (p){
-        const pid = String(p.teamId);
-        for (const t of teams40){
-          if (String(t.teamId) === pid) t.isPlayer = true;
-        }
-      }
+      console.log('[ANNOUNCE]', text);
     }
-
-    const groups = makeGroups40(teams40);
-
-    // 予選の総合（40）は全員同じテーブルで積む
-    const overall40Map = {};
-    for (const t of teams40){
-      overall40Map[String(t.teamId)] = newOverallRow(t);
-    }
-
-    const state = {
-      phase: 'world',
-
-      // 40
-      teams40,
-      groups,                 // {A,B,C,D} each team objects
-      overall40Map,
-
-      // グループ予選進行
-      blockIndex: 0,          // 0..GROUP_BLOCKS-1
-      matchInBlock: 0,        // 0..4
-      matchGlobal: 0,         // 累計
-
-      // 現在ブロックの20IDs
-      currentBlockTeamIds: [],
-
-      // 勝ち上がりフェーズ
-      subPhase: 'groups',     // groups -> winners -> losers -> losers2 -> done
-      stage20: null,          // { name, teamIds20, overallMap20, matchIndex }
-      winnersSeed: null,      // { winners20Ids, losers20Ids }
-      finalTeams20: null,     // teamId[20]
-
-      lastMatch: null,
-      done: false
-    };
-
-    // 初期ブロックセット
-    setCurrentGroupBlock20(state);
-
-    return state;
-  };
-
-  function setCurrentGroupBlock20(state){
-    const blk = GROUP_BLOCKS[state.blockIndex];
-    if (!blk) { state.currentBlockTeamIds = []; return; }
-
-    const leftTeams = state.groups[blk.left] || [];
-    const rightTeams = state.groups[blk.right] || [];
-    const ids20 = idsOf(leftTeams).concat(idsOf(rightTeams));
-    state.currentBlockTeamIds = ids20;
   }
 
-  function getCurrentGroupTeams20(state){
-    const ids20 = state.currentBlockTeamIds || [];
-    const byId = new Map(state.teams40.map(t => [String(t.teamId), t]));
-    return ids20.map(id => byId.get(String(id))).filter(Boolean);
+  // ---------------------------------------------------------
+  // STORAGE
+  // ---------------------------------------------------------
+  function readState(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch{
+      return null;
+    }
   }
-
-  function getStageTeams20(state){
-    const ids20 = state.stage20?.teamIds20 || [];
-    const byId = new Map(state.teams40.map(t => [String(t.teamId), t]));
-    return ids20.map(id => byId.get(String(id))).filter(Boolean);
+  function writeState(st){
+    try{
+      localStorage.setItem(LS_KEY, JSON.stringify(st));
+    }catch{}
   }
-
-  function initStage20(state, name, teamIds20){
-    const byId = new Map(state.teams40.map(t => [String(t.teamId), t]));
-    const map20 = {};
-    for (const id of teamIds20){
-      const t = byId.get(String(id));
-      if (t) map20[String(id)] = newOverallRow(t);
-    }
-    state.stage20 = {
-      name,
-      teamIds20: teamIds20.slice(),
-      overallMap20: map20,
-      matchIndex: 0
-    };
-  }
-
-  function finalizeStage20(state){
-    const st = state.stage20;
-    if (!st) return [];
-    const rows = sortOverallRows(Object.values(st.overallMap20 || {}));
-    return rows;
-  }
-
-  /**
-   * playNext
-   * - 1試合進める（world全体を通して）
-   * return:
-   *  {
-   *    subPhase,
-   *    blockLabel, matchup,
-   *    matchNoInBlock, matchesInBlock,
-   *    matchNoGlobal,
-   *    resultRows20,
-   *    blockOverall20,
-   *    overall40(optional),
-   *    stageOverall20(optional),
-   *  }
-   */
-  SimTournamentWorld.playNext = function(state){
-    if (!state || state.done) return null;
-
-    // ===== グループ予選 =====
-    if (state.subPhase === 'groups'){
-      const blk = GROUP_BLOCKS[state.blockIndex];
-      if (!blk){
-        // 予選終了→Winners/Losersへ
-        const overall40 = SimTournamentWorld.getOverall40(state);
-        const winners20 = overall40.slice(0,20).map(r=>r.teamId);
-        const losers20 = overall40.slice(20).map(r=>r.teamId);
-        state.winnersSeed = { winners20Ids: winners20, losers20Ids: losers20 };
-
-        initStage20(state, 'Winners', winners20);
-        state.subPhase = 'winners';
-        return SimTournamentWorld.playNext(state);
-      }
-
-      const teams20 = getCurrentGroupTeams20(state);
-      const out = runOneMatch(teams20, {
-        phase:'world',
-        subPhase:'groups',
-        block: blk.matchup,
-        blockLabel: blk.label,
-        matchNoInBlock: state.matchInBlock + 1,
-        matchNoGlobal: state.matchGlobal + 1
-      });
-
-      const rows20 = Array.isArray(out.rows) ? out.rows : [];
-
-      // 予選は overall40Map に積む
-      applyMatchToOverall(state.overall40Map, rows20);
-
-      state.lastMatch = {
-        subPhase:'groups',
-        blockLabel: blk.label,
-        matchup: blk.matchup,
-        matchNoInBlock: state.matchInBlock + 1,
-        matchesInBlock: blk.matches,
-        matchNoGlobal: state.matchGlobal + 1,
-        rows: rows20
-      };
-
-      state.matchInBlock += 1;
-      state.matchGlobal += 1;
-
-      // ブロックの現在総合（20）
-      const blockOverall20 = buildOverall20(state.overall40Map, state.currentBlockTeamIds);
-
-      // ブロック終了→次ブロックへ
-      if (state.matchInBlock >= blk.matches){
-        state.blockIndex += 1;
-        state.matchInBlock = 0;
-        setCurrentGroupBlock20(state);
-      }
-
-      return {
-        subPhase: 'groups',
-        blockLabel: blk.label,
-        matchup: blk.matchup,
-        matchNoInBlock: state.lastMatch.matchNoInBlock,
-        matchesInBlock: blk.matches,
-        matchNoGlobal: state.lastMatch.matchNoGlobal,
-        resultRows20: rows20,
-        blockOverall20,
-        overall40: SimTournamentWorld.getOverall40(state)
-      };
-    }
-
-    // ===== Winners / Losers / Losers2（各20チーム）=====
-    if (state.subPhase === 'winners' || state.subPhase === 'losers' || state.subPhase === 'losers2'){
-      const st = state.stage20;
-      if (!st){
-        state.done = true;
-        return null;
-      }
-
-      if (st.matchIndex >= STAGE_MATCHES){
-        // この20ステージを締める
-        const stageRows = finalizeStage20(state);
-
-        if (state.subPhase === 'winners'){
-          const top10 = stageRows.slice(0,10).map(r=>r.teamId);
-          const bottom10 = stageRows.slice(10).map(r=>r.teamId);
-
-          // 次は Losers（別20を5試合）
-          initStage20(state, 'Losers', state.winnersSeed?.losers20Ids || []);
-          state._winnersToFinal10 = top10;
-          state._winnersToLosers2_10 = bottom10;
-          state.subPhase = 'losers';
-          return SimTournamentWorld.playNext(state);
-        }
-
-        if (state.subPhase === 'losers'){
-          const top10 = stageRows.slice(0,10).map(r=>r.teamId);
-          const bottom10 = stageRows.slice(10).map(r=>r.teamId);
-
-          // Losers2 20チーム = Winners下位10 + Losers上位10
-          const losers2Ids = (state._winnersToLosers2_10 || []).concat(top10);
-
-          initStage20(state, 'Losers2', losers2Ids);
-          state._losersEliminated10 = bottom10;
-          state.subPhase = 'losers2';
-          return SimTournamentWorld.playNext(state);
-        }
-
-        if (state.subPhase === 'losers2'){
-          const top10 = stageRows.slice(0,10).map(r=>r.teamId);
-          const bottom10 = stageRows.slice(10).map(r=>r.teamId);
-
-          // FINAL 20 = Winners上位10 + Losers2上位10
-          const final20 = (state._winnersToFinal10 || []).concat(top10);
-          state.finalTeams20 = final20;
-
-          state._losers2Eliminated10 = bottom10;
-          state.subPhase = 'done';
-          state.done = true;
-
-          return {
-            subPhase: 'done',
-            finalTeams20: final20.slice(),
-            eliminated: {
-              losers10: (state._losersEliminated10 || []).slice(),
-              losers2_10: bottom10.slice()
-            },
-            note: 'FINALは sim_tournament_final.js で処理'
-          };
-        }
-      }
-
-      // 1試合
-      const teams20 = getStageTeams20(state);
-      const out = runOneMatch(teams20, {
-        phase:'world',
-        subPhase: state.subPhase,
-        stage: st.name,
-        matchNoInStage: st.matchIndex + 1
-      });
-
-      const rows20 = Array.isArray(out.rows) ? out.rows : [];
-
-      // stage20Map に積む（この20内の総合）
-      applyMatchToOverall(st.overallMap20, rows20);
-
-      const stageOverall20 = buildOverall20(st.overallMap20, st.teamIds20);
-
-      const matchNoInBlock = st.matchIndex + 1;
-      st.matchIndex += 1;
-
-      return {
-        subPhase: state.subPhase,
-        blockLabel: st.name,
-        matchup: st.name,
-        matchNoInBlock,
-        matchesInBlock: STAGE_MATCHES,
-        matchNoGlobal: null,
-        resultRows20: rows20,
-        blockOverall20: stageOverall20,
-        overall40: (state.subPhase === 'winners' || state.subPhase === 'losers' || state.subPhase === 'losers2')
-          ? null
-          : null
-      };
-    }
-
-    // done
-    state.done = true;
-    return null;
-  };
-
-  SimTournamentWorld.getOverall40 = function(state){
-    if (!state) return [];
-    return sortOverallRows(Object.values(state.overall40Map || {}));
-  };
-
-  SimTournamentWorld.getFinalTeams20 = function(state){
-    return (state?.finalTeams20 || []).slice();
-  };
-
-  SimTournamentWorld.getGroups = function(state){
-    if (!state?.groups) return null;
-    return {
-      A: idsOf(state.groups.A),
-      B: idsOf(state.groups.B),
-      C: idsOf(state.groups.C),
-      D: idsOf(state.groups.D),
-    };
-  };
-
-  SimTournamentWorld.getUiHints = function(state){
-    if (!state) return { title:'ワールドファイナル', phase:'world' };
-
-    if (state.subPhase === 'groups'){
-      const blk = GROUP_BLOCKS[state.blockIndex] || null;
-      return {
-        title: 'ワールドファイナル',
-        phase: 'world',
-        subPhase: 'groups',
-        label: blk ? blk.label : '予選リーグ',
-        matchup: blk ? blk.matchup : '',
-        progressText: blk ? `第${Math.min(state.matchInBlock+1, blk.matches)}試合 / ${blk.matches}` : ''
-      };
-    }
-
-    if (state.subPhase === 'winners'){
-      return { title:'ワールドファイナル', phase:'world', subPhase:'winners', label:'Winners', progressText:`第${Math.min(state.stage20.matchIndex+1,5)}試合 / 5` };
-    }
-    if (state.subPhase === 'losers'){
-      return { title:'ワールドファイナル', phase:'world', subPhase:'losers', label:'Losers', progressText:`第${Math.min(state.stage20.matchIndex+1,5)}試合 / 5` };
-    }
-    if (state.subPhase === 'losers2'){
-      return { title:'ワールドファイナル', phase:'world', subPhase:'losers2', label:'Losers2', progressText:`第${Math.min(state.stage20.matchIndex+1,5)}試合 / 5` };
-    }
-
-    return { title:'ワールドファイナル', phase:'world', subPhase:'done', label:'FINAL待ち' };
-  };
 
 })();
-
