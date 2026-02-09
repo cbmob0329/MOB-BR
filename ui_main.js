@@ -1,12 +1,16 @@
 'use strict';
 
 /*
-  MOB BR - ui_main.js v17（フル）
+  MOB BR - ui_main.js v18（フル）
   目的：
   - メイン画面の表示/タップ処理
   - TEAM/TRAINING/SHOP/CARD/SCHEDULE のルーティングを「各UIの open() 優先」に統一
   - modalBack（透明フタ）が残ってボタンが押せなくなる事故を徹底排除
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
+
+  v18 変更点（今回）：
+  - BATTLE（大会）ボタンで、tournamentFlow.startLocalTournament() を呼ぶ
+    （大会UIが存在すればそちらで進行。無ければログのみ）
 
   v17 変更点：
   - schedule ルート追加（ui_schedule.js が open を持てばそれを優先）
@@ -15,7 +19,7 @@
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v17';
+  const VERSION = 'v18';
 
   // ===== Storage Keys（storage.js / ui_team.js と揃える）=====
   const K = {
@@ -401,7 +405,26 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
-    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => setRecent('大会：未実装（次フェーズ）'));
+    // ★★★ BATTLE（大会）実装：Flow を呼ぶ ★★★
+    if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => {
+      hideBack();
+      render();
+
+      const Flow = window.MOBBR?.sim?.tournamentFlow;
+      if (Flow && typeof Flow.startLocalTournament === 'function'){
+        setRecent('大会：ローカル大会を開始！');
+        try{
+          Flow.startLocalTournament();
+        }catch(err){
+          console.error(err);
+          setRecent('大会：開始に失敗（コンソール確認）');
+        }
+        return;
+      }
+
+      // Flowが無い場合（読み込み漏れ）
+      setRecent('大会：未実装（sim_tournament_flow.js の読み込みを確認）');
+    });
 
     // ===== DOM直開き保険の閉じる =====
     if (ui.btnCloseTeam && ui.teamScreen){
