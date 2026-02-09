@@ -1,7 +1,7 @@
 'use strict';
 
 /*
-  MOB BR - ui_training.js v15（フル / 結果ポップアップ & EXPゲージ復活版）
+  MOB BR - ui_training.js v16（フル / 大会週ブロック追加）
 
   役割：
   - 育成（修行）画面の制御
@@ -13,6 +13,10 @@
   - 途中状態は保存しない（事故防止）
   - commit（保存・週進行）は「結果ポップアップOK」だけ
   - 結果表示中は trainingScreen を操作させない（閉じる無効 + modalBack）
+
+  v16 追加：
+  - ★大会週は修行を開けない＆実行できない（大会優先）
+    判定は ui_schedule.js と同じ表を内蔵して「今週が大会ならブロック」
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -30,6 +34,30 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   const K = S.KEYS;
+
+  /* =========================
+     大会スケジュール（ui_schedule.js と同一）
+     - 「今週が大会」なら修行をブロック
+  ========================= */
+  const TOURNAMENT_SCHEDULE = [
+    { m:2, w:1, name:'ローカル大会' },
+    { m:3, w:1, name:'ナショナル大会' },
+    { m:3, w:2, name:'ナショナル大会後半' },
+    { m:3, w:3, name:'ナショナルラストチャンス' },
+    { m:4, w:1, name:'ワールドファイナル' },
+
+    { m:7, w:1, name:'ローカル大会' },
+    { m:8, w:1, name:'ナショナル大会' },
+    { m:8, w:2, name:'ナショナル大会後半' },
+    { m:8, w:3, name:'ナショナルラストチャンス' },
+    { m:9, w:1, name:'ワールドファイナル' },
+
+    { m:11, w:1, name:'ローカル大会' },
+    { m:12, w:1, name:'ナショナル大会' },
+    { m:12, w:2, name:'ナショナル大会後半' },
+    { m:12, w:3, name:'ナショナルラストチャンス' },
+    { m:1,  w:2, name:'チャンピオンシップ ワールドファイナル' }
+  ];
 
   /* =========================
      修行メニュー定義（確定仕様）
@@ -76,10 +104,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   /* =========================
      ユーティリティ
   ========================= */
-  function getNum(key, def){
-    const v = Number(localStorage.getItem(key));
-    return Number.isFinite(v) ? v : def;
-  }
   function getStr(key, def){
     const v = localStorage.getItem(key);
     return (v === null || v === undefined || v === '') ? def : v;
@@ -176,6 +200,126 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   /* =========================
+     大会週ブロック
+  ========================= */
+  function getTournamentToday(){
+    const d = getDate();
+    for (const it of TOURNAMENT_SCHEDULE){
+      if (Number(it.m) === Number(d.m) && Number(it.w) === Number(d.w)){
+        return { name: String(it.name || '大会') };
+      }
+    }
+    return null;
+  }
+
+  function announce(msg){
+    // できるだけ既存UIに寄せて表示
+    try{
+      const ui = window.MOBBR?.ui;
+      if (ui && typeof ui.showMessage === 'function'){
+        ui.showMessage(String(msg || ''));
+        return;
+      }
+    }catch(e){}
+
+    // 最後の砦
+    try{ alert(String(msg || '')); }catch(e){}
+  }
+
+  let blockPop = null;
+  function ensureBlockPop(){
+    if (blockPop) return blockPop;
+
+    const pop = document.createElement('div');
+    pop.id = 'trainingBlockPop';
+    pop.className = 'modalCard';
+    pop.style.display = 'none';
+    pop.setAttribute('aria-hidden', 'true');
+
+    pop.style.position = 'fixed';
+    pop.style.left = '50%';
+    pop.style.top = '50%';
+    pop.style.transform = 'translate(-50%,-50%)';
+    pop.style.zIndex = '9999';
+    pop.style.width = 'min(560px, 92vw)';
+    pop.style.maxHeight = '78vh';
+    pop.style.overflow = 'auto';
+
+    const title = document.createElement('div');
+    title.className = 'modalTitle';
+    title.textContent = '修行できません';
+
+    const sub = document.createElement('div');
+    sub.id = 'trainingBlockSub';
+    sub.style.marginTop = '10px';
+    sub.style.fontWeight = '1000';
+    sub.style.opacity = '0.95';
+    sub.style.lineHeight = '1.45';
+
+    const ok = document.createElement('button');
+    ok.className = 'closeBtn';
+    ok.type = 'button';
+    ok.id = 'btnTrainingBlockOk';
+    ok.textContent = 'OK';
+    ok.style.marginTop = '14px';
+
+    pop.appendChild(title);
+    pop.appendChild(sub);
+    pop.appendChild(ok);
+
+    document.body.appendChild(pop);
+    blockPop = pop;
+
+    ok.addEventListener('click', ()=>{
+      blockPop.style.display = 'none';
+      blockPop.setAttribute('aria-hidden', 'true');
+      hideBack();
+    });
+
+    return blockPop;
+  }
+
+  function showTournamentBlockPop(tourName){
+    const pop = ensureBlockPop();
+    const sub = $('trainingBlockSub');
+    const d = getDate();
+
+    if (sub){
+      sub.textContent =
+        `今週は「${tourName}」の週です。\n` +
+        `（${d.m}月 第${d.w}週）\n` +
+        `修行はできません。大会に進んでください。`;
+    }
+
+    // 演出ログにも残す（任意だが分かりやすい）
+    try{
+      S.setStr(K.recent, `大会週のため修行はできない（${tourName}）`);
+      if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
+    }catch(e){}
+
+    showBack();
+    pop.style.display = 'block';
+    pop.setAttribute('aria-hidden', 'false');
+  }
+
+  function guardTournamentWeekOrReturnFalse(){
+    const t = getTournamentToday();
+    if (!t) return true;
+
+    // 画面を開かせない（＆もし開いてても閉じる）
+    try{
+      if (dom.screen){
+        dom.screen.classList.remove('show');
+        dom.screen.setAttribute('aria-hidden', 'true');
+      }
+      if (dom.btnStart) dom.btnStart.disabled = true;
+    }catch(e){}
+
+    showTournamentBlockPop(t.name || '大会');
+    return false;
+  }
+
+  /* =========================
      UI生成：修行カード
   ========================= */
   function renderCards(){
@@ -219,6 +363,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
 
         btn.addEventListener('click', ()=>{
+          // 大会週なら選択自体も止める（誤操作防止）
+          if (!guardTournamentWeekOrReturnFalse()) return;
+
           selected[mem.id] = tr;
           renderCards();
           if (dom.btnStart) dom.btnStart.disabled = !allSelected();
@@ -381,7 +528,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function renderResultPop(previewResults){
-    const pop = ensureResultPop();
     const sub = $('trainingResultSub');
     const list = $('trainingResultListPop');
 
@@ -411,7 +557,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       card.appendChild(top);
       card.appendChild(note);
 
-      // ステータスごと（EXP/ゲージ/あと◯）
       const grid = document.createElement('div');
       grid.style.marginTop = '10px';
       grid.style.display = 'flex';
@@ -424,7 +569,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const label = DP.STAT_LABEL?.[k] || k;
         const add = r.expAdd[k] || 0;
 
-        // afterExp / afterLv
         const afterExp = r.after.exp[k] ?? 0;
         const beforeLv = r.before.lv[k] ?? 1;
         const afterLv = r.after.lv[k] ?? beforeLv;
@@ -499,7 +643,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ok.type = 'button';
     ok.id = 'btnTrainingWeekPopOk';
     ok.textContent = 'OK';
-
     ok.style.marginTop = '14px';
 
     pop.appendChild(title);
@@ -538,6 +681,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      commit（OKでのみ）
   ========================= */
   function commitAndAdvance(previewResults){
+    // ★大会週は絶対にcommitさせない（二重防止）
+    if (!guardTournamentWeekOrReturnFalse()) return;
+
     // 1) teamを読み込み
     let team = normalizeTeam(readPlayerTeam());
 
@@ -602,6 +748,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      open / close
   ========================= */
   function open(){
+    // ★大会週は開かせない
+    if (!guardTournamentWeekOrReturnFalse()) return;
+
     selected = { A:null, B:null, C:null };
 
     // 結果ポップが残ってたら消す
@@ -642,6 +791,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     if (dom.btnStart){
       dom.btnStart.addEventListener('click', ()=>{
+        // ★大会週は実行できない
+        if (!guardTournamentWeekOrReturnFalse()) return;
+
         if (!allSelected()) return;
 
         // trainingScreen操作防止（閉じる無効）
@@ -659,6 +811,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const ok = $('btnTrainingResultOk');
         if (ok){
           ok.onclick = () => {
+            // ★OK直前も大会週チェック（安全）
+            if (!guardTournamentWeekOrReturnFalse()){
+              // 結果ポップ閉じ＆復帰
+              closeResultPop();
+              if (dom.close) dom.close.disabled = false;
+              return;
+            }
+
             // 結果ポップ閉じ
             closeResultPop();
 
