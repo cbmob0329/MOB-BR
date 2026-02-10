@@ -17,7 +17,12 @@
   <link rel="stylesheet" href="main.css?v=18" />
   <link rel="stylesheet" href="team.css?v=18" />
   <link rel="stylesheet" href="training.css?v=18" />
+  <!-- 大会専用CSS（追加） -->
   <link rel="stylesheet" href="tournament.css?v=18" />
+  <!-- 追加CSS（未作成ならコメントアウトでOK） -->
+  <!-- <link rel="stylesheet" href="shop.css?v=18" /> -->
+  <!-- <link rel="stylesheet" href="card.css?v=18" /> -->
+  <!-- <link rel="stylesheet" href="schedule.css?v=18" /> -->
 </head>
 
 <body class="no-callout">
@@ -106,7 +111,7 @@
           <img class="jobBg" src="job.png" alt="" draggable="false" />
           <div class="jobText">
             <div class="jobLine small">
-              VER <span id="uiVer">v18</span>
+              VER <span id="uiVer">v17</span>
             </div>
             <div class="jobLine tappable" id="tapCompany">
               企業名：<span id="uiCompany">CB Memory</span>
@@ -193,32 +198,236 @@
       <button class="closeBtn" id="btnCloseMembers" type="button">閉じる</button>
     </div>
 
-    <!-- TEAM / TRAINING / SHOP / CARD / SCHEDULE screens（あなたの既存DOMはそのまま） -->
-    <!-- ※ここはあなたが貼ったものをそのまま保持してOK（省略せず残してます） -->
-
     <!-- TEAM SCREEN -->
     <div id="teamScreen" class="teamScreen" aria-label="チーム" aria-hidden="true">
-      <!-- ...（あなたの既存のまま）... -->
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">チーム</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTeam" type="button">閉じる</button>
+        </div>
+
+        <div class="teamHeaderA">
+          <div class="teamHeaderLeft">
+            <div class="line">企業名：<b id="tCompany">CB Memory</b></div>
+            <div class="line">チーム名：<b id="tTeam">PLAYER TEAM</b></div>
+          </div>
+
+          <div class="teamHeaderRight">
+            <div class="teamPowerBig">
+              総合 <span id="tTeamPower">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="teamMembersA">
+          <div class="memberCardA" aria-label="メンバーA">
+            <div class="memberTop">
+              <div class="memberName" id="tNameA">A</div>
+              <div class="memberTag">A</div>
+            </div>
+            <div class="memberStatsGridA">
+              <div class="statCellA"><div class="k">体力</div><div class="v" id="tA_hp">0</div></div>
+              <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tA_mental">0</div></div>
+              <div class="statCellA"><div class="k">エイム</div><div class="v" id="tA_aim">0</div></div>
+              <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tA_agi">0</div></div>
+              <div class="statCellA"><div class="k">技術</div><div class="v" id="tA_tech">0</div></div>
+              <div class="statCellA"><div class="k">サポ</div><div class="v" id="tA_support">0</div></div>
+              <div class="statCellA"><div class="k">索敵</div><div class="v" id="tA_scan">0</div></div>
+              <div class="statCellA"><div class="k">ULT</div><div class="v" id="tA_ult">未定</div></div>
+            </div>
+            <div class="teamMiniSkillRow">
+              <div class="teamMiniSkill">PAS：<span id="tA_passive">未定</span></div>
+            </div>
+          </div>
+
+          <div class="memberCardA" aria-label="メンバーB">
+            <div class="memberTop">
+              <div class="memberName" id="tNameB">B</div>
+              <div class="memberTag">B</div>
+            </div>
+            <div class="memberStatsGridA">
+              <div class="statCellA"><div class="k">体力</div><div class="v" id="tB_hp">0</div></div>
+              <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tB_mental">0</div></div>
+              <div class="statCellA"><div class="k">エイム</div><div class="v" id="tB_aim">0</div></div>
+              <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tB_agi">0</div></div>
+              <div class="statCellA"><div class="k">技術</div><div class="v" id="tB_tech">0</div></div>
+              <div class="statCellA"><div class="k">サポ</div><div class="v" id="tB_support">0</div></div>
+              <div class="statCellA"><div class="k">索敵</div><div class="v" id="tB_scan">0</div></div>
+              <div class="statCellA"><div class="k">ULT</div><div class="v" id="tB_ult">未定</div></div>
+            </div>
+            <div class="teamMiniSkillRow">
+              <div class="teamMiniSkill">PAS：<span id="tB_passive">未定</span></div>
+            </div>
+          </div>
+
+          <div class="memberCardA" aria-label="メンバーC">
+            <div class="memberTop">
+              <div class="memberName" id="tNameC">C</div>
+              <div class="memberTag">C</div>
+            </div>
+            <div class="memberStatsGridA">
+              <div class="statCellA"><div class="k">体力</div><div class="v" id="tC_hp">0</div></div>
+              <div class="statCellA"><div class="k">メンタル</div><div class="v" id="tC_mental">0</div></div>
+              <div class="statCellA"><div class="k">エイム</div><div class="v" id="tC_aim">0</div></div>
+              <div class="statCellA"><div class="k">敏捷</div><div class="v" id="tC_agi">0</div></div>
+              <div class="statCellA"><div class="k">技術</div><div class="v" id="tC_tech">0</div></div>
+              <div class="statCellA"><div class="k">サポ</div><div class="v" id="tC_support">0</div></div>
+              <div class="statCellA"><div class="k">索敵</div><div class="v" id="tC_scan">0</div></div>
+              <div class="statCellA"><div class="k">ULT</div><div class="v" id="tC_ult">未定</div></div>
+            </div>
+            <div class="teamMiniSkillRow">
+              <div class="teamMiniSkill">PAS：<span id="tC_passive">未定</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="teamFooterA">
+          <div class="teamSaveRowA">
+            <button class="saveBtn" id="btnManualSave" type="button">セーブ</button>
+            <button class="saveBtn danger" id="btnDeleteSave" type="button">セーブ削除</button>
+          </div>
+          <div class="teamFooterNote">
+            ※能力値は修行やアイテムで成長します（表示は読みやすさ最優先）
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- TRAINING SCREEN -->
     <div id="trainingScreen" class="teamScreen" aria-label="育成（修行）" aria-hidden="true">
-      <!-- ...（あなたの既存のまま）... -->
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">育成（修行）</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseTraining" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div class="dateLine" style="font-weight:900;">
+            <span id="trY">1989</span>年
+            <span id="trM">1</span>月
+            第<span id="trW">1</span>週
+          </div>
+          <div style="opacity:.9;font-size:13px;line-height:1.35;margin-top:6px;">
+            ※3人分の修行を選択して実行<br />
+            ※結果OKでのみ確定（EXP反映＋週進行）
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">修行メニュー</div>
+          <div id="trainingCards"></div>
+          <div style="height:12px;"></div>
+
+          <button class="saveBtn" id="btnTrainingStart" type="button" disabled>
+            修行を実行
+          </button>
+
+          <div class="saveNote">
+            共通：全能力 EXP +1<br />
+            専門：対象能力 EXP +4（共通+1 +追加+3）<br />
+            総合：全能力 EXP +2（共通+1 +追加+1）
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- SHOP SCREEN -->
     <div id="shopScreen" class="teamScreen" aria-label="ショップ" aria-hidden="true">
-      <!-- ...（あなたの既存のまま）... -->
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">ショップ（カードガチャ）</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseShop" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div>所持G：<span id="shopGold">0</span></div>
+          <div>CDP：<span id="shopCDP">0</span></div>
+          <div style="opacity:.9;font-size:13px;line-height:1.3;">
+            ※ここは「カードガチャのみ」<br />
+            ※確率・％表示はしない（仕様）
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">カードガチャ</div>
+
+          <div class="saveRow">
+            <button class="saveBtn" id="btnGacha1" type="button">1回引く</button>
+            <button class="saveBtn" id="btnGacha10" type="button">10連</button>
+          </div>
+
+          <div style="height:10px;"></div>
+
+          <button class="saveBtn" id="btnGachaSR" type="button">
+            SR以上確定（CDP100）
+          </button>
+
+          <div class="saveNote">
+            通常ガチャ：引くたびにCDP +1（10連なら +10）<br />
+            同名10枚まで有効／11枚目以降はG変換（中央ログ）
+          </div>
+        </div>
+
+        <div id="shopResult" class="teamSection" style="display:none;">
+          <div class="teamSectionTitle">結果</div>
+          <div id="shopResultList" class="recordsList"></div>
+          <button class="closeBtn" id="btnShopOk" type="button">OK</button>
+        </div>
+      </div>
     </div>
 
     <!-- CARD SCREEN -->
     <div id="cardScreen" class="teamScreen" aria-label="カードコレクション" aria-hidden="true">
-      <!-- ...（あなたの既存のまま）... -->
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">カードコレクション</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseCard" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div style="opacity:.9;font-size:13px;line-height:1.3;">
+            ※所持しているだけで恒久強化（％は表示しない）<br />
+            ※ID順で一覧表示
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">所持カード一覧</div>
+          <div id="cardList" class="recordsList"></div>
+        </div>
+      </div>
+
+      <div id="cardPreview" class="modalCard" style="display:none;" aria-hidden="true">
+        <div class="modalTitle">カード</div>
+        <img
+          id="cardPreviewImg"
+          src=""
+          alt="カード画像"
+          style="width:100%;height:auto;display:block;border-radius:12px;"
+        />
+        <button class="closeBtn" id="btnCloseCardPreview" type="button">閉じる</button>
+      </div>
     </div>
 
     <!-- SCHEDULE SCREEN -->
     <div id="scheduleScreen" class="teamScreen" aria-label="年間スケジュール" aria-hidden="true">
-      <!-- ...（あなたの既存のまま）... -->
+      <div class="teamPanel teamPanelWide" role="dialog" aria-modal="true">
+        <div class="teamHead">
+          <h2 class="teamTitle">年間スケジュール</h2>
+          <button class="closeBtn teamCloseBtn" id="btnCloseSchedule" type="button">閉じる</button>
+        </div>
+
+        <div class="teamMeta">
+          <div style="opacity:.9;font-size:13px;line-height:1.3;">
+            ※次の大会は赤色で強調
+          </div>
+        </div>
+
+        <div class="teamSection">
+          <div class="teamSectionTitle">スケジュール</div>
+          <div id="scheduleList" class="recordsList"></div>
+        </div>
+      </div>
     </div>
 
     <div class="safePad" aria-hidden="true"></div>
@@ -226,8 +435,7 @@
 
   <!-- =========================
        JS
-       ★v18方式：app.js だけ読み込む
-       （app.js が storage/ui/sim を順番にロード）
+       ★ v18方式：app.js だけ読み込む（他は app.js が順序ロード）
   ========================== -->
   <script src="app.js?v=18" defer></script>
 </body>
