@@ -1,345 +1,246 @@
 'use strict';
 
-/* =========================================================
-   MOB BR - ui_tournament.js v1.0 (FULL)
-   ---------------------------------------------------------
-   目的：
-   - 大会用の表示（intro/message/result）を1枚のCSS前提で統一
-   - DOMはこのファイルが自前生成（index側に大会DOM不要）
-   - sim側UIは呼ばない。Flow がここを呼ぶ
-   ---------------------------------------------------------
-   公開API（Flowから使用）：
-   window.MOBBR.ui.tournament = {
-     open({bg, playerImage, title, messageLines, nextLabel, nextEnabled, onNext, highlightTeamId})
-     close()
-     setScene({...openと同様})
-     showMessage(title, lines, nextLabel)
-     showResult({title, sub, rows, highlightTeamId})
-     setNextHandler(fn)
-     setNextEnabled(bool)
-   }
-========================================================= */
+/*
+  MOB BR - ui_tournament.js v1（フル）
+  - tournament.css 前提
+  - 背景(neonmain.png) + 正方形(tent.png) + プレイヤー(P1.png) を重ねる
+  - Flow から呼ばれる最低限APIを実装：
+    open / setScene / showMessage / showResult / setNextHandler / setNextEnabled / close
+*/
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  const T = {};
-  window.MOBBR.ui.tournament = T;
+  const UI = {};
+  window.MOBBR.ui.tournament = UI;
 
   let dom = null;
   let nextHandler = null;
-  let hiTeamId = '';
 
   function ensureDom(){
     if (dom) return dom;
 
     const root = document.createElement('div');
     root.className = 'mobbrTui';
-    root.id = 'mobbrTournamentUI';
     root.setAttribute('aria-hidden', 'true');
 
-    // bg
-    const bg = document.createElement('div');
-    bg.className = 'tuiBg';
-    const bgImg = document.createElement('img');
-    bgImg.alt = '';
-    bgImg.draggable = false;
-    bg.appendChild(bgImg);
+    root.innerHTML = `
+      <div class="tuiBg"><img id="tuiBgImg" src="" alt="" draggable="false"></div>
+      <div class="tuiVeil"></div>
 
-    const veil = document.createElement('div');
-    veil.className = 'tuiVeil';
+      <div class="tuiSafe">
+        <div class="tuiWrap">
 
-    const safe = document.createElement('div');
-    safe.className = 'tuiSafe';
+          <div class="tuiTop">
+            <div class="tuiTitle" id="tuiTitle">大会</div>
+            <button class="tuiClose" id="tuiClose" type="button">閉じる</button>
+          </div>
 
-    const wrap = document.createElement('div');
-    wrap.className = 'tuiWrap';
+          <div class="tuiStage">
+            <div class="tuiSquare">
+              <div class="tuiTent"><img id="tuiTentImg" src="" alt="" draggable="false"></div>
+              <img class="tuiPlayer" id="tuiPlayerImg" src="" alt="" draggable="false">
+            </div>
+          </div>
 
-    // top
-    const top = document.createElement('div');
-    top.className = 'tuiTop';
+          <div class="tuiBottom">
+            <div class="tuiCard" id="tuiCard">
+              <div class="tuiCardHead">
+                <div class="h1" id="tuiH1">MESSAGE</div>
+                <div class="h2" id="tuiH2"></div>
+              </div>
+              <div class="tuiCardBody" id="tuiBody"></div>
+            </div>
 
-    const title = document.createElement('div');
-    title.className = 'tuiTitle';
-    title.textContent = '大会';
+            <button class="tuiNext" id="tuiNext" type="button">NEXT</button>
+            <div class="tuiNote" id="tuiNote">※NEXTで進行</div>
+          </div>
 
-    const btnClose = document.createElement('button');
-    btnClose.type = 'button';
-    btnClose.className = 'tuiClose';
-    btnClose.textContent = '閉じる';
+        </div>
+      </div>
+    `;
 
-    top.appendChild(title);
-    top.appendChild(btnClose);
-
-    // stage square
-    const stage = document.createElement('div');
-    stage.className = 'tuiStage';
-
-    const square = document.createElement('div');
-    square.className = 'tuiSquare';
-
-    const tent = document.createElement('div');
-    tent.className = 'tuiTent';
-    const tentImg = document.createElement('img');
-    tentImg.alt = '';
-    tentImg.draggable = false;
-    tent.appendChild(tentImg);
-
-    const playerImg = document.createElement('img');
-    playerImg.className = 'tuiPlayer';
-    playerImg.alt = 'PLAYER';
-    playerImg.draggable = false;
-
-    square.appendChild(tent);
-    square.appendChild(playerImg);
-    stage.appendChild(square);
-
-    // card (message/result)
-    const card = document.createElement('div');
-    card.className = 'tuiCard';
-
-    const cardHead = document.createElement('div');
-    cardHead.className = 'tuiCardHead';
-
-    const h1 = document.createElement('div');
-    h1.className = 'h1';
-    h1.textContent = 'MESSAGE';
-
-    const h2 = document.createElement('div');
-    h2.className = 'h2';
-    h2.textContent = '';
-
-    cardHead.appendChild(h1);
-    cardHead.appendChild(h2);
-
-    const cardBody = document.createElement('div');
-    cardBody.className = 'tuiCardBody';
-
-    card.appendChild(cardHead);
-    card.appendChild(cardBody);
-
-    // bottom
-    const bottom = document.createElement('div');
-    bottom.className = 'tuiBottom';
-
-    const btnNext = document.createElement('button');
-    btnNext.type = 'button';
-    btnNext.className = 'tuiNext';
-    btnNext.textContent = 'NEXT';
-
-    const note = document.createElement('div');
-    note.className = 'tuiNote';
-    note.textContent = '※演出表示のみ';
-
-    bottom.appendChild(btnNext);
-    bottom.appendChild(note);
-
-    wrap.appendChild(top);
-    wrap.appendChild(stage);
-    wrap.appendChild(card);
-    wrap.appendChild(bottom);
-
-    safe.appendChild(wrap);
-
-    root.appendChild(bg);
-    root.appendChild(veil);
-    root.appendChild(safe);
-
-    // attach
     document.body.appendChild(root);
 
-    // events
-    btnNext.addEventListener('click', (e)=>{
-      e.preventDefault();
-      if (btnNext.disabled) return;
-      if (typeof nextHandler === 'function') nextHandler();
-    });
+    const $q = (id)=>root.querySelector(`#${id}`);
 
-    btnClose.addEventListener('click', (e)=>{
-      e.preventDefault();
-      T.close();
-      // 大会を閉じたことが分かるようにメインに戻す（任意）
-      // main側は表示されたままなので “閉じる” は overlay を消すだけ
-    });
+    const els = {
+      root,
+      bg: $q('tuiBgImg'),
+      tent: $q('tuiTentImg'),
+      player: $q('tuiPlayerImg'),
+      title: $q('tuiTitle'),
+      close: $q('tuiClose'),
+      h1: $q('tuiH1'),
+      h2: $q('tuiH2'),
+      body: $q('tuiBody'),
+      next: $q('tuiNext'),
+      note: $q('tuiNote')
+    };
 
-    // 誤タップで裏が押せないように
+    // click through防止
     root.addEventListener('click', (e)=>{
       e.preventDefault();
       e.stopPropagation();
     }, { passive:false });
 
-    dom = {
-      root,
-      bgImg,
-      tentImg,
-      title,
-      h1,
-      h2,
-      body: cardBody,
-      btnNext
-    };
+    els.close.addEventListener('click', ()=>{
+      UI.close();
+    });
 
+    els.next.addEventListener('click', (e)=>{
+      e.preventDefault();
+      if (typeof nextHandler === 'function') nextHandler();
+    });
+
+    dom = els;
     return dom;
   }
 
-  function openBase(opt){
+  function openRoot(){
     const d = ensureDom();
-
-    // hide main overlay interference（裏側が押せないのが目的なのでこれでOK）
     d.root.classList.add('isOpen');
-    d.root.setAttribute('aria-hidden','false');
-
-    // bg
-    d.bgImg.src = String(opt.bg || 'neonmain.png');
-
-    // tent + player
-    d.tentImg.src = String(opt.tentImage || 'tent.png');
-    d.tentImg.onerror = ()=>{ /* tent missingでも落とさない */ };
-
-    d.title.textContent = String(opt.title || '大会');
-
-    // player（衣装差し替え前提）
-    d.playerImage = d.playerImage || null;
-    // (playerImageはdomにあるので直接設定)
-    const player = d.root.querySelector('.tuiPlayer');
-    if (player) player.src = String(opt.playerImage || 'P1.png');
-
-    // next
-    if (typeof opt.onNext === 'function') nextHandler = opt.onNext;
-    if (typeof opt.nextEnabled === 'boolean') T.setNextEnabled(opt.nextEnabled);
-    if (opt.nextLabel) d.btnNext.textContent = String(opt.nextLabel);
-
-    // message
-    if (Array.isArray(opt.messageLines)){
-      T.showMessage(opt.title || '大会', opt.messageLines, opt.nextLabel || 'NEXT');
-    }
+    d.root.style.display = 'block';
+    d.root.setAttribute('aria-hidden', 'false');
   }
 
-  // ===== public =====
-  T.open = function(opt){
-    hiTeamId = String(opt?.highlightTeamId || '');
-    openBase(opt || {});
-  };
-
-  T.setScene = function(opt){
-    // open中の内容差し替え
-    const d = ensureDom();
-    if (!d.root.classList.contains('isOpen')){
-      T.open(opt);
-      return;
-    }
-    hiTeamId = String(opt?.highlightTeamId || hiTeamId || '');
-    openBase(opt || {});
-  };
-
-  T.close = function(){
+  function closeRoot(){
     const d = ensureDom();
     d.root.classList.remove('isOpen');
-    d.root.setAttribute('aria-hidden','true');
-    // 次ハンドラは残してもOKだが、閉じたら誤爆しないように無効化
-    T.setNextEnabled(false);
-  };
+    d.root.style.display = 'none';
+    d.root.setAttribute('aria-hidden', 'true');
+  }
 
-  T.setNextHandler = function(fn){
-    nextHandler = (typeof fn === 'function') ? fn : null;
-  };
-
-  T.setNextEnabled = function(on){
+  function setImages(opt){
     const d = ensureDom();
-    d.btnNext.disabled = !on;
-  };
+    const bg = opt.bg || 'neonmain.png';
+    const tent = opt.tent || 'tent.png';
+    const p = opt.playerImage || 'P1.png';
 
-  T.showMessage = function(title, lines, nextLabel){
+    d.bg.src = bg;
+    d.tent.src = tent;
+    d.player.src = p;
+  }
+
+  function renderMessage(title, lines, nextLabel){
     const d = ensureDom();
     d.h1.textContent = String(title || 'MESSAGE');
     d.h2.textContent = '';
-
-    if (nextLabel) d.btnNext.textContent = String(nextLabel);
-
     const arr = Array.isArray(lines) ? lines : [String(lines || '')];
-
-    const box = document.createElement('div');
-    box.className = 'tuiLines';
-    arr.forEach(t=>{
-      const line = document.createElement('div');
-      line.className = 'tuiLine';
-      line.textContent = String(t);
-      box.appendChild(line);
-    });
-
-    d.body.innerHTML = '';
-    d.body.appendChild(box);
-
-    // messageは基本NEXT可
-    T.setNextEnabled(true);
-  };
-
-  T.showResult = function(opt){
-    const d = ensureDom();
-    const o = opt || {};
-
-    d.h1.textContent = String(o.title || 'RESULT');
-    d.h2.textContent = String(o.sub || '');
-
-    const rows = Array.isArray(o.rows) ? o.rows : [];
-    const highlight = String(o.highlightTeamId || hiTeamId || '');
-
-    const table = document.createElement('table');
-    table.className = 'tuiTable';
-
-    const thead = document.createElement('thead');
-    thead.innerHTML = `
-      <tr>
-        <th style="width:52px;">順位</th>
-        <th>チーム</th>
-        <th style="width:70px;">PT</th>
-        <th style="width:56px;">K</th>
-        <th style="width:56px;">A</th>
-      </tr>
+    d.body.innerHTML = `
+      <div class="tuiLines">
+        ${arr.map(s=>`<div class="tuiLine">${escapeHtml(String(s))}</div>`).join('')}
+      </div>
     `;
-    table.appendChild(thead);
+    d.next.textContent = String(nextLabel || 'NEXT');
+  }
 
-    const tbody = document.createElement('tbody');
+  function renderResult(payload){
+    const d = ensureDom();
+    d.h1.textContent = String(payload.title || 'RESULT');
+    d.h2.textContent = String(payload.sub || '');
 
-    // rowsは Flow側で normalize されて {rank, teamId, teamName, points, kills, assists, treasure, flag}
-    rows.slice(0, 20).forEach(r=>{
-      const tr = document.createElement('tr');
-      const teamId = String(r.teamId || '');
-      if (highlight && teamId && teamId === highlight){
-        tr.className = 'tuiHi';
-      }
-      const rank = Number(r.rank || 0) || 0;
-      const name = String(r.teamName || r.name || teamId || '');
-      const pt = Number(r.points ?? r.total ?? 0) || 0;
-      const k = Number(r.kills ?? r.kp ?? 0) || 0;
-      const a = Number(r.assists ?? r.ap ?? 0) || 0;
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const hi = String(payload.highlightTeamId || '');
 
-      tr.innerHTML = `
-        <td>${rank}</td>
-        <td>${escapeHtml(name)}</td>
-        <td>${pt}</td>
-        <td>${k}</td>
-        <td>${a}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-
-    table.appendChild(tbody);
-
-    d.body.innerHTML = '';
-    d.body.appendChild(table);
-
-    // result表示でもNEXT可
-    T.setNextEnabled(true);
-  };
+    // columns: rank / team / pts / kills / assists / treasure / flag
+    d.body.innerHTML = `
+      <table class="tuiTable" aria-label="result">
+        <thead>
+          <tr>
+            <th>順位</th>
+            <th>チーム</th>
+            <th>PT</th>
+            <th>K</th>
+            <th>A</th>
+            <th>宝</th>
+            <th>旗</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r=>{
+            const teamId = String(r.teamId ?? '');
+            const cls = (hi && teamId && hi === teamId) ? 'tuiHi' : '';
+            return `
+              <tr class="${cls}">
+                <td>${escapeHtml(String(r.rank ?? ''))}</td>
+                <td>${escapeHtml(String(r.teamName ?? r.teamId ?? ''))}</td>
+                <td>${escapeHtml(String(r.points ?? 0))}</td>
+                <td>${escapeHtml(String(r.kills ?? 0))}</td>
+                <td>${escapeHtml(String(r.assists ?? 0))}</td>
+                <td>${escapeHtml(String(r.treasure ?? 0))}</td>
+                <td>${escapeHtml(String(r.flag ?? 0))}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }
 
   function escapeHtml(s){
-    return String(s ?? '')
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;')
-      .replace(/'/g,'&#39;');
+    return String(s)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
   }
+
+  // ===== Public API =====
+
+  UI.open = function(opt){
+    openRoot();
+    setImages(opt || {});
+    const d = ensureDom();
+    d.title.textContent = String(opt?.title || '大会');
+    nextHandler = (typeof opt?.onNext === 'function') ? opt.onNext : null;
+
+    renderMessage(
+      opt?.title || '大会',
+      opt?.messageLines || ['開始！', 'NEXTで進行します'],
+      opt?.nextLabel || 'NEXT'
+    );
+    UI.setNextEnabled(opt?.nextEnabled !== false);
+  };
+
+  UI.setScene = function(opt){
+    openRoot();
+    setImages(opt || {});
+    const d = ensureDom();
+    d.title.textContent = String(opt?.title || '大会');
+    nextHandler = (typeof opt?.onNext === 'function') ? opt.onNext : nextHandler;
+
+    if (opt?.messageLines){
+      renderMessage(opt.title || '大会', opt.messageLines, opt.nextLabel || 'NEXT');
+    }
+    if (typeof opt?.nextEnabled !== 'undefined') UI.setNextEnabled(opt.nextEnabled);
+  };
+
+  UI.showMessage = function(title, lines, nextLabel){
+    openRoot();
+    const d = ensureDom();
+    d.title.textContent = '大会';
+    renderMessage(title, lines, nextLabel || 'NEXT');
+  };
+
+  UI.showResult = function(payload){
+    openRoot();
+    renderResult(payload || {});
+  };
+
+  UI.setNextHandler = function(fn){
+    nextHandler = (typeof fn === 'function') ? fn : null;
+  };
+
+  UI.setNextEnabled = function(on){
+    const d = ensureDom();
+    d.next.disabled = !on;
+  };
+
+  UI.close = function(){
+    closeRoot();
+  };
+
 })();
