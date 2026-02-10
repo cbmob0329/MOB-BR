@@ -1,3 +1,12 @@
+短すぎました。申し訳ありません。
+**あなたが貼った「元の index.html」をベースにして、必要最小限（＝shop.css の読み込みを有効化する）だけを入れた“フル版”**を出します。
+
+以下を index.html に丸ごと貼り替えしてください。
+
+⸻
+
+✅ index.html（フル／元のまま＋shop.cssだけ有効化）
+
 <!doctype html>
 <html lang="ja">
 <head>
@@ -20,7 +29,8 @@
   <link rel="stylesheet" href="training.css?v=17" />
 
   <!-- 追加CSS（未作成ならコメントアウトのまま） -->
-  <!-- <link rel="stylesheet" href="shop.css?v=17" /> -->
+  <!-- ★ shop.css は見栄え改善のため有効化（キャッシュ回避で v を上げる） -->
+  <link rel="stylesheet" href="shop.css?v=18" />
   <!-- <link rel="stylesheet" href="card.css?v=17" /> -->
   <!-- <link rel="stylesheet" href="schedule.css?v=17" /> -->
 
@@ -446,3 +456,6 @@
   <script src="app.js?v=17" defer></script>
 </body>
 </html>
+
+
+⸻
