@@ -11,18 +11,15 @@
   <!-- =========================
        CSS（分割読み込み）
        ※順番厳守
+       ※既存が v17 のままなら v17 のままでOK（404回避）
   ========================== -->
-  <link rel="stylesheet" href="base.css?v=18" />
-  <link rel="stylesheet" href="title.css?v=18" />
-  <link rel="stylesheet" href="main.css?v=18" />
-  <link rel="stylesheet" href="team.css?v=18" />
-  <link rel="stylesheet" href="training.css?v=18" />
-  <!-- 大会専用CSS（追加） -->
-  <link rel="stylesheet" href="tournament.css?v=18" />
-  <!-- 追加CSS（未作成ならコメントアウトでOK） -->
-  <!-- <link rel="stylesheet" href="shop.css?v=18" /> -->
-  <!-- <link rel="stylesheet" href="card.css?v=18" /> -->
-  <!-- <link rel="stylesheet" href="schedule.css?v=18" /> -->
+  <link rel="stylesheet" href="base.css?v=17" />
+  <link rel="stylesheet" href="title.css?v=17" />
+  <link rel="stylesheet" href="main.css?v=17" />
+  <link rel="stylesheet" href="team.css?v=17" />
+  <link rel="stylesheet" href="training.css?v=17" />
+  <!-- 大会専用CSS -->
+  <link rel="stylesheet" href="tournament.css?v=1" />
 </head>
 
 <body class="no-callout">
@@ -38,6 +35,7 @@
         <img src="rogo.png" alt="MOB BR" draggable="false" />
       </div>
 
+      <!-- 通常NEXT -->
       <button
         class="titleNextBtn"
         id="btnTitleNext"
@@ -46,6 +44,24 @@
       >
         <img src="bnext.png" alt="NEXT" draggable="false" />
       </button>
+
+      <!-- ✅テスト用：タイトルからローカル大会開始（後で消す） -->
+      <button
+        class="titleNextBtn"
+        id="btnTitleLocal"
+        type="button"
+        aria-label="ローカル大会（テスト）"
+        style="margin-top:12px;"
+      >
+        <!-- 画像が無ければテキストでもOK -->
+        ローカル大会（テスト）
+      </button>
+
+      <!-- 読み込みヒント（app.js が出す） -->
+      <div
+        id="titleHint"
+        style="margin-top:10px;font-size:12px;opacity:.85;color:#fff;text-align:center;display:none;"
+      ></div>
     </div>
 
     <div class="safePad" aria-hidden="true"></div>
@@ -434,9 +450,9 @@
   </div>
 
   <!-- =========================
-       JS
-       ★ v18方式：app.js だけ読み込む（他は app.js が順序ロード）
+       JS（重要）
+       app.js だけ読み込む → app.js が分割JSを順序ロードする
   ========================== -->
-  <script src="app.js?v=18" defer></script>
+  <script src="app.js?v=19" defer></script>
 </body>
 </html>
