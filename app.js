@@ -1,224 +1,140 @@
 'use strict';
 
 /*
-  MOB BR - app.js v19（FULL）
-  - index.html は app.js だけ読み込む前提（重複script禁止）
-  - 必須ファイルだけ先にロードして「メイン画面は必ず開く」
-  - 大会はテストボタン/ BATTLEボタン押下時に必要分だけチェック
-  - iPhoneでも原因特定できるように「不足ファイル名」をalert表示
+  MOB BR - app.js（FULL / B案最終）
+  役割：
+  - タイトル → メイン遷移の安定化
+  - tournament_runtime の唯一の起動点
+  - テスト用「ローカル大会（テスト）」ボタン実装
 */
 
 window.MOBBR = window.MOBBR || {};
-window.MOBBR.__boot = window.MOBBR.__boot || {};
 
 (function(){
-  const V = 'v19';
 
-  const $ = (id)=>document.getElementById(id);
+  let booted = false;
+  let titleLocked = false;
 
-  const dom = {
-    titleScreen: $('titleScreen'),
-    app: $('app'),
-    btnTitleNext: $('btnTitleNext'),
-    btnTitleLocalTest: $('btnTitleLocalTest')
-  };
+  const $ = (id) => document.getElementById(id);
 
-  // ===== 設定：ここが“あなたの実ファイル名”と1文字でも違うと失敗します =====
-  // まず「メイン起動に必須」だけロード（これが欠けるとメインすら出せない）
-  const REQUIRED = [
-    'storage.js',
-    'data_player.js',
-    'ui_team.js',
-    'ui_training.js',
-    'ui_shop.js',
-    'ui_card.js',
-    'ui_schedule.js',
-    'ui_main.js'
-  ];
+  /* =========================
+     安全な初期化
+  ========================= */
+  function safeInit(){
+    if (booted) return;
+    booted = true;
 
-  // 大会テストに必要（ローカルだけ）
-  const TOURNAMENT_REQUIRED = [
-    'ui_tournament.js',
-    'sim_tournament_flow.js',
-    'sim_tournament_local.js'
-  ];
-
-  // そのうち必要（今は無くてもOK扱いにする：欠けてても起動を止めない）
-  const OPTIONAL = [
-    'sim_tournament_national.js',
-    'sim_tournament_world.js',
-    'sim_tournament_final.js'
-  ];
-
-  // query付与（キャッシュ対策）
-  function withVer(url){
-    const u = String(url);
-    return u.includes('?') ? u : `${u}?v=19`;
+    // メインUI初期化（存在すれば）
+    if (window.MOBBR?.initMainUI){
+      try{
+        window.MOBBR.initMainUI();
+      }catch(e){
+        console.error('[app] initMainUI error', e);
+      }
+    }
   }
 
-  // 既に読み込まれたか（重複注入防止）
-  function isLoaded(url){
-    const base = String(url).split('?')[0];
-    return !!document.querySelector(`script[data-mobbr-src="${base}"]`);
+  /* =========================
+     画面制御
+  ========================= */
+  function showTitle(){
+    const t = $('titleScreen');
+    const a = $('app');
+    if (t) t.style.display = 'block';
+    if (a) a.style.display = 'none';
   }
 
-  function loadScript(url){
-    return new Promise((resolve, reject)=>{
-      const base = String(url).split('?')[0];
-      if (isLoaded(url)) return resolve({ url, cached:true });
+  function showMain(){
+    const t = $('titleScreen');
+    const a = $('app');
+    if (t) t.style.display = 'none';
+    if (a) a.style.display = 'grid';
+  }
 
-      const s = document.createElement('script');
-      s.src = withVer(url);
-      s.defer = true;
-      s.async = false;
-      s.dataset.mobbrSrc = base;
+  /* =========================
+     タイトル NEXT（安定版）
+  ========================= */
+  function bindTitleNext(){
+    const btn = $('btnTitleNext');
+    if (!btn) return;
 
-      s.onload = ()=> resolve({ url, cached:false });
-      s.onerror = ()=> reject({ url, reason:'load_error' });
+    btn.addEventListener('click', async ()=>{
+      if (titleLocked) return;
+      titleLocked = true;
 
-      document.head.appendChild(s);
+      btn.disabled = true;
+
+      try{
+        // DOM & UI 初期化を必ず先に完了させる
+        await Promise.resolve();
+        safeInit();
+        showMain();
+      }catch(e){
+        console.error('[app] title next failed', e);
+        showTitle();
+      }finally{
+        // メインに行けたら二度と押させない
+        const title = $('titleScreen');
+        if (title && title.style.display !== 'none'){
+          titleLocked = false;
+          btn.disabled = false;
+        }
+      }
     });
   }
 
-  async function loadAllSequential(list){
-    const ok = [];
-    for (const f of list){
+  /* =========================
+     テスト用：ローカル大会直行ボタン
+  ========================= */
+  function injectTestTournamentButton(){
+    const title = $('titleScreen');
+    if (!title) return;
+
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '18px';
+    wrap.style.textAlign = 'center';
+
+    const btn = document.createElement('button');
+    btn.textContent = 'ローカル大会（テスト）';
+    btn.style.padding = '12px 18px';
+    btn.style.fontWeight = '900';
+    btn.style.borderRadius = '14px';
+    btn.style.border = '1px solid rgba(255,255,255,.25)';
+    btn.style.background = 'rgba(0,0,0,.55)';
+    btn.style.color = '#fff';
+
+    btn.addEventListener('click', ()=>{
+      btn.disabled = true;
+
       try{
-        const r = await loadScript(f);
-        ok.push(r.url);
-      }catch(e){
-        throw e;
-      }
-    }
-    return ok;
-  }
+        safeInit();
 
-  function showAlertMissing(title, missingUrl){
-    // iPhoneで特定できるよう「ファイル名」をそのまま出す
-    alert(
-      `${title}\n\n` +
-      `読み込みに失敗しました\n` +
-      `不足/名前違い/置き場所違いの可能性\n\n` +
-      `× ${missingUrl}\n\n` +
-      `（GitHub Pagesは大文字小文字を区別します）`
-    );
-  }
-
-  function setTitleButtonsEnabled(on){
-    if (dom.btnTitleNext) dom.btnTitleNext.disabled = !on;
-    if (dom.btnTitleLocalTest) dom.btnTitleLocalTest.disabled = !on;
-    if (dom.btnTitleNext) dom.btnTitleNext.style.opacity = on ? '1' : '0.55';
-    if (dom.btnTitleLocalTest) dom.btnTitleLocalTest.style.opacity = on ? '1' : '0.55';
-  }
-
-  function openMain(){
-    // タイトル→メインの切替（必ず成功させる）
-    if (dom.titleScreen) dom.titleScreen.style.display = 'none';
-    if (dom.app) dom.app.style.display = 'block';
-
-    // ui_main.js は自動で initMainUI() している前提だが、
-    // 念のため再実行できる場合は叩く（“押しても開かない”対策）
-    try{
-      if (typeof window.MOBBR?.initMainUI === 'function'){
-        window.MOBBR.initMainUI();
-      }
-    }catch(e){
-      console.warn('[app] initMainUI failed', e);
-    }
-  }
-
-  async function ensureTournamentCore(){
-    // 大会に必要な最低限だけを読み込む
-    for (const f of TOURNAMENT_REQUIRED){
-      try{
-        await loadScript(f);
-      }catch(e){
-        showAlertMissing('大会が開始できません', e.url || f);
-        return false;
-      }
-    }
-    // OPTIONALは失敗しても止めない（あとでフェーズ移行時に必要になったら追加する）
-    for (const f of OPTIONAL){
-      loadScript(f).catch(()=>{ /* ignore */ });
-    }
-    return true;
-  }
-
-  async function startLocalTournamentFromTitle(){
-    const ok = await ensureTournamentCore();
-    if (!ok) return;
-
-    // ここまで来たらFlowが存在するはず
-    const Flow = window.MOBBR?.sim?.tournamentFlow;
-    if (!Flow || typeof Flow.startLocalTournament !== 'function'){
-      alert(
-        '大会が開始できません\n\n' +
-        'tournamentFlow が見つかりません\n' +
-        '（sim_tournament_flow.js の中で window.MOBBR.sim.tournamentFlow を設定しているか確認）'
-      );
-      return;
-    }
-
-    // メイン画面を開かずに大会だけ出してもOK（あなたのテスト要望）
-    // ただしUIが重なるのが嫌なら openMain() を先に呼んでOK
-    // openMain();
-
-    try{
-      Flow.startLocalTournament();
-    }catch(e){
-      console.error(e);
-      alert('大会開始でエラー（コンソール確認）');
-    }
-  }
-
-  function bindTitle(){
-    let locked = false;
-
-    if (dom.btnTitleNext){
-      dom.btnTitleNext.addEventListener('click', (e)=>{
-        e.preventDefault();
-        if (locked) return;
-        locked = true;
-        try{
-          openMain();
-        }finally{
-          setTimeout(()=>{ locked = false; }, 250);
+        const rt = window.MOBBR?.tournament?.runtime;
+        if (!rt){
+          alert('tournament_runtime が見つかりません');
+          return;
         }
-      }, { passive:false });
-    }
 
-    if (dom.btnTitleLocalTest){
-      dom.btnTitleLocalTest.addEventListener('click', (e)=>{
-        e.preventDefault();
-        if (locked) return;
-        locked = true;
-        startLocalTournamentFromTitle().finally(()=>{
-          setTimeout(()=>{ locked = false; }, 250);
-        });
-      }, { passive:false });
-    }
+        // タイトルは閉じて大会UIに完全委譲
+        showMain();
+        rt.start('LOCAL');
+
+      }catch(e){
+        console.error('[app] test tournament start failed', e);
+      }
+    });
+
+    wrap.appendChild(btn);
+    title.querySelector('.titleInner')?.appendChild(wrap);
   }
 
-  async function boot(){
-    bindTitle();
-    setTitleButtonsEnabled(false);
+  /* =========================
+     boot
+  ========================= */
+  document.addEventListener('DOMContentLoaded', ()=>{
+    showTitle();
+    bindTitleNext();
+    injectTestTournamentButton();
+  });
 
-    // 必須ロード（ここで失敗したら、メインすら出せないので確実に表示）
-    try{
-      await loadAllSequential(REQUIRED);
-    }catch(e){
-      showAlertMissing('読み込みに失敗しました', e.url || '(unknown)');
-      // タイトルのまま止める
-      return;
-    }
-
-    // 起動成功
-    setTitleButtonsEnabled(true);
-
-    // 初期はタイトル表示のまま
-    if (dom.titleScreen) dom.titleScreen.style.display = 'block';
-    if (dom.app) dom.app.style.display = 'none';
-  }
-
-  boot();
 })();
