@@ -1,745 +1,650 @@
 'use strict';
 
 /*
-  MOB BR - ui_shop.core.js v17（フル / 統一仕様）
+  MOB BR - ui_shop.core.js（フル）
+  目的：
+  - SHOP画面の open/close と「見切れ防止UI強化」を担当
+  - shop.css を index.html で読んでなくても反映されるよう CSS 自動注入（保険）
+  - ガチャ結果表示の「器」を用意（結果が分からない問題を解決）
+  - 共有APIを window.MOBBR.ui.shop に公開（gacha/catalog が使う）
 
-  修正（今回）：
-  - 他UI（メンバー名ポップ等）と modalBack の z-index が干渉して
-    「暗くなって押せない」を起こしていたため、
-    shop用の z-index 強制を "ショップが開いている時だけ" に限定する（bodyクラスでスコープ）
+  重要：
+  - index.html の shopScreen DOM（btnCloseShop / shopGold / shopCDP / btnGacha1 / btnGacha10 / btnGachaSR / shopResult / shopResultList / btnShopOk）
+    に合わせています（あなたのHTMLそのままでOK）
 */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
+window.MOBBR.ui.shop = window.MOBBR.ui.shop || {};
 
 (function(){
+  const VERSION = 'shop.core.v1';
+
+  // ===== Storage Keys（既存と合わせる）=====
+  const K = {
+    gold: 'mobbr_gold',
+    cdp: 'mobbr_cdp',
+    recent: 'mobbr_recent'
+  };
+
   const $ = (id) => document.getElementById(id);
 
-  const S  = window.MOBBR?.storage || null;
-  const DP = window.MOBBR?.data?.player || null;
-
-  const FALLBACK_KEYS = {
-    gold: 'mobbr_gold',
-    rank: 'mobbr_rank',
-    recent: 'mobbr_recent',
-    playerTeam: 'mobbr_playerTeam',
-    m1: 'mobbr_m1',
-    m2: 'mobbr_m2',
-    m3: 'mobbr_m3'
-  };
-  const K = (S && S.KEYS) ? S.KEYS : FALLBACK_KEYS;
-
   function getNum(key, def){
-    if (S?.getNum) return S.getNum(key, def);
     const v = Number(localStorage.getItem(key));
     return Number.isFinite(v) ? v : def;
   }
-  function getStr(key, def){
-    if (S?.getStr) return S.getStr(key, def);
-    const v = localStorage.getItem(key);
-    return (v === null || v === undefined || v === '') ? def : v;
-  }
   function setNum(key, val){
-    if (S?.setNum) return S.setNum(key, val);
     localStorage.setItem(key, String(Number(val)));
   }
   function setStr(key, val){
-    if (S?.setStr) return S.setStr(key, val);
     localStorage.setItem(key, String(val));
   }
 
-  // ===== constants =====
-  const KEY_CDP = 'mobbr_cdp';
-  const BODY_SHOP_CLASS = 'mobbrShopActive';
-
-  // ===== DOM cache =====
-  const dom = {
-    screen: $('shopScreen'),
-    close: $('btnCloseShop'),
-
-    // meta
-    shopGold: $('shopGold'),
-    shopCDP: $('shopCDP'),
-
-    // existing gacha DOM (index.html のまま)
-    btnGacha1: $('btnGacha1'),
-    btnGacha10: $('btnGacha10'),
-    btnGachaSR: $('btnGachaSR'),
-    shopResult: $('shopResult'),
-    shopResultList: $('shopResultList'),
-    btnShopOk: $('btnShopOk'),
-
-    // shared back
-    modalBack: $('modalBack')
-  };
-
-  // ===== style inject（CSS未追加でも最低限成立させる）=====
-  let styleInjected = false;
-  function injectStyle(){
-    if (styleInjected) return;
-    styleInjected = true;
-
-    const st = document.createElement('style');
-    st.id = 'shopCoreStyleV17';
-    st.textContent = `
-      /* =========================================================
-         Z LAYER（事故防止）
-         ★重要：modalBackのz-index強制は「ショップが開いている時だけ」
-         他UIのポップと干渉しないように bodyクラスでスコープ化
-      ========================================================= */
-      body.${BODY_SHOP_CLASS} #modalBack { z-index: 9000 !important; }
-      body.${BODY_SHOP_CLASS} #shopConfirmPop,
-      body.${BODY_SHOP_CLASS} #shopMemberPickPop,
-      body.${BODY_SHOP_CLASS} #shopResultPop { z-index: 10000 !important; }
-
-      /* 上部の閉じるボタンが大きすぎる問題 */
-      #shopScreen .teamCloseBtn,
-      #shopScreen #btnCloseShop{
-        padding: 10px 14px !important;
-        border-radius: 14px !important;
-        font-size: 16px !important;
-        min-height: 44px !important;
-        height: auto !important;
-      }
-
-      /* shop home */
-      .shopHomeWrap{
-        position: relative;
-        width: 100%;
-        max-width: 520px;
-        margin: 10px auto 0;
-        border-radius: 18px;
-        overflow: hidden;
-        background: rgba(0,0,0,.15);
-        box-shadow: 0 12px 30px rgba(0,0,0,.35);
-      }
-      .shopHomeImg{
-        display:block;
-        width:100%;
-        height:auto;
-        user-select:none;
-        -webkit-user-drag:none;
-      }
-      .shopHomeBtnGrid{
-        position:absolute;
-        left: 50%;
-        top: 62%;
-        transform: translate(-50%, -50%);
-        width: 86%;
-        display:grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        z-index: 5;
-        pointer-events: auto;
-      }
-      .shopHomeBtn{
-        border: 0;
-        border-radius: 9999px;
-        padding: 12px 10px;
-        font-weight: 1000;
-        font-size: 15px;
-        line-height: 1;
-        background: rgba(255,255,255,.92);
-        box-shadow: 0 10px 18px rgba(0,0,0,.25);
-      }
-      .shopHomeBtn:active{ transform: translateY(1px); }
-      .shopHomeBtn.isClose{
-        background: rgba(255,255,255,.88);
-        opacity: .95;
-      }
-
-      /* dynamic section */
-      #shopDynamicSection .shopList{ display:flex; flex-direction:column; gap:10px; }
-      #shopDynamicSection .shopRow{
-        display:flex; justify-content:space-between; align-items:center;
-        padding:12px 12px;
-        border-radius:16px;
-        background: rgba(255,255,255,.08);
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
-      }
-      #shopDynamicSection .shopRowLeft{ display:flex; flex-direction:column; gap:6px; }
-      #shopDynamicSection .shopRowName{ font-weight:1000; }
-      #shopDynamicSection .shopRowSub{ font-size:12px; opacity:.9; }
-      #shopDynamicSection .shopRowRight{ display:flex; align-items:center; gap:10px; }
-      #shopDynamicSection .shopPrice{ font-weight:1000; }
-      #shopDynamicSection .shopBuyBtn{
-        border:0; border-radius:9999px;
-        padding:10px 14px; font-weight:1000;
-        background: rgba(255,255,255,.92);
-      }
-      #shopDynamicSection .shopBuyBtn:disabled{ opacity:.45; }
-
-      /* popups */
-      .shopPop{
-        position:fixed;
-        left:50%; top:50%;
-        transform:translate(-50%,-50%);
-        width:min(92vw, 360px);
-        background: rgba(25,25,25,.96);
-        color:#fff;
-        border-radius:18px;
-        padding:14px 14px 16px;
-        box-shadow: 0 20px 60px rgba(0,0,0,.6);
-        display:none;
-      }
-      .shopPop.show{ display:block; }
-      .shopPopTitle{ font-weight:1000; font-size:16px; margin-bottom:10px; }
-      .shopPopText{ font-size:14px; opacity:.96; line-height:1.35; white-space:pre-wrap; }
-      .shopPopActions{ margin-top:12px; display:flex; gap:10px; }
-      .shopPopBtn{
-        flex:1;
-        border:0;
-        border-radius:9999px;
-        padding:12px 10px;
-        font-weight:1000;
-      }
-      .shopPopBtnYes{ background: rgba(255,255,255,.92); }
-      .shopPopBtnNo{ background: rgba(255,255,255,.22); color:#fff; }
-      .memberPickList{ display:flex; gap:10px; margin-top:10px; }
-      .memberPickBtn{
-        flex:1; border:0; border-radius:9999px;
-        padding:12px 10px; font-weight:1000;
-        background: rgba(255,255,255,.92);
-      }
-      .shopResultBig{ margin-top:6px; font-weight:1000; font-size:15px; line-height:1.3; }
-      .shopTiny{ margin-top:8px; font-size:12px; opacity:.9; white-space:pre-wrap; }
-    `;
-    document.head.appendChild(st);
-  }
-
-  // ===== modal back =====
-  function showBack(){
-    if (!dom.modalBack) return;
-    dom.modalBack.style.display = 'block';
-    dom.modalBack.style.pointerEvents = 'auto';
-    dom.modalBack.setAttribute('aria-hidden', 'false');
-  }
-  function hideBack(){
-    if (!dom.modalBack) return;
-    dom.modalBack.style.display = 'none';
-    dom.modalBack.style.pointerEvents = 'none';
-    dom.modalBack.setAttribute('aria-hidden', 'true');
-  }
-
-  function setShopBodyActive(on){
-    if (!document.body) return;
-    if (on) document.body.classList.add(BODY_SHOP_CLASS);
-    else document.body.classList.remove(BODY_SHOP_CLASS);
-  }
-
-  // ===== recent =====
   function setRecent(text){
-    setStr(K.recent, text);
-    if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
+    try{ setStr(K.recent, text); }catch(e){}
+    try{
+      // ui_main が render するなら即反映
+      if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
+    }catch(e){}
   }
 
-  // ===== money / cdp =====
-  function fmtG(n){ return String(Number(n) || 0); }
+  // ===== CSS自動注入（shop.css をリンクしてなくても必ず効く）=====
+  function ensureShopCssInjected(){
+    const id = 'mobbr_shop_css_injected_v1';
+    if (document.getElementById(id)) return;
 
-  function getGold(){ return getNum(K.gold, 0); }
-  function setGold(v){
-    setNum(K.gold, v);
-    renderMeta();
-    if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
-  }
-  function addGold(delta){ setGold(getGold() + (Number(delta) || 0)); }
-  function spendGold(cost){
-    const c = Number(cost) || 0;
-    const g = getGold();
-    if (g < c) return false;
-    setGold(g - c);
-    return true;
+    const css = `
+:root{
+  --shop-radius: 22px;
+  --shop-pad: 16px;
+  --shop-gap: 12px;
+  --shop-bg: rgba(20, 24, 34, .72);
+  --shop-border: rgba(255,255,255,.16);
+  --shop-shadow: 0 18px 50px rgba(0,0,0,.55);
+  --shop-text: rgba(255,255,255,.92);
+  --shop-muted: rgba(255,255,255,.70);
+  --shop-accent: rgba(255, 217, 107, .95);
+  --shop-blue: rgba(119, 200, 255, .95);
+}
+#shopScreen .teamPanel{
+  width: min(92vw, 520px);
+  max-width: 92vw;
+  max-height: calc(100dvh - 18px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden;
+  border-radius: var(--shop-radius);
+  box-shadow: var(--shop-shadow);
+  background: var(--shop-bg);
+  border: 1px solid var(--shop-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+#shopScreen .shopScroll{
+  max-height: inherit;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--shop-pad);
+}
+#shopScreen .shopHeader{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 10px 10px 12px;
+  margin: -16px -16px 10px;
+  background: linear-gradient(to bottom, rgba(20,24,34,.92), rgba(20,24,34,.60));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+#shopScreen .shopHeaderRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+}
+#shopScreen .shopTitleRow{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+#shopScreen .shopTitleIcon{
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.12);
+}
+#shopScreen .shopTitleText{
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: var(--shop-text);
+  font-size: 18px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56vw;
+}
+#shopScreen .shopCloseBtn{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 900;
+  min-height: 40px;
+  min-width: 98px;
+}
+#shopScreen .shopMetaGrid{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--shop-gap);
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+#shopScreen .shopMetaCard{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+}
+#shopScreen .shopMetaLeft{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+#shopScreen .shopBadge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.10);
+}
+#shopScreen .shopBadge.gold{ color: var(--shop-accent); }
+#shopScreen .shopBadge.cdp{ color: var(--shop-blue); }
+#shopScreen .shopMetaLabel{
+  font-weight: 800;
+  color: var(--shop-muted);
+  font-size: 13px;
+}
+#shopScreen .shopMetaVal{
+  font-weight: 1000;
+  color: var(--shop-text);
+  font-size: 18px;
+  letter-spacing: .02em;
+}
+#shopScreen .shopDivider{
+  height: 1px;
+  background: rgba(255,255,255,.10);
+  margin: 12px 0;
+}
+#shopScreen .shopNote{
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 6px;
+}
+#shopScreen .shopActions{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#shopScreen .shopActionBtn{
+  width: 100%;
+  min-height: 48px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+#shopScreen .shopActionBtn.primary{
+  background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.08));
+  border-color: rgba(255,255,255,.18);
+}
+#shopScreen .shopActionBtn.sr{
+  background: linear-gradient(135deg, rgba(255, 217, 107, .20), rgba(255,255,255,.06));
+  border-color: rgba(255, 217, 107, .35);
+}
+#shopScreen .shopActionBtn:disabled{
+  opacity: .45;
+  filter: grayscale(.3);
+}
+#shopScreen .shopResultWrap{
+  display:none;
+  margin-top: 12px;
+  padding: 12px 12px 10px;
+  border-radius: 18px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.14);
+}
+#shopScreen .shopResultWrap.show{ display:block; }
+#shopScreen .shopResultHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+#shopScreen .shopResultTitle{
+  font-weight: 1000;
+  letter-spacing: .02em;
+  font-size: 15px;
+}
+#shopScreen .shopResultMini{
+  color: rgba(255,255,255,.70);
+  font-size: 12px;
+  white-space: nowrap;
+}
+#shopScreen .shopResultList{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 36vh;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+}
+#shopScreen .shopResultItem{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+#shopScreen .shopResultLeft{ min-width: 0; }
+#shopScreen .shopResultName{
+  font-weight: 950;
+  font-size: 13px;
+  color: rgba(255,255,255,.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56vw;
+}
+#shopScreen .shopResultSub{
+  font-size: 12px;
+  color: rgba(255,255,255,.70);
+  margin-top: 2px;
+}
+#shopScreen .shopPill{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 1000;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  flex: 0 0 auto;
+}
+#shopScreen .shopPill.r-sr{ border-color: rgba(255, 217, 107, .38); color: rgba(255, 217, 107, .98); }
+#shopScreen .shopPill.r-ssr{ border-color: rgba(170, 255, 220, .36); color: rgba(170, 255, 220, .98); }
+#shopScreen .shopPill.r-r{ border-color: rgba(170, 210, 255, .34); color: rgba(170, 210, 255, .98); }
+#shopScreen .shopPill.r-n{ border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.88); }
+#shopScreen .shopOkRow{
+  margin-top: 10px;
+  display:flex;
+  justify-content:flex-end;
+}
+#shopScreen .shopOkBtn{
+  min-height: 42px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 1000;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+}
+`;
+
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = css;
+    document.head.appendChild(style);
   }
 
-  function getCDP(){ return getNum(KEY_CDP, 0); }
-  function setCDP(v){
-    setNum(KEY_CDP, v);
-    renderMeta();
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
+  }
+
+  function pillClass(r){
+    const rr = String(r || 'N').toUpperCase();
+    if (rr === 'SSR') return 'r-ssr';
+    if (rr === 'SR') return 'r-sr';
+    if (rr === 'R') return 'r-r';
+    return 'r-n';
+  }
+
+  // ===== DOM/state =====
+  let dom = null;
+  let enhanced = false;
+  let boundCore = false;
+
+  function collectDom(){
+    dom = {
+      screen: $('shopScreen'),
+      panel: $('shopScreen')?.querySelector('.teamPanel') || null,
+
+      btnCloseShop: $('btnCloseShop'),
+
+      goldText: $('shopGold'),
+      cdpText: $('shopCDP'),
+
+      btnGacha1: $('btnGacha1'),
+      btnGacha10: $('btnGacha10'),
+      btnGachaSR: $('btnGachaSR'),
+
+      // existing result nodes
+      resultSection: $('shopResult'),
+      resultList: $('shopResultList'),
+      btnOk: $('btnShopOk')
+    };
+  }
+
+  function enhanceDom(){
+    if (enhanced) return;
+    if (!dom) collectDom();
+    if (!dom?.screen || !dom.panel) return;
+
+    ensureShopCssInjected();
+
+    // panel内をスクロールラッパで包む（見切れ防止の本体）
+    if (!dom.panel.querySelector('.shopScroll')){
+      const wrap = document.createElement('div');
+      wrap.className = 'shopScroll';
+
+      const children = Array.from(dom.panel.childNodes);
+      for (const ch of children) wrap.appendChild(ch);
+      dom.panel.appendChild(wrap);
+    }
+
+    const scroll = dom.panel.querySelector('.shopScroll');
+
+    // stickyヘッダー（見た目＋閉じるを常に押せる）
+    if (!scroll.querySelector('.shopHeader')){
+      const head = document.createElement('div');
+      head.className = 'shopHeader';
+      head.innerHTML = `
+        <div class="shopHeaderRow">
+          <div class="shopTitleRow">
+            <div class="shopTitleIcon" aria-hidden="true">🃏</div>
+            <div class="shopTitleText">ショップ（カードガチャ）</div>
+          </div>
+          <button type="button" class="shopCloseBtn" id="__shopCloseSticky">閉じる</button>
+        </div>
+      `;
+      scroll.insertBefore(head, scroll.firstChild);
+
+      const b = head.querySelector('#__shopCloseSticky');
+      if (b) b.addEventListener('click', () => api.close());
+    }
+
+    // メタ情報カード（G/CDP を上部で強調）
+    if (!scroll.querySelector('.shopMetaGrid')){
+      const meta = document.createElement('div');
+      meta.className = 'shopMetaGrid';
+      meta.innerHTML = `
+        <div class="shopMetaCard">
+          <div class="shopMetaLeft">
+            <span class="shopBadge gold">G</span>
+            <div class="shopMetaLabel">所持G</div>
+          </div>
+          <div class="shopMetaVal" id="__shopGoldBig">0</div>
+        </div>
+        <div class="shopMetaCard">
+          <div class="shopMetaLeft">
+            <span class="shopBadge cdp">CDP</span>
+            <div class="shopMetaLabel">CDP</div>
+          </div>
+          <div class="shopMetaVal" id="__shopCdpBig">0</div>
+        </div>
+        <div class="shopNote">
+          ※ここは「カードガチャのみ」<br />
+          ※確率・％表示はしない（仕様）
+        </div>
+        <div class="shopDivider"></div>
+      `;
+
+      const anchor =
+        scroll.querySelector('.teamMeta') ||
+        scroll.querySelector('.teamSection') ||
+        null;
+
+      if (anchor) scroll.insertBefore(meta, anchor);
+      else scroll.appendChild(meta);
+    }
+
+    // ガチャボタンの見栄えを揃える（既存ボタンを移動して二重表示を防ぐ）
+    if (dom.btnGacha1) dom.btnGacha1.classList.add('shopActionBtn', 'primary');
+    if (dom.btnGacha10) dom.btnGacha10.classList.add('shopActionBtn', 'primary');
+    if (dom.btnGachaSR) dom.btnGachaSR.classList.add('shopActionBtn', 'sr');
+
+    const firstSection = scroll.querySelector('.teamSection');
+    if (firstSection && !firstSection.querySelector('.shopActions')){
+      const actions = document.createElement('div');
+      actions.className = 'shopActions';
+
+      if (dom.btnGacha1) actions.appendChild(dom.btnGacha1);
+      if (dom.btnGacha10) actions.appendChild(dom.btnGacha10);
+      if (dom.btnGachaSR) actions.appendChild(dom.btnGachaSR);
+
+      const saveRow = firstSection.querySelector('.saveRow');
+      if (saveRow) saveRow.innerHTML = '';
+
+      const title = firstSection.querySelector('.teamSectionTitle');
+      if (title && title.nextSibling){
+        firstSection.insertBefore(actions, title.nextSibling);
+      }else{
+        firstSection.appendChild(actions);
+      }
+    }
+
+    // 結果パネルを「必ず見える器」にする
+    if (dom.resultSection){
+      dom.resultSection.classList.add('shopResultWrap');
+
+      // 見出し強化（無ければ追加）
+      if (!dom.resultSection.querySelector('.shopResultHead')){
+        const head = document.createElement('div');
+        head.className = 'shopResultHead';
+        head.innerHTML = `
+          <div class="shopResultTitle">結果</div>
+          <div class="shopResultMini" id="__shopResultMini">-</div>
+        `;
+        dom.resultSection.insertBefore(head, dom.resultSection.firstChild);
+      }
+
+      if (dom.resultList) dom.resultList.classList.add('shopResultList');
+
+      if (dom.btnOk){
+        dom.btnOk.classList.add('shopOkBtn');
+        if (!dom.resultSection.querySelector('.shopOkRow')){
+          const row = document.createElement('div');
+          row.className = 'shopOkRow';
+          row.appendChild(dom.btnOk);
+          dom.resultSection.appendChild(row);
+        }
+      }
+    }
+
+    enhanced = true;
   }
 
   function renderMeta(){
-    if (dom.shopGold) dom.shopGold.textContent = fmtG(getGold());
-    if (dom.shopCDP) dom.shopCDP.textContent = fmtG(getCDP());
+    if (!dom) collectDom();
+    const g = getNum(K.gold, 0);
+    const c = getNum(K.cdp, 0);
+
+    if (dom.goldText) dom.goldText.textContent = String(g);
+    if (dom.cdpText) dom.cdpText.textContent = String(c);
+
+    const gb = document.getElementById('__shopGoldBig');
+    const cb = document.getElementById('__shopCdpBig');
+    if (gb) gb.textContent = String(g);
+    if (cb) cb.textContent = String(c);
+
+    if (dom.btnGachaSR) dom.btnGachaSR.disabled = c < 100;
   }
 
-  // ===== sections / containers =====
-  let built = false;
-  let gachaSection = null;
-  let homeWrap = null;
-  let dynWrap = null;
+  function hideResult(){
+    if (!dom) collectDom();
+    if (dom.resultSection){
+      dom.resultSection.classList.remove('show');
+      dom.resultSection.style.display = 'none';
+    }
+    if (dom.resultList) dom.resultList.innerHTML = '';
+    const mini = document.getElementById('__shopResultMini');
+    if (mini) mini.textContent = '-';
+  }
 
-  function ensureContainers(){
-    injectStyle();
-    if (!dom.screen) return;
+  function showResult(items, label){
+    if (!dom) collectDom();
+    if (!dom.resultSection || !dom.resultList) return;
 
-    const panel = dom.screen.querySelector('.teamPanel');
-    if (!panel) return;
+    dom.resultList.innerHTML = '';
 
-    if (built) return;
+    for (const it of items){
+      const rarity = String(it?.rarity || 'N').toUpperCase();
+      const name = it?.name ?? 'カード';
+      const sub = it?.sub ?? '';
 
-    const sections = Array.from(panel.querySelectorAll('.teamSection'));
-    gachaSection = sections.find(s => s.querySelector('#btnGacha1')) || sections[0] || null;
-
-    // ===== HOME（shop.png + 4 buttons） =====
-    homeWrap = document.createElement('div');
-    homeWrap.id = 'shopHomeWrap';
-    homeWrap.className = 'shopHomeWrap';
-
-    const img = document.createElement('img');
-    img.className = 'shopHomeImg';
-    img.src = 'shop.png';
-    img.alt = 'SHOP';
-    img.draggable = false;
-
-    const grid = document.createElement('div');
-    grid.className = 'shopHomeBtnGrid';
-
-    const mkBtn = (text, cls, onClick) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = `shopHomeBtn ${cls||''}`.trim();
-      b.textContent = text;
-      b.addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        onClick && onClick();
-      });
-      return b;
-    };
-
-    const b1 = mkBtn('1. 育成アイテム', '', ()=> hooks.openItemShop ? hooks.openItemShop() : setRecent('育成アイテム：未実装'));
-    const b2 = mkBtn('2. カードガチャ', '', ()=> hooks.openGacha ? hooks.openGacha() : openGachaView());
-    const b3 = mkBtn('3. コーチスキル', '', ()=> hooks.openCoachShop ? hooks.openCoachShop() : setRecent('コーチスキル：未実装'));
-    const b4 = mkBtn('4. 閉じる', 'isClose', ()=> close());
-
-    grid.appendChild(b1);
-    grid.appendChild(b2);
-    grid.appendChild(b3);
-    grid.appendChild(b4);
-
-    homeWrap.appendChild(img);
-    homeWrap.appendChild(grid);
-
-    // ===== DYNAMIC（育成/コーチ） =====
-    dynWrap = document.createElement('div');
-    dynWrap.id = 'shopDynamicSection';
-    dynWrap.className = 'teamSection';
-    dynWrap.style.display = 'none';
-
-    const dynTitle = document.createElement('div');
-    dynTitle.className = 'teamSectionTitle';
-    dynTitle.id = 'shopDynamicTitle';
-    dynTitle.textContent = '';
-
-    const dynBody = document.createElement('div');
-    dynBody.id = 'shopDynamicBody';
-
-    dynWrap.appendChild(dynTitle);
-    dynWrap.appendChild(dynBody);
-
-    const meta = panel.querySelector('.teamMeta');
-    if (meta && meta.parentElement === panel){
-      if (meta.nextSibling) panel.insertBefore(homeWrap, meta.nextSibling);
-      else panel.appendChild(homeWrap);
-      panel.insertBefore(dynWrap, homeWrap.nextSibling);
-    }else{
-      panel.appendChild(homeWrap);
-      panel.appendChild(dynWrap);
+      const row = document.createElement('div');
+      row.className = 'shopResultItem';
+      row.innerHTML = `
+        <div class="shopResultLeft">
+          <div class="shopResultName">${escapeHtml(name)}</div>
+          <div class="shopResultSub">${escapeHtml(sub)}</div>
+        </div>
+        <div class="shopPill ${pillClass(rarity)}">${escapeHtml(rarity)}</div>
+      `;
+      dom.resultList.appendChild(row);
     }
 
-    built = true;
+    dom.resultSection.style.display = 'block';
+    dom.resultSection.classList.add('show');
+
+    const mini = document.getElementById('__shopResultMini');
+    if (mini) mini.textContent = label || `${items.length}件`;
+
+    // 結果を確実に見せる（見切れ防止：結果位置へスクロール）
+    const scroll = dom.panel?.querySelector('.shopScroll');
+    if (scroll){
+      const top = dom.resultSection.offsetTop - 10;
+      scroll.scrollTo({ top, behavior: 'smooth' });
+    }
   }
 
-  function showHome(){
-    ensureContainers();
-    hideBack();
+  function bindCore(){
+    if (boundCore) return;
+    boundCore = true;
 
-    if (homeWrap) homeWrap.style.display = '';
-    if (dynWrap) dynWrap.style.display = 'none';
-    if (gachaSection) gachaSection.style.display = 'none';
-    if (dom.shopResult) dom.shopResult.style.display = 'none';
+    if (!dom) collectDom();
+    if (!dom?.screen) return;
 
-    const title = dom.screen?.querySelector('.teamTitle');
-    if (title) title.textContent = 'ショップ';
+    // 既存の閉じる（ヘッダー以外）も生かす
+    if (dom.btnCloseShop) dom.btnCloseShop.addEventListener('click', () => api.close());
 
-    setRecent('ショップ：メニューを開いた');
+    // 結果OK
+    if (dom.btnOk) dom.btnOk.addEventListener('click', hideResult);
+
+    // 初回は結果畳む
+    hideResult();
   }
 
-  function showDynamic(titleText){
-    ensureContainers();
-    hideBack();
+  // ===== 公開API =====
+  function open(){
+    if (!dom) collectDom();
+    if (!dom?.screen) return;
 
-    if (homeWrap) homeWrap.style.display = 'none';
-    if (gachaSection) gachaSection.style.display = 'none';
-    if (dom.shopResult) dom.shopResult.style.display = 'none';
+    enhanceDom();
+    bindCore();
+    renderMeta();
 
-    if (dynWrap) dynWrap.style.display = '';
-    const t = $('shopDynamicTitle');
-    const body = $('shopDynamicBody');
-    if (t) t.textContent = titleText || '';
-    if (body) body.innerHTML = '';
-
-    const title = dom.screen?.querySelector('.teamTitle');
-    if (title) title.textContent = titleText || 'ショップ';
-  }
-
-  function openGachaView(){
-    ensureContainers();
-    hideBack();
-
-    if (homeWrap) homeWrap.style.display = 'none';
-    if (dynWrap) dynWrap.style.display = 'none';
-
-    if (gachaSection) gachaSection.style.display = '';
-    if (dom.shopResult) dom.shopResult.style.display = 'none';
-
-    const title = dom.screen?.querySelector('.teamTitle');
-    if (title) title.textContent = 'ショップ（カードガチャ）';
+    dom.screen.classList.add('show');
+    dom.screen.setAttribute('aria-hidden', 'false');
 
     setRecent('ショップ：カードガチャを開いた');
   }
 
-  // ===== popups =====
-  let popConfirm = null;
-  let popPick = null;
-  let popResult = null;
-
-  function ensurePopups(){
-    injectStyle();
-
-    if (!popConfirm){
-      popConfirm = document.createElement('div');
-      popConfirm.className = 'shopPop';
-      popConfirm.id = 'shopConfirmPop';
-      popConfirm.setAttribute('aria-hidden','true');
-
-      const t = document.createElement('div');
-      t.className = 'shopPopTitle';
-      t.textContent = '確認';
-
-      const tx = document.createElement('div');
-      tx.className = 'shopPopText';
-      tx.id = 'shopConfirmText';
-
-      const act = document.createElement('div');
-      act.className = 'shopPopActions';
-
-      const yes = document.createElement('button');
-      yes.type = 'button';
-      yes.className = 'shopPopBtn shopPopBtnYes';
-      yes.id = 'shopConfirmYes';
-      yes.textContent = 'OK';
-
-      const no = document.createElement('button');
-      no.type = 'button';
-      no.className = 'shopPopBtn shopPopBtnNo';
-      no.id = 'shopConfirmNo';
-      no.textContent = 'いいえ';
-
-      act.appendChild(yes);
-      act.appendChild(no);
-
-      popConfirm.appendChild(t);
-      popConfirm.appendChild(tx);
-      popConfirm.appendChild(act);
-      document.body.appendChild(popConfirm);
-    }
-
-    if (!popPick){
-      popPick = document.createElement('div');
-      popPick.className = 'shopPop';
-      popPick.id = 'shopMemberPickPop';
-      popPick.setAttribute('aria-hidden','true');
-
-      const t = document.createElement('div');
-      t.className = 'shopPopTitle';
-      t.textContent = '使用するメンバーを選んでください';
-
-      const list = document.createElement('div');
-      list.className = 'memberPickList';
-      list.id = 'shopMemberPickList';
-
-      popPick.appendChild(t);
-      popPick.appendChild(list);
-      document.body.appendChild(popPick);
-    }
-
-    if (!popResult){
-      popResult = document.createElement('div');
-      popResult.className = 'shopPop';
-      popResult.id = 'shopResultPop';
-      popResult.setAttribute('aria-hidden','true');
-
-      const t = document.createElement('div');
-      t.className = 'shopPopTitle';
-      t.textContent = '結果';
-
-      const big = document.createElement('div');
-      big.className = 'shopResultBig';
-      big.id = 'shopResultBig';
-
-      const tiny = document.createElement('div');
-      tiny.className = 'shopTiny';
-      tiny.id = 'shopResultTiny';
-
-      const ok = document.createElement('button');
-      ok.type = 'button';
-      ok.className = 'shopPopBtn shopPopBtnYes';
-      ok.id = 'shopResultOk';
-      ok.textContent = 'OK';
-      ok.style.marginTop = '12px';
-
-      popResult.appendChild(t);
-      popResult.appendChild(big);
-      popResult.appendChild(tiny);
-      popResult.appendChild(ok);
-      document.body.appendChild(popResult);
-    }
-  }
-
-  function closePop(pop){
-    if (!pop) return;
-    pop.classList.remove('show');
-    pop.setAttribute('aria-hidden','true');
-  }
-
-  function closeAllPops(){
-    if (popConfirm) closePop(popConfirm);
-    if (popPick) closePop(popPick);
-    if (popResult) closePop(popResult);
-  }
-
-  function openPop(pop){
-    if (!pop) return;
-    closeAllPops();
-    showBack();
-    pop.classList.add('show');
-    pop.setAttribute('aria-hidden','false');
-  }
-
-  function closePopAndBack(pop){
-    if (!pop) return;
-    closePop(pop);
-    const anyOpen =
-      (popConfirm && popConfirm.classList.contains('show')) ||
-      (popPick && popPick.classList.contains('show')) ||
-      (popResult && popResult.classList.contains('show'));
-    if (!anyOpen) hideBack();
-  }
-
-  function confirmPop(text, onYes){
-    ensurePopups();
-    const tx = $('shopConfirmText');
-    if (tx) tx.textContent = text || '';
-
-    const yes = $('shopConfirmYes');
-    const no  = $('shopConfirmNo');
-
-    if (yes){
-      yes.onclick = () => {
-        closePopAndBack(popConfirm);
-        if (typeof onYes === 'function') onYes();
-      };
-    }
-    if (no){
-      no.onclick = () => closePopAndBack(popConfirm);
-    }
-
-    openPop(popConfirm);
-  }
-
-  function resultPop(bigText, tinyText, onOk){
-    ensurePopups();
-    const b = $('shopResultBig');
-    const t = $('shopResultTiny');
-    if (b) b.textContent = bigText || '';
-    if (t) t.textContent = tinyText || '';
-
-    const ok = $('shopResultOk');
-    if (ok){
-      ok.onclick = () => {
-        closePopAndBack(popResult);
-        if (typeof onOk === 'function') onOk();
-      };
-    }
-
-    openPop(popResult);
-  }
-
-  function openMemberPick(onPick){
-    ensurePopups();
-    const list = $('shopMemberPickList');
-    if (!list) return;
-
-    const names = {
-      A: getStr(K.m1,'A'),
-      B: getStr(K.m2,'B'),
-      C: getStr(K.m3,'C')
-    };
-
-    list.innerHTML = '';
-    (['A','B','C']).forEach(id=>{
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'memberPickBtn';
-      btn.textContent = names[id] || id;
-      btn.addEventListener('click', ()=>{
-        closePopAndBack(popPick);
-        if (typeof onPick === 'function') onPick(id, names[id] || id);
-      });
-      list.appendChild(btn);
-    });
-
-    openPop(popPick);
-  }
-
-  // ===== gacha result list area (既存DOM) =====
-  function showListResult(rows){
-    if (!dom.shopResult || !dom.shopResultList) return;
-    dom.shopResultList.innerHTML = '';
-
-    (rows || []).forEach(r=>{
-      const row = document.createElement('div');
-      row.className = 'recordRow';
-      row.style.display = 'flex';
-      row.style.flexDirection = 'column';
-      row.style.gap = '4px';
-
-      const t = document.createElement('div');
-      t.style.fontWeight = '1000';
-      t.textContent = r.text;
-
-      const s = document.createElement('div');
-      s.style.fontSize = '12px';
-      s.style.opacity = '0.92';
-      s.textContent = r.sub || '';
-
-      row.appendChild(t);
-      if (r.sub) row.appendChild(s);
-
-      dom.shopResultList.appendChild(row);
-    });
-
-    dom.shopResult.style.display = '';
-  }
-
-  // ===== registration hooks =====
-  const hooks = {
-    openItemShop: null,
-    openCoachShop: null,
-    openGacha: null
-  };
-  function registerCatalog(api){
-    hooks.openItemShop  = api?.openItemShop  || hooks.openItemShop;
-    hooks.openCoachShop = api?.openCoachShop || hooks.openCoachShop;
-  }
-  function registerGacha(api){
-    hooks.openGacha = api?.openGacha || hooks.openGacha;
-  }
-
-  // ===== open/close =====
-  function open(){
-    ensureContainers();
-    renderMeta();
-
-    // shop専用z-index強制を有効化
-    setShopBodyActive(true);
-
-    hideBack();
-    closeAllPops();
-    if (dom.shopResult) dom.shopResult.style.display = 'none';
-
-    if (dom.screen){
-      dom.screen.classList.add('show');
-      dom.screen.setAttribute('aria-hidden', 'false');
-    }
-
-    showHome();
-  }
-
   function close(){
-    closeAllPops();
-    hideBack();
+    if (!dom) collectDom();
+    if (!dom?.screen) return;
 
-    if (dom.shopResult) dom.shopResult.style.display = 'none';
-    if (gachaSection) gachaSection.style.display = 'none';
-    if (dynWrap) dynWrap.style.display = 'none';
-    if (homeWrap) homeWrap.style.display = 'none';
-
-    if (dom.screen){
-      dom.screen.classList.remove('show');
-      dom.screen.setAttribute('aria-hidden', 'true');
-    }
-
-    // shop専用z-index強制を解除（他UIに干渉しない）
-    setShopBodyActive(false);
-
-    setRecent('ショップを閉じた');
+    dom.screen.classList.remove('show');
+    dom.screen.setAttribute('aria-hidden', 'true');
+    hideResult();
   }
 
-  // ===== bind =====
-  let bound = false;
-  function bind(){
-    if (bound) return;
-    bound = true;
-
-    if (dom.close) dom.close.addEventListener('click', (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    });
-
-    if (dom.modalBack){
-      dom.modalBack.addEventListener('click', (e)=> e.preventDefault(), { passive:false });
-    }
-
-    if (dom.btnShopOk){
-      dom.btnShopOk.addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        if (dom.shopResult) dom.shopResult.style.display = 'none';
-      });
-    }
+  function payGold(cost){
+    const g = getNum(K.gold, 0);
+    if (g < cost) return false;
+    setNum(K.gold, g - cost);
+    return true;
   }
 
+  function addCdp(n){
+    const c = getNum(K.cdp, 0);
+    setNum(K.cdp, c + n);
+  }
+
+  function consumeCdp(n){
+    const c = getNum(K.cdp, 0);
+    if (c < n) return false;
+    setNum(K.cdp, c - n);
+    return true;
+  }
+
+  const api = window.MOBBR.ui.shop;
+  api.version = VERSION;
+  api.open = open;
+  api.close = close;
+
+  // shared helpers for gacha/catalog
+  api.renderMeta = renderMeta;
+  api.showResult = showResult;
+  api.hideResult = hideResult;
+  api.setRecent = setRecent;
+
+  api.getGold = () => getNum(K.gold, 0);
+  api.getCdp = () => getNum(K.cdp, 0);
+  api.payGold = payGold;
+  api.addCdp = addCdp;
+  api.consumeCdp = consumeCdp;
+
+  // ===== init =====
   function initShopUI(){
-    bind();
+    collectDom();
+    enhanceDom();
+    bindCore();
     renderMeta();
   }
 
-  window.MOBBR.initShopUI = initShopUI;
-  window.MOBBR.ui.shop = { open, close, render: renderMeta };
+  window.MOBBR.initShopUI = window.MOBBR.initShopUI || initShopUI;
 
-  window.MOBBR.ui.shopCore = {
-    VERSION: 'v17',
-    dom, K, DP,
-
-    fmtG,
-    getGold, setGold, addGold, spendGold,
-    getCDP, setCDP,
-    renderMeta,
-
-    showHome,
-    showDynamic,
-    openGachaView,
-
-    confirmPop,
-    resultPop,
-    openMemberPick,
-
-    showListResult,
-
-    setRecent,
-
-    registerCatalog,
-    registerGacha,
-
-    close
-  };
-
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', initShopUI);
-  }else{
-    initShopUI();
-  }
+  // 動的ロードでも確実に
+  initShopUI();
 })();
