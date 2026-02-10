@@ -1,12 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.1（フル：復旧用）
+  MOB BR - app.js v17.2（フル：復旧用）
   目的：
-  - タイトル → メイン遷移を「確実」にする（ロード成功後に showMain）
-  - 分割JSを順序ロード（重複ロードしない）
-  - shop は「分割版のみ採用」：ui_shop.js（単体）は読み込まない
-  - 大会系は一旦読み込まない（復旧優先）
+  - タイトル→メイン遷移を確実にする（ロード成功後に showMain）
+  - 「透明フタ（modalBack 等）が残って全タップが死ぬ」事故を強制復旧
+  - shop は分割版のみ想定（ui_shop.js 単体は読み込まない）
+  - 大会系は復旧完了まで読み込まない
 */
 
 const APP_VER = 17;
@@ -32,27 +32,79 @@ window.MOBBR.ver = APP_VER;
   );
 })();
 
-// ===== show / hide =====
-function showTitle(){
-  const title = $('titleScreen');
-  const app = $('app');
-  if (title) title.style.display = 'block';
-  if (app) app.style.display = 'none';
-}
-
-function showMain(){
-  const title = $('titleScreen');
-  const app = $('app');
-  if (title) title.style.display = 'none';
-  if (app) app.style.display = 'grid';
-}
-
-// ===== hint（任意：DOMが無ければ何もしない）=====
+// ===== hint（任意）=====
 function setTitleHint(text){
   const el = $('titleHint');
   if (!el) return;
   el.textContent = String(text || '');
   el.style.display = text ? 'block' : 'none';
+}
+
+// ===== 「透明フタ」事故の強制復旧 =====
+function hardResetOverlays(){
+  // 1) modalBack が残っていたら強制的に無効化（最重要）
+  const back = $('modalBack');
+  if (back){
+    back.style.display = 'none';
+    back.style.pointerEvents = 'none';
+    back.setAttribute('aria-hidden', 'true');
+  }
+
+  // 2) membersPop 等のモーダルも念のため閉じる
+  const members = $('membersPop');
+  if (members){
+    members.style.display = 'none';
+    members.setAttribute('aria-hidden', 'true');
+  }
+
+  // 3) タイトルが「消えてるのに残骸がクリックを吸う」事故を防ぐ
+  const title = $('titleScreen');
+  if (title && title.style.display === 'none'){
+    title.style.pointerEvents = 'none';
+  }
+
+  // 4) tournament UI（もし残ってたら）も最前面事故になるので閉じる
+  //    ui_tournament.js が動的生成する .mobbrTui を想定
+  const tui = document.querySelector('.mobbrTui');
+  if (tui){
+    tui.classList.remove('isOpen');
+    tui.style.display = 'none';
+    tui.style.pointerEvents = 'none';
+    tui.setAttribute('aria-hidden', 'true');
+  }
+}
+
+// ===== show / hide =====
+function showTitle(){
+  const title = $('titleScreen');
+  const app = $('app');
+
+  if (title){
+    title.style.display = 'block';
+    title.style.pointerEvents = 'auto';
+  }
+  if (app) app.style.display = 'none';
+
+  // タイトルへ戻す時もフタ事故を消す
+  hardResetOverlays();
+}
+
+function showMain(){
+  const title = $('titleScreen');
+  const app = $('app');
+
+  if (title){
+    title.style.display = 'none';
+    // 透明残骸で吸わないように
+    title.style.pointerEvents = 'none';
+  }
+  if (app) app.style.display = 'grid';
+
+  // メイン表示直後に必ず「フタ事故」掃除
+  hardResetOverlays();
+
+  // さらに 1フレーム後にも掃除（JS初期化タイミングのズレ対策）
+  requestAnimationFrame(() => hardResetOverlays());
 }
 
 // ===== dynamic script loader =====
@@ -71,11 +123,7 @@ function loadScript(src){
 async function loadModules(){
   const v = `?v=${APP_VER}`;
 
-  /*
-    読み込み順は超重要
-    - storage / data → ui
-    - 「同系統UIの重複ロード」は事故るので絶対しない
-  */
+  // ※ここで重要：同じ系統を二重ロードしない
   const files = [
     // core
     `storage.js${v}`,
@@ -83,22 +131,18 @@ async function loadModules(){
     `data_cards.js${v}`,
 
     // UI
-    `ui_main.js?v=18`,        // ui_main は v18 を使ってる前提（あなたの貼ったものが v18）
+    `ui_main.js?v=18`,
     `ui_team.js${v}`,
     `ui_training.js${v}`,
     `ui_card.js${v}`,
 
-    // shop（分割版のみ採用：ここが超重要）
+    // shop（分割版のみ）
     `ui_shop.core.js${v}`,
     `ui_shop.gacha.js${v}`,
     `ui_shop.catalog.js${v}`,
 
     // schedule
     `ui_schedule.js${v}`
-
-    // 大会系は復旧完了まで読み込まない
-    // `ui_tournament.js?...`
-    // `sim_tournament_...`
   ];
 
   for (const f of files){
@@ -141,7 +185,7 @@ async function bootAfterNext(){
     window.MOBBR.initCardUI();
   }
 
-  // shop（coreが initShopUI を持つ）
+  // shop
   if (window.MOBBR?.initShopUI){
     window.MOBBR.initShopUI();
   }
@@ -152,6 +196,9 @@ async function bootAfterNext(){
   }
 
   setTitleHint('');
+
+  // init 後にも念のため掃除（modalBack事故の最終保険）
+  hardResetOverlays();
 }
 
 // ===== global events =====
@@ -169,11 +216,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = $('btnTitleNext');
   if (btn){
     btn.addEventListener('click', async () => {
-      // 連打・二重起動防止
       btn.disabled = true;
 
       try{
-        // ★ここが重要：ロード＆initが成功してから showMain
+        // ロード & init 完了してから画面を出す（不安定対策）
         await bootAfterNext();
         showMain();
       }catch(err){
