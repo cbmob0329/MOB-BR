@@ -1,370 +1,327 @@
-/* shop.css v17（フル）
+/* shop.css（フル）
   目的：
-  - 既存UI/ロジックは一切変えず「ショップ（カードガチャ）」だけ豪華に見せる
-  - 影響範囲は #shopScreen 内に限定（他画面を壊さない）
+  - スマホで「下が見切れる」をゼロにする（max-height + overflow）
+  - ヘッダー（タイトル/閉じる）を sticky で固定
+  - ガチャ結果を視認性高く（結果パネル + リスト）
+  - 既存 team.css の上に「上書き」で効くように #shopScreen を強くスコープ
+
+  ※このCSSは index.html で <link rel="stylesheet" href="shop.css?..."> してもOK
+  ※してなくても ui_shop.js が自動注入する（保険）
 */
 
 :root{
-  --shop-bg-1: rgba(20, 24, 34, 0.72);
-  --shop-bg-2: rgba(12, 14, 20, 0.62);
-  --shop-stroke: rgba(255,255,255,0.14);
-  --shop-stroke-2: rgba(255,255,255,0.10);
-  --shop-shadow: 0 18px 60px rgba(0,0,0,0.55);
-  --shop-glow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 26px rgba(255,200,90,0.12);
-  --shop-text: rgba(255,255,255,0.92);
-  --shop-muted: rgba(255,255,255,0.72);
-  --shop-dim: rgba(255,255,255,0.55);
+  --shop-radius: 22px;
+  --shop-pad: 16px;
+  --shop-gap: 12px;
 
-  --shop-gold: #f6d06f;
-  --shop-cdp: #7fd4ff;
+  --shop-bg: rgba(20, 24, 34, .72);
+  --shop-bg-2: rgba(255,255,255,.08);
+  --shop-border: rgba(255,255,255,.16);
+  --shop-shadow: 0 18px 50px rgba(0,0,0,.55);
 
-  --shop-ok: #a7ffcf;
-  --shop-warn: #ffcf7f;
+  --shop-text: rgba(255,255,255,.92);
+  --shop-muted: rgba(255,255,255,.70);
 
-  --shop-radius-lg: 22px;
-  --shop-radius-md: 16px;
-  --shop-radius-sm: 12px;
-
-  --shop-pad: 18px;
+  --shop-accent: rgba(255, 217, 107, .95);
+  --shop-blue: rgba(119, 200, 255, .95);
 }
 
-/* =========================
-   Scope: #shopScreen only
-========================= */
-#shopScreen{
-  /* 既存の show/aria は触らない */
-}
-
+/* ===== ベース：shopScreen の panel を「必ず画面内」へ ===== */
 #shopScreen .teamPanel{
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--shop-radius-lg);
-  border: 1px solid var(--shop-stroke);
-  background:
-    radial-gradient(1200px 520px at 10% 0%, rgba(255,200,90,0.10), transparent 55%),
-    radial-gradient(820px 520px at 90% 10%, rgba(80,170,255,0.10), transparent 55%),
-    linear-gradient(180deg, var(--shop-bg-1), var(--shop-bg-2));
+  /* 既存の team.css の見た目を壊さない範囲で上書き */
+  width: min(92vw, 520px);
+  max-width: 92vw;
+
+  /* ↓ここが「下が見切れる」を潰す本体 */
+  max-height: calc(100dvh - 18px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden; /* 内側をスクロールに回す */
+  border-radius: var(--shop-radius);
   box-shadow: var(--shop-shadow);
-  color: var(--shop-text);
+
+  /* 透明ガラス感（既存がある場合も上書き） */
+  background: var(--shop-bg);
+  border: 1px solid var(--shop-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
-#shopScreen .teamPanel::before{
-  content:"";
-  position:absolute;
-  inset:-2px;
-  background:
-    linear-gradient(135deg,
-      rgba(255,215,130,0.12),
-      rgba(255,255,255,0.05) 35%,
-      rgba(120,210,255,0.10) 70%,
-      rgba(255,255,255,0.04));
-  pointer-events:none;
-  opacity: 0.85;
-  mix-blend-mode: screen;
+/* panel 内部をスクロール可能にするラッパ（ui_shop.js が付与） */
+#shopScreen .shopScroll{
+  max-height: inherit;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--shop-pad);
 }
 
-#shopScreen .teamPanel::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    repeating-linear-gradient(
-      135deg,
-      rgba(255,255,255,0.06) 0px,
-      rgba(255,255,255,0.06) 1px,
-      transparent 1px,
-      transparent 8px
-    );
-  opacity: 0.06;
-  pointer-events:none;
+/* ===== ヘッダー固定（タイトル + 閉じる） ===== */
+#shopScreen .shopHeader{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 10px 10px 12px;
+  margin: -16px -16px 10px; /* shopScroll padding を相殺 */
+  background: linear-gradient(to bottom, rgba(20,24,34,.92), rgba(20,24,34,.60));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,.10);
 }
 
-/* =========================
-   Header
-========================= */
-#shopScreen .teamHead{
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: calc(var(--shop-pad) + 2px) var(--shop-pad);
-  border-bottom: 1px solid var(--shop-stroke-2);
+#shopScreen .shopHeaderRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
 }
 
-#shopScreen .teamTitle{
-  margin: 0;
+#shopScreen .shopTitleRow{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+
+#shopScreen .shopTitleIcon{
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+#shopScreen .shopTitleText{
   font-weight: 900;
-  letter-spacing: 0.5px;
+  letter-spacing: .02em;
+  color: var(--shop-text);
   font-size: 18px;
-  line-height: 1.15;
-  text-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56vw;
 }
 
-#shopScreen .teamTitle::before{
-  content:"🃏";
-  margin-right: 10px;
-  filter: drop-shadow(0 8px 14px rgba(0,0,0,0.35));
-}
-
-/* 既存 closeBtn をショップらしく */
-#shopScreen .teamCloseBtn,
-#shopScreen #btnCloseShop,
-#shopScreen .closeBtn{
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.10);
-  color: rgba(255,255,255,0.92);
-  padding: 10px 16px;
-  font-weight: 900;
-  letter-spacing: 0.4px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
-}
-
-#shopScreen .teamCloseBtn:active,
-#shopScreen #btnCloseShop:active,
-#shopScreen .closeBtn:active{
-  transform: translateY(1px) scale(0.99);
-  background: rgba(255,255,255,0.14);
-  border-color: rgba(255,255,255,0.22);
-}
-
-/* =========================
-   Meta (G / CDP)
-========================= */
-#shopScreen .teamMeta{
-  position: relative;
-  padding: var(--shop-pad);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  border-bottom: 1px solid var(--shop-stroke-2);
-}
-
-#shopScreen .teamMeta > div{
-  font-size: 13px;
-  color: var(--shop-muted);
-  line-height: 1.25;
-}
-
-#shopScreen .teamMeta > div:nth-child(1),
-#shopScreen .teamMeta > div:nth-child(2){
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--shop-radius-md);
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.18);
-  box-shadow: var(--shop-glow);
-}
-
-#shopScreen .teamMeta > div:nth-child(1)::before{
-  content:"G";
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: rgba(246,208,111,0.18);
-  border: 1px solid rgba(246,208,111,0.35);
-  color: var(--shop-gold);
-  font-weight: 900;
-  font-size: 12px;
-}
-
-#shopScreen .teamMeta > div:nth-child(2)::before{
-  content:"CDP";
-  display: inline-grid;
-  place-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(127,212,255,0.14);
-  border: 1px solid rgba(127,212,255,0.32);
-  color: var(--shop-cdp);
-  font-weight: 900;
-  font-size: 12px;
-}
-
-#shopScreen #shopGold{
-  color: var(--shop-gold);
-  font-weight: 900;
-  text-shadow: 0 12px 30px rgba(0,0,0,0.35);
-}
-
-#shopScreen #shopCDP{
-  color: var(--shop-cdp);
-  font-weight: 900;
-  text-shadow: 0 12px 30px rgba(0,0,0,0.35);
-}
-
-/* 説明文 */
-#shopScreen .teamMeta > div:nth-child(3){
-  grid-column: 1 / -1;
-  padding: 0 2px;
-  color: var(--shop-dim);
-}
-
-/* =========================
-   Sections
-========================= */
-#shopScreen .teamSection{
-  position: relative;
-  padding: var(--shop-pad);
-}
-
-#shopScreen .teamSectionTitle{
-  font-weight: 900;
-  letter-spacing: 0.3px;
-  font-size: 14px;
-  margin-bottom: 12px;
-  color: rgba(255,255,255,0.92);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-#shopScreen .teamSectionTitle::after{
-  content:"";
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.18), transparent);
-}
-
-/* =========================
-   Buttons (ガチャ)
-========================= */
-#shopScreen .saveRow{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-#shopScreen .saveBtn{
+#shopScreen .shopCloseBtn{
   appearance: none;
-  border: 1px solid rgba(255,255,255,0.18);
-  background:
-    radial-gradient(600px 220px at 10% 0%, rgba(255,215,130,0.12), transparent 55%),
-    radial-gradient(600px 220px at 90% 0%, rgba(127,212,255,0.10), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
-  color: rgba(255,255,255,0.92);
-  border-radius: var(--shop-radius-md);
-  padding: 12px 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+  border-radius: 14px;
+  padding: 10px 14px;
   font-weight: 900;
-  letter-spacing: 0.2px;
-  box-shadow: 0 14px 40px rgba(0,0,0,0.26);
-  transform: translateZ(0);
-  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, filter 120ms ease;
+  min-height: 40px;
+  min-width: 98px;
 }
 
-#shopScreen .saveBtn:active{
-  transform: translateY(1px) scale(0.99);
-  filter: brightness(1.05);
-  border-color: rgba(255,255,255,0.24);
-}
-
-#shopScreen .saveBtn[disabled]{
-  opacity: 0.45;
-  filter: grayscale(0.25);
-  cursor: not-allowed;
-}
-
-#shopScreen #btnGachaSR{
-  width: 100%;
-  margin-top: 10px;
-  border-color: rgba(246,208,111,0.28);
-  background:
-    radial-gradient(760px 240px at 10% 0%, rgba(246,208,111,0.18), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
-  box-shadow: 0 18px 50px rgba(246,208,111,0.08), 0 14px 40px rgba(0,0,0,0.25);
-}
-
-#shopScreen #btnGachaSR::before{
-  content:"✨";
-  margin-right: 8px;
-}
-
-/* 注意/説明 */
-#shopScreen .saveNote{
-  margin-top: 12px;
-  padding: 12px 12px;
-  border-radius: var(--shop-radius-md);
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.18);
-  color: rgba(255,255,255,0.72);
-  line-height: 1.35;
-  font-size: 12.5px;
-}
-
-/* =========================
-   Result section
-========================= */
-#shopScreen #shopResult{
-  border-top: 1px solid rgba(255,255,255,0.10);
-  margin-top: 6px;
-  padding-top: 16px;
-}
-
-/* recordsList を“カード結果”に見えるように */
-#shopScreen #shopResultList.recordsList,
-#shopScreen #shopResultList{
+/* ===== メタ情報（G / CDP） ===== */
+#shopScreen .shopMetaGrid{
   display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--shop-gap);
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+#shopScreen .shopMetaCard{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+#shopScreen .shopMetaLeft{
+  display:flex;
+  align-items:center;
   gap: 10px;
 }
 
-/* ui_shop.js 側が div.row を作っていなくても、既存の子要素をカード風に */
-#shopScreen #shopResultList > *{
-  border-radius: var(--shop-radius-md);
-  border: 1px solid rgba(255,255,255,0.14);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
-  padding: 10px 12px;
-  box-shadow: 0 12px 34px rgba(0,0,0,0.22);
-  color: rgba(255,255,255,0.86);
-}
-
-/* OKボタン（結果確定） */
-#shopScreen #btnShopOk{
-  width: 100%;
-  margin-top: 12px;
+#shopScreen .shopBadge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(167,255,207,0.30);
-  background:
-    radial-gradient(700px 220px at 10% 0%, rgba(167,255,207,0.18), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
-  color: rgba(255,255,255,0.94);
   font-weight: 900;
-  padding: 12px 14px;
-  box-shadow: 0 18px 50px rgba(167,255,207,0.10), 0 14px 40px rgba(0,0,0,0.24);
-  transition: transform 120ms ease, filter 120ms ease;
-}
-#shopScreen #btnShopOk:active{
-  transform: translateY(1px) scale(0.99);
-  filter: brightness(1.05);
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.10);
 }
 
-/* =========================
-   Small devices
-========================= */
-@media (max-width: 420px){
-  #shopScreen .teamTitle{ font-size: 17px; }
-  #shopScreen .teamMeta{ grid-template-columns: 1fr; }
-  #shopScreen .saveRow{ grid-template-columns: 1fr; }
+#shopScreen .shopBadge.gold{ color: var(--shop-accent); }
+#shopScreen .shopBadge.cdp{ color: var(--shop-blue); }
+
+#shopScreen .shopMetaLabel{
+  font-weight: 800;
+  color: var(--shop-muted);
+  font-size: 13px;
 }
 
-/* =========================
-   Reduced motion
-========================= */
-@media (prefers-reduced-motion: reduce){
-  #shopScreen .saveBtn,
-  #shopScreen .closeBtn,
-  #shopScreen #btnShopOk{
-    transition: none !important;
-  }
+#shopScreen .shopMetaVal{
+  font-weight: 1000;
+  color: var(--shop-text);
+  font-size: 18px;
+  letter-spacing: .02em;
+}
+
+/* ===== セクション区切り ===== */
+#shopScreen .shopDivider{
+  height: 1px;
+  background: rgba(255,255,255,.10);
+  margin: 12px 0;
+}
+
+#shopScreen .shopNote{
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+/* ===== ガチャボタン（見栄えUP） ===== */
+#shopScreen .shopActions{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#shopScreen .shopActionBtn{
+  width: 100%;
+  min-height: 48px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+#shopScreen .shopActionBtn.primary{
+  background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.08));
+  border-color: rgba(255,255,255,.18);
+}
+
+#shopScreen .shopActionBtn.sr{
+  background: linear-gradient(135deg, rgba(255, 217, 107, .20), rgba(255,255,255,.06));
+  border-color: rgba(255, 217, 107, .35);
+}
+
+#shopScreen .shopActionBtn:disabled{
+  opacity: .45;
+  filter: grayscale(.3);
+}
+
+/* ===== 結果パネル（何が当たったか見える） ===== */
+#shopScreen .shopResultWrap{
+  display:none;
+  margin-top: 12px;
+  padding: 12px 12px 10px;
+  border-radius: 18px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.14);
+}
+
+#shopScreen .shopResultWrap.show{
+  display:block;
+}
+
+#shopScreen .shopResultHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#shopScreen .shopResultTitle{
+  font-weight: 1000;
+  letter-spacing: .02em;
+  font-size: 15px;
+}
+
+#shopScreen .shopResultMini{
+  color: rgba(255,255,255,.70);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#shopScreen .shopResultList{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 36vh;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+}
+
+#shopScreen .shopResultItem{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+#shopScreen .shopResultLeft{
+  min-width: 0;
+}
+
+#shopScreen .shopResultName{
+  font-weight: 950;
+  font-size: 13px;
+  color: rgba(255,255,255,.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56vw;
+}
+
+#shopScreen .shopResultSub{
+  font-size: 12px;
+  color: rgba(255,255,255,.70);
+  margin-top: 2px;
+}
+
+#shopScreen .shopPill{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 1000;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  flex: 0 0 auto;
+}
+
+#shopScreen .shopPill.r-sr{ border-color: rgba(255, 217, 107, .38); color: rgba(255, 217, 107, .98); }
+#shopScreen .shopPill.r-ssr{ border-color: rgba(170, 255, 220, .36); color: rgba(170, 255, 220, .98); }
+#shopScreen .shopPill.r-r{ border-color: rgba(170, 210, 255, .34); color: rgba(170, 210, 255, .98); }
+#shopScreen .shopPill.r-n{ border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.88); }
+
+#shopScreen .shopOkRow{
+  margin-top: 10px;
+  display:flex;
+  justify-content:flex-end;
+}
+
+#shopScreen .shopOkBtn{
+  min-height: 42px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 1000;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.10);
+  color: #fff;
 }
