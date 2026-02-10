@@ -1,57 +1,61 @@
 'use strict';
 
 /*
-  MOB BR - app.js v20（フル）
-  目的：
-  - タイトル→メイン遷移を確実化
-  - 分割JSロードを「今あるファイルだけ」に絞って404停止を根絶
-  - タイトルから「ローカル大会（テスト）」で即開始
+  MOB BR - app.js v19（フル）
+  役割：
+  - タイトル → メイン遷移制御
+  - 分割JSの順序ロード
+  - 各UI init の一元管理
 
-  v20:
-  ✅ 404で途中停止しない（存在前提ファイルのみロード）
-  ✅ 必須2本（ui_tournament.js / sim_tournament_flow.js）が無い場合は原因を表示
-  ✅ タイトル表示中に先読み（preload）
+  v19 変更点：
+  - タイトルのNEXTが不安定な時の原因を特定できるように
+    「失敗したファイル名」をalert表示
+  - タイトルに「ローカル大会（テスト）」ボタンを追加した場合、
+    そのボタンでも必ず modules を先にロードしてから大会開始する
+    （Flow未ロード事故を根絶）
 */
 
-const APP_VER = 20;
+const APP_VER = 19;
 
+// ===== DOM helpers =====
+const $ = (id) => document.getElementById(id);
+
+// ===== global namespace =====
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ver = APP_VER;
 
-const $ = (id) => document.getElementById(id);
-
-// iOS: prevent double-tap zoom
+// ===== iOS: prevent double-tap zoom =====
 (function preventDoubleTapZoom(){
-  let last = 0;
-  document.addEventListener('touchend', (e)=>{
-    const now = Date.now();
-    if (now - last <= 300) e.preventDefault();
-    last = now;
-  }, { passive:false });
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) e.preventDefault();
+      lastTouchEnd = now;
+    },
+    { passive: false }
+  );
 })();
 
+// ===== show / hide =====
 function showTitle(){
-  const t = $('titleScreen');
-  const a = $('app');
-  if (t) t.style.display = 'block';
-  if (a) a.style.display = 'none';
+  const title = $('titleScreen');
+  const app = $('app');
+  if (title) title.style.display = 'block';
+  if (app) app.style.display = 'none';
 }
+
 function showMain(){
-  const t = $('titleScreen');
-  const a = $('app');
-  if (t) t.style.display = 'none';
-  if (a) a.style.display = 'grid';
+  const title = $('titleScreen');
+  const app = $('app');
+  if (title) title.style.display = 'none';
+  if (app) app.style.display = 'grid';
 }
 
-function setTitleHint(text){
-  const el = $('titleHint');
-  if (!el) return;
-  el.textContent = String(text || '');
-  el.style.display = text ? 'block' : 'none';
-}
-
+// ===== dynamic script loader =====
 function loadScript(src){
-  return new Promise((resolve, reject)=>{
+  return new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src;
     s.defer = true;
@@ -61,163 +65,189 @@ function loadScript(src){
   });
 }
 
-/**
- * ✅ 今このプロジェクトで「確実に存在している」想定のファイルだけ
- * ※あなたが index.html に書いてた構成（ui_shop.js 1本など）に合わせる
- */
+// ===== load all modules =====
 async function loadModules(){
   const v = `?v=${APP_VER}`;
 
+  /*
+    読み込み順は超重要
+    - storage / data → ui → sim
+    - Flow は最後
+  */
   const files = [
-    // storage / data
+    // core
     `storage.js${v}`,
     `data_player.js${v}`,
 
-    // UI（あなたの現行）
+    // cards data
+    `data_cards.js${v}`,
+
+    // UI（メイン系）
+    `ui_main.js${v}`,
     `ui_team.js${v}`,
     `ui_training.js${v}`,
-    `ui_shop.js${v}`,
-    `ui_card.js${v}`,
-    `ui_schedule.js${v}`,
-    `ui_main.js${v}`,
 
-    // tournament UI（今回追加）
+    // cards UI
+    `ui_card.js${v}`,
+
+    // shop UI（SPLIT）
+    `ui_shop.core.js${v}`,
+    `ui_shop.gacha.js${v}`,
+    `ui_shop.catalog.js${v}`,
+
+    // schedule UI
+    `ui_schedule.js${v}`,
+
+    // TOURNAMENT UI（★追加：大会UI）
     `ui_tournament.js${v}`,
 
-    // sim（大会）
-    `sim_tournament_flow.js${v}`,
+    // SIM
+    `sim_battle.js${v}`,
+
+    // 5大会シム
     `sim_tournament_local.js${v}`,
-    // national/world/final は後で追加でOK（無ければFlow側が警告する）
-    // `sim_tournament_national.js${v}`,
-    // `sim_tournament_world.js${v}`,
-    // `sim_tournament_final.js${v}`,
+    `sim_tournament_national.js${v}`,
+    `sim_tournament_lastchance.js${v}`,
+    `sim_tournament_world.js${v}`,
+    `sim_tournament_final.js${v}`,
+
+    // Flow（最後）
+    `sim_tournament_flow.js${v}`
   ];
 
+  // どのファイルで落ちたか特定できるようにする
   for (const f of files){
-    await loadScript(f);
-  }
-}
-
-let modulesLoaded = false;
-let preloadPromise = null;
-let bootBusy = false;
-
-async function bootModulesIfNeeded(){
-  if (modulesLoaded) return;
-
-  if (preloadPromise){
-    await preloadPromise;
-    modulesLoaded = true;
-    return;
-  }
-
-  await loadModules();
-  modulesLoaded = true;
-}
-
-function initAll(){
-  // storage
-  if (window.MOBBR?.initStorage) window.MOBBR.initStorage();
-
-  // ui_main は自分で init してる場合もあるが、あっても安全
-  if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
-
-  // 既存UI
-  if (window.MOBBR?.initTeamUI) window.MOBBR.initTeamUI();
-  if (window.MOBBR?.initTrainingUI) window.MOBBR.initTrainingUI();
-  if (window.MOBBR?.initShopUI) window.MOBBR.initShopUI();
-  if (window.MOBBR?.initCardUI) window.MOBBR.initCardUI();
-  if (window.MOBBR?.initScheduleUI) window.MOBBR.initScheduleUI();
-}
-
-function assertTournamentReady(){
-  const tUI = window.MOBBR?.ui?.tournament;
-  const Flow = window.MOBBR?.sim?.tournamentFlow;
-
-  if (!tUI){
-    return { ok:false, msg:'ui_tournament.js が読み込めていません（ファイル名/置き場所/大文字小文字）' };
-  }
-  if (!Flow){
-    return { ok:false, msg:'sim_tournament_flow.js が読み込めていません（ファイル名/置き場所/大文字小文字）' };
-  }
-  if (typeof Flow.startLocalTournament !== 'function'){
-    return { ok:false, msg:'tournamentFlow.startLocalTournament がありません（Flowの定義を確認）' };
-  }
-  return { ok:true, msg:'' };
-}
-
-async function goMain(){
-  await bootModulesIfNeeded();
-  initAll();
-  showMain();
-}
-
-async function goLocalTournamentFromTitle(){
-  await goMain();
-
-  const chk = assertTournamentReady();
-  if (!chk.ok){
-    alert(`大会が開始できません\n${chk.msg}`);
-    return;
-  }
-
-  // 開始
-  window.MOBBR.sim.tournamentFlow.startLocalTournament();
-}
-
-document.addEventListener('DOMContentLoaded', ()=>{
-  showTitle();
-
-  const btnNext  = $('btnTitleNext');
-  const btnLocal = $('btnTitleLocal');
-
-  // ✅ タイトル表示中に先読み
-  setTitleHint('読み込み中…');
-  preloadPromise = loadModules()
-    .then(()=>{
-      modulesLoaded = true;
-      setTitleHint('');
-    })
-    .catch((err)=>{
-      console.error(err);
-      preloadPromise = null;
-      // 失敗理由をタイトルに出す（ユーザーが気付ける）
-      setTitleHint('読み込み失敗：ファイル名/パス/大文字小文字を確認');
-    });
-
-  async function guarded(fn){
-    if (bootBusy) return;
-    bootBusy = true;
-    if (btnNext) btnNext.disabled = true;
-    if (btnLocal) btnLocal.disabled = true;
-
     try{
-      await fn();
-    }catch(e){
-      console.error(e);
-      alert('起動に失敗しました（Console確認）');
-      showTitle();
-    }finally{
-      const t = $('titleScreen');
-      if (t && t.style.display !== 'none'){
-        if (btnNext) btnNext.disabled = false;
-        if (btnLocal) btnLocal.disabled = false;
-      }
-      bootBusy = false;
+      await loadScript(f);
+    }catch(err){
+      err._mobbrFile = f;
+      throw err;
     }
   }
+}
+
+// ===== boot after NEXT =====
+let modulesLoaded = false;
+
+async function bootAfterNext(){
+  if (!modulesLoaded){
+    await loadModules();
+    modulesLoaded = true;
+  }
+
+  // storage
+  if (window.MOBBR?.initStorage){
+    window.MOBBR.initStorage();
+  }
+
+  // main UI
+  if (window.MOBBR?.initMainUI){
+    window.MOBBR.initMainUI();
+  }
+
+  // team
+  if (window.MOBBR?.initTeamUI){
+    window.MOBBR.initTeamUI();
+  }
+
+  // training
+  if (window.MOBBR?.initTrainingUI){
+    window.MOBBR.initTrainingUI();
+  }
+
+  // card
+  if (window.MOBBR?.initCardUI){
+    window.MOBBR.initCardUI();
+  }
+
+  // shop（coreが initShopUI を持つ）
+  if (window.MOBBR?.initShopUI){
+    window.MOBBR.initShopUI();
+  }
+
+  // schedule
+  if (window.MOBBR?.initScheduleUI){
+    window.MOBBR.initScheduleUI();
+  }
+
+  // tournament UI / flow はロードされていれば使える（init不要）
+}
+
+// ===== global events =====
+function bindGlobalEvents(){
+  window.addEventListener('mobbr:goTitle', () => {
+    showTitle();
+  });
+}
+
+// ===== util: safe alert =====
+function alertLoadError(err){
+  const f = err?._mobbrFile || '';
+  const msg = f
+    ? `読み込みに失敗しました\n${f}\n\n（ファイル不足/名前違い/場所違い/大文字小文字）`
+    : '読み込みに失敗しました（ファイル不足の可能性）';
+  console.error(err);
+  alert(msg);
+}
+
+// ===== boot =====
+document.addEventListener('DOMContentLoaded', () => {
+  bindGlobalEvents();
+  showTitle();
+
+  const btnNext = $('btnTitleNext');
+  const btnTestLocal = $('btnTitleLocalTest'); // ★タイトルのテスト大会ボタン（index側で用意）
 
   // NEXT
   if (btnNext){
-    const h = ()=>guarded(goMain);
-    btnNext.addEventListener('click', h);
-    btnNext.addEventListener('touchstart', (e)=>{ e.preventDefault(); h(); }, { passive:false });
+    btnNext.addEventListener('click', async () => {
+      btnNext.disabled = true;
+      if (btnTestLocal) btnTestLocal.disabled = true;
+
+      try{
+        await bootAfterNext();
+        showMain();
+      }catch(err){
+        alertLoadError(err);
+        showTitle();
+      }finally{
+        const title = $('titleScreen');
+        if (title && title.style.display !== 'none'){
+          btnNext.disabled = false;
+          if (btnTestLocal) btnTestLocal.disabled = false;
+        }
+      }
+    });
   }
 
-  // ローカル大会（テスト）
-  if (btnLocal){
-    const h = ()=>guarded(goLocalTournamentFromTitle);
-    btnLocal.addEventListener('click', h);
-    btnLocal.addEventListener('touchstart', (e)=>{ e.preventDefault(); h(); }, { passive:false });
+  // ★タイトルから「ローカル大会（テスト）」
+  if (btnTestLocal){
+    btnTestLocal.addEventListener('click', async () => {
+      btnTestLocal.disabled = true;
+      if (btnNext) btnNext.disabled = true;
+
+      try{
+        // 重要：先にロード＆初期化
+        await bootAfterNext();
+
+        // メイン表示は “しない” でもOK（大会UIはoverlayで出る）
+        // showMain(); ← テストでメインも見たいならコメント解除
+
+        const Flow = window.MOBBR?.sim?.tournamentFlow;
+        if (!Flow || typeof Flow.startLocalTournament !== 'function'){
+          throw new Error('tournamentFlow missing after boot');
+        }
+        Flow.startLocalTournament();
+      }catch(err){
+        alertLoadError(err);
+        showTitle();
+      }finally{
+        const title = $('titleScreen');
+        if (title && title.style.display !== 'none'){
+          btnTestLocal.disabled = false;
+          if (btnNext) btnNext.disabled = false;
+        }
+      }
+    });
   }
 });
