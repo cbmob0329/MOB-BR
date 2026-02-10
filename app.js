@@ -1,18 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17-stable（フル）
-  役割：
-  - タイトル → メイン遷移制御（安定化）
-  - 分割JSの順序ロード
-  - 各UI init の一元管理
-
-  方針（重要）：
-  - 「大会系は一度全部削除」前提で、tournament系の読み込みを完全に外す
-    （ファイル不足で loadModules が落ちて、画面が壊れるのを防ぐ）
-  - NEXTが不安定：連打/多重起動/ロード中の状態ずれを防止
-    1) NEXT押下中はボタン無効化
-    2) 先にモジュールを確実に初期化 → 成功したらメイン表示
+  MOB BR - app.js v17.1（フル：復旧用）
+  目的：
+  - タイトル → メイン遷移を「確実」にする（ロード成功後に showMain）
+  - 分割JSを順序ロード（重複ロードしない）
+  - shop は「分割版のみ採用」：ui_shop.js（単体）は読み込まない
+  - 大会系は一旦読み込まない（復旧優先）
 */
 
 const APP_VER = 17;
@@ -53,6 +47,14 @@ function showMain(){
   if (app) app.style.display = 'grid';
 }
 
+// ===== hint（任意：DOMが無ければ何もしない）=====
+function setTitleHint(text){
+  const el = $('titleHint');
+  if (!el) return;
+  el.textContent = String(text || '');
+  el.style.display = text ? 'block' : 'none';
+}
+
 // ===== dynamic script loader =====
 function loadScript(src){
   return new Promise((resolve, reject) => {
@@ -71,42 +73,32 @@ async function loadModules(){
 
   /*
     読み込み順は超重要
-    - storage / data → ui → (sim)
-    ※大会系は「一旦全部削除」方針なので読み込まない
+    - storage / data → ui
+    - 「同系統UIの重複ロード」は事故るので絶対しない
   */
   const files = [
     // core
     `storage.js${v}`,
     `data_player.js${v}`,
-
-    // cards data
     `data_cards.js${v}`,
 
-    // UI（メイン系）
-    `ui_main.js${v}`,
+    // UI
+    `ui_main.js?v=18`,        // ui_main は v18 を使ってる前提（あなたの貼ったものが v18）
     `ui_team.js${v}`,
     `ui_training.js${v}`,
-
-    // cards UI
     `ui_card.js${v}`,
 
-    // shop UI（SPLIT）
+    // shop（分割版のみ採用：ここが超重要）
     `ui_shop.core.js${v}`,
     `ui_shop.gacha.js${v}`,
     `ui_shop.catalog.js${v}`,
 
-    // schedule UI
-    `ui_schedule.js${v}`,
+    // schedule
+    `ui_schedule.js${v}`
 
-    // いまは大会系は読み込まない（ファイル不足で落ちる原因になる）
-    // `ui_tournament.js${v}`,
-    // `sim_battle.js${v}`,
-    // `sim_tournament_local.js${v}`,
-    // `sim_tournament_national.js${v}`,
-    // `sim_tournament_lastchance.js${v}`,
-    // `sim_tournament_world.js${v}`,
-    // `sim_tournament_final.js${v}`,
-    // `sim_tournament_flow.js${v}`
+    // 大会系は復旧完了まで読み込まない
+    // `ui_tournament.js?...`
+    // `sim_tournament_...`
   ];
 
   for (const f of files){
@@ -119,6 +111,7 @@ let modulesLoaded = false;
 
 async function bootAfterNext(){
   if (!modulesLoaded){
+    setTitleHint('読み込み中...');
     await loadModules();
     modulesLoaded = true;
   }
@@ -157,6 +150,8 @@ async function bootAfterNext(){
   if (window.MOBBR?.initScheduleUI){
     window.MOBBR.initScheduleUI();
   }
+
+  setTitleHint('');
 }
 
 // ===== global events =====
@@ -166,37 +161,6 @@ function bindGlobalEvents(){
   });
 }
 
-// ===== NEXT 安定化 =====
-let isBooting = false;
-
-async function onPressNext(btn){
-  if (isBooting) return;
-  isBooting = true;
-
-  if (btn){
-    btn.disabled = true;
-    btn.style.pointerEvents = 'none';
-    btn.style.opacity = '0.85';
-  }
-
-  try{
-    // 先にロード＆初期化を確実に完了させる（成功したらメイン表示）
-    await bootAfterNext();
-    showMain();
-  }catch(err){
-    console.error(err);
-    alert('読み込みに失敗しました（ファイル不足の可能性）');
-    showTitle();
-  }finally{
-    isBooting = false;
-    if (btn){
-      btn.disabled = false;
-      btn.style.pointerEvents = 'auto';
-      btn.style.opacity = '';
-    }
-  }
-}
-
 // ===== boot =====
 document.addEventListener('DOMContentLoaded', () => {
   bindGlobalEvents();
@@ -204,6 +168,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btn = $('btnTitleNext');
   if (btn){
-    btn.addEventListener('click', () => onPressNext(btn));
+    btn.addEventListener('click', async () => {
+      // 連打・二重起動防止
+      btn.disabled = true;
+
+      try{
+        // ★ここが重要：ロード＆initが成功してから showMain
+        await bootAfterNext();
+        showMain();
+      }catch(err){
+        console.error(err);
+        alert('読み込みに失敗しました（ファイル不足 or 読み込み順の不整合の可能性）');
+        setTitleHint('');
+        showTitle();
+      }finally{
+        btn.disabled = false;
+      }
+    });
   }
 });
