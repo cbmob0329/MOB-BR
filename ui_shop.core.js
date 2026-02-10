@@ -1,10 +1,7 @@
 /* =========================
-   ui_shop.core.js v17（フル）
-   - 分割：ui_shop.core / ui_shop.gacha / ui_shop.catalog 前提
-   - 見切れ対策：パネル内スクロール + safe-area + 下余白
-   - 結果が分かる：ガチャ結果を「結果画面」で一覧表示（スクロール可）
-   - confirm()禁止：confirmPop/resultPop を提供
-   - modalBack 制御をここに統一（押せなくなる事故を防止）
+   ui_shop.core.js v18（フル）
+   - v17→v18：暗背景で文字が黒くなる問題を修正（色を明示）
+   - ボタン/説明文/結果行の文字色を高コントラストへ
 ========================= */
 'use strict';
 
@@ -12,7 +9,7 @@ window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  const APP_VER = 17;
+  const APP_VER = 18;
 
   // ===== Storage Keys（他UIと合わせる）=====
   const K = {
@@ -117,7 +114,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const css = document.createElement('style');
     css.type = 'text/css';
     css.textContent = `
-/* shop core injected */
+/* shop core injected v18 - contrast fix */
+
+/* ---- global safety for SHOP area ---- */
+#shopScreen, #shopScreen *{
+  -webkit-tap-highlight-color: rgba(255,255,255,.08);
+}
+#shopScreen .teamPanel{
+  color: rgba(255,255,255,.92);
+}
+#shopScreen .teamPanel a,
+#shopScreen .teamPanel button{
+  color: rgba(255,255,255,.92);
+}
+
+/* panel scroll fix */
 #shopScreen .teamPanel{
   max-height: calc(100vh - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow: auto;
@@ -126,6 +137,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 }
 #shopScreen .teamPanel::-webkit-scrollbar{ width: 0; height: 0; }
 
+/* ---- meta chips ---- */
 #shopScreen .shopMetaChips{
   display:grid;
   gap:10px;
@@ -152,19 +164,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   letter-spacing:.02em;
   font-size:13px;
   opacity:.95;
+  color: rgba(255,255,255,.92);
 }
 #shopScreen .shopChipIcon.g{ background: rgba(255,190,60,.18); border:1px solid rgba(255,190,60,.25); }
 #shopScreen .shopChipIcon.c{ background: rgba(80,180,255,.16); border:1px solid rgba(80,180,255,.25); }
 #shopScreen .shopChipVal{
   font-weight:900;
   font-size:18px;
+  color: rgba(255,255,255,.95);
 }
 #shopScreen .shopChipSub{
-  opacity:.8;
+  opacity:.82;
   font-size:12px;
   margin-left:auto;
+  color: rgba(255,255,255,.78);
 }
 
+/* ---- gacha button area ---- */
 #shopScreen .shopBtns{
   display:grid;
   gap:12px;
@@ -176,8 +192,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   padding:16px 14px;
   font-weight:900;
   letter-spacing:.03em;
+
+  /* contrast fix */
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.95);
+}
+#shopScreen .shopBtnBig:active{
+  transform: translateY(1px);
+}
+#shopScreen .shopBtnBig:disabled{
+  opacity:.45;
 }
 
+/* ---- result list ---- */
 #shopScreen .shopResultListX{
   display:grid;
   gap:10px;
@@ -187,6 +215,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   border-radius:14px;
   background: rgba(0,0,0,.22);
   border:1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.92);
 }
 #shopScreen .shopResultTop{
   display:flex;
@@ -205,23 +234,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   letter-spacing:.02em;
   border:1px solid rgba(255,255,255,.14);
   background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.95);
 }
-#shopScreen .shopBadge.r{ border-color: rgba(255,210,80,.25); background: rgba(255,210,80,.10); }
-#shopScreen .shopBadge.sr{ border-color: rgba(120,210,255,.25); background: rgba(120,210,255,.10); }
-#shopScreen .shopBadge.ssr{ border-color: rgba(255,120,200,.25); background: rgba(255,120,200,.10); }
+#shopScreen .shopBadge.r{ border-color: rgba(255,210,80,.25); background: rgba(255,210,80,.12); }
+#shopScreen .shopBadge.sr{ border-color: rgba(120,210,255,.25); background: rgba(120,210,255,.12); }
+#shopScreen .shopBadge.ssr{ border-color: rgba(255,120,200,.25); background: rgba(255,120,200,.12); }
 
 #shopScreen .shopResultName{
   font-weight:900;
   line-height:1.2;
+  color: rgba(255,255,255,.95);
 }
 #shopScreen .shopResultSub{
-  opacity:.82;
+  opacity:.86;
   font-size:12px;
   margin-top:6px;
   line-height:1.35;
+  color: rgba(255,255,255,.80);
 }
 
-/* popup */
+/* ---- popup ---- */
 .mobbrShopPopBack{
   position: fixed;
   inset: 0;
@@ -236,12 +268,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   transform: translate(-50%,-50%);
   width: min(92vw, 520px);
   border-radius: 18px;
-  background: rgba(20,22,28,.92);
+  background: rgba(20,22,28,.94);
   border: 1px solid rgba(255,255,255,.12);
   box-shadow: 0 18px 60px rgba(0,0,0,.55);
   z-index: 9999;
   display:none;
   overflow:hidden;
+
+  /* contrast fix */
+  color: rgba(255,255,255,.92);
 }
 .mobbrShopPopInner{
   padding: 14px 14px 12px;
@@ -250,12 +285,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   font-weight: 900;
   font-size: 16px;
   line-height: 1.25;
+  color: rgba(255,255,255,.95);
 }
 .mobbrShopPopSub{
   margin-top: 8px;
-  opacity: .85;
+  opacity: .90;
   font-size: 13px;
   line-height: 1.35;
+  color: rgba(255,255,255,.86);
 }
 .mobbrShopPopBody{
   margin-top: 10px;
@@ -274,14 +311,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   border-radius: 14px;
   padding: 12px 10px;
   font-weight: 900;
+
+  /* contrast fix */
+  color: rgba(255,255,255,.95);
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
 }
 .mobbrShopPopBtns .danger{
-  background: rgba(255,80,120,.14);
-  border:1px solid rgba(255,80,120,.22);
+  background: rgba(255,80,120,.18);
+  border:1px solid rgba(255,80,120,.24);
 }
 .mobbrShopPopBtns .primary{
-  background: rgba(120,210,255,.14);
-  border:1px solid rgba(120,210,255,.22);
+  background: rgba(120,210,255,.18);
+  border:1px solid rgba(120,210,255,.24);
 }
 .mobbrShopPickBtn{
   width:100%;
@@ -292,8 +334,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   align-items:center;
   justify-content:space-between;
   gap:10px;
+
+  /* contrast fix */
+  color: rgba(255,255,255,.95);
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
 }
-.mobbrShopPickBtn span{ opacity:.9; font-weight:700; font-size:12px; }
+.mobbrShopPickBtn span{ opacity:.92; font-weight:800; font-size:12px; color: rgba(255,255,255,.85); }
+
+/* ---- original HTML buttons (saveBtn / closeBtn) contrast safety ---- */
+#shopScreen .saveBtn,
+#shopScreen .closeBtn{
+  color: rgba(255,255,255,.95) !important;
+}
+#shopScreen .saveNote{
+  color: rgba(255,255,255,.80);
+}
 `;
     document.head.appendChild(css);
   }
@@ -373,6 +429,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     popBody.innerHTML = '';
     popBtnA.onclick = null;
     popBtnB.onclick = null;
+    popBtnA.style.display = '';
     hideBack();
   }
 
@@ -388,6 +445,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function confirmPop(text, onYes){
     openPop('確認', String(text || ''));
+    popBtnA.style.display = '';
     popBtnA.textContent = 'やめる';
     popBtnB.textContent = 'OK';
 
@@ -402,19 +460,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     openPop(String(title || '結果'), String(sub || ''));
     popBtnA.style.display = 'none';
     popBtnB.textContent = 'OK';
-
     popBtnB.onclick = () => {
       closePop();
       try{ onOk && onOk(); }catch(e){ console.error(e); }
     };
-
-    // Aボタンを隠した分、Bを全幅に
-    popBtnB.style.flex = '1';
   }
 
   function openMemberPick(onPick){
     openPop('メンバー選択', '対象のメンバーを選んでください');
-    popBtnA.style.display = 'inline-flex';
+    popBtnA.style.display = '';
     popBtnA.textContent = '戻る';
     popBtnB.textContent = '閉じる';
 
@@ -448,7 +502,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!dom.shopScreen) return;
     dom.shopScreen.classList.add('show');
     dom.shopScreen.setAttribute('aria-hidden', 'false');
-    showBack(); // 画面外クリック事故防止（背面UIを押せなくする）
+    showBack(); // 背面UI誤タップ防止
   }
   function closeScreen(){
     if (!dom.shopScreen) return;
@@ -493,7 +547,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function setRecent(text){
     setStr(K.recent, String(text||''));
-    // mainのログ表示は ui_main が render で拾う（安全にイベントも投げる）
     try{
       window.dispatchEvent(new CustomEvent('mobbr:recent', { detail:{ text:String(text||'') } }));
     }catch(e){}
@@ -507,11 +560,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.shopGold) dom.shopGold.textContent = String(getGold());
     if (dom.shopCDP) dom.shopCDP.textContent = String(getCDP());
 
-    // metaの見栄え（HTMLは変えず、動的にチップを追加）
     const meta = dom.shopScreen ? dom.shopScreen.querySelector('.teamMeta') : null;
     if (!meta) return;
 
-    // 既に差し込んでいたら更新だけ
     let chips = meta.querySelector('.shopMetaChips');
     if (!chips){
       chips = document.createElement('div');
@@ -535,8 +586,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       chips.appendChild(chipG);
       chips.appendChild(chipC);
-
-      // 元のテキストの下に入れる
       meta.appendChild(chips);
     }
 
@@ -555,10 +604,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ===== Result list (gacha) =====
   function showListResult(rows){
-    // rows: [{text, sub}]
     if (!dom.resultList) return;
 
-    // 見切れ対策：結果は必ず独立画面でスクロール
     hideDynamic();
     showResult();
 
@@ -569,7 +616,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const text = String(r?.text || '');
       const sub  = String(r?.sub || '');
 
-      // 【SSR】 などを抽出
       let rar = '';
       const m = text.match(/^【(SSR|SR|R)】\s*(.*)$/i);
       if (m){
@@ -604,7 +650,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.resultList.appendChild(row);
     });
 
-    // OK
     if (dom.btnResultOk){
       dom.btnResultOk.onclick = (e)=>{
         e.preventDefault();
@@ -636,7 +681,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dynWrap.appendChild(dynTitle);
     dynWrap.appendChild(dynBody);
 
-    // gachaセクションの直後に差し込む
     if (dom.secGacha && dom.secGacha.parentNode){
       dom.secGacha.parentNode.insertBefore(dynWrap, dom.secGacha.nextSibling);
     }else{
@@ -664,7 +708,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hideDynamic();
     if (dom.secGacha) dom.secGacha.style.display = 'block';
 
-    // gachaボタンの見栄え（CSSだけ）
     if (dom.secGacha){
       const row = dom.secGacha.querySelector('.saveRow');
       if (row) row.classList.add('shopBtns');
@@ -682,7 +725,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function registerCatalog(api){ catalogApi = api || null; }
 
   function showHome(){
-    // 結果・動的ページを閉じて、ガチャ画面を標準表示
     hideResult();
     hideDynamic();
     openGachaView();
@@ -705,7 +747,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (bound) return;
     bound = true;
 
-    // close btn
     if (dom.btnCloseShop){
       dom.btnCloseShop.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -714,7 +755,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // result OK
     if (dom.btnResultOk){
       dom.btnResultOk.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -723,11 +763,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
     }
 
-    // iOSでの誤タップ伝播を止める
     if (dom.shopScreen){
-      dom.shopScreen.addEventListener('click', (e)=>{
-        // 何もしない：背面クリックの事故を避ける
-      }, { passive:true });
+      dom.shopScreen.addEventListener('click', ()=>{}, { passive:true });
     }
   }
 
@@ -737,48 +774,38 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bind();
     ensureDynamicArea();
 
-    // shop open hook（ui_main が open() を優先して呼べる）
     window.MOBBR.ui.shop = window.MOBBR.ui.shop || {};
     window.MOBBR.ui.shop.open = open;
 
-    // core API export
     window.MOBBR.ui.shopCore = {
       K, DP, dom,
       fmtG,
 
-      // money/cdp
       getGold, setGold, addGold, spendGold,
       getCDP, setCDP,
 
-      // ui
       open, close: closeScreen,
       renderMeta,
       setRecent,
 
-      // popups
       confirmPop,
       resultPop,
       openMemberPick,
 
-      // views
       showHome,
       openGachaView,
       showDynamic,
       showListResult,
 
-      // register
       registerGacha,
       registerCatalog
     };
 
-    // 起動直後にmeta更新だけ（画面は閉じたまま）
     renderMeta();
   }
 
-  // expose for app.js v17
   window.MOBBR.initShopUI = initShopUI;
 
-  // dynamic loadでも確実に初期化
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', initShopUI);
   }else{
