@@ -1,19 +1,19 @@
 'use strict';
 
 /*
-  MOB BR - app.js v18（フル）
+  MOB BR - app.js v19（フル）
   役割：
   - タイトル → メイン遷移制御
   - 分割JSの順序ロード
   - 各UI init の一元管理
 
-  v18 変更点（今回）：
-  - 「NEXT押下→メイン表示」をやめて、
-    ①モジュールを先にロード＆初期化 → ②成功したらメイン表示
-    に変更（BATTLE押下が早すぎて「未実装」になる事故を根絶）
+  v19 変更点（今回）：
+  ✅ タイトル表示中にモジュールを先読み（preload）して「NEXT押しても開かない」体感を根絶
+  ✅ タイトルに「ローカル大会（テスト）」専用ボタンを追加して、タイトルから直で開始できる
+  ✅ 連打/二重起動防止を強化（NEXT/TESTどちらも共通ガード）
 */
 
-const APP_VER = 18;
+const APP_VER = 19;
 
 // ===== DOM helpers =====
 const $ = (id) => document.getElementById(id);
@@ -51,6 +51,14 @@ function showMain(){
   if (app) app.style.display = 'grid';
 }
 
+// ===== title loading hint =====
+function setTitleHint(text){
+  const el = $('titleHint');
+  if (!el) return;
+  el.textContent = String(text || '');
+  el.style.display = text ? 'block' : 'none';
+}
+
 // ===== dynamic script loader =====
 function loadScript(src){
   return new Promise((resolve, reject) => {
@@ -70,7 +78,7 @@ async function loadModules(){
   /*
     読み込み順は超重要
     - storage / data → ui → sim
-    - Flow は「sim_tournament_local.js」等に依存するので最後
+    - Flow は最後
   */
   const files = [
     // core
@@ -96,7 +104,7 @@ async function loadModules(){
     // schedule UI
     `ui_schedule.js${v}`,
 
-    // TOURNAMENT UI
+    // TOURNAMENT UI（CSS前提）
     `ui_tournament.js${v}`,
 
     // SIM
@@ -118,15 +126,27 @@ async function loadModules(){
   }
 }
 
-// ===== boot after NEXT =====
+// ===== boot sequence =====
 let modulesLoaded = false;
+let preloadPromise = null;
+let bootBusy = false;
 
-async function bootAfterNext(){
-  if (!modulesLoaded){
-    await loadModules();
+async function bootModulesIfNeeded(){
+  if (modulesLoaded) return;
+
+  // preload が走ってるならそれを待つ
+  if (preloadPromise){
+    await preloadPromise;
     modulesLoaded = true;
+    return;
   }
 
+  // なければ通常ロード
+  await loadModules();
+  modulesLoaded = true;
+}
+
+function initAll(){
   // storage
   if (window.MOBBR?.initStorage){
     window.MOBBR.initStorage();
@@ -162,7 +182,25 @@ async function bootAfterNext(){
     window.MOBBR.initScheduleUI();
   }
 
-  // tournament UI / flow は「ロードされていれば」使える状態になる（initは不要）
+  // tournament UI / flow：ロードされていれば使える状態（init不要）
+}
+
+async function goMain(){
+  await bootModulesIfNeeded();
+  initAll();
+  showMain();
+}
+
+async function goLocalTournamentFromTitle(){
+  await goMain();
+
+  const Flow = window.MOBBR?.sim?.tournamentFlow;
+  if (Flow && typeof Flow.startLocalTournament === 'function'){
+    Flow.startLocalTournament();
+  }else{
+    console.warn('[app] tournamentFlow missing');
+    alert('大会が開始できません（sim_tournament_flow.js / ui_tournament.js の読み込みを確認）');
+  }
 }
 
 // ===== global events =====
@@ -177,28 +215,60 @@ document.addEventListener('DOMContentLoaded', () => {
   bindGlobalEvents();
   showTitle();
 
-  const btn = $('btnTitleNext');
-  if (btn){
-    btn.addEventListener('click', async () => {
-      // 連打事故防止（読み込み中に二重起動しない）
-      btn.disabled = true;
+  const btnNext = $('btnTitleNext');
+  const btnLocal = $('btnTitleLocal');
 
-      try{
-        // ★v18: 先にロード＆初期化 → 成功したらメイン表示
-        await bootAfterNext();
-        showMain();
-      }catch(err){
-        console.error(err);
-        alert('読み込みに失敗しました（ファイル不足の可能性）');
-        showTitle();
-      }finally{
-        // タイトルに戻った場合のみ押せるようにする（メインに行けたら不要）
-        // showTitle() が表示されているなら再有効化
-        const title = $('titleScreen');
-        if (title && title.style.display !== 'none'){
-          btn.disabled = false;
-        }
-      }
+  // ✅ v19: タイトル表示中に裏で先読み開始（体感無反応を消す）
+  setTitleHint('読み込み中…');
+  preloadPromise = loadModules()
+    .then(() => {
+      modulesLoaded = true;
+      setTitleHint('');
+    })
+    .catch((err) => {
+      console.error(err);
+      // 先読み失敗しても「押した時に再トライ」できるようにする
+      preloadPromise = null;
+      setTitleHint('読み込みに失敗（通信/キャッシュ確認）');
     });
+
+  async function guardedRun(fn){
+    if (bootBusy) return;
+    bootBusy = true;
+
+    // 連打事故防止
+    if (btnNext) btnNext.disabled = true;
+    if (btnLocal) btnLocal.disabled = true;
+
+    try{
+      await fn();
+    }catch(err){
+      console.error(err);
+      alert('読み込みに失敗しました（ファイル不足の可能性）');
+      showTitle();
+    }finally{
+      // タイトルに戻っているなら押せるように戻す
+      const title = $('titleScreen');
+      if (title && title.style.display !== 'none'){
+        if (btnNext) btnNext.disabled = false;
+        if (btnLocal) btnLocal.disabled = false;
+      }
+      bootBusy = false;
+    }
+  }
+
+  // NEXT → メインへ
+  if (btnNext){
+    const handler = () => guardedRun(goMain);
+    btnNext.addEventListener('click', handler);
+    // iOSでclick遅延が出る環境向け
+    btnNext.addEventListener('touchstart', (e)=>{ e.preventDefault(); handler(); }, { passive:false });
+  }
+
+  // ✅ テスト用：タイトルからローカル大会開始
+  if (btnLocal){
+    const handler = () => guardedRun(goLocalTournamentFromTitle);
+    btnLocal.addEventListener('click', handler);
+    btnLocal.addEventListener('touchstart', (e)=>{ e.preventDefault(); handler(); }, { passive:false });
   }
 });
