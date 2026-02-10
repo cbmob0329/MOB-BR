@@ -12,19 +12,18 @@
        CSS（分割読み込み）
        ※順番厳守
   ========================== -->
-  <link rel="stylesheet" href="base.css?v=17" />
-  <link rel="stylesheet" href="title.css?v=17" />
-  <link rel="stylesheet" href="main.css?v=17" />
-  <link rel="stylesheet" href="team.css?v=17" />
-  <link rel="stylesheet" href="training.css?v=17" />
-
-  <!-- 大会専用CSS（B案） -->
-  <link rel="stylesheet" href="tournament.css?v=1" />
+  <link rel="stylesheet" href="base.css?v=19" />
+  <link rel="stylesheet" href="title.css?v=19" />
+  <link rel="stylesheet" href="main.css?v=19" />
+  <link rel="stylesheet" href="team.css?v=19" />
+  <link rel="stylesheet" href="training.css?v=19" />
+  <!-- ★大会専用 -->
+  <link rel="stylesheet" href="tournament.css?v=19" />
 
   <!-- 追加CSS（未作成ならコメントアウトでOK） -->
-  <!-- <link rel="stylesheet" href="shop.css?v=17" /> -->
-  <!-- <link rel="stylesheet" href="card.css?v=17" /> -->
-  <!-- <link rel="stylesheet" href="schedule.css?v=17" /> -->
+  <!-- <link rel="stylesheet" href="shop.css?v=19" /> -->
+  <!-- <link rel="stylesheet" href="card.css?v=19" /> -->
+  <!-- <link rel="stylesheet" href="schedule.css?v=19" /> -->
 </head>
 
 <body class="no-callout">
@@ -49,13 +48,20 @@
         <img src="bnext.png" alt="NEXT" draggable="false" />
       </button>
 
-      <!-- テスト用：タイトルから直接ローカル大会開始（後で削除） -->
+      <!-- ★テスト用：タイトルから即ローカル大会（後で消す） -->
       <button
-        class="titleNextBtn"
         id="btnTitleLocalTest"
         type="button"
-        aria-label="ローカル大会（テスト）"
-        style="margin-top:10px;"
+        style="
+          margin-top: 14px;
+          min-height: 44px;
+          padding: 10px 16px;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,.35);
+          background: rgba(255,255,255,.72);
+          font-weight: 1000;
+          letter-spacing: .02em;
+        "
       >
         ローカル大会（テスト）
       </button>
@@ -124,7 +130,7 @@
           <img class="jobBg" src="job.png" alt="" draggable="false" />
           <div class="jobText">
             <div class="jobLine small">
-              VER <span id="uiVer">v17</span>
+              VER <span id="uiVer">v19</span>
             </div>
             <div class="jobLine tappable" id="tapCompany">
               企業名：<span id="uiCompany">CB Memory</span>
@@ -447,31 +453,9 @@
   </div>
 
   <!-- =========================
-       JS（defer：上から順に実行）
-       ※既存UIを壊さない順番 + B案追加
+       JS
+       ★重要：ここは app.js だけにする（動的ロード方式）
   ========================== -->
-
-  <!-- 1) storage -->
-  <script src="storage.js?v=17" defer></script>
-
-  <!-- 2) data -->
-  <script src="data_player.js?v=17" defer></script>
-
-  <!-- 3) main UI（既存） -->
-  <script src="ui_team.js?v=17" defer></script>
-  <script src="ui_training.js?v=17" defer></script>
-  <script src="ui_shop.js?v=17" defer></script>
-  <script src="ui_card.js?v=17" defer></script>
-  <script src="ui_schedule.js?v=17" defer></script>
-  <script src="ui_main.js?v=18" defer></script>
-
-  <!-- 4) tournament（B案） -->
-  <script src="tournament_flow.js?v=1" defer></script>
-  <script src="tournament_runtime.js?v=1" defer></script>
-  <script src="ui_tournament.js?v=1" defer></script>
-  <script src="tournament_hooks.js?v=1" defer></script>
-
-  <!-- 5) app（タイトル・遷移） -->
-  <script src="app.js?v=22" defer></script>
+  <script src="app.js?v=19" defer></script>
 </body>
 </html>
