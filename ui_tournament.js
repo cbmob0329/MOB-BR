@@ -1,10 +1,11 @@
 'use strict';
 
 /*
-  MOB BR - ui_tournament.js v1（フル）
+  MOB BR - ui_tournament.js v2（フル）
   - tournament.css 前提
   - 背景(neonmain.png) + 正方形(tent.png) + プレイヤー(P1.png) を重ねる
-  - Flow から呼ばれる最低限APIを実装：
+  - B案：tournament_runtime 経由で NEXT を進める（UIがFlowを直接触らない）
+  - 提供API（hooks / runtime から呼ぶ）：
     open / setScene / showMessage / showResult / setNextHandler / setNextEnabled / close
 */
 
@@ -16,7 +17,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   window.MOBBR.ui.tournament = UI;
 
   let dom = null;
+
+  // B案：基本は runtime.next を使う（未ロードでも落とさない）
   let nextHandler = null;
+
+  function getRuntimeNext(){
+    const rt = window.MOBBR?.tournament?.runtime;
+    if (rt && typeof rt.next === 'function') return () => rt.next();
+    return null;
+  }
 
   function ensureDom(){
     if (dom) return dom;
@@ -79,19 +88,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       note: $q('tuiNote')
     };
 
-    // click through防止
+    // overlay click-through防止（ただし中のボタンは動かす）
     root.addEventListener('click', (e)=>{
       e.preventDefault();
       e.stopPropagation();
     }, { passive:false });
 
-    els.close.addEventListener('click', ()=>{
+    // Close
+    els.close.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
       UI.close();
     });
 
+    // Next
     els.next.addEventListener('click', (e)=>{
       e.preventDefault();
-      if (typeof nextHandler === 'function') nextHandler();
+      e.stopPropagation();
+      // 優先順位：明示setNextHandler > runtime.next
+      const fn = (typeof nextHandler === 'function') ? nextHandler : getRuntimeNext();
+      if (typeof fn === 'function') fn();
     });
 
     dom = els;
@@ -103,6 +119,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     d.root.classList.add('isOpen');
     d.root.style.display = 'block';
     d.root.setAttribute('aria-hidden', 'false');
+
+    // 開いた瞬間に runtime が居れば自動接続（B案）
+    if (nextHandler == null){
+      const rtNext = getRuntimeNext();
+      if (rtNext) nextHandler = rtNext;
+    }
   }
 
   function closeRoot(){
@@ -123,10 +145,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     d.player.src = p;
   }
 
-  function renderMessage(title, lines, nextLabel){
+  function renderMessage(title, lines, nextLabel, sub){
     const d = ensureDom();
     d.h1.textContent = String(title || 'MESSAGE');
-    d.h2.textContent = '';
+    d.h2.textContent = String(sub || '');
     const arr = Array.isArray(lines) ? lines : [String(lines || '')];
     d.body.innerHTML = `
       <div class="tuiLines">
@@ -195,12 +217,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setImages(opt || {});
     const d = ensureDom();
     d.title.textContent = String(opt?.title || '大会');
-    nextHandler = (typeof opt?.onNext === 'function') ? opt.onNext : null;
+
+    // B案：UIは基本 runtime.next を使う。ただし明示指定があれば優先。
+    nextHandler = (typeof opt?.onNext === 'function') ? opt.onNext : (getRuntimeNext() || null);
 
     renderMessage(
       opt?.title || '大会',
       opt?.messageLines || ['開始！', 'NEXTで進行します'],
-      opt?.nextLabel || 'NEXT'
+      opt?.nextLabel || 'NEXT',
+      ''
     );
     UI.setNextEnabled(opt?.nextEnabled !== false);
   };
@@ -210,19 +235,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setImages(opt || {});
     const d = ensureDom();
     d.title.textContent = String(opt?.title || '大会');
-    nextHandler = (typeof opt?.onNext === 'function') ? opt.onNext : nextHandler;
+
+    // onNext が渡されたら差し替え。無ければ runtime を維持。
+    if (typeof opt?.onNext === 'function') nextHandler = opt.onNext;
+    else if (nextHandler == null) nextHandler = getRuntimeNext() || null;
 
     if (opt?.messageLines){
-      renderMessage(opt.title || '大会', opt.messageLines, opt.nextLabel || 'NEXT');
+      renderMessage(opt.title || '大会', opt.messageLines, opt.nextLabel || 'NEXT', '');
     }
     if (typeof opt?.nextEnabled !== 'undefined') UI.setNextEnabled(opt.nextEnabled);
   };
 
-  UI.showMessage = function(title, lines, nextLabel){
+  UI.showMessage = function(title, lines, nextLabel, sub){
     openRoot();
     const d = ensureDom();
     d.title.textContent = '大会';
-    renderMessage(title, lines, nextLabel || 'NEXT');
+    renderMessage(title, lines, nextLabel || 'NEXT', sub || '');
   };
 
   UI.showResult = function(payload){
@@ -230,6 +258,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     renderResult(payload || {});
   };
 
+  // 明示的に handler をセット（runtime.nextより優先）
   UI.setNextHandler = function(fn){
     nextHandler = (typeof fn === 'function') ? fn : null;
   };
@@ -242,5 +271,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   UI.close = function(){
     closeRoot();
   };
+
+  // 互換：Flow側が呼んでも動く
+  UI.setNextEnabled(true);
 
 })();
