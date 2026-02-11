@@ -1,0 +1,302 @@
+/* match.css v1 (FULL)
+   MOB BR - Match Screen (paper-play style)
+*/
+
+.mobbrMui{
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: none;
+  pointer-events: none;
+  color: #fff;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.mobbrMui.isOpen{
+  display: block;
+  pointer-events: auto;
+}
+
+.mobbrMui[aria-hidden="true"]{
+  display: none;
+  pointer-events: none;
+}
+
+.mobbrMui .muiBg{
+  position: absolute;
+  inset: 0;
+  background: #000;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity .9s ease;
+}
+
+.mobbrMui.isOpen .muiBg{
+  opacity: 1;
+}
+
+.mobbrMui .muiWrap{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* TOP */
+.mobbrMui .muiTop{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mobbrMui .muiTitle{
+  font-weight: 1000;
+  font-size: 15px;
+  letter-spacing: .5px;
+}
+
+.mobbrMui .muiMeta{
+  font-size: 12px;
+  opacity: .9;
+}
+
+.mobbrMui .muiClose{
+  border: 0;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  font-weight: 1000;
+  border-radius: 12px;
+  padding: 10px 14px;
+  touch-action: manipulation;
+}
+
+/* CENTER */
+.mobbrMui .muiCenter{
+  display: grid;
+  place-items: center;
+  padding: 10px 0;
+}
+
+.mobbrMui .muiSquare{
+  width: min(92vw, 520px);
+  aspect-ratio: 1/1;
+  border-radius: 18px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(0,0,0,.45);
+  box-shadow: 0 18px 60px rgba(0,0,0,.6);
+}
+
+.mobbrMui .muiSquareBg{
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: saturate(1.05);
+}
+
+/* Fighters */
+.mobbrMui .muiFighter{
+  position: absolute;
+  bottom: 8px;
+  width: 44%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-items: end;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.mobbrMui .muiFighter.left{ left: 8px; }
+.mobbrMui .muiFighter.right{ right: 8px; justify-items: end; }
+
+.mobbrMui .muiName{
+  font-weight: 1000;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.18);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobbrMui .muiChar{
+  width: 100%;
+  max-height: 64%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 16px 24px rgba(0,0,0,.55));
+}
+
+/* Center Log (3 lines fixed) */
+.mobbrMui .muiLog{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  width: calc(100% - 28px);
+  max-width: 470px;
+  min-height: 92px;
+  border-radius: 16px;
+  background: rgba(0,0,0,.70);
+  border: 1px solid rgba(255,255,255,.22);
+  padding: 14px 16px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.mobbrMui .muiIcon{
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  display: block;
+  margin: 0 auto 6px auto;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.6));
+}
+
+.mobbrMui .muiLogL1{
+  font-weight: 1000;
+  font-size: 16px;
+}
+
+.mobbrMui .muiLogL2{
+  margin-top: 4px;
+  font-weight: 1000;
+  font-size: 14px;
+  opacity: .98;
+}
+
+.mobbrMui .muiLogL3{
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: .92;
+}
+
+/* Battle header / stamp */
+.mobbrMui .muiBattleTop{
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 66%;
+  max-width: 360px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 18px 30px rgba(0,0,0,.65));
+}
+
+.mobbrMui .muiBattleTop.flash{
+  animation: muiFlash .35s ease-in-out 0s 3;
+}
+
+@keyframes muiFlash{
+  0%{ transform: translateX(-50%) scale(1); opacity: .9; }
+  50%{ transform: translateX(-50%) scale(1.05); opacity: 1; }
+  100%{ transform: translateX(-50%) scale(1); opacity: .9; }
+}
+
+.mobbrMui .muiResultStamp{
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 54%;
+  max-width: 320px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 20px 40px rgba(0,0,0,.75));
+}
+
+.mobbrMui .muiResultStamp.pop{
+  animation: muiPop .18s ease-out 0s 1;
+}
+
+@keyframes muiPop{
+  0%{ transform: translateX(-50%) scale(.90); opacity: .6; }
+  100%{ transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* Team list overlay */
+.mobbrMui .muiTeamList{
+  position: absolute;
+  inset: 12px;
+  border-radius: 16px;
+  background: rgba(0,0,0,.62);
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.mobbrMui .muiTeamListHead{
+  font-weight: 1000;
+  font-size: 14px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.16);
+  margin-bottom: 10px;
+}
+
+.mobbrMui .muiTeamListScroll{
+  height: calc(100% - 56px);
+  overflow: auto;
+  border-radius: 14px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.12);
+  padding: 10px;
+}
+
+.mobbrMui .muiTeamRow{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.08);
+  margin-bottom: 10px;
+}
+
+.mobbrMui .muiTeamRow .n{
+  font-weight: 1000;
+  font-size: 14px;
+}
+
+.mobbrMui .muiTeamRow .m{
+  font-size: 12px;
+  opacity: .92;
+}
+
+/* BOTTOM */
+.mobbrMui .muiBottom{
+  display: grid;
+  gap: 10px;
+}
+
+.mobbrMui .muiNext{
+  border: 0;
+  border-radius: 14px;
+  padding: 14px;
+  font-weight: 1000;
+  font-size: 15px;
+  background: rgba(255,59,48,.95);
+  color: #fff;
+  touch-action: manipulation;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.mobbrMui .muiNext.show{
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
