@@ -1,12 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.2（フル：復旧用）
+  MOB BR - app.js v17.3（フル：復旧用 + 大会読み込み追加）
   目的：
   - タイトル→メイン遷移を確実にする（ロード成功後に showMain）
   - 「透明フタ（modalBack 等）が残って全タップが死ぬ」事故を強制復旧
   - shop は分割版のみ想定（ui_shop.js 単体は読み込まない）
-  - 大会系は復旧完了まで読み込まない
+  - 大会UI（ui_tournament.js + tournament.css）は復旧後に戻す：今回は JS は読み込む
 */
 
 const APP_VER = 17;
@@ -142,7 +142,10 @@ async function loadModules(){
     `ui_shop.catalog.js${v}`,
 
     // schedule
-    `ui_schedule.js${v}`
+    `ui_schedule.js${v}`,
+
+    // tournament（追加：JSは読み込む / CSSは index 側で読み込み）
+    `ui_tournament.js?v=1`
   ];
 
   for (const f of files){
@@ -193,6 +196,11 @@ async function bootAfterNext(){
   // schedule
   if (window.MOBBR?.initScheduleUI){
     window.MOBBR.initScheduleUI();
+  }
+
+  // tournament
+  if (window.MOBBR?.initTournamentUI){
+    window.MOBBR.initTournamentUI();
   }
 
   setTitleHint('');
