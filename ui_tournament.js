@@ -2,10 +2,14 @@
 
 /*
   MOB BR - ui_tournament.js v1（フル）
-  - 大会画面（本番レイアウト：CSS分離）
-  - btnBattle から開く（ui_main.js改修なしで動作）
-  - コーチスキル：装備中から1つ選択→消耗（owned-- & equippedから除去）
-  - 選択結果は mobbr_coachSkillSelected に保存（後で sim が参照）
+  - 大会画面UI（本番：CSS分離）
+  - ui_main.js(v18) は Flow を呼ぶ → Flow がこの UI を open() する
+  - ここでは btnBattle を bind しない（ui_main.js と二重発火させない）
+
+  コーチスキル：
+  - 最新版仕様：5種のみ（内部効果は後で sim 側が参照）
+  - “装備中”から1つ選んで使用（= 所持 -1 / 装備枠から除去）
+  - “使わない”あり
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -14,45 +18,44 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  // ===== storage keys (coach) =====
-  const COACH_OWNED_KEY = 'mobbr_coachSkillsOwned';     // { id: count }
-  const COACH_EQUIP_KEY = 'mobbr_coachSkillsEquipped';  // [id|null, id|null, id|null]
-  const COACH_SELECTED_KEY = 'mobbr_coachSkillSelected';// string|null（この大会で使用）
+  // ===== keys =====
+  const COACH_OWNED_KEY    = 'mobbr_coachSkillsOwned';      // { id: count }
+  const COACH_EQUIP_KEY    = 'mobbr_coachSkillsEquipped';   // [id|null, id|null, id|null]
+  const COACH_SELECTED_KEY = 'mobbr_coachSkillSelected';    // string|null（この試合で使用）
+
+  const TS_KEY = 'mobbr_tournamentState'; // sim_tournament_flow.js が生成
 
   // ===== images =====
   const IMG_NEONMAIN = 'neonmain.png';
   const IMG_TENT     = 'tent.png';
 
-  // ===== coach master (UI表示用) =====
-  // ※ui_team.js の定義と同じID/名称で合わせる（効果の数値は表示のみ・内部反映は sim 側）
+  // ===== coach master（最新版：5種）=====
   const COACH_SKILLS = [
-    { id:'tactics_note',  name:'戦術ノート',     effectLabel:'この試合、総合戦闘力が1%アップする', coachLine:'基本を徹底。丁寧に戦おう！' },
-    { id:'mental_care',   name:'メンタル整備',   effectLabel:'この試合、チームの雰囲気が安定する', coachLine:'全員で勝つぞ！' },
-    { id:'endgame_power', name:'終盤の底力',     effectLabel:'この試合、終盤の勝負で総合戦闘力が3%アップする', coachLine:'終盤一気に押すぞ！' },
-    { id:'clearing',      name:'クリアリング徹底',effectLabel:'この試合、ファイトに勝った後に人数が残りやすい', coachLine:'周辺をしっかり見ろ！' },
-    { id:'score_mind',    name:'スコア意識',     effectLabel:'この試合、お宝やフラッグを取りやすい', coachLine:'この試合はポイント勝負だ！' },
-    { id:'igl_call',      name:'IGL強化コール',  effectLabel:'この試合、総合戦闘力が4%アップする', coachLine:'コールを信じろ！チャンピオン取るぞ！' },
-    { id:'protagonist',   name:'主人公ムーブ',   effectLabel:'この試合、総合戦闘力が6%アップし、アシストも出やすくなる', coachLine:'チームの力を信じろ！' }
+    { id:'tactics_note',  name:'戦術ノート',     effectLabel:'常時：戦闘総合力 ×1.01', coachLine:'戦術を大事にして戦おう！' },
+    { id:'endgame_power', name:'終盤の底力',     effectLabel:'終盤(R5/R6)：戦闘総合力 ×1.03', coachLine:'終盤一気に攻めるぞ！' },
+    { id:'score_mind',    name:'スコア意識',     effectLabel:'お宝/フラッグ取得が伸びる（+1追加）', coachLine:'お宝狙いだ！全力で探せ！' },
+    { id:'igl_call',      name:'IGL強化コール',  effectLabel:'常時：戦闘総合力 ×1.05', coachLine:'IGLを信じるんだ！' },
+    { id:'protagonist',   name:'主人公ムーブ',   effectLabel:'常時：戦闘総合力 ×1.10', coachLine:'この試合の主人公はお前たちだ！' }
   ];
   const COACH_BY_ID = Object.fromEntries(COACH_SKILLS.map(s => [s.id, s]));
 
   // ===== state =====
-  let tui = null;
-  let step = 'intro'; // intro -> teams -> coach -> coachConfirm -> r1
+  let ui = null;
+  let step = 'arrival'; // arrival -> teams -> coachPick -> coachConfirm -> r1
   let selectedSkillId = null;
 
-  // ===== local helpers =====
-  function safeJSONParse(raw, fallback){
+  // ===== helpers =====
+  function safeParse(raw, fallback){
     try{ return JSON.parse(raw); }catch{ return fallback; }
   }
 
   function readOwned(){
-    const obj = safeJSONParse(localStorage.getItem(COACH_OWNED_KEY) || '{}', {});
+    const obj = safeParse(localStorage.getItem(COACH_OWNED_KEY) || '{}', {});
     return (obj && typeof obj === 'object') ? obj : {};
   }
 
   function readEquipped(){
-    const arr = safeJSONParse(localStorage.getItem(COACH_EQUIP_KEY) || '[]', []);
+    const arr = safeParse(localStorage.getItem(COACH_EQUIP_KEY) || '[]', []);
     if (!Array.isArray(arr)) return [null,null,null];
     const out = [arr[0] ?? null, arr[1] ?? null, arr[2] ?? null];
     return out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
@@ -84,14 +87,28 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (cnt > 0) owned[skillId] = cnt - 1;
     writeOwned(owned);
 
-    // equipped remove (all slots of same id)
+    // equipped remove（同IDが入ってたら null に）
     const eq = readEquipped().map(v => (v === skillId) ? null : v);
     writeEquipped(eq);
   }
 
+  function loadTournamentState(){
+    const st = safeParse(localStorage.getItem(TS_KEY) || 'null', null);
+    return st && typeof st === 'object' ? st : null;
+  }
+
+  function hardHideModalBack(){
+    const back = $('modalBack');
+    if (back){
+      back.style.display = 'none';
+      back.style.pointerEvents = 'none';
+      back.setAttribute('aria-hidden', 'true');
+    }
+  }
+
   // ===== DOM build =====
   function ensureDOM(){
-    if (tui) return tui;
+    if (ui) return ui;
 
     const root = document.createElement('div');
     root.className = 'mobbrTui';
@@ -168,13 +185,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     btnNext.textContent = 'NEXT';
     bottom.appendChild(btnNext);
 
-    const btnGhost = document.createElement('button');
-    btnGhost.className = 'tuiBtn tuiBtnGhost';
-    btnGhost.type = 'button';
-    btnGhost.id = 'tuiAlt';
-    btnGhost.textContent = '使わない';
-    btnGhost.style.display = 'none';
-    bottom.appendChild(btnGhost);
+    const btnAlt = document.createElement('button');
+    btnAlt.className = 'tuiBtn tuiBtnGhost';
+    btnAlt.type = 'button';
+    btnAlt.id = 'tuiAlt';
+    btnAlt.textContent = '使わない';
+    btnAlt.style.display = 'none';
+    bottom.appendChild(btnAlt);
 
     wrap.appendChild(top);
     wrap.appendChild(center);
@@ -183,7 +200,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     root.appendChild(wrap);
     document.body.appendChild(root);
 
-    tui = {
+    ui = {
       root,
       bg,
       sqBg,
@@ -193,27 +210,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       logMain: root.querySelector('#tuiLogMain'),
       logSub: root.querySelector('#tuiLogSub'),
       btnNext,
-      btnAlt: btnGhost
+      btnAlt
     };
 
-    tui.btnNext.addEventListener('click', () => next());
-    tui.btnAlt.addEventListener('click', () => {
-      // “使わない”はコーチ選択画面でのみ表示
+    ui.btnNext.addEventListener('click', () => next());
+    ui.btnAlt.addEventListener('click', () => {
+      // coachPick / coachConfirm で有効
       selectedSkillId = null;
       setSelectedSkill(null);
       showR1Start();
     });
 
-    return tui;
+    return ui;
   }
 
-  function setBG(img){
-    ensureDOM().bg.style.backgroundImage = `url(${img})`;
-  }
-
-  function setSquareBG(img){
-    ensureDOM().sqBg.style.backgroundImage = `url(${img})`;
-  }
+  function setBG(img){ ensureDOM().bg.style.backgroundImage = `url(${img})`; }
+  function setSquareBG(img){ ensureDOM().sqBg.style.backgroundImage = `url(${img})`; }
 
   function setBanner(left, right){
     const d = ensureDOM();
@@ -238,8 +250,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== screens =====
-  function showIntro(){
-    step = 'intro';
+  function showArrival(){
+    step = 'arrival';
     selectedSkillId = null;
     setSelectedSkill(null);
 
@@ -261,46 +273,55 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     step = 'teams';
     setBanner('出場チーム', '20チーム');
 
-    // いまは大会データ削除＝1から。よって仮の一覧（後で data_cpu_teams と接続）
+    const st = loadTournamentState();
+    const ps = Array.isArray(st?.participants) ? st.participants : [];
+
     let html = '';
-    for (let i=1; i<=20; i++){
-      html += `
-        <div class="tuiRow">
-          <button class="tuiRowBtn" type="button">
-            <div class="name">Team ${i}</div>
-            <div class="tag">紹介</div>
-          </button>
-        </div>
-      `;
+    if (ps.length === 0){
+      html = `<div class="tuiNote">参加チームデータがありません。</div>`;
+    }else{
+      for (const p of ps){
+        html += `
+          <div class="tuiRow">
+            <button class="tuiRowBtn" type="button" aria-label="team">
+              <div class="name">${escapeHTML(p.name || 'TEAM')}</div>
+              <div class="tag">${escapeHTML(p.kind === 'player' ? 'PLAYER' : 'CPU')}</div>
+            </button>
+          </div>
+        `;
+      }
+      html += `<div class="tuiNote">NEXTでコーチスキル選択へ進みます。</div>`;
     }
-    html += `<div class="tuiNote">NEXTでコーチスキル選択へ進みます。</div>`;
+
     setScrollHTML(html);
     setLog('出場チーム一覧', '');
     setButtons('NEXT', false);
   }
 
-  function showCoachSelect(){
-    step = 'coach';
+  function showCoachPick(){
+    step = 'coachPick';
     setBanner('コーチスキル', '1つ選んで消耗');
 
     const eq = readEquipped();
     const owned = readOwned();
 
-    let html = `<div class="tuiNote">装備中のスキルから1つ選択してください（使わないもOK）。</div>`;
-
+    // “装備中”に入ってる & 所持>0 & マスターに存在する（最新版5種のみ）
     const usable = [];
     for (const id of eq){
       if (!id) continue;
+      if (!COACH_BY_ID[id]) continue;
       const cnt = Number(owned[id]) || 0;
       if (cnt <= 0) continue;
-      usable.push(id);
+      if (!usable.includes(id)) usable.push(id);
     }
+
+    let html = `<div class="tuiNote">装備中のスキルから1つ選択してください（使わないもOK）。</div>`;
 
     if (usable.length === 0){
       html += `<div class="tuiNote">使用可能なコーチスキルがありません。</div>`;
     }else{
       for (const id of usable){
-        const s = COACH_BY_ID[id] || { id, name:id, effectLabel:'', coachLine:'' };
+        const s = COACH_BY_ID[id];
         const cnt = Number(owned[id]) || 0;
         html += `
           <div class="tuiSkill">
@@ -308,8 +329,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               <div class="sName">${escapeHTML(s.name)}</div>
               <div class="sState">所持:${cnt}</div>
             </div>
-            <div class="sDesc">${escapeHTML(s.effectLabel || '')}</div>
-            <div class="tuiNote">コーチ：「${escapeHTML(s.coachLine || '')}」</div>
+            <div class="sDesc">${escapeHTML(s.effectLabel)}</div>
+            <div class="tuiNote">コーチ：「${escapeHTML(s.coachLine)}」</div>
             <div style="height:8px;"></div>
             <button class="tuiBtn" type="button" data-sel="${escapeAttr(id)}" style="width:100%;">これを使う</button>
           </div>
@@ -317,17 +338,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }
 
+    html += `<div class="tuiNote">※「使わない」を押すとスキル無しで開始します。</div>`;
+
     setScrollHTML(html);
     setLog('使用するコーチスキルを選択してください', '');
     setButtons('戻る', true);
-    ensureDOM().btnNext.onclick = () => prevFromCoach(); // ここだけ差し替え
-    bindSkillButtons();
-  }
 
-  function prevFromCoach(){
-    // coach選択から戻る = teamsへ
-    ensureDOM().btnNext.onclick = () => next(); // 元に戻す
-    showTeams();
+    // 次ボタンは “戻る” として teamsへ
+    ensureDOM().btnNext.onclick = () => {
+      ensureDOM().btnNext.onclick = () => next(); // 既定に戻す
+      showTeams();
+    };
+
+    bindSkillButtons();
   }
 
   function bindSkillButtons(){
@@ -345,7 +368,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function showCoachConfirm(){
     step = 'coachConfirm';
-    const s = COACH_BY_ID[selectedSkillId] || { name:selectedSkillId, coachLine:'' };
+
+    const s = COACH_BY_ID[selectedSkillId];
+    if (!s){
+      selectedSkillId = null;
+      setSelectedSkill(null);
+      showR1Start();
+      return;
+    }
 
     setBanner('コーチスキル発動', 'この試合で消耗');
     setScrollHTML(
@@ -354,17 +384,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         このスキルを使用します。よろしいですか？
       </div>`
     );
-    setLog(`コーチ：「${s.coachLine || '行くぞ！'}」`, 'NEXTで確定（消耗）');
+    setLog(`コーチ：「${s.coachLine}」`, 'NEXTで確定（消耗）');
     setButtons('NEXT', true);
 
-    // alt = 使わない（=選択解除）
+    // alt（使わない）＝選択解除で開始
     ensureDOM().btnAlt.onclick = () => {
       selectedSkillId = null;
       setSelectedSkill(null);
       showR1Start();
     };
 
-    // next = consume and proceed
+    // next（確定）＝消耗して開始
     ensureDOM().btnNext.onclick = () => {
       if (selectedSkillId){
         setSelectedSkill(selectedSkillId);
@@ -378,48 +408,44 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function showR1Start(){
     step = 'r1';
-    ensureDOM().btnNext.onclick = () => next(); // 元に戻す
+
+    // next ボタンの onclick を既定（next()）に戻す
+    ensureDOM().btnNext.onclick = () => next();
 
     setBanner('試合開始', 'Round 1');
     setScrollHTML(`<div class="tuiNote">R1を開始します。</div>`);
-    setLog('Round 1 開始！', '（ここから先は sim 実装で接続）');
+
+    const s = selectedSkillId && COACH_BY_ID[selectedSkillId] ? COACH_BY_ID[selectedSkillId].name : '（なし）';
+    setLog('Round 1 開始！', `コーチスキル：${s}`);
+
     setButtons('OK', false);
 
-    // いまは sim 未実装なので閉じるだけ（次ステップで battle UIへ接続）
+    // 今はここまで（次工程で試合本体へ接続）
     ensureDOM().btnNext.onclick = () => {
       closeUI();
-      // 将来：window.MOBBR.sim.startMatch() などへ接続
+      // 将来：window.MOBBR.sim.match.start() 等へ接続
     };
   }
 
   function next(){
-    if (step === 'intro') return showTeams();
-    if (step === 'teams') return showCoachSelect();
-    // coach系は専用ハンドラ
+    if (step === 'arrival') return showTeams();
+    if (step === 'teams') return showCoachPick();
+    // coachPick/coachConfirm/r1 は個別で制御済み
   }
 
   // ===== open/close =====
   function openUI(){
     const d = ensureDOM();
+
+    // “透明フタ事故”は必ず殺す
+    hardHideModalBack();
+
     d.root.style.display = 'block';
     d.root.style.pointerEvents = 'auto';
     d.root.classList.add('isOpen');
     d.root.setAttribute('aria-hidden', 'false');
 
-    // タップ死亡事故（modalBack）を先に掃除
-    if (typeof window.hardResetOverlays === 'function'){
-      window.hardResetOverlays();
-    }else{
-      // app.js内関数はスコープなので呼べない。念のためここでも掃除
-      const back = $('modalBack');
-      if (back){
-        back.style.display = 'none';
-        back.style.pointerEvents = 'none';
-        back.setAttribute('aria-hidden', 'true');
-      }
-    }
-
-    showIntro();
+    showArrival();
   }
 
   function closeUI(){
@@ -428,25 +454,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     d.root.style.display = 'none';
     d.root.style.pointerEvents = 'none';
     d.root.setAttribute('aria-hidden', 'true');
-
-    // “透明フタ”事故の保険
-    const back = $('modalBack');
-    if (back){
-      back.style.display = 'none';
-      back.style.pointerEvents = 'none';
-      back.setAttribute('aria-hidden', 'true');
-    }
-  }
-
-  // ===== bind battle button =====
-  let bound = false;
-  function bindBattleButton(){
-    if (bound) return;
-    bound = true;
-
-    const btn = $('btnBattle');
-    if (!btn) return;
-    btn.addEventListener('click', () => openUI());
+    hardHideModalBack();
   }
 
   // ===== escape =====
@@ -462,17 +470,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ===== init =====
   function initTournamentUI(){
     ensureDOM();
-    bindBattleButton();
-
-    // “大会データ削除で1から”なので、初回の選択値はクリアしておく（安全）
-    // ※嫌なら削除OK
-    // localStorage.removeItem(COACH_SELECTED_KEY);
-
-    // 画面残骸があっても閉じられるように
     closeUI();
   }
 
   window.MOBBR.initTournamentUI = initTournamentUI;
   window.MOBBR.ui.tournament = { open: openUI, close: closeUI };
-
 })();
