@@ -1,4 +1,4 @@
-/* tournament.css v2
+/* tournament.css v3
    MOB BR - Tournament Screen (FULL production layout)
 */
 
@@ -173,7 +173,7 @@
   opacity: .9;
 }
 
-/* ================= LOG ================= */
+/* ================= LOG（3段固定） ================= */
 
 .mobbrTui .tuiLog{
   border-radius: 14px;
@@ -181,18 +181,30 @@
   border: 1px solid rgba(255,255,255,.2);
   padding: 14px;
   text-align: center;
-  min-height: 70px;
+  min-height: 78px;
+  display: grid;
+  gap: 6px;
+  align-content: center;
 }
 
-.mobbrTui .tuiLogMain{
-  font-weight: 1000;
+.mobbrTui .tuiLogLine{
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.mobbrTui .tuiLogL1{
   font-size: 16px;
 }
 
-.mobbrTui .tuiLogSub{
-  margin-top: 6px;
+.mobbrTui .tuiLogL2{
+  font-size: 14px;
+  opacity: .95;
+}
+
+.mobbrTui .tuiLogL3{
   font-size: 13px;
   opacity: .9;
+  font-weight: 700;
 }
 
 /* ================= BOTTOM ================= */
