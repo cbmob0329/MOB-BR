@@ -1,5 +1,5 @@
 /* tournament.css v2
-   MOB BR - Tournament Screen (production layout)
+   MOB BR - Tournament Screen (FULL production layout)
 */
 
 .mobbrTui{
@@ -9,6 +9,7 @@
   pointer-events: none;
   z-index: 9999;
   color: #fff;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
 .mobbrTui.isOpen{
@@ -44,38 +45,36 @@
   box-sizing: border-box;
 }
 
+/* ================= TOP ================= */
+
 .mobbrTui .tuiTop{
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
-.mobbrTui .tuiTop .tuiTitle{
+.mobbrTui .tuiTitle{
   font-weight: 1000;
-  font-size: 14px;
-  opacity: .96;
-  white-space: nowrap;
+  font-size: 15px;
 }
 
-.mobbrTui .tuiTop .tuiMeta{
+.mobbrTui .tuiMeta{
   font-size: 12px;
   opacity: .9;
-  white-space: nowrap;
 }
 
-.mobbrTui .tuiTop .tuiClose{
+.mobbrTui .tuiClose{
   border: 0;
-  background: rgba(255,255,255,.14);
+  background: rgba(255,255,255,.18);
   color: #fff;
   font-weight: 1000;
-  font-size: 12px;
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 12px;
+  padding: 10px 14px;
   touch-action: manipulation;
 }
+
+/* ================= CENTER ================= */
 
 .mobbrTui .tuiCenter{
   display: grid;
@@ -85,12 +84,12 @@
 
 .mobbrTui .tuiSquare{
   width: min(92vw, 520px);
-  aspect-ratio: 1 / 1;
-  border-radius: 16px;
+  aspect-ratio: 1/1;
+  border-radius: 18px;
   overflow: hidden;
   position: relative;
-  background: rgba(0,0,0,.35);
-  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  background: rgba(0,0,0,.45);
+  box-shadow: 0 18px 60px rgba(0,0,0,.6);
 }
 
 .mobbrTui .tuiSquareBg{
@@ -98,8 +97,6 @@
   inset: 0;
   background-size: cover;
   background-position: center;
-  filter: saturate(1.05);
-  opacity: .98;
 }
 
 .mobbrTui .tuiSquareInner{
@@ -108,213 +105,137 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   padding: 14px;
-  box-sizing: border-box;
   gap: 10px;
 }
 
+/* ================= BANNER ================= */
+
 .mobbrTui .tuiBanner{
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(0,0,0,.45);
-  border: 1px solid rgba(255,255,255,.14);
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.18);
 }
 
 .mobbrTui .tuiBanner .left{
   font-weight: 1000;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .mobbrTui .tuiBanner .right{
   font-size: 12px;
-  opacity: .92;
-}
-
-.mobbrTui .tuiScroll{
-  overflow: auto;
-  border-radius: 12px;
-  background: rgba(0,0,0,.35);
-  border: 1px solid rgba(255,255,255,.12);
-  padding: 10px;
-}
-
-.mobbrTui .tuiScroll::-webkit-scrollbar{
-  width: 10px;
-}
-.mobbrTui .tuiScroll::-webkit-scrollbar-thumb{
-  background: rgba(255,255,255,.16);
-  border-radius: 10px;
-}
-
-.mobbrTui .tuiLog{
-  border-radius: 12px;
-  background: rgba(0,0,0,.55);
-  border: 1px solid rgba(255,255,255,.16);
-  padding: 10px 10px;
-  min-height: 66px;
-  display: grid;
-  align-content: center;
-  text-align: center;
-  line-height: 1.35;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.mobbrTui .tuiLog .tuiLogMain{
-  font-weight: 1000;
-  font-size: 15px;
-}
-
-.mobbrTui .tuiLog .tuiLogSub{
-  margin-top: 6px;
-  font-size: 12px;
   opacity: .9;
 }
 
-.mobbrTui .tuiBottom{
+/* ================= SCROLL ================= */
+
+.mobbrTui .tuiScroll{
+  overflow: auto;
+  border-radius: 14px;
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.16);
+  padding: 12px;
+}
+
+.mobbrTui .tuiRow{
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  margin-bottom: 12px;
+
+  cursor: pointer;
+  transition: transform .08s ease, background .15s ease;
 }
 
-.mobbrTui .tuiBtn{
-  border: 0;
-  border-radius: 12px;
-  padding: 12px 12px;
-  font-weight: 1000;
-  font-size: 14px;
-  color: #fff;
-  background: rgba(255,59,48,.92);
-  box-shadow: 0 12px 30px rgba(0,0,0,.35);
-  touch-action: manipulation;
-}
-
-.mobbrTui .tuiBtn:disabled{
-  opacity: .5;
-}
-
-.mobbrTui .tuiBtnGhost{
+.mobbrTui .tuiRow:hover{
   background: rgba(255,255,255,.14);
 }
 
-/* list items */
-.mobbrTui .tuiRow{
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: center;
-  padding: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  margin-bottom: 10px;
-  overflow: hidden;
-}
-
-/* ★押しにくい問題の解決：ボタン化 */
-.mobbrTui .tuiRowBtn{
-  width: 100%;
-  border: 0;
-  background: rgba(255,255,255,.06);
-  color: inherit;
-  text-align: left;
-  padding: 12px 12px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: center;
-  touch-action: manipulation;
-}
-
-.mobbrTui .tuiRowBtn:active{
-  transform: scale(0.99);
-  background: rgba(255,255,255,.10);
+.mobbrTui .tuiRow:active{
+  transform: scale(.98);
 }
 
 .mobbrTui .tuiRow .name{
   font-weight: 1000;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .mobbrTui .tuiRow .tag{
   font-size: 12px;
   opacity: .9;
-  white-space: nowrap;
 }
 
-/* coach skill buttons (将来拡張用) */
-.mobbrTui .tuiSkill{
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.25);
-  border-radius: 12px;
-  padding: 10px 10px;
-  margin-bottom: 10px;
+/* ================= LOG ================= */
+
+.mobbrTui .tuiLog{
+  border-radius: 14px;
+  background: rgba(0,0,0,.65);
+  border: 1px solid rgba(255,255,255,.2);
+  padding: 14px;
+  text-align: center;
+  min-height: 70px;
 }
 
-.mobbrTui .tuiSkill .sTop{
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+.mobbrTui .tuiLogMain{
+  font-weight: 1000;
+  font-size: 16px;
+}
+
+.mobbrTui .tuiLogSub{
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: .9;
+}
+
+/* ================= BOTTOM ================= */
+
+.mobbrTui .tuiBottom{
+  display: grid;
   gap: 10px;
 }
 
-.mobbrTui .tuiSkill .sName{
+.mobbrTui .tuiBtn{
+  border: 0;
+  border-radius: 14px;
+  padding: 14px;
   font-weight: 1000;
-  font-size: 14px;
+  font-size: 15px;
+  background: rgba(255,59,48,.95);
+  color: #fff;
+  touch-action: manipulation;
 }
 
-.mobbrTui .tuiSkill .sState{
-  font-size: 12px;
-  opacity: .9;
-  white-space: nowrap;
+.mobbrTui .tuiBtnGhost{
+  background: rgba(255,255,255,.18);
 }
 
-.mobbrTui .tuiSkill .sDesc{
-  margin-top: 6px;
-  font-size: 12px;
-  opacity: .92;
-  line-height: 1.35;
-}
+/* ================= IMAGE PREVIEW ================= */
 
-.mobbrTui .tuiNote{
-  font-size: 12px;
-  opacity: .9;
-  line-height: 1.35;
-  margin-top: 6px;
-}
-
-/* ===== team image modal ===== */
-.mobbrTui .tuiImgModal{
-  position: absolute;
+.mobbrTui .tuiPreview{
+  position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(0,0,0,.65);
-  padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
-  box-sizing: border-box;
+  display: none;
+  background: rgba(0,0,0,.85);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
 }
 
-.mobbrTui .tuiImgCard{
-  width: min(92vw, 520px);
+.mobbrTui .tuiPreview.show{
+  display: flex;
+}
+
+.mobbrTui .tuiPreview img{
+  max-width: 80vw;
+  max-height: 80vh;
   border-radius: 16px;
-  background: rgba(0,0,0,.80);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 12px;
-  box-shadow: 0 18px 60px rgba(0,0,0,.55);
-}
-
-.mobbrTui .tuiImgTitle{
-  font-weight: 1000;
-  font-size: 14px;
-  margin-bottom: 10px;
-}
-
-.mobbrTui #tuiImgEl{
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 12px;
-  background: rgba(255,255,255,.06);
+  box-shadow: 0 20px 60px rgba(0,0,0,.8);
 }
