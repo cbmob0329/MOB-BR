@@ -1,10 +1,10 @@
-/* ui_tournament.js v3（フル）
-   - チーム紹介は大会開始前（match1のintro）だけ表示 → 試合が始まったら消す
-   - 画像ロード待ち：
-      ・接敵→VS演出の間に左右チーム画像をプリロード
-      ・移動は ido.png → 次エリア背景をプリロード → 到着演出
-   - ログは「流し切ってから」勝敗演出を出す
-   - 勝敗演出は2秒固定表示→NEXTを表示
+/* ui_tournament.js v3.1（フル）
+   ✅修正点：
+   - 「本日の出場チームをご紹介！」を “introStep” で2段階に分離
+     1) テキストだけ
+     2) チーム一覧スクロール表示
+   - その後に coach -> drop へ進む
+   - 既存の接敵→VS→プリロード、ログ完走→勝敗2秒→NEXT、ido移動→画像ロード→到着 は維持
 */
 
 'use strict';
@@ -194,7 +194,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const name = el('div','name');
       const tag = el('div','tag');
 
-      const displayPower = (t.isPlayer ? t.power : t.power);
+      const displayPower = Number.isFinite(Number(t.power)) ? t.power : '';
       name.textContent = (t.isPlayer?'★ ':'') + (t.name || t.id);
       tag.textContent = `総合戦闘力 ${displayPower}`;
 
@@ -204,9 +204,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ===== 演出：接敵→VS =====
+  // ===== 演出：接敵→VS（ロード待ち） =====
   async function contactAndPreload(playerTeamName, enemyTeamName, playerImg, enemyImg){
-    // 先にプリロード開始
     const p1 = preloadImage(playerImg);
     const p2 = preloadImage(enemyImg);
 
@@ -214,11 +213,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await sleep(600);
 
     showBattleBanner(`${playerTeamName}  VS  ${enemyTeamName}!!`);
-    // この間にロード完了させる
     await Promise.all([p1,p2]);
     await sleep(700);
 
-    showBattleBanner(''); // 消す
+    showBattleBanner('');
   }
 
   // ===== 戦闘ログ（高速切替） =====
@@ -231,7 +229,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   ];
 
   async function runBattleLog(){
-    // ランダムで10個、表示→消えるを繰り返し
     const pick = [];
     const src = BATTLE_LINES.slice();
     for(let i=0;i<10;i++){
@@ -240,9 +237,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     for(const line of pick){
-      setCenter3('', '', line);
+      setCenter3('','', line);
       await sleep(140);
-      setCenter3('', '', '');
+      setCenter3('','', '');
       await sleep(90);
     }
   }
@@ -254,16 +251,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await sleep(700);
 
     const info = flow.getAreaInfo(player.areaId);
-    // 次エリア背景のロード待ち
     await preloadImage(info.img);
 
-    // 到着：squareBgを次エリアへ
     setBg('maps/neonmain.png', info.img);
-    setCenter3('', '', `${info.name} へ到着！`);
+    setCenter3('','', `${info.name} へ到着！`);
     await sleep(650);
   }
 
-  // ===== NEXT処理（状態機械はここ）=====
+  // ===== NEXT処理 =====
   async function onNext(){
     if (busy) return;
     const flow = window.MOBBR?.sim?.tournamentFlow;
@@ -274,40 +269,53 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     busy = true;
     try{
-      // intro：チーム紹介（match1だけ）
+      // ===== intro：2段階 =====
       if (st.phase === 'intro'){
-        // 背景：大会背景→tent
-        setBg('maps/neonmain.png', 'tent.png');
-        setBanner(`ローカル大会（試合 ${st.matchIndex}/5）`, '本日の出場チーム');
-        setMeta('');
-        setCenter3('本日の出場チームをご紹介！','','');
-        renderTeamIntroList(st);
+        if (!Number.isFinite(st.introStep)) st.introStep = 0;
 
+        // step0：テキストだけ
+        if (st.introStep === 0){
+          clearTeamList();
+          setBg('maps/neonmain.png', 'tent.png');
+          setBanner(`ローカル大会（試合 ${st.matchIndex}/5）`, '本日の出場チーム');
+          setCenter3('本日の出場チームをご紹介！','','');
+          st.introStep = 1;     // 次で一覧
+          render();
+          return;
+        }
+
+        // step1：一覧スクロールを出す（ここで止める）
+        if (st.introStep === 1){
+          setBg('maps/neonmain.png', 'tent.png');
+          setBanner(`ローカル大会（試合 ${st.matchIndex}/5）`, '出場チーム一覧');
+          setCenter3('','スクロールで確認してね','NEXTで進行');
+          renderTeamIntroList(st);
+          st.introStep = 2;     // 次で coachへ
+          render();
+          return;
+        }
+
+        // step2：一覧を消して coachへ
+        clearTeamList();
         st.phase = 'coach';
         render();
         return;
       }
 
-      // coach：使用するコーチスキルを選択（超簡易：今は「使わない」or装備先頭だけ）
+      // ===== coach =====
       if (st.phase === 'coach'){
         clearTeamList();
 
-        const equipped = flow.getEquippedCoachList();
-        // まずは「使わない」優先（現状UI未実装のため）
-        flow.setCoachSkill(''); // 使わない
+        flow.setCoachSkill(''); // 現状は「使わない」（誤動作防止）
         setCenter3('それでは試合を開始します！','使用するコーチスキルを選択してください！','（現状：使わない）');
         await sleep(700);
-
-        if (equipped.length){
-          // 装備があるなら先頭を「選んだことにする」でも良いが、誤動作を避けて今は使わない固定
-        }
 
         st.phase = 'drop';
         render();
         return;
       }
 
-      // drop：降下開始→エリア表示
+      // ===== drop =====
       if (st.phase === 'drop'){
         flow.initMatchDrop();
         const p = st.teams.find(t=>t.isPlayer);
@@ -317,11 +325,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         setCenter3('バトルスタート！','降下開始…！','');
         await sleep(850);
 
-        // 降下先へ
         await preloadImage(info.img);
         setBg('maps/neonmain.png', info.img);
 
-        const contested = st.playerContestedAtDrop;
+        const contested = !!st.playerContestedAtDrop;
         setCenter3(`${info.name} に降下完了。周囲を確認…`, contested ? '被った…敵影がいる！' : '静かだ…', 'IGLがコール！戦闘準備！');
         await sleep(900);
 
@@ -331,11 +338,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // round：R1〜R6
+      // ===== round =====
       if (st.phase === 'round'){
         const r = st.round;
 
-        // R6：背景を最終へ固定
         if (r === 6){
           const p = st.teams.find(t=>t.isPlayer);
           p.areaId = 25;
@@ -349,7 +355,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           await sleep(500);
         }
 
-        // イベント（プレイヤーだけ表示。回数は仕様通り）
+        // イベント（プレイヤーだけ表示）
         const player = st.teams.find(t=>t.isPlayer);
         const eCount = (r===1)?1:((r>=2&&r<=5)?2:0);
 
@@ -357,65 +363,51 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           if (player && !player.eliminated){
             const ev = flow.applyEventForTeam(player);
             if (ev){
-              // 3段固定＋アイコン演出は今はテキストのみ（画像はcss側で拡張可）
               setCenter3(ev.log1, ev.log2, ev.log3);
               await sleep(850);
             }
           }
         }
 
-        // 交戦（処理→表示）
+        // 交戦（処理）
         const sim = flow.simulateCurrentRound();
         const results = sim.results || [];
 
-        // プレイヤーが絡む交戦だけ表示（CPU同士は裏処理）
-        // ※ resolveBattle のwinner/loserを results から拾う（順序は matches 順）
-        const matches = (flow.getState().teams||[]); // 最新参照
+        // プレイヤー戦のみ表示
         const pNow = st.teams.find(t=>t.isPlayer);
-
-        // 簡易：このラウンドでプレイヤー戦が起きたら「最後のres」で判定（1回想定）
         let playerRes = null;
         if (results.length){
-          // どれがプレイヤー戦か：winnerId/loserId が PLAYER を含むもの
           playerRes = results.find(x=>x.winnerId==='PLAYER' || x.loserId==='PLAYER') || null;
         }
 
         if (pNow && !pNow.eliminated && playerRes){
-          // 敵チームIDを特定
           const enemyId = (playerRes.winnerId === 'PLAYER') ? playerRes.loserId : playerRes.winnerId;
           const enemy = st.teams.find(t=>t.id===enemyId);
 
-          // 左右画像セット（ロード前の演出）
           const pImg = flow.getPlayerSkin();
-          const eImg = `${enemyId}.png`; // 仕様：teamIdと同名png（ルートはプロジェクト直下想定）
-          // ※ cpuフォルダ配下なら `${DataCPU.getAssetBase()}/${enemyId}.png` へ変更してください（今は仕様に合わせて直下）
+          const eImg = `${enemyId}.png`; // ここが違う場合は cpu/${enemyId}.png に変更
 
           await contactAndPreload(pNow.name, enemy.name, pImg, eImg);
 
           setChars(pImg, eImg);
           setNameBoxes(pNow.name,'', enemy.name,'');
 
-          // バトル背景：プレイヤーの現在Area
           const info = flow.getAreaInfo(pNow.areaId);
           await preloadImage(info.img);
           setBg('maps/neonmain.png', info.img);
 
-          // battle開始バナー
           showBattleBanner('BATTLE!!');
           await sleep(350);
           showBattleBanner('');
 
-          // ログを流し切る
           await runBattleLog();
 
-          // 勝敗演出（2秒固定表示→NEXT）
           const win = (playerRes.winnerId === 'PLAYER');
           showBattleBanner(win ? 'WIN!!' : 'LOSE..');
           setCenter3('', '', win ? 'よし！次に備えるぞ！' : 'やられた..');
           await sleep(2000);
           showBattleBanner('');
 
-          // プレイヤーが全滅してたら：高速処理→resultへ
           const pAfter = st.teams.find(t=>t.isPlayer);
           if (pAfter && pAfter.eliminated){
             flow.fastForwardMatchEnd();
@@ -425,7 +417,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           }
         }
 
-        // Round終了：移動（R1-5）
+        // 移動（R1-5）
         if (r <= 5){
           const p = st.teams.find(t=>t.isPlayer);
           if (p && !p.eliminated){
@@ -433,11 +425,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           }
         }
 
-        // 次ラウンドへ
         flow.advanceRoundCounter();
         st.round += 1;
 
-        // R6が終わったらresult
         if (st.round >= 7){
           flow.finishMatchAndBuildResult();
           st.phase = 'result';
@@ -447,7 +437,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // result：1試合リザルト（テーブル表示）
+      // ===== result =====
       if (st.phase === 'result'){
         clearTeamList();
 
@@ -476,7 +466,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           sc.appendChild(row);
         }
 
-        // 次の試合へ or 大会終了
         if (st.matchIndex < st.matchCount){
           st.phase = 'nextMatch';
           setCenter3('NEXTで次の試合へ','','');
@@ -489,10 +478,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // nextMatch：次の試合へ
+      // ===== nextMatch =====
       if (st.phase === 'nextMatch'){
         flow.startNextMatch();
-        st.phase = 'drop'; // チーム紹介は最初だけなのでskip
+        st.phase = 'drop'; // チーム紹介は最初だけ
+        st.introStep = 99; // 念のため固定
         setBg('maps/neonmain.png','tent.png');
         setCenter3(`試合 ${st.matchIndex}/5 を開始します！`,'','');
         await sleep(650);
@@ -500,7 +490,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // tournamentEnd：終了→メインへ
+      // ===== tournamentEnd =====
       if (st.phase === 'tournamentEnd'){
         close();
         window.dispatchEvent(new Event('mobbr:goTitle'));
@@ -509,6 +499,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     } finally{
       busy = false;
+      if (root){
+        const btn = root.querySelector('.tuiBtn');
+        if (btn) btn.disabled = false;
+      }
     }
   }
 
@@ -521,48 +515,33 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     ensureRoot();
 
-    // meta
     setMeta(`試合 ${st.matchIndex}/5  /  R${st.round||1}  /  ${st.phase||''}`);
 
-    // bg
     setBg('maps/neonmain.png', st.ui?.squareBg || 'tent.png');
 
-    // banner
     setBanner(st.bannerLeft||'ローカル大会', st.bannerRight||'');
 
-    // chars
     const pSkin = flow.getPlayerSkin();
     setChars(pSkin, st.ui?.rightImg || '');
 
-    // 初期：名前箱は消しておく（戦闘時だけ入る）
+    // intro中は一覧を renderTeamIntroList するのでここでは触らない
+    // それ以外は基本一覧を消す（result除く）
+    if (st.phase !== 'intro' && st.phase !== 'result'){
+      clearTeamList();
+    }
+
     if (st.phase !== 'round'){
       setNameBoxes('','','','');
       setChars(pSkin,'');
       showBattleBanner('');
     }
 
-    // introのときだけ一覧を描画（それ以外はUI側で消す）
-    if (st.phase === 'intro'){
-      renderTeamIntroList(st);
-    }else if (st.phase !== 'result'){
-      clearTeamList();
-    }
-
-    // center3は状況により onNext が上書きするので、空なら最低限
-    if (!root.querySelector('.tuiLogL1').textContent &&
-        !root.querySelector('.tuiLogL2').textContent &&
-        !root.querySelector('.tuiLogL3').textContent){
-      setCenter3('','','');
-    }
-
-    // nextボタン（常時表示だがbusy中は無効）
     const btn = root.querySelector('.tuiBtn');
     btn.disabled = !!busy;
   }
 
   window.MOBBR.ui.tournament = { open, close, render };
 
-  // app.js が呼ぶ初期化口
   window.MOBBR.initTournamentUI = function(){
     ensureRoot();
     close();
