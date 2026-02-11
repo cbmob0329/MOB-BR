@@ -1,13 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v2（フル）
+  ui_tournament.js v3（フル）
   - 大会UI：mobbrTui（overlay）
-  - チーム行は「押せるボタン」扱い（当たり判定を行全体へ）
+  - チーム行は「押せるボタン」扱い（行全体が当たり判定）
   - チーム名タップで「チーム画像プレビュー」
-    ・プレイヤー：P1.png（将来P2/P3対応余地）
-    ・CPU：DataCPU.getAssetBase() + '/' + teamId + '.png'（例：cpu/TEAM_01.png）
-  - sim_tournament_flow.js が持つ state を描画して進行
+    ・プレイヤー：P1.png
+    ・CPU：DataCPU.getAssetBase() + '/' + teamId + '.png'
+  - 中央ログは必ず3段固定（log1/log2/log3）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -37,7 +37,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function guessPlayerImage(){
-    // 今は P1.png を採用（仕様の「前面にプレイヤーチーム画像」）
     return 'P1.png';
   }
 
@@ -76,9 +75,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const img = pv.querySelector('img');
     if (!img) return;
 
-    // 失敗しても落とさない
     img.onerror = () => {
-      // 404でも真っ黒にならないよう、閉じずに「無い」だけで済ませる
       img.onerror = null;
       img.alt = '画像が見つかりません';
     };
@@ -96,11 +93,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (root) return root;
 
     root = el('div', 'mobbrTui');
-    root.classList.add('isOpen');
-    root.setAttribute('aria-hidden', 'false');
+    root.setAttribute('aria-hidden', 'true');
 
     const bg = el('div', 'tuiBg');
-    // 背景は真っ黒でOK（必要なら画像に差し替え）
     root.appendChild(bg);
 
     const wrap = el('div', 'tuiWrap');
@@ -127,8 +122,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const square = el('div', 'tuiSquare');
 
     const squareBg = el('div', 'tuiSquareBg');
-    // 大会到着レイアウト：テント背景などがあるなら tent.png
-    // 無くても黒で成立する
     squareBg.style.backgroundImage = `url("tent.png")`;
     square.appendChild(squareBg);
 
@@ -143,10 +136,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const scroll = el('div', 'tuiScroll');
 
     const log = el('div', 'tuiLog');
-    const logMain = el('div', 'tuiLogMain');
-    const logSub = el('div', 'tuiLogSub');
-    log.appendChild(logMain);
-    log.appendChild(logSub);
+    const log1 = el('div', 'tuiLogLine tuiLogL1');
+    const log2 = el('div', 'tuiLogLine tuiLogL2');
+    const log3 = el('div', 'tuiLogLine tuiLogL3');
+    log.appendChild(log1);
+    log.appendChild(log2);
+    log.appendChild(log3);
 
     inner.appendChild(banner);
     inner.appendChild(scroll);
@@ -172,7 +167,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const btnGhost = el('button', 'tuiBtn tuiBtnGhost');
     btnGhost.type = 'button';
-    btnGhost.textContent = 'チーム画像（プレイヤー）';
+    btnGhost.textContent = 'プレイヤー画像';
     btnGhost.addEventListener('click', ()=>{
       openPreview(root, guessPlayerImage());
     });
@@ -187,6 +182,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     root.appendChild(wrap);
     document.body.appendChild(root);
 
+    ensurePreview(root);
     return root;
   }
 
@@ -199,50 +195,59 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const bL = r.querySelector('.tuiBanner .left');
     const bR = r.querySelector('.tuiBanner .right');
     const scroll = r.querySelector('.tuiScroll');
-    const logMain = r.querySelector('.tuiLogMain');
-    const logSub = r.querySelector('.tuiLogSub');
+    const log1 = r.querySelector('.tuiLogL1');
+    const log2 = r.querySelector('.tuiLogL2');
+    const log3 = r.querySelector('.tuiLogL3');
 
     if (!state){
       safeText(meta, '');
       safeText(bL, '大会');
       safeText(bR, '');
       if (scroll) scroll.innerHTML = '';
-      safeText(logMain, '大会データなし');
-      safeText(logSub, 'BATTLEから開始してください');
+      safeText(log1, '大会データなし');
+      safeText(log2, '');
+      safeText(log3, 'BATTLEから開始してください');
       return;
     }
 
-    // meta
     const round = state.round ?? 1;
     const phase = state.phase ?? 'start';
     safeText(meta, `R${round} / ${phase}`);
 
-    // banner
     safeText(bL, state.bannerLeft || `ROUND ${round}`);
     safeText(bR, state.bannerRight || '');
 
-    // log（プレイヤー視点ログのみ）
+    // ログ：最後のログ（3段固定）
     const last = (state.logs && state.logs.length) ? state.logs[state.logs.length - 1] : null;
-    safeText(logMain, last?.main || state.logMain || '大会開始');
-    safeText(logSub, last?.sub || state.logSub || '');
+
+    safeText(log1, last?.log1 || state.log1 || '大会開始');
+    safeText(log2, last?.log2 || state.log2 || '');
+    safeText(log3, last?.log3 || state.log3 || '');
 
     // list
     if (scroll){
       scroll.innerHTML = '';
 
       const teams = Array.isArray(state.teams) ? state.teams.slice() : [];
-      // 表示：aliveが多い順→名前
       teams.sort((a,b)=>{
-        const aa = (a.eliminated? -999 : (a.alive||0));
-        const bb = (b.eliminated? -999 : (b.alive||0));
+        const aa = (a.eliminated ? -999 : (a.alive||0));
+        const bb = (b.eliminated ? -999 : (b.alive||0));
         if (bb !== aa) return bb - aa;
+
+        const ta = a.treasure || 0;
+        const tb = b.treasure || 0;
+        if (tb !== ta) return tb - ta;
+
+        const fa = a.flag || 0;
+        const fb = b.flag || 0;
+        if (fb !== fa) return fb - fa;
+
         return String(a.name||'').localeCompare(String(b.name||''), 'ja');
       });
 
       teams.forEach((t, idx)=>{
         const row = el('div', 'tuiRow');
 
-        // 押しやすく：行全体でタップOK
         row.addEventListener('click', ()=>{
           const src = getTeamImageSrc(t);
           if (src) openPreview(r, src);
@@ -254,29 +259,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const alive = (t.alive ?? 0);
         const status = t.eliminated ? '全滅' : `生存${alive}`;
 
-        // プレイヤー強調
         const nm = (t.isPlayer ? '★ ' : '') + (t.name || t.id || `TEAM ${idx+1}`);
         safeText(name, nm);
 
-        // 追加情報（宝/旗/downs_total）
         const treasure = t.treasure || 0;
         const flag = t.flag || 0;
-        const downs = t.downs_total || 0;
+        const extra = `お宝${treasure} / フラッグ${flag}`;
 
-        let extra = '';
-        if (treasure || flag) extra += ` / お宝${treasure} フラッグ${flag}`;
-        extra += ` / downs${downs}`;
+        safeText(tag, `${status} / ${extra}`);
 
-        safeText(tag, `${status}${extra}`);
-
-        // eliminatedなら薄く
         if (t.eliminated){
           row.style.opacity = '0.55';
         }else{
           row.style.opacity = '1';
         }
 
-        // プレイヤーは枠色で目立たせる
         if (t.isPlayer){
           row.style.border = '1px solid rgba(255,59,48,.55)';
           row.style.background = 'rgba(255,59,48,.10)';
@@ -284,7 +281,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
         row.appendChild(name);
         row.appendChild(tag);
-
         scroll.appendChild(row);
       });
     }
@@ -307,10 +303,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     root.setAttribute('aria-hidden', 'true');
   }
 
-  // expose
   window.MOBBR.ui.tournament = { open, close, render };
 
-  // init（ロードされたら作るだけ。表示はFlow.startで）
   document.addEventListener('DOMContentLoaded', ()=> {
     ensureRoot();
     close();
