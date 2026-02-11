@@ -2,36 +2,30 @@
 
 /*
   ui_tournament.js v4（フル）
-  - 大会UI：mobbrTui（overlay）
-  - チーム行は「押せるボタン」扱い（当たり判定を行全体へ）
-  - チーム名タップで「チーム画像プレビュー」
-    ・プレイヤー：P1.png（将来P2/P3対応余地）
-    ・CPU：DataCPU.getAssetBase() + '/' + teamId + '.png'
-  - sim_tournament_flow.js の state を描画して進行
-  - ✅交戦演出（UI側）
-      * brbattle.png を表示
-      * 10ログ高速切替（順番）
-      * brwin.png / brlose.png を表示
-      * 最後に勝敗セリフ → NEXT復帰
+  ✅追加：
+  - state.battleView があれば「戦闘演出レイヤー」を表示（brbattle/brwin/brlose）
+  - state.matchResult があれば「1試合result表」を表示
+  - state.tournamentResult があれば「大会result表」を表示
+  - state.bgImage を正方形背景に反映（maps/* / tent / ido / battle.png）
 */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
-  const $ = (id) => document.getElementById(id);
-
   function el(tag, cls){
     const d = document.createElement(tag);
     if (cls) d.className = cls;
     return d;
   }
-
   function safeText(node, t){
     if (!node) return;
     node.textContent = String(t ?? '');
   }
 
+  function guessPlayerImage(){
+    return 'P1.png';
+  }
   function getCpuBase(){
     try{
       if (window.DataCPU && typeof window.DataCPU.getAssetBase === 'function'){
@@ -40,11 +34,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(e){}
     return 'cpu';
   }
-
-  function guessPlayerImage(){
-    return 'P1.png';
-  }
-
   function getTeamImageSrc(team){
     if (!team) return '';
     if (team.isPlayer) return guessPlayerImage();
@@ -52,7 +41,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return `${base}/${team.id}.png`;
   }
 
-  // ===== Image Preview (fullscreen) =====
+  // ========= image preview =========
   function ensurePreview(root){
     let pv = root.querySelector('.tuiPreview');
     if (pv) return pv;
@@ -90,49 +79,222 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     pv.setAttribute('aria-hidden', 'false');
   }
 
-  // ===== Battle lines (順番固定) =====
-  const BATTLE_LINES = [
-    'やってやんべ！',
-    '裏取るぞ！',
-    '展開する！',
-    'サポートするぞ！',
-    'うわあー！',
-    'ミスった！',
-    '一気に行くぞ！',
-    '今のうちに回復だ！',
-    '絶対勝つぞ！',
-    '撃て―！'
-  ];
+  // ========= battle overlay =========
+  function ensureBattleLayer(root){
+    let lay = root.querySelector('.tuiBattle');
+    if (lay) return lay;
 
-  const WIN_LINES = [
-    'よし！次に備えるぞ！',
-    'やったー！勝ったぞ！',
-    'ナイスー！'
-  ];
+    lay = el('div', 'tuiBattle');
+    lay.setAttribute('aria-hidden', 'true');
 
-  const LOSE_LINES = [
-    'やられた..',
-    '次だ次！',
-    '負けちまった..'
-  ];
+    const top = el('div', 'tuiBattleTop');
+    const topImg = document.createElement('img');
+    topImg.className = 'tuiBattleTopImg';
+    topImg.alt = 'battle banner';
+    topImg.draggable = false;
+    top.appendChild(topImg);
 
-  function pickOne(list){
-    if (!Array.isArray(list) || list.length === 0) return '';
-    return list[(Math.random()*list.length)|0] || '';
+    const mid = el('div', 'tuiBattleMid');
+
+    const left = el('div', 'tuiBattleSide left');
+    const leftName = el('div', 'tuiBattleName');
+    const leftImg = document.createElement('img');
+    leftImg.className = 'tuiBattleImg';
+    leftImg.alt = 'player team';
+    leftImg.draggable = false;
+    left.appendChild(leftName);
+    left.appendChild(leftImg);
+
+    const right = el('div', 'tuiBattleSide right');
+    const rightName = el('div', 'tuiBattleName');
+    const rightImg = document.createElement('img');
+    rightImg.className = 'tuiBattleImg';
+    rightImg.alt = 'enemy team';
+    rightImg.draggable = false;
+    right.appendChild(rightName);
+    right.appendChild(rightImg);
+
+    mid.appendChild(left);
+    mid.appendChild(right);
+
+    const log = el('div', 'tuiBattleLog');
+    const logLine = el('div', 'tuiBattleLine');
+    log.appendChild(logLine);
+
+    const resultImg = document.createElement('img');
+    resultImg.className = 'tuiBattleResultImg';
+    resultImg.alt = 'battle result';
+    resultImg.draggable = false;
+
+    lay.appendChild(top);
+    lay.appendChild(mid);
+    lay.appendChild(resultImg);
+    lay.appendChild(log);
+
+    root.appendChild(lay);
+    return lay;
   }
 
-  // ===== UI Root =====
-  let root = null;
-  let lastState = null;
-  let animating = false;
-  let animTimer = null;
-
-  function clearAnimTimer(){
-    if (animTimer){
-      clearInterval(animTimer);
-      animTimer = null;
+  let battleTimer = null;
+  function stopBattleAnim(){
+    if (battleTimer){
+      clearInterval(battleTimer);
+      battleTimer = null;
     }
   }
+
+  function renderBattleLayer(root, state){
+    const lay = ensureBattleLayer(root);
+    const bv = state?.battleView;
+
+    if (!bv){
+      stopBattleAnim();
+      lay.classList.remove('show');
+      lay.setAttribute('aria-hidden', 'true');
+      return;
+    }
+
+    lay.classList.add('show');
+    lay.setAttribute('aria-hidden', 'false');
+
+    const topImg = lay.querySelector('.tuiBattleTopImg');
+    const leftName = lay.querySelector('.tuiBattleSide.left .tuiBattleName');
+    const rightName = lay.querySelector('.tuiBattleSide.right .tuiBattleName');
+    const leftImg = lay.querySelector('.tuiBattleSide.left .tuiBattleImg');
+    const rightImg = lay.querySelector('.tuiBattleSide.right .tuiBattleImg');
+    const resultImg = lay.querySelector('.tuiBattleResultImg');
+    const logLine = lay.querySelector('.tuiBattleLine');
+
+    // bg は squareBg が担当（Flow側で state.bgImage が maps に入ってる）
+    if (topImg) topImg.src = 'brbattle.png';
+
+    safeText(leftName, bv.playerTeamName || 'PLAYER');
+    safeText(rightName, bv.enemyTeamName || 'ENEMY');
+
+    if (leftImg) leftImg.src = guessPlayerImage();
+    if (rightImg) rightImg.src = `${getCpuBase()}/${bv.enemyTeamId}.png`;
+
+    // 戦闘中は結果非表示
+    if (resultImg){
+      resultImg.style.opacity = '0';
+      resultImg.src = '';
+    }
+
+    // ランダム高速切り替え（10個）
+    stopBattleAnim();
+    const lines = Array.isArray(bv.chatter) ? bv.chatter.slice() : [];
+    let idx = 0;
+
+    // ウルトは厳密実装前なので「ランダムで1回だけ混ぜる」だけ（ログ演出要件を先に満たす）
+    if (lines.length >= 6 && Math.random() < 0.35){
+      lines[(Math.random()*lines.length)|0] = 'ウルト行くぞ！';
+    }
+
+    if (logLine) safeText(logLine, lines[0] || '交戦中…');
+
+    battleTimer = setInterval(()=>{
+      idx++;
+      if (idx < lines.length){
+        if (logLine) safeText(logLine, lines[idx]);
+        return;
+      }
+
+      // 終了
+      stopBattleAnim();
+
+      const res = bv.result;
+      if (resultImg){
+        if (res === 'win' || res === 'champ') resultImg.src = 'brwin.png';
+        else resultImg.src = 'brlose.png';
+        resultImg.style.opacity = '1';
+      }
+
+      if (logLine) safeText(logLine, bv.afterLine || '');
+    }, 180);
+  }
+
+  // ========= results table =========
+  function buildTableRow(cells, cls){
+    const tr = document.createElement('tr');
+    if (cls) tr.className = cls;
+    for (const c of cells){
+      const td = document.createElement('td');
+      td.textContent = String(c ?? '');
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  function renderResultPanel(root, state){
+    const box = root.querySelector('.tuiResult');
+    if (!box) return;
+
+    const mr = state?.matchResult;
+    const tr = state?.tournamentResult;
+
+    // 何も無いなら隠す
+    if (!mr && !tr){
+      box.classList.remove('show');
+      box.setAttribute('aria-hidden', 'true');
+      box.innerHTML = '';
+      return;
+    }
+
+    box.classList.add('show');
+    box.setAttribute('aria-hidden', 'false');
+    box.innerHTML = '';
+
+    const title = el('div', 'tuiResultTitle');
+    const tableWrap = el('div', 'tuiResultTableWrap');
+
+    const table = document.createElement('table');
+    table.className = 'tuiTable';
+
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+
+    if (mr){
+      safeText(title, `RESULT（試合 ${mr.matchIndex}/5）`);
+
+      thead.appendChild(buildTableRow(
+        ['Placement','Squad','KP','AP','Treasure','Flag','Total','PlacementP'],
+        'head'
+      ));
+
+      for (const r of (mr.rows || [])){
+        tbody.appendChild(buildTableRow(
+          [r.placement, r.squad, r.kp, r.ap, r.treasure, r.flag, r.total, r.placementP],
+          r.teamId === 'PLAYER' ? 'me' : ''
+        ));
+      }
+    }else{
+      safeText(title, 'TOURNAMENT RESULT（5試合合算）');
+
+      thead.appendChild(buildTableRow(
+        ['Rank','Squad','総合P','総合順位P','KP','AP','Treasure','Flag'],
+        'head'
+      ));
+
+      const rows = (tr.rows || []);
+      rows.forEach((r, i)=>{
+        tbody.appendChild(buildTableRow(
+          [i+1, r.squad, r.totalP, r.sumPlacementP, r.kp, r.ap, r.treasure, r.flag],
+          r.teamId === 'PLAYER' ? 'me' : ''
+        ));
+      });
+    }
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+
+    box.appendChild(title);
+    box.appendChild(tableWrap);
+  }
+
+  // ========= UI root =========
+  let root = null;
+  let state = null;
 
   function ensureRoot(){
     if (root) return root;
@@ -142,8 +304,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     root.setAttribute('aria-hidden', 'false');
 
     const bg = el('div', 'tuiBg');
-    // 大会背景（なければ黒でOK）
-    bg.style.backgroundImage = `url("neonmain.png")`;
     root.appendChild(bg);
 
     const wrap = el('div', 'tuiWrap');
@@ -152,7 +312,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const top = el('div', 'tuiTop');
     const title = el('div', 'tuiTitle');
     title.textContent = 'ローカル大会';
-
     const meta = el('div', 'tuiMeta');
     meta.textContent = '';
 
@@ -171,7 +330,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const square = el('div', 'tuiSquare');
 
     const squareBg = el('div', 'tuiSquareBg');
-    squareBg.style.backgroundImage = `url("tent.png")`;
     square.appendChild(squareBg);
 
     const inner = el('div', 'tuiSquareInner');
@@ -182,368 +340,170 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     banner.appendChild(bL);
     banner.appendChild(bR);
 
-    // ✅ battle stage block
-    const stage = el('div', 'tuiStage');
-    stage.style.display = 'none';
-
-    const leftSide = el('div', 'tuiSide');
-    const leftName = el('div', 'tuiSideName');
-    const leftImg = document.createElement('img');
-    leftImg.className = 'tuiSideImg';
-    leftImg.alt = 'player';
-    leftImg.draggable = false;
-    leftSide.appendChild(leftName);
-    leftSide.appendChild(leftImg);
-
-    const rightSide = el('div', 'tuiSide');
-    const rightName = el('div', 'tuiSideName');
-    const rightImg = document.createElement('img');
-    rightImg.className = 'tuiSideImg';
-    rightImg.alt = 'enemy';
-    rightImg.draggable = false;
-    rightSide.appendChild(rightName);
-    rightSide.appendChild(rightImg);
-
-    // brbattle (top)
-    const battleTop = el('div', 'tuiBattleTop');
-    const battleTopImg = document.createElement('img');
-    battleTopImg.alt = 'battle';
-    battleTopImg.draggable = false;
-    battleTopImg.src = 'brbattle.png';
-    battleTop.appendChild(battleTopImg);
-
-    // brwin/lose (center)
-    const battleResult = el('div', 'tuiBattleResult');
-    const battleResultImg = document.createElement('img');
-    battleResultImg.alt = 'result';
-    battleResultImg.draggable = false;
-    battleResult.appendChild(battleResultImg);
-
-    stage.appendChild(leftSide);
-    stage.appendChild(rightSide);
-    stage.appendChild(battleTop);
-    stage.appendChild(battleResult);
-
-    // scroll list (teams)
     const scroll = el('div', 'tuiScroll');
 
-    // central log (3段対応：Main / Mid / Sub)
-    const log = el('div', 'tuiLog');
-    const logMain = el('div', 'tuiLogMain');
-    const logMid  = el('div', 'tuiLogMid');
-    const logSub  = el('div', 'tuiLogSub');
-    log.appendChild(logMain);
-    log.appendChild(logMid);
-    log.appendChild(logSub);
+    // result panel（同じ枠内に表示）
+    const resultBox = el('div', 'tuiResult');
+    resultBox.setAttribute('aria-hidden', 'true');
 
-    // battle log box (高速切替用)
-    const bLog = el('div', 'tuiBattleLog');
-    const bLine = el('div', 'tuiBattleLine');
-    bLog.appendChild(bLine);
+    const log = el('div', 'tuiLog');
+    const log1 = el('div', 'tuiLogL1');
+    const log2 = el('div', 'tuiLogL2');
+    const log3 = el('div', 'tuiLogL3');
+    log.appendChild(log1);
+    log.appendChild(log2);
+    log.appendChild(log3);
 
     inner.appendChild(banner);
-    inner.appendChild(stage);
     inner.appendChild(scroll);
+    inner.appendChild(resultBox);
     inner.appendChild(log);
-    inner.appendChild(bLog);
 
     square.appendChild(inner);
     center.appendChild(square);
 
     // BOTTOM
     const bottom = el('div', 'tuiBottom');
-
     const btnNext = el('button', 'tuiBtn');
     btnNext.type = 'button';
     btnNext.textContent = '次へ';
-
-    const btnGhost = el('button', 'tuiBtn tuiBtnGhost');
-    btnGhost.type = 'button';
-    btnGhost.textContent = 'チーム画像（プレイヤー）';
-    btnGhost.addEventListener('click', ()=>{
-      openPreview(root, guessPlayerImage());
-    });
-
-    btnNext.addEventListener('click', async ()=>{
-      if (animating) return;
-
+    btnNext.addEventListener('click', ()=>{
       const Flow = window.MOBBR?.sim?.tournamentFlow;
       if (!Flow || typeof Flow.step !== 'function'){
         alert('大会進行が見つかりません（sim_tournament_flow.js 読み込みを確認）');
         return;
       }
-
-      // 直前state
-      const before = Flow.getState?.() || null;
-
-      // 進行
       Flow.step();
-
-      // 直後state
-      const after = Flow.getState?.() || null;
-
-      // 描画（いったん）
       render();
+    });
 
-      // ✅プレイヤー交戦ログが増えたタイミングだけ演出
-      try{
-        await maybePlayBattleAnimation(before, after);
-      }catch(e){
-        // 演出失敗しても進行は落とさない
-        console.warn(e);
-      }finally{
-        render();
-      }
+    const btnPlayerImg = el('button', 'tuiBtn tuiBtnGhost');
+    btnPlayerImg.type = 'button';
+    btnPlayerImg.textContent = 'チーム画像（プレイヤー）';
+    btnPlayerImg.addEventListener('click', ()=>{
+      openPreview(root, guessPlayerImage());
     });
 
     bottom.appendChild(btnNext);
-    bottom.appendChild(btnGhost);
+    bottom.appendChild(btnPlayerImg);
 
     wrap.appendChild(top);
     wrap.appendChild(center);
     wrap.appendChild(bottom);
 
     root.appendChild(wrap);
-    document.body.appendChild(root);
 
+    // battle layer
+    ensureBattleLayer(root);
+
+    document.body.appendChild(root);
     return root;
   }
 
-  function getUiNodes(){
-    const r = ensureRoot();
-    return {
-      r,
-      bg: r.querySelector('.tuiBg'),
-      meta: r.querySelector('.tuiMeta'),
-      bL: r.querySelector('.tuiBanner .left'),
-      bR: r.querySelector('.tuiBanner .right'),
-      squareBg: r.querySelector('.tuiSquareBg'),
-      scroll: r.querySelector('.tuiScroll'),
-      logMain: r.querySelector('.tuiLogMain'),
-      logMid: r.querySelector('.tuiLogMid'),
-      logSub: r.querySelector('.tuiLogSub'),
-      stage: r.querySelector('.tuiStage'),
-      leftName: r.querySelector('.tuiStage .tuiSide:nth-child(1) .tuiSideName'),
-      leftImg: r.querySelector('.tuiStage .tuiSide:nth-child(1) img'),
-      rightName: r.querySelector('.tuiStage .tuiSide:nth-child(2) .tuiSideName'),
-      rightImg: r.querySelector('.tuiStage .tuiSide:nth-child(2) img'),
-      battleTop: r.querySelector('.tuiBattleTop'),
-      battleResult: r.querySelector('.tuiBattleResult'),
-      battleResultImg: r.querySelector('.tuiBattleResult img'),
-      battleLog: r.querySelector('.tuiBattleLog'),
-      battleLine: r.querySelector('.tuiBattleLine'),
-      btnNext: r.querySelector('.tuiBottom .tuiBtn')
-    };
-  }
-
-  function extractOpponentNameFromSub(sub){
-    // 例：`相手：TEAM（相手生存2）/ 自軍生存3`
-    const s = String(sub || '');
-    const m = s.match(/相手：([^（/]+)\s*/);
-    if (m && m[1]) return m[1].trim();
-    return '';
-  }
-
-  function findCpuTeamByName(state, nm){
-    if (!state || !Array.isArray(state.teams)) return null;
-    const s = String(nm || '');
-    if (!s) return null;
-    // name完全一致優先
-    let t = state.teams.find(x => String(x.name||'') === s);
-    if (t) return t;
-    // 部分一致
-    t = state.teams.find(x => String(x.name||'').includes(s));
-    return t || null;
-  }
-
-  function isPlayerFightLog(entry){
-    const main = String(entry?.main || '');
-    return (main === 'ファイト勝利！' || main === 'ファイト敗北…');
-  }
-
-  function maybeGetNewLastLog(before, after){
-    const b = (before?.logs && before.logs.length) ? before.logs[before.logs.length-1] : null;
-    const a = (after?.logs && after.logs.length) ? after.logs[after.logs.length-1] : null;
-    if (!a) return null;
-    // beforeと同一参照っぽい場合でも main/sub で差分判定
-    if (!b) return a;
-    if (String(a.main||'') !== String(b.main||'') || String(a.sub||'') !== String(b.sub||'')) return a;
-    return null;
-  }
-
-  async function maybePlayBattleAnimation(before, after){
-    const newLast = maybeGetNewLastLog(before, after);
-    if (!newLast) return;
-
-    if (!isPlayerFightLog(newLast)) return;
-
-    const ui = getUiNodes();
-
-    const player = (after?.teams || []).find(t => t.isPlayer) || null;
-    const enemyName = extractOpponentNameFromSub(newLast.sub);
-    const enemy = findCpuTeamByName(after, enemyName);
-
-    // 画像セット（無くても落とさない）
-    ui.stage.style.display = 'grid';
-    safeText(ui.leftName, player?.name ? `★ ${player.name}` : '★ PLAYER');
-    safeText(ui.rightName, enemy?.name || enemyName || 'ENEMY');
-
-    ui.leftImg.onerror = ()=>{ ui.leftImg.onerror=null; };
-    ui.rightImg.onerror = ()=>{ ui.rightImg.onerror=null; };
-
-    ui.leftImg.src = guessPlayerImage();
-    ui.rightImg.src = enemy ? getTeamImageSrc(enemy) : (enemyName ? `${getCpuBase}/${enemyName}.png` : '');
-
-    // battle overlay on
-    ui.battleTop.classList.add('show');
-    ui.battleResult.classList.remove('show');
-    ui.battleLog.classList.add('show');
-
-    // NEXT無効化（連打防止）
-    animating = true;
-    if (ui.btnNext) ui.btnNext.disabled = true;
-
-    // 戦闘ログ高速切替（順番で10個）
-    let idx = 0;
-    safeText(ui.battleLine, BATTLE_LINES[0] || '');
-    clearAnimTimer();
-
-    await new Promise((resolve)=>{
-      animTimer = setInterval(()=>{
-        idx++;
-        if (idx >= BATTLE_LINES.length){
-          clearAnimTimer();
-          resolve();
-          return;
-        }
-        safeText(ui.battleLine, BATTLE_LINES[idx]);
-      }, 140); // 高速
-    });
-
-    // 少し間
-    await new Promise(r=>setTimeout(r, 220));
-
-    // 勝敗
-    const won = (String(newLast.main||'') === 'ファイト勝利！');
-    ui.battleTop.classList.remove('show');
-    ui.battleResultImg.src = won ? 'brwin.png' : 'brlose.png';
-    ui.battleResult.classList.add('show');
-
-    // 最終セリフ
-    await new Promise(r=>setTimeout(r, 280));
-    safeText(ui.battleLine, won ? pickOne(WIN_LINES) : pickOne(LOSE_LINES));
-
-    // しばらく見せる
-    await new Promise(r=>setTimeout(r, 520));
-
-    // battle UI off（結果はログ枠に残る）
-    ui.battleResult.classList.remove('show');
-    ui.battleLog.classList.remove('show');
-    ui.stage.style.display = 'none';
-
-    animating = false;
-    if (ui.btnNext) ui.btnNext.disabled = false;
-  }
-
   function render(){
-    const ui = getUiNodes();
+    const r = ensureRoot();
+    state = window.MOBBR?.sim?.tournamentFlow?.getState?.() || state;
 
-    const Flow = window.MOBBR?.sim?.tournamentFlow;
-    const state = Flow?.getState?.() || null;
-    lastState = state;
+    const title = r.querySelector('.tuiTitle');
+    const meta  = r.querySelector('.tuiMeta');
+    const bL    = r.querySelector('.tuiBanner .left');
+    const bR    = r.querySelector('.tuiBanner .right');
+    const scroll= r.querySelector('.tuiScroll');
+    const bg    = r.querySelector('.tuiSquareBg');
+
+    const log1 = r.querySelector('.tuiLogL1');
+    const log2 = r.querySelector('.tuiLogL2');
+    const log3 = r.querySelector('.tuiLogL3');
 
     if (!state){
-      safeText(ui.meta, '');
-      safeText(ui.bL, '大会');
-      safeText(ui.bR, '');
-      if (ui.scroll) ui.scroll.innerHTML = '';
-      safeText(ui.logMain, '大会データなし');
-      safeText(ui.logMid, '');
-      safeText(ui.logSub, 'BATTLEから開始してください');
+      safeText(title, '大会');
+      safeText(meta, '');
+      safeText(bL, '大会');
+      safeText(bR, '');
+      if (bg) bg.style.backgroundImage = '';
+      if (scroll) scroll.innerHTML = '';
+      safeText(log1, '大会データなし');
+      safeText(log2, 'BATTLEから開始してください');
+      safeText(log3, '');
+      renderBattleLayer(r, null);
+      renderResultPanel(r, null);
       return;
     }
 
-    // meta
+    safeText(title, state.mode === 'local' ? 'ローカル大会' : '大会');
+
     const round = state.round ?? 1;
-    const phase = state.phase ?? 'start';
-    safeText(ui.meta, `R${round} / ${phase}`);
+    const phase = state.phase ?? '';
+    const matchIndex = state.matchIndex ?? 1;
+    safeText(meta, `試合${matchIndex}/5  /  R${round}  /  ${phase}`);
 
-    // banner
-    safeText(ui.bL, state.bannerLeft || `ROUND ${round}`);
-    safeText(ui.bR, state.bannerRight || '');
+    safeText(bL, state.bannerLeft || '');
+    safeText(bR, state.bannerRight || '');
 
-    // square bg（Flow側が差し込めるように）
-    // 例：state.squareBg = 'tent.png' / 'maps/xxx.png' / 'ido.png'
-    if (ui.squareBg && state.squareBg){
-      ui.squareBg.style.backgroundImage = `url("${state.squareBg}")`;
-    }
+    const bgSrc = state.bgImage || 'tent.png';
+    if (bg) bg.style.backgroundImage = `url("${bgSrc}")`;
 
-    // central log（3段対応。無ければ従来の main/sub を使う）
     const last = (state.logs && state.logs.length) ? state.logs[state.logs.length - 1] : null;
+    safeText(log1, last?.l1 || '');
+    safeText(log2, last?.l2 || '');
+    safeText(log3, last?.l3 || '');
 
-    // event v2（log1/log2/log3）にも後で対応できるよう、state.currentEvent を見に行く
-    if (state.currentEvent && (state.currentEvent.log1 || state.currentEvent.log2 || state.currentEvent.log3)){
-      safeText(ui.logMain, state.currentEvent.log1 || 'イベント発生！');
-      safeText(ui.logMid,  state.currentEvent.log2 || '');
-      safeText(ui.logSub,  state.currentEvent.log3 || '');
-    }else{
-      safeText(ui.logMain, last?.main || state.logMain || '大会開始');
-      safeText(ui.logMid,  ''); // v2では中段が無いので空
-      safeText(ui.logSub,  last?.sub || state.logSub || '');
-    }
+    // 戦闘レイヤー
+    renderBattleLayer(r, state);
 
-    // list
-    if (ui.scroll){
-      ui.scroll.innerHTML = '';
+    // result panel
+    renderResultPanel(r, state);
 
-      const teams = Array.isArray(state.teams) ? state.teams.slice() : [];
-      teams.sort((a,b)=>{
-        const aa = (a.eliminated ? -999 : (a.alive||0));
-        const bb = (b.eliminated ? -999 : (b.alive||0));
-        if (bb !== aa) return bb - aa;
-        return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-      });
+    // list（result表示中は隠す）
+    const showingResult = !!(state.matchResult || state.tournamentResult);
+    if (scroll){
+      scroll.style.display = showingResult ? 'none' : 'block';
+      scroll.innerHTML = '';
 
-      teams.forEach((t, idx)=>{
-        const row = el('div', 'tuiRow');
+      if (!showingResult){
+        const teams = Array.isArray(state.teams) ? state.teams.slice() : [];
+        teams.sort((a,b)=>{
+          const aa = (a.eliminated ? -999 : (a.alive||0));
+          const bb = (b.eliminated ? -999 : (b.alive||0));
+          if (bb !== aa) return bb - aa;
+          return String(a.name||'').localeCompare(String(b.name||''), 'ja');
+        });
 
-        row.addEventListener('click', ()=>{
-          const src = getTeamImageSrc(t);
-          if (src) openPreview(ui.r, src);
-        }, { passive:true });
+        teams.forEach((t, idx)=>{
+          const row = el('div', 'tuiRow');
+          row.addEventListener('click', ()=>{
+            const src = getTeamImageSrc(t);
+            if (src) openPreview(r, src);
+          }, { passive:true });
 
-        const name = el('div', 'name');
-        const tag = el('div', 'tag');
+          const name = el('div', 'name');
+          const tag  = el('div', 'tag');
 
-        const alive = (t.alive ?? 0);
-        const status = t.eliminated ? '全滅' : `生存${alive}`;
+          const alive = (t.alive ?? 0);
+          const status = t.eliminated ? '全滅' : `生存${alive}`;
+          const nm = (t.isPlayer ? '★ ' : '') + (t.name || t.id || `TEAM ${idx+1}`);
+          safeText(name, nm);
 
-        const nm = (t.isPlayer ? '★ ' : '') + (t.name || t.id || `TEAM ${idx+1}`);
-        safeText(name, nm);
+          const treasure = t.treasure || 0;
+          const flag = t.flag || 0;
+          const pwr = Number.isFinite(Number(t.power)) ? Math.round(Number(t.power)) : 0;
+          let extra = ` / 総合力${pwr}`;
+          if (treasure || flag) extra += ` / お宝${treasure} フラッグ${flag}`;
+          safeText(tag, `${status}${extra}`);
 
-        const treasure = t.treasure || 0;
-        const flag = t.flag || 0;
+          if (t.eliminated) row.style.opacity = '0.55';
+          else row.style.opacity = '1';
 
-        let extra = '';
-        if (treasure || flag) extra += ` / お宝${treasure} フラッグ${flag}`;
+          if (t.isPlayer){
+            row.style.border = '1px solid rgba(255,59,48,.55)';
+            row.style.background = 'rgba(255,59,48,.10)';
+          }
 
-        safeText(tag, `${status}${extra}`);
-
-        if (t.eliminated){
-          row.style.opacity = '0.55';
-        }else{
-          row.style.opacity = '1';
-        }
-
-        if (t.isPlayer){
-          row.style.border = '1px solid rgba(255,59,48,.55)';
-          row.style.background = 'rgba(255,59,48,.10)';
-        }
-
-        row.appendChild(name);
-        row.appendChild(tag);
-        ui.scroll.appendChild(row);
-      });
+          row.appendChild(name);
+          row.appendChild(tag);
+          scroll.appendChild(row);
+        });
+      }
     }
   }
 
@@ -558,24 +518,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function close(){
     if (!root) return;
+    stopBattleAnim();
     root.classList.remove('isOpen');
     root.style.display = 'none';
     root.style.pointerEvents = 'none';
     root.setAttribute('aria-hidden', 'true');
-    clearAnimTimer();
-    animating = false;
   }
 
-  // expose
   window.MOBBR.ui.tournament = { open, close, render };
 
-  // app.js から呼べる初期化口（v17.6が呼ぶ）
-  window.MOBBR.initTournamentUI = function(){
-    ensureRoot();
-    close();
-  };
-
-  // init（ロードされたら作るだけ。表示はFlow.startで）
   document.addEventListener('DOMContentLoaded', ()=> {
     ensureRoot();
     close();
