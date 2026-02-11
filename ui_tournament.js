@@ -1,12 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - ui_tournament.js v2（フル）
-  - tournamentFlow が保存する mobbr_tournamentState を読み、参加20チームを表示
-  - 画面は「到着 → チーム紹介」まで（今はA/B範囲）
-  - btnBattle は触らない（ui_main.js が握ってる）
-
-  ※画像は仮：neonmain.png / tent.png（ここは後で最新版UIに合わせて差し替え可能）
+  MOB BR - ui_tournament.js v3（フル）
+  追加：
+  - 出場20チーム一覧の「行タップ」で画像プレビュー
+    * PLAYER: P1.png
+    * CPU: cpu/<teamId>.png（participantsの img を優先）
+  - 透明フタ事故防止：modalBack は使わず、TUI内モーダルで完結
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -17,6 +17,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const TS_KEY = 'mobbr_tournamentState';
 
+  // ※背景は現状維持（あとで最新版仕様の見た目に寄せる）
   const IMG_BG  = 'neonmain.png';
   const IMG_SQ  = 'tent.png';
 
@@ -122,6 +123,29 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     wrap.appendChild(bottom);
 
     root.appendChild(wrap);
+
+    // ===== プレビュー用モーダル（TUI内完結）=====
+    const pvBack = document.createElement('div');
+    pvBack.className = 'tuiPvBack';
+    pvBack.style.display = 'none';
+    pvBack.style.pointerEvents = 'none';
+
+    const pvCard = document.createElement('div');
+    pvCard.className = 'tuiPvCard';
+    pvCard.style.display = 'none';
+    pvCard.style.pointerEvents = 'none';
+
+    pvCard.innerHTML = `
+      <div class="tuiPvTitle" id="tuiPvTitle">TEAM</div>
+      <div class="tuiPvImgWrap">
+        <img id="tuiPvImg" alt="team" draggable="false" />
+      </div>
+      <button class="tuiPvClose" id="tuiPvClose" type="button">閉じる</button>
+    `;
+
+    root.appendChild(pvBack);
+    root.appendChild(pvCard);
+
     document.body.appendChild(root);
 
     ui = {
@@ -133,10 +157,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       scroll,
       logMain: root.querySelector('#tuiLogMain'),
       logSub: root.querySelector('#tuiLogSub'),
-      btnNext
+      btnNext,
+      pvBack,
+      pvCard,
+      pvTitle: root.querySelector('#tuiPvTitle'),
+      pvImg: root.querySelector('#tuiPvImg'),
+      pvClose: root.querySelector('#tuiPvClose')
     };
 
     ui.btnNext.addEventListener('click', () => next());
+
+    // プレビュー閉じ
+    ui.pvBack.addEventListener('click', () => hidePreview());
+    ui.pvClose.addEventListener('click', () => hidePreview());
 
     return ui;
   }
@@ -166,9 +199,39 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }[m]));
   }
 
+  // ===== Preview =====
+  function showPreview(teamName, imgSrc){
+    const d = ensureDOM();
+    d.pvTitle.textContent = String(teamName || 'TEAM');
+
+    if (d.pvImg){
+      d.pvImg.src = imgSrc || '';
+      d.pvImg.onerror = () => {
+        // 画像が無い場合でも落とさない
+        d.pvImg.onerror = null;
+        d.pvImg.src = '';
+      };
+    }
+
+    d.pvBack.style.display = 'block';
+    d.pvBack.style.pointerEvents = 'auto';
+    d.pvCard.style.display = 'block';
+    d.pvCard.style.pointerEvents = 'auto';
+  }
+
+  function hidePreview(){
+    const d = ensureDOM();
+    d.pvBack.style.display = 'none';
+    d.pvBack.style.pointerEvents = 'none';
+    d.pvCard.style.display = 'none';
+    d.pvCard.style.pointerEvents = 'none';
+  }
+
   // ===== screens =====
   function showArrival(){
     step = 'arrival';
+    hidePreview();
+
     setBG(IMG_BG);
     setSquareBG(IMG_SQ);
 
@@ -180,16 +243,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       </div>`
     );
     setLog('本日の出場チームをご紹介！', '');
+    ensureDOM().btnNext.textContent = 'NEXT';
   }
 
   function showTeams(){
     step = 'teams';
-    setBanner('出場チーム', '20チーム');
+    hidePreview();
+
+    setBanner('出場チーム', '20チーム（タップで画像）');
 
     const st = loadTournamentState();
     const ps = Array.isArray(st?.participants) ? st.participants : [];
 
-    // A：CPU読み込みの結果（debug）を表示（見えるログは軽く）
     const dbg = st?.debug || {};
     const dbgLine = (dbg && typeof dbg === 'object')
       ? `CPU:${dbg.cpuOk ? 'OK' : 'NG'} / pool:${escapeHTML(String(dbg.pickedFrom || '-'))} / local:${escapeHTML(String(dbg.localCount ?? '-'))}`
@@ -199,22 +264,52 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (ps.length === 0){
       html = `<div class="tuiNote">参加チームデータがありません。</div>`;
     }else{
-      for (const p of ps){
+      for (let i=0;i<ps.length;i++){
+        const p = ps[i];
         const tag = (p.kind === 'player') ? 'PLAYER' : 'CPU';
         const nm = escapeHTML(p.name || p.id || 'TEAM');
+        const img = escapeHTML(p.img || '');
+        const pid = escapeHTML(p.id || '');
+
         html += `
-          <div class="tuiRow">
+          <button class="tuiRowBtn" type="button"
+            data-idx="${i}"
+            data-name="${nm}"
+            data-img="${img}"
+            data-id="${pid}"
+            data-kind="${tag}">
             <div class="name">${nm}</div>
             <div class="tag">${tag}</div>
-          </div>
+          </button>
         `;
       }
       html += `<div class="tuiNote">（debug）${dbgLine}</div>`;
     }
 
     setScrollHTML(html);
-    setLog('出場チーム一覧', '※ローカル大会（抽選済み）');
-    ui.btnNext.textContent = 'OK';
+
+    // 行タップ bind（scroll内だけ）
+    const d = ensureDOM();
+    const btns = d.scroll.querySelectorAll('.tuiRowBtn');
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.getAttribute('data-name') || 'TEAM';
+        const img = btn.getAttribute('data-img') || '';
+        const kind = btn.getAttribute('data-kind') || '';
+        const id = btn.getAttribute('data-id') || '';
+
+        // imgが無い場合のフォールバック
+        let src = img;
+        if (!src){
+          if (kind === 'PLAYER') src = 'P1.png';
+          else if (id) src = `cpu/${id}.png`;
+        }
+        showPreview(name, src);
+      });
+    });
+
+    setLog('出場チーム一覧', '※タップで画像プレビュー');
+    d.btnNext.textContent = 'OK';
   }
 
   function next(){
@@ -232,13 +327,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     d.root.classList.add('isOpen');
     d.root.setAttribute('aria-hidden', 'false');
 
-    // 毎回 “到着” から
-    ui.btnNext.textContent = 'NEXT';
     showArrival();
   }
 
   function closeUI(){
     const d = ensureDOM();
+    hidePreview();
     d.root.classList.remove('isOpen');
     d.root.style.display = 'none';
     d.root.style.pointerEvents = 'none';
