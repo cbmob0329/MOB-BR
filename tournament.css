@@ -1,5 +1,7 @@
-/* tournament.css v4（フル）
-   ✅追加：戦闘レイヤー（brbattle/brwin/brlose）＋ result表
+/* tournament.css v5（フル）
+   - LOGは3段固定
+   - battle overlayあり
+   - rosterはintroだけUIで表示制御
 */
 
 .mobbrTui{
@@ -45,8 +47,7 @@
   box-sizing: border-box;
 }
 
-/* ================= TOP ================= */
-
+/* TOP */
 .mobbrTui .tuiTop{
   display: flex;
   align-items: center;
@@ -74,8 +75,7 @@
   touch-action: manipulation;
 }
 
-/* ================= CENTER ================= */
-
+/* CENTER */
 .mobbrTui .tuiCenter{
   display: grid;
   place-items: center;
@@ -103,13 +103,12 @@
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto;
   padding: 14px;
   gap: 10px;
 }
 
-/* ================= BANNER ================= */
-
+/* BANNER */
 .mobbrTui .tuiBanner{
   display: flex;
   justify-content: space-between;
@@ -130,8 +129,7 @@
   opacity: .9;
 }
 
-/* ================= SCROLL ================= */
-
+/* SCROLL（introだけ表示） */
 .mobbrTui .tuiScroll{
   overflow: auto;
   border-radius: 14px;
@@ -155,13 +153,8 @@
   transition: transform .08s ease, background .15s ease;
 }
 
-.mobbrTui .tuiRow:hover{
-  background: rgba(255,255,255,.14);
-}
-
-.mobbrTui .tuiRow:active{
-  transform: scale(.98);
-}
+.mobbrTui .tuiRow:hover{ background: rgba(255,255,255,.14); }
+.mobbrTui .tuiRow:active{ transform: scale(.98); }
 
 .mobbrTui .tuiRow .name{
   font-weight: 1000;
@@ -173,63 +166,7 @@
   opacity: .9;
 }
 
-/* ================= RESULT PANEL ================= */
-
-.mobbrTui .tuiResult{
-  display: none;
-  border-radius: 14px;
-  background: rgba(0,0,0,.62);
-  border: 1px solid rgba(255,255,255,.18);
-  padding: 12px;
-  overflow: hidden;
-}
-
-.mobbrTui .tuiResult.show{
-  display: block;
-}
-
-.mobbrTui .tuiResultTitle{
-  font-weight: 1000;
-  font-size: 14px;
-  margin-bottom: 10px;
-  text-align: center;
-}
-
-.mobbrTui .tuiResultTableWrap{
-  overflow: auto;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.06);
-}
-
-.mobbrTui table.tuiTable{
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 520px;
-}
-
-.mobbrTui table.tuiTable thead tr.head td{
-  font-weight: 1000;
-  font-size: 12px;
-  opacity: .95;
-  padding: 10px 10px;
-  border-bottom: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.35);
-}
-
-.mobbrTui table.tuiTable tbody td{
-  font-size: 12px;
-  padding: 10px 10px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  white-space: nowrap;
-}
-
-.mobbrTui table.tuiTable tbody tr.me td{
-  background: rgba(255,59,48,.12);
-}
-
-/* ================= LOG（3段固定） ================= */
-
+/* LOG（3段固定） */
 .mobbrTui .tuiLog{
   border-radius: 14px;
   background: rgba(0,0,0,.65);
@@ -258,8 +195,7 @@
   opacity: .9;
 }
 
-/* ================= BOTTOM ================= */
-
+/* BOTTOM */
 .mobbrTui .tuiBottom{
   display: grid;
   gap: 10px;
@@ -276,12 +212,15 @@
   touch-action: manipulation;
 }
 
+.mobbrTui .tuiBtn:disabled{
+  opacity: .55;
+}
+
 .mobbrTui .tuiBtnGhost{
   background: rgba(255,255,255,.18);
 }
 
-/* ================= IMAGE PREVIEW ================= */
-
+/* IMAGE PREVIEW */
 .mobbrTui .tuiPreview{
   position: fixed;
   inset: 0;
@@ -292,9 +231,7 @@
   justify-content: center;
 }
 
-.mobbrTui .tuiPreview.show{
-  display: flex;
-}
+.mobbrTui .tuiPreview.show{ display: flex; }
 
 .mobbrTui .tuiPreview img{
   max-width: 80vw;
@@ -303,8 +240,7 @@
   box-shadow: 0 20px 60px rgba(0,0,0,.8);
 }
 
-/* ================= BATTLE LAYER ================= */
-
+/* BATTLE LAYER */
 .mobbrTui .tuiBattle{
   position: absolute;
   inset: 0;
@@ -313,9 +249,7 @@
   pointer-events: none;
 }
 
-.mobbrTui .tuiBattle.show{
-  display: block;
-}
+.mobbrTui .tuiBattle.show{ display: block; }
 
 .mobbrTui .tuiBattleTop{
   position: absolute;
@@ -404,10 +338,4 @@
   font-weight: 1000;
   font-size: 14px;
   opacity: .95;
-}
-
-/* battle中はLog枠が邪魔なので少し薄く */
-.mobbrTui .tuiBattle.show ~ .tuiWrap .tuiLog{
-  opacity: .0;
-  pointer-events: none;
 }
