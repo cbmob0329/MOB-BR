@@ -1,12 +1,14 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.3（フル：復旧用 + 大会読み込み追加）
+  MOB BR - app.js v17.4（フル：復旧用 + 大会Flow/UI 読み込み）
   目的：
   - タイトル→メイン遷移を確実にする（ロード成功後に showMain）
   - 「透明フタ（modalBack 等）が残って全タップが死ぬ」事故を強制復旧
   - shop は分割版のみ想定（ui_shop.js 単体は読み込まない）
-  - 大会UI（ui_tournament.js + tournament.css）は復旧後に戻す：今回は JS は読み込む
+  - 大会：ui_main.js(v18) が tournamentFlow を呼ぶので、
+          sim_tournament_flow.js を必ず読み込む
+          UIがある場合は ui_tournament.js が open される
 */
 
 const APP_VER = 17;
@@ -64,7 +66,6 @@ function hardResetOverlays(){
   }
 
   // 4) tournament UI（もし残ってたら）も最前面事故になるので閉じる
-  //    ui_tournament.js が動的生成する .mobbrTui を想定
   const tui = document.querySelector('.mobbrTui');
   if (tui){
     tui.classList.remove('isOpen');
@@ -95,7 +96,6 @@ function showMain(){
 
   if (title){
     title.style.display = 'none';
-    // 透明残骸で吸わないように
     title.style.pointerEvents = 'none';
   }
   if (app) app.style.display = 'grid';
@@ -144,7 +144,8 @@ async function loadModules(){
     // schedule
     `ui_schedule.js${v}`,
 
-    // tournament（追加：JSは読み込む / CSSは index 側で読み込み）
+    // tournament flow + UI
+    `sim_tournament_flow.js?v=1`,
     `ui_tournament.js?v=1`
   ];
 
@@ -198,7 +199,7 @@ async function bootAfterNext(){
     window.MOBBR.initScheduleUI();
   }
 
-  // tournament
+  // tournament UI
   if (window.MOBBR?.initTournamentUI){
     window.MOBBR.initTournamentUI();
   }
@@ -227,7 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.disabled = true;
 
       try{
-        // ロード & init 完了してから画面を出す（不安定対策）
         await bootAfterNext();
         showMain();
       }catch(err){
