@@ -1,10 +1,10 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.5（フル：大会ローカル抽選 A/B 対応）
+  MOB BR - app.js v17.6（フル：大会ローカル抽選 A/B 対応）
   - data_cpu_teams.js をロード（CPUチームデータ）
-  - sim_tournament_flow.js v2 をロード（A/B 同時）
-  - ui_tournament.js v2 をロード（20チーム表示）
+  - sim_tournament_flow.js v3 をロード（DataCPU対応）
+  - ui_tournament.js v3 をロード（20チーム表示）
 */
 
 const APP_VER = 17;
@@ -108,7 +108,7 @@ async function loadModules(){
     `storage.js${v}`,
     `data_player.js${v}`,
     `data_cards.js${v}`,
-    `data_cpu_teams.js${v}`, // ★追加（CPUチーム）
+    `data_cpu_teams.js${v}`,
 
     // UI
     `ui_main.js?v=18`,
@@ -124,9 +124,9 @@ async function loadModules(){
     // schedule
     `ui_schedule.js${v}`,
 
-    // tournament
-    `sim_tournament_flow.js?v=2`,
-    `ui_tournament.js?v=2`
+    // tournament（★v上げてキャッシュ回避）
+    `sim_tournament_flow.js?v=3`,
+    `ui_tournament.js?v=3`
   ];
 
   for (const f of files){
@@ -151,7 +151,6 @@ async function bootAfterNext(){
   if (window.MOBBR?.initShopUI) window.MOBBR.initShopUI();
   if (window.MOBBR?.initScheduleUI) window.MOBBR.initScheduleUI();
 
-  // tournament UI
   if (window.MOBBR?.initTournamentUI) window.MOBBR.initTournamentUI();
 
   setTitleHint('');
