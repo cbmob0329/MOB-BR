@@ -1,233 +1,281 @@
-/* =========================================================
-   MOB BR - tournament.css v1 (FULL)
-   大会画面（ui_tournament.js）専用
-========================================================= */
+/* tournament.css v1
+   MOB BR - Tournament Screen (production layout)
+*/
 
-:root{
-  --tui-border: rgba(255,255,255,.14);
-  --tui-soft: rgba(255,255,255,.08);
-  --tui-bg: rgba(10,12,18,.88);
-  --tui-card: rgba(15,18,24,.94);
-  --tui-text: rgba(255,255,255,.92);
-  --tui-muted: rgba(255,255,255,.72);
-}
-
-/* overlay */
 .mobbrTui{
   position: fixed;
   inset: 0;
-  z-index: 99990;
   display: none;
   pointer-events: none;
+  z-index: 9999;
+  color: #fff;
 }
+
 .mobbrTui.isOpen{
   display: block;
   pointer-events: auto;
 }
 
-/* full background image */
+.mobbrTui[aria-hidden="true"]{
+  display: none;
+  pointer-events: none;
+}
+
 .mobbrTui .tuiBg{
   position: absolute;
   inset: 0;
   background: #000;
-}
-.mobbrTui .tuiBg img{
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity .9s ease;
 }
 
-/* dark veil for readability */
-.mobbrTui .tuiVeil{
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(0,0,0,.30),
-    rgba(0,0,0,.55)
-  );
+.mobbrTui.isOpen .tuiBg{
+  opacity: 1;
 }
 
-/* safe area padding */
-.mobbrTui .tuiSafe{
-  position: absolute;
-  inset: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  box-sizing: border-box;
-}
-
-/* main layout: center column */
 .mobbrTui .tuiWrap{
   position: absolute;
   inset: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 10px;
-  padding: 10px;
+  padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
-/* top bar */
 .mobbrTui .tuiTop{
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-.mobbrTui .tuiTitle{
-  font-weight: 1000;
-  letter-spacing: .04em;
-  color: #fff;
-  font-size: 14px;
-  text-shadow: 0 2px 10px rgba(0,0,0,.5);
-}
-.mobbrTui .tuiClose{
-  border: 1px solid var(--tui-border);
-  background: rgba(255,255,255,.06);
-  color: #fff;
-  border-radius: 12px;
-  padding: 10px 12px;
-  min-height: 40px;
-  font-weight: 900;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* center stage */
-.mobbrTui .tuiStage{
+.mobbrTui .tuiTop .tuiTitle{
+  font-weight: 1000;
+  font-size: 14px;
+  opacity: .96;
+  white-space: nowrap;
+}
+
+.mobbrTui .tuiTop .tuiMeta{
+  font-size: 12px;
+  opacity: .9;
+  white-space: nowrap;
+}
+
+.mobbrTui .tuiTop .tuiClose{
+  border: 0;
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  font-weight: 1000;
+  font-size: 12px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  touch-action: manipulation;
+}
+
+.mobbrTui .tuiCenter{
   display: grid;
   place-items: center;
-}
-.mobbrTui .tuiSquare{
-  width: min(92vw, 560px);
-  aspect-ratio: 1 / 1;
-  position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid var(--tui-border);
-  box-shadow: 0 18px 55px rgba(0,0,0,.55);
-  background: rgba(0,0,0,.25);
+  padding: 10px 0;
 }
 
-/* tent square background */
-.mobbrTui .tuiTent{
+.mobbrTui .tuiSquare{
+  width: min(92vw, 520px);
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(0,0,0,.35);
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+
+/* square bg (tent.png) */
+.mobbrTui .tuiSquareBg{
   position: absolute;
   inset: 0;
-}
-.mobbrTui .tuiTent img{
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  background-size: cover;
+  background-position: center;
+  filter: saturate(1.05);
+  opacity: .98;
 }
 
-/* player image on top of tent */
-.mobbrTui .tuiPlayer{
+/* content overlay */
+.mobbrTui .tuiSquareInner{
   position: absolute;
-  left: 50%;
-  bottom: 6%;
-  transform: translateX(-50%);
-  width: min(78%, 420px);
-  height: auto;
-  display: block;
-  filter: drop-shadow(0 14px 20px rgba(0,0,0,.55));
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 14px;
+  box-sizing: border-box;
+  gap: 10px;
 }
 
-/* message / result card */
-.mobbrTui .tuiCard{
-  width: min(92vw, 560px);
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid var(--tui-border);
-  background: var(--tui-card);
-  box-shadow: 0 16px 45px rgba(0,0,0,.55);
-}
-.mobbrTui .tuiCardHead{
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
+/* banner line inside square */
+.mobbrTui .tuiBanner{
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.14);
 }
-.mobbrTui .tuiCardHead .h1{
+
+.mobbrTui .tuiBanner .left{
   font-weight: 1000;
   font-size: 13px;
-  color: #fff;
 }
-.mobbrTui .tuiCardHead .h2{
-  font-weight: 900;
+
+.mobbrTui .tuiBanner .right{
   font-size: 12px;
-  color: var(--tui-muted);
+  opacity: .92;
 }
-.mobbrTui .tuiCardBody{
-  padding: 10px 12px 12px;
-  color: var(--tui-text);
-  font-size: 13px;
+
+/* scroll area inside square */
+.mobbrTui .tuiScroll{
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.12);
+  padding: 10px;
+}
+
+.mobbrTui .tuiScroll::-webkit-scrollbar{
+  width: 10px;
+}
+.mobbrTui .tuiScroll::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.16);
+  border-radius: 10px;
+}
+
+/* log */
+.mobbrTui .tuiLog{
+  border-radius: 12px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.16);
+  padding: 10px 10px;
+  min-height: 66px;
+  display: grid;
+  align-content: center;
+  text-align: center;
   line-height: 1.35;
-  white-space: pre-wrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* message lines */
-.mobbrTui .tuiLines{
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.mobbrTui .tuiLine{
-  opacity: .96;
+.mobbrTui .tuiLog .tuiLogMain{
+  font-weight: 1000;
+  font-size: 15px;
 }
 
-/* result table */
-.mobbrTui .tuiTable{
-  width: 100%;
-  border-collapse: collapse;
+.mobbrTui .tuiLog .tuiLogSub{
+  margin-top: 6px;
   font-size: 12px;
-}
-.mobbrTui .tuiTable th,
-.mobbrTui .tuiTable td{
-  padding: 8px 6px;
-  border-bottom: 1px solid rgba(255,255,255,.08);
-  text-align: left;
-  vertical-align: middle;
-}
-.mobbrTui .tuiTable th{
-  color: rgba(255,255,255,.75);
-  font-weight: 900;
-  font-size: 11px;
-}
-.mobbrTui .tuiTable td{
-  color: rgba(255,255,255,.92);
-  font-weight: 700;
-}
-.mobbrTui .tuiHi{
-  background: rgba(255,255,255,.06);
+  opacity: .9;
 }
 
-/* bottom next bar */
+/* bottom buttons */
 .mobbrTui .tuiBottom{
   display: grid;
-  place-items: center;
-  gap: 8px;
-}
-.mobbrTui .tuiNext{
-  width: min(92vw, 560px);
-  min-height: 48px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.08);
-  color: #fff;
-  font-weight: 1000;
-  letter-spacing: .06em;
-}
-.mobbrTui .tuiNext:disabled{
-  opacity: .45;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
-/* small helper */
+.mobbrTui .tuiBtn{
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-weight: 1000;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255,59,48,.92);
+  box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  touch-action: manipulation;
+}
+
+.mobbrTui .tuiBtn:disabled{
+  opacity: .5;
+}
+
+.mobbrTui .tuiBtnGhost{
+  background: rgba(255,255,255,.14);
+}
+
+/* list items */
+.mobbrTui .tuiRow{
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  margin-bottom: 10px;
+}
+
+.mobbrTui .tuiRow .name{
+  font-weight: 1000;
+  font-size: 14px;
+}
+
+.mobbrTui .tuiRow .tag{
+  font-size: 12px;
+  opacity: .9;
+  white-space: nowrap;
+}
+
+.mobbrTui .tuiRowBtn{
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+/* coach skill buttons */
+.mobbrTui .tuiSkill{
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.25);
+  border-radius: 12px;
+  padding: 10px 10px;
+  margin-bottom: 10px;
+}
+
+.mobbrTui .tuiSkill .sTop{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.mobbrTui .tuiSkill .sName{
+  font-weight: 1000;
+  font-size: 14px;
+}
+
+.mobbrTui .tuiSkill .sState{
+  font-size: 12px;
+  opacity: .9;
+  white-space: nowrap;
+}
+
+.mobbrTui .tuiSkill .sDesc{
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: .92;
+  line-height: 1.35;
+}
+
 .mobbrTui .tuiNote{
-  width: min(92vw, 560px);
-  font-size: 11px;
-  color: rgba(255,255,255,.70);
-  text-align: center;
-  text-shadow: 0 2px 12px rgba(0,0,0,.55);
+  font-size: 12px;
+  opacity: .9;
+  line-height: 1.35;
+  margin-top: 6px;
 }
