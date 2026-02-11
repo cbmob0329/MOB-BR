@@ -1,10 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.6（フル：大会ローカル抽選 A/B 対応）
+  MOB BR - app.js v17.7（フル：ローカル大会 1本 / 最新仕様）
   - data_cpu_teams.js をロード（CPUチームデータ）
-  - sim_tournament_flow.js v3 をロード（DataCPU対応）
-  - ui_tournament.js v3 をロード（20チーム表示）
+  - sim_match_events.js v2 をロード（イベント：rollForTeam / eventBuffs）
+  - sim_match_flow.js v2 をロード（交戦解決：resolveBattle）
+  - sim_tournament_flow.js v3 をロード（大会本体：20チーム / R1〜R6）
+  - ui_tournament.js v3 をロード（大会UI：20チーム表示・3段ログ）
 */
 
 const APP_VER = 17;
@@ -124,7 +126,11 @@ async function loadModules(){
     // schedule
     `ui_schedule.js${v}`,
 
-    // tournament（★v上げてキャッシュ回避）
+    // tournament core（★依存順が重要）
+    `sim_match_events.js?v=2`,
+    `sim_match_flow.js?v=2`,
+
+    // tournament（★キャッシュ回避）
     `sim_tournament_flow.js?v=3`,
     `ui_tournament.js?v=3`
   ];
@@ -151,6 +157,8 @@ async function bootAfterNext(){
   if (window.MOBBR?.initShopUI) window.MOBBR.initShopUI();
   if (window.MOBBR?.initScheduleUI) window.MOBBR.initScheduleUI();
 
+  // 大会UIは ui_tournament.js 側で window.MOBBR.ui.tournament を公開するだけなので
+  // ここは「存在すれば呼ぶ」運用のままでOK（無ければ何もしない）
   if (window.MOBBR?.initTournamentUI) window.MOBBR.initTournamentUI();
 
   setTitleHint('');
