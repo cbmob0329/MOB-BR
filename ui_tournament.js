@@ -2,12 +2,11 @@
 
 /*
   ui_tournament.js v3（フル）
-  - 大会UI：mobbrTui（overlay）
-  - チーム行は「押せるボタン」扱い（行全体が当たり判定）
-  - チーム名タップで「チーム画像プレビュー」
-    ・プレイヤー：P1.png
-    ・CPU：DataCPU.getAssetBase() + '/' + teamId + '.png'
-  - 中央ログは必ず3段固定（log1/log2/log3）
+  ✅中央ログ：3段固定（仕様準拠）
+    1) log1
+    2) log2
+    3) log3
+  - チーム行：行全体タップで「チーム画像プレビュー」
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -47,7 +46,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return `${base}/${team.id}.png`;
   }
 
-  // 画像プレビュー（フルスクリーン）
+  // 画像プレビュー
   function ensurePreview(root){
     let pv = root.querySelector('.tuiPreview');
     if (pv) return pv;
@@ -135,10 +134,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const scroll = el('div', 'tuiScroll');
 
+    // LOG（3段固定）
     const log = el('div', 'tuiLog');
-    const log1 = el('div', 'tuiLogLine tuiLogL1');
-    const log2 = el('div', 'tuiLogLine tuiLogL2');
-    const log3 = el('div', 'tuiLogLine tuiLogL3');
+    const log1 = el('div', 'tuiLogMain');   // 大きめ
+    const log2 = el('div', 'tuiLogSub');    // 中
+    const log3 = el('div', 'tuiLogSub');    // 中（同classでOK）
+    log3.style.marginTop = '4px';
     log.appendChild(log1);
     log.appendChild(log2);
     log.appendChild(log3);
@@ -152,6 +153,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // BOTTOM
     const bottom = el('div', 'tuiBottom');
+
     const btnNext = el('button', 'tuiBtn');
     btnNext.type = 'button';
     btnNext.textContent = '次へ';
@@ -182,7 +184,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     root.appendChild(wrap);
     document.body.appendChild(root);
 
-    ensurePreview(root);
     return root;
   }
 
@@ -195,9 +196,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const bL = r.querySelector('.tuiBanner .left');
     const bR = r.querySelector('.tuiBanner .right');
     const scroll = r.querySelector('.tuiScroll');
-    const log1 = r.querySelector('.tuiLogL1');
-    const log2 = r.querySelector('.tuiLogL2');
-    const log3 = r.querySelector('.tuiLogL3');
+
+    const log1 = r.querySelector('.tuiLog .tuiLogMain');
+    const logSubs = r.querySelectorAll('.tuiLog .tuiLogSub');
+    const log2 = logSubs[0] || null;
+    const log3 = logSubs[1] || null;
 
     if (!state){
       safeText(meta, '');
@@ -217,12 +220,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     safeText(bL, state.bannerLeft || `ROUND ${round}`);
     safeText(bR, state.bannerRight || '');
 
-    // ログ：最後のログ（3段固定）
+    // ✅ ログは3段固定：最新ログがあればそれ、なければ state.log1-3
     const last = (state.logs && state.logs.length) ? state.logs[state.logs.length - 1] : null;
-
-    safeText(log1, last?.log1 || state.log1 || '大会開始');
-    safeText(log2, last?.log2 || state.log2 || '');
-    safeText(log3, last?.log3 || state.log3 || '');
+    safeText(log1, last?.l1 || state.log1 || '大会開始');
+    safeText(log2, last?.l2 || state.log2 || '');
+    safeText(log3, last?.l3 || state.log3 || '');
 
     // list
     if (scroll){
@@ -230,18 +232,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const teams = Array.isArray(state.teams) ? state.teams.slice() : [];
       teams.sort((a,b)=>{
-        const aa = (a.eliminated ? -999 : (a.alive||0));
-        const bb = (b.eliminated ? -999 : (b.alive||0));
+        const aa = (a.eliminated? -999 : (a.alive||0));
+        const bb = (b.eliminated? -999 : (b.alive||0));
         if (bb !== aa) return bb - aa;
-
-        const ta = a.treasure || 0;
-        const tb = b.treasure || 0;
-        if (tb !== ta) return tb - ta;
-
-        const fa = a.flag || 0;
-        const fb = b.flag || 0;
-        if (fb !== fa) return fb - fa;
-
         return String(a.name||'').localeCompare(String(b.name||''), 'ja');
       });
 
@@ -264,9 +257,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
         const treasure = t.treasure || 0;
         const flag = t.flag || 0;
-        const extra = `お宝${treasure} / フラッグ${flag}`;
 
-        safeText(tag, `${status} / ${extra}`);
+        let extra = '';
+        if (treasure || flag) extra = ` / お宝${treasure} フラッグ${flag}`;
+
+        safeText(tag, `${status}${extra}`);
 
         if (t.eliminated){
           row.style.opacity = '0.55';
@@ -279,9 +274,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           row.style.background = 'rgba(255,59,48,.10)';
         }
 
+        scroll.appendChild(row);
         row.appendChild(name);
         row.appendChild(tag);
-        scroll.appendChild(row);
       });
     }
   }
