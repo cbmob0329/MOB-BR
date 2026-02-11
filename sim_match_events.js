@@ -1,15 +1,22 @@
 'use strict';
 
 /*
-  MOB BR - sim_match_events.js v1（フル）
-  試合最新版.txt 準拠（8-3 / 8-4 / 8-5）
-  - イベント抽選（重み）
-  - 表示テンポ（必ず3段固定）
-  - 効果は内部のみ（％や数値はログに出さない）
-  - eliminated=true のチームは抽選対象外
-  - R2〜R5は2回（同一ラウンドでイベント重複なし）→ flow側が2回呼ぶ前提だが、ここでもガード
-  - Treasure/Flag は result用カウント
-  - score_mind 装備中：Treasure/Flag 取得時に +1 追加（合計+2）
+  sim_match_events.js v2（フル）
+  ✅「試合最新版.txt」準拠：イベント一覧（重み抽選・表記セリフ・効果・表示画像）を確定反映
+
+  仕様（最新版より）：
+  - 8-4. イベント一覧（重み抽選・表記セリフ・効果 確定）
+  - 8-3. 表示テンポ：中央ログは必ず3段固定
+      1) 「イベント発生！」
+      2) 「（イベント名）」
+      3) 「表示セリフ（数値なし）」
+  - 選択対象：eliminated=false のチームのみ
+  - 効果の内部反映：
+      * Aim/Mental/Agility の％効果は teamFightPower 計算時に乗算で反映
+      * 効果はその試合中のみ（eventBuffsへ加算、試合終了時にリセット）
+      * Treasure/Flag は result 用カウントとして保持
+  - コーチスキル score_mind（プレイヤーチームのみ）：
+      「お宝ゲット」を獲得したら Treasure +1 追加（合計+2）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -17,13 +24,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
 (function(){
 
-  const EVENT_MASTER = [
+  // ===== Event Master（最新版の確定表）=====
+  // weights は「%」表記だが、抽選は相対重みとして扱う（合計100である必要なし）
+  // buff: { aim, mental, agi } は「%加算」（後段のteamFightPower側で乗算に変換する）
+  const MASTER = [
     {
       id: 'strategy_meeting',
       name: '作戦会議',
-      weight: 35,
+      w: 35,
       icon: 'bup.png',
-      effect: { agiPct: +1 },
+      buff: { agi: 1 },
       lines: [
         '次の戦闘に向けて作戦会議！連携力がアップした！',
         'ここで作戦会議！連携力アップ！',
@@ -33,9 +43,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'supply_trade',
       name: '物資交換',
-      weight: 35,
+      w: 35,
       icon: 'bup.png',
-      effect: { agiPct: +1 },
+      buff: { agi: 1 },
       lines: [
         '物資をお互いに交換！連携力がアップした！',
         '物資を交換した！連携力アップ！',
@@ -45,9 +55,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'huddle',
       name: '円陣',
-      weight: 35,
+      w: 35,
       icon: 'bup.png',
-      effect: { aimPct: +1 },
+      buff: { aim: 1 },
       lines: [
         '円陣を組んだ！ファイト力アップ！',
         '絶対勝つぞ！円陣で気合い注入！',
@@ -57,9 +67,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'calm_scan',
       name: '冷静な索敵',
-      weight: 35,
+      w: 35,
       icon: 'bup.png',
-      effect: { mentalPct: +1 },
+      buff: { mental: 1 },
       lines: [
         '落ち着いて索敵！次の戦闘は先手を取れそうだ！',
         'それぞれが索敵！戦闘に備える！',
@@ -69,9 +79,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'rare_weapon',
       name: 'レア武器ゲット',
-      weight: 10,
+      w: 10,
       icon: 'bup.png',
-      effect: { aimPct: +2 },
+      buff: { aim: 2 },
       lines: [
         'レア武器をゲット！戦闘が有利に！',
         'これは..レア武器発見！やったね！',
@@ -81,20 +91,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'bad_call',
       name: '判断ミス',
-      weight: 15,
+      w: 15,
       icon: 'bdeba.png',
-      effect: { agiPct: -1 },
+      buff: { agi: -1 },
       lines: [
         '痛恨の判断ミス！',
         '移動で迷ってしまった..'
       ]
     },
     {
-      id: 'argument',
+      id: 'fight',
       name: '喧嘩',
-      weight: 10,
+      w: 10,
       icon: 'bdeba.png',
-      effect: { mentalPct: -1 },
+      buff: { mental: -1 },
       lines: [
         'ムーブが噛み合わない！争ってしまった..',
         'ピンを見ていなかった..一時の言い争いだ'
@@ -103,19 +113,19 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'reload_miss',
       name: 'リロードミス',
-      weight: 5,
+      w: 5,
       icon: 'bdeba.png',
-      effect: { aimPct: -2 },
+      buff: { aim: -2 },
       lines: [
         'リロードしていなかった！これはまずい'
       ]
     },
     {
-      id: 'zone_mode',
+      id: 'in_the_zone',
       name: 'ゾーンに入る',
-      weight: 5,
+      w: 5,
       icon: 'bup.png',
-      effect: { aimPct: +3, mentalPct: +3 },
+      buff: { aim: 3, mental: 3 },
       lines: [
         '全員がゾーンに入った!!優勝するぞ！',
         '全員が集中モード！終わらせよう！'
@@ -124,213 +134,135 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     {
       id: 'champion_move',
       name: 'チャンピオンムーブ',
-      weight: 3,
+      w: 3,
       icon: 'bup.png',
-      effect: { aimPct: +5, mentalPct: +5 },
+      buff: { aim: 5, mental: 5 },
       lines: [
         'チャンピオンムーブが発動！全員覚醒モードだ！'
       ]
     },
     {
-      id: 'treasure',
+      id: 'treasure_get',
       name: 'お宝ゲット',
-      weight: 4,
+      w: 4,
       icon: 'bgeta.png',
-      effect: { treasure: +1 },
+      treasure: 1,
       lines: [
         'お宝をゲット！順位が有利に！'
       ]
     },
     {
-      id: 'flag',
+      id: 'flag_get',
       name: 'フラッグゲット',
-      weight: 2,
+      w: 2,
       icon: 'bgetb.png',
-      effect: { flag: +1 },
+      flag: 1,
       lines: [
         'フラッグをゲット！順位に大きく影響する！'
       ]
     }
   ];
 
-  const BY_ID = Object.fromEntries(EVENT_MASTER.map(e => [e.id, e]));
-
-  function randInt(n){
-    return Math.floor(Math.random() * n);
-  }
-  function pickOne(arr){
-    if (!arr || arr.length === 0) return null;
-    return arr[randInt(arr.length)];
-  }
-
-  function weightedPick(list, bannedIdsSet){
-    const candidates = [];
+  // ===== utils =====
+  function pickWeighted(list){
     let total = 0;
-
+    for (const e of list) total += (Number(e.w) || 0);
+    let r = Math.random() * (total || 1);
     for (const e of list){
-      if (bannedIdsSet && bannedIdsSet.has(e.id)) continue;
-      const w = Number(e.weight) || 0;
-      if (w <= 0) continue;
-      total += w;
-      candidates.push({ e, w });
+      r -= (Number(e.w) || 0);
+      if (r <= 0) return e;
     }
-
-    if (candidates.length === 0) return null;
-
-    let r = Math.random() * total;
-    for (const c of candidates){
-      r -= c.w;
-      if (r <= 0) return c.e;
-    }
-    return candidates[candidates.length - 1].e;
+    return list[0] || null;
   }
 
-  // プレイヤーチーム判定（kind === 'player' を優先。無ければ先頭）
-  function getPlayerTeam(state){
-    const teams = Array.isArray(state?.teams) ? state.teams : [];
-    const p = teams.find(t => t && t.kind === 'player');
-    return p || teams[0] || null;
+  function pickLine(lines){
+    if (!Array.isArray(lines) || lines.length === 0) return '';
+    const i = Math.floor(Math.random() * lines.length);
+    return String(lines[i] ?? '');
   }
 
-  function ensureTeamEventFields(team){
-    if (!team) return;
+  function ensureEventBuffs(team){
+    // eventBuffs は「%加算」を積む（後段のteamFightPower計算で乗算に変換する）
     if (!team.eventBuffs || typeof team.eventBuffs !== 'object'){
-      team.eventBuffs = { aimPct: 0, mentalPct: 0, agiPct: 0 };
+      team.eventBuffs = { aim: 0, mental: 0, agi: 0 };
     }else{
-      if (!Number.isFinite(team.eventBuffs.aimPct)) team.eventBuffs.aimPct = 0;
-      if (!Number.isFinite(team.eventBuffs.mentalPct)) team.eventBuffs.mentalPct = 0;
-      if (!Number.isFinite(team.eventBuffs.agiPct)) team.eventBuffs.agiPct = 0;
+      if (!Number.isFinite(team.eventBuffs.aim)) team.eventBuffs.aim = 0;
+      if (!Number.isFinite(team.eventBuffs.mental)) team.eventBuffs.mental = 0;
+      if (!Number.isFinite(team.eventBuffs.agi)) team.eventBuffs.agi = 0;
     }
-
-    if (!Number.isFinite(team.treasure)) team.treasure = 0;
-    if (!Number.isFinite(team.flag)) team.flag = 0;
-
-    // 同ラウンド重複なし用（idセット）
-    if (!team._roundEventUsed || typeof team._roundEventUsed !== 'object'){
-      team._roundEventUsed = {};
-    }
+    return team.eventBuffs;
   }
 
-  // コーチ装備取得（playerのみ）
-  function readCoachEquipped(){
-    try{
-      const arr = JSON.parse(localStorage.getItem('mobbr_coachSkillsEquipped') || '[]');
-      if (!Array.isArray(arr)) return [];
-      return arr.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
-    }catch{
-      return [];
-    }
-  }
+  function applyEventToTeam(team, ev, ctx){
+    if (!team || team.eliminated) return;
 
-  function hasCoachSkill(id){
-    const eq = readCoachEquipped();
-    return eq.includes(id);
-  }
-
-  // 3段固定表示（UIがあれば委譲、無ければログで代替）
-  function showEvent3Lines(eventName, line, icon){
-    const U = window.MOBBR?.ui?.match;
-
-    // UIが「キュー」に積めるならそっち（後でui_match.jsで実装する前提）
-    if (U && typeof U.enqueue === 'function'){
-      U.enqueue({
-        type: 'event',
-        icon: icon || '',
-        lines: ['イベント発生！', eventName, line]
-      });
-      return;
+    // buffs
+    const b = ensureEventBuffs(team);
+    if (ev && ev.buff){
+      if (Number.isFinite(ev.buff.aim)) b.aim += ev.buff.aim;
+      if (Number.isFinite(ev.buff.mental)) b.mental += ev.buff.mental;
+      if (Number.isFinite(ev.buff.agi)) b.agi += ev.buff.agi;
     }
 
-    // 最低限：即時ログ（3段を順に出す）
-    if (U && typeof U.log === 'function'){
-      U.log('イベント発生！', '');
-      U.log(eventName, '');
-      U.log(line, '');
-      return;
-    }
+    // treasure / flag
+    if (ev && ev.treasure){
+      let add = Number(ev.treasure) || 0;
 
-    // さらに保険（console）
-    console.log('[EVENT]', 'イベント発生！', eventName, line, icon || '');
-  }
-
-  // 効果内部反映（％は加算で保持→後で計算側で乗算にする）
-  function applyEventEffect(team, ev){
-    ensureTeamEventFields(team);
-
-    const eff = ev.effect || {};
-
-    if (Number.isFinite(eff.aimPct)) team.eventBuffs.aimPct += eff.aimPct;
-    if (Number.isFinite(eff.mentalPct)) team.eventBuffs.mentalPct += eff.mentalPct;
-    if (Number.isFinite(eff.agiPct)) team.eventBuffs.agiPct += eff.agiPct;
-
-    // Treasure/Flag（result用）
-    if (Number.isFinite(eff.treasure)){
-      const baseAdd = eff.treasure;
-      team.treasure += baseAdd;
-
-      // score_mind：取得が伸びる（+1追加 → 合計+2相当）
-      if (hasCoachSkill('score_mind')){
-        team.treasure += 1;
+      // ✅ score_mind：プレイヤーチームのみ
+      // ctx.playerCoach.score_mind === true を想定（flow側が作る）
+      if (add > 0 && team.isPlayer && ctx && ctx.playerCoach && ctx.playerCoach.score_mind){
+        add += 1; // 合計+2
       }
+
+      team.treasure = (Number(team.treasure) || 0) + add;
     }
-
-    if (Number.isFinite(eff.flag)){
-      const baseAdd = eff.flag;
-      team.flag += baseAdd;
-
-      if (hasCoachSkill('score_mind')){
-        team.flag += 1;
-      }
+    if (ev && ev.flag){
+      const add = Number(ev.flag) || 0;
+      team.flag = (Number(team.flag) || 0) + add;
     }
   }
 
-  // ラウンド切替時に必ず呼ぶ想定（Flow側で round++ の前後で）
-  function resetRoundUsed(state){
-    const teams = Array.isArray(state?.teams) ? state.teams : [];
-    for (const t of teams){
-      if (!t) continue;
-      t._roundEventUsed = {};
-    }
+  // ===== public: roll event for a team =====
+  // 戻り値：UI表示用（3段ログ固定 + icon）
+  function rollForTeam(team, round, ctx){
+    if (!team || team.eliminated) return null;
+
+    const ev = pickWeighted(MASTER);
+    if (!ev) return null;
+
+    const line = pickLine(ev.lines);
+
+    applyEventToTeam(team, ev, ctx);
+
+    return {
+      // UI用：表示テンポ固定
+      log1: 'イベント発生！',
+      log2: ev.name,
+      log3: line,
+
+      // UI用：表示画像
+      icon: ev.icon,
+
+      // 内部参照用
+      id: ev.id,
+      name: ev.name
+    };
   }
 
-  // メイン：イベント1回分実行（Flowから呼ぶ）
-  // - state.round を参照
-  // - playerが脱落してたら何もしない（プレイヤー視点ログ無しのため）
-  function run(state){
-    if (!state || !Array.isArray(state.teams)) return;
-
-    const round = Number(state.round) || 1;
-
-    const player = getPlayerTeam(state);
-    if (!player) return;
-    if (player.eliminated) return; // 視点ログを出さない + 効果も不要
-
-    ensureTeamEventFields(player);
-
-    // R2〜R5は2回呼ばれる前提だが、同ラウンド内重複をここでもガード
-    const used = new Set(Object.keys(player._roundEventUsed || {}).filter(k => player._roundEventUsed[k]));
-
-    const ev = weightedPick(EVENT_MASTER, used);
-    if (!ev) return;
-
-    // 同ラウンド重複禁止の記録
-    player._roundEventUsed[ev.id] = true;
-
-    const line = pickOne(ev.lines) || '';
-    showEvent3Lines(ev.name, line, ev.icon);
-
-    applyEventEffect(player, ev);
-
-    // debug用に保持（任意）
-    if (!player._eventHistory) player._eventHistory = [];
-    player._eventHistory.push({ r: round, id: ev.id, name: ev.name });
+  // ===== public: reset buffs (end of match) =====
+  function resetTeamMatchState(team){
+    if (!team) return;
+    team.eventBuffs = { aim: 0, mental: 0, agi: 0 };
+    // treasure/flag は result 用に保持する設計もあり得るが、
+    // 「試合終了時に必ずリセット」対象は eventBuffs と明記されているため、
+    // ここでは treasure/flag は消さない（result 側が使用後にリセットする想定）。
   }
 
+  // ===== public: expose =====
   window.MOBBR.sim.matchEvents = {
-    master: EVENT_MASTER,
-    byId: BY_ID,
-    run,
-    resetRoundUsed
+    MASTER,              // デバッグ/調整用（必要なら参照）
+    rollForTeam,
+    resetTeamMatchState
   };
 
 })();
