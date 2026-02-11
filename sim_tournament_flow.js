@@ -2,14 +2,13 @@
 
 /*
   sim_tournament_flow.js v3（フル）
-  ✅「試合最新版.txt」準拠：ローカル大会（単一進行）
+  ローカル大会（単体）
   - 20チーム（プレイヤー1 + CPU19）
-  - CPU min-max抽選：大会開始時に team.power を確定（data_cpu_teams.js の basePower/min-max を使用）
+  - CPUは大会開始時に team.power を確定（min-max抽選：既存データ構造に柔軟対応）
   - R1〜R6：交戦枠固定（R1-4:4 / R5:2 / R6:1）
-  - R4/R5：プレイヤー戦 確率100%
-  - ログ：プレイヤー視点のみ（関与した「イベント」「交戦」「結果」だけ）
+  - イベント回数：R1=1 / R2-5=2 / R6=0（同ラウンド重複なし）
+  - ログ：プレイヤー視点のみ（プレイヤーに関与したイベント/交戦/結果だけ）
   - プレイヤー全滅後：裏で高速処理（ログ追加なし）→優勝算出
-  - ダウン概念なし（downs_total 一切なし）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -18,6 +17,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 (function(){
 
   const K = {
+    company: 'mobbr_company',
     team: 'mobbr_team',
     playerTeam: 'mobbr_playerTeam'
   };
@@ -41,19 +41,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return a;
   }
 
-  function clamp(n, lo, hi){
-    const v = Number(n);
-    if (!Number.isFinite(v)) return lo;
-    return Math.max(lo, Math.min(hi, v));
-  }
-
-  // ===== プレイヤーチーム戦闘力（簡易）=====
   function clamp01to100(n){
     const v = Number(n);
     if (!Number.isFinite(v)) return 0;
     return Math.max(0, Math.min(100, v));
   }
 
+  // ===== プレイヤーチーム戦闘力（ui_team の重みを簡易再現）=====
   const WEIGHT = {
     aim: 0.25,
     mental: 0.15,
@@ -87,7 +81,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     total += s.armor * WEIGHT.armor;
     total += s.hp * WEIGHT.hp;
 
-    return clamp(total, 1, 100);
+    return Math.max(1, Math.min(100, total));
   }
 
   function calcPlayerTeamPower(){
@@ -99,38 +93,58 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const members = t.members.slice(0,3);
       const vals = members.map(m => calcCharBasePower(m.stats || {}));
       const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-      return Math.round(avg + 3);
+      return Math.round(avg + 3); // ui_team と同じ「+3」寄せ
     }catch{
       return 55;
     }
   }
 
-  // ===== CPU min-max 抽選（data_cpu_teams.js: basePower / members powerMin/powerMax を利用）=====
+  // ===== CPU power 抽選（既存データ構造に柔軟対応）=====
+  // 1) もし members があり、各メンバーに min/max がある → 3人抽選平均
+  // 2) それ以外 → teamPower/power を base とし、min/max を倍率 or 絶対値として抽選
   function rollCpuPower(cpuTeam){
-    // 1) basePower があればそれをベース
-    const base = Number.isFinite(Number(cpuTeam?.basePower)) ? Number(cpuTeam.basePower) : 55;
+    // members抽選（推奨：最新仕様寄り）
+    const mems = Array.isArray(cpuTeam?.members) ? cpuTeam.members : null;
+    if (mems && mems.length){
+      const baseTeam = clamp01to100(cpuTeam.teamPower || cpuTeam.power || 55);
 
-    // 2) members の powerMin/powerMax から倍率レンジを作る（無ければ ±8%）
-    let minMult = 0.92;
-    let maxMult = 1.08;
+      // 「総合力が高いほど安定」＝ブレを縮める（高いほど中心寄り）
+      // 0..1（高いほど安定）
+      const stability = Math.max(0, Math.min(1, baseTeam / 100));
 
-    if (cpuTeam && Array.isArray(cpuTeam.members) && cpuTeam.members.length){
-      // 各メンバーの min/max を集計 → チームのぶれ幅に使う（やりすぎないよう弱め）
-      const mins = cpuTeam.members.map(m => Number(m?.powerMin)).filter(v => Number.isFinite(v));
-      const maxs = cpuTeam.members.map(m => Number(m?.powerMax)).filter(v => Number.isFinite(v));
-      if (mins.length && maxs.length){
-        const avgMin = mins.reduce((a,b)=>a+b,0)/mins.length; // 例: 60〜90
-        const avgMax = maxs.reduce((a,b)=>a+b,0)/maxs.length;
-        // だいたい basePower の周辺で揺れるように倍率化（雑な対応でOK、後で調整可）
-        // basePower を中心に「±(avgMax-avgMin)の一部」だけ揺らす
-        const span = clamp((avgMax - avgMin) / 100, 0.06, 0.18); // 6%〜18%
-        minMult = 1 - span*0.55;
-        maxMult = 1 + span*0.55;
-      }
+      const picked = mems.slice(0,3).map(m=>{
+        const lo = Number(m.min ?? m.minPower ?? m.powerMin ?? 0);
+        const hi = Number(m.max ?? m.maxPower ?? m.powerMax ?? 100);
+        const minV = Math.min(lo, hi);
+        const maxV = Math.max(lo, hi);
+
+        // 安定度で乱数を中心に寄せる
+        // stability=1 だとブレを 35% まで圧縮
+        const r0 = Math.random();               // 0..1
+        const centered = 0.5 + (r0 - 0.5) * (1 - stability * 0.65);
+        const v = minV + centered * (maxV - minV);
+        return clamp01to100(v);
+      });
+
+      const avg = picked.reduce((a,b)=>a+b,0) / picked.length;
+      return Math.round(avg);
     }
 
-    const r = minMult + Math.random() * (maxMult - minMult);
-    return clamp(Math.round(base * r), 1, 100);
+    // 旧式：teamPower + min/max（倍率っぽい/絶対値っぽい）対応
+    const base = Number(cpuTeam.teamPower || cpuTeam.power || 55);
+    const min = Number(cpuTeam.min || cpuTeam.minPower || cpuTeam.powerMin || 0.92);
+    const max = Number(cpuTeam.max || cpuTeam.maxPower || cpuTeam.powerMax || 1.08);
+
+    const isMult = (min > 0 && min < 2.5 && max > 0 && max < 2.5);
+    if (isMult){
+      const r = min + Math.random() * (max - min);
+      return Math.round(base * r);
+    }
+
+    const lo = Math.min(min, max);
+    const hi = Math.max(min, max);
+    const v = lo + Math.random() * (hi - lo);
+    return Math.round(v);
   }
 
   // ===== ラウンドごとの交戦枠 =====
@@ -140,19 +154,21 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 1; // R6
   }
 
+  // ===== イベント回数（最新版準拠）=====
+  function eventCount(round){
+    if (round === 1) return 1;
+    if (round >= 2 && round <= 5) return 2;
+    return 0; // R6
+  }
+
   // ===== State =====
   let state = null;
 
-  function pushPlayerLog3(l1, l2, l3, icon){
+  function pushPlayerLog(main, sub){
     if (!state) return;
     if (!state.logs) state.logs = [];
-    state.logs.push({
-      l1: String(l1 || ''),
-      l2: String(l2 || ''),
-      l3: String(l3 || ''),
-      icon: icon ? String(icon) : ''
-    });
-    if (state.logs.length > 80) state.logs = state.logs.slice(-80);
+    state.logs.push({ main: String(main||''), sub: String(sub||'') });
+    if (state.logs.length > 60) state.logs = state.logs.slice(-60);
   }
 
   function aliveTeams(){
@@ -167,18 +183,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const player = getPlayer();
     const coachFlags = window.MOBBR?.sim?.matchFlow?.getPlayerCoachFlags
       ? window.MOBBR.sim.matchFlow.getPlayerCoachFlags()
-      : {};
+      : null;
     return { player, playerCoach: coachFlags };
   }
 
-  function ensureTeamRuntimeShape(team){
+  function ensureTeamShape(team){
     if (!team) return;
     if (!Number.isFinite(Number(team.power))) team.power = 55;
     if (!Number.isFinite(Number(team.alive))) team.alive = 3;
     if (team.alive < 0) team.alive = 0;
     if (team.eliminated !== true) team.eliminated = false;
-    if (!Number.isFinite(Number(team.treasure))) team.treasure = 0;
-    if (!Number.isFinite(Number(team.flag))) team.flag = 0;
+
+    // matchEvents v2 で使う eventBuffs
     if (!team.eventBuffs || typeof team.eventBuffs !== 'object'){
       team.eventBuffs = { aim:0, mental:0, agi:0 };
     }else{
@@ -186,9 +202,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (!Number.isFinite(team.eventBuffs.mental)) team.eventBuffs.mental = 0;
       if (!Number.isFinite(team.eventBuffs.agi)) team.eventBuffs.agi = 0;
     }
+
+    if (!Number.isFinite(Number(team.treasure))) team.treasure = 0;
+    if (!Number.isFinite(Number(team.flag))) team.flag = 0;
   }
 
-  // ===== マッチ組み（枠固定 + R4/R5プレイヤー確定参戦）=====
+  // ===== マッチ組み（枠固定）=====
   function buildMatchesForRound(round){
     const alive = aliveTeams();
     const slots = battleSlots(round);
@@ -196,8 +215,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const matches = [];
     const used = new Set();
 
+    // ※「プレイヤー戦は確率で寄せる」仕様が来ているが、
+    // areaId 周りがまだ tournamentFlow に入っていないため、現段階は
+    // R4〜R6 は必ずプレイヤー参戦、それ以外はランダムで参戦させるだけにする。
     const player = getPlayer();
-    const mustPlayer = (round === 4 || round === 5);
+    const pTable = { 1:0.60, 2:0.70, 3:0.75, 4:1.00, 5:1.00, 6:1.00 };
+    const wantPlayer = !!(player && !player.eliminated && (Math.random() < (pTable[round] ?? 0)));
 
     function pickOpponent(excludeId){
       const pool = alive.filter(t => !used.has(t.id) && t.id !== excludeId);
@@ -205,7 +228,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return pool[(Math.random()*pool.length)|0];
     }
 
-    if (player && !player.eliminated && mustPlayer){
+    if (wantPlayer){
       used.add(player.id);
       const opp = pickOpponent(player.id);
       if (opp){
@@ -232,12 +255,71 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return matches;
   }
 
-  // ===== そのラウンドの「イベント対象数」 =====
-  function eventCountByRound(round){
-    // 仕様の「テンポ優先」で固定（調整しやすい）
-    if (round <= 2) return 2;
-    if (round <= 4) return 1;
-    return 1;
+  // ===== イベント（R別回数 / 同ラウンド重複なし）=====
+  function runRoundEvents(round, ctx){
+    const cnt = eventCount(round);
+    if (cnt <= 0) return;
+
+    const me = ctx.player;
+    const usedIds = new Set();
+
+    for (let i=0;i<cnt;i++){
+      const alive = aliveTeams();
+      if (!alive.length) break;
+
+      // 対象チーム：eliminated=false のみ（aliveTeamsが既にそう）
+      const target = alive[(Math.random()*alive.length)|0];
+      ensureTeamShape(target);
+
+      // 同ラウンド重複なし：同じイベントIDが出たら引き直し（最大20回）
+      let ev = null;
+      if (window.MOBBR?.sim?.matchEvents?.rollForTeam){
+        for (let k=0;k<20;k++){
+          const tmp = window.MOBBR.sim.matchEvents.rollForTeam(target, round, ctx);
+          if (!tmp) break;
+          if (!usedIds.has(tmp.id)){
+            ev = tmp;
+            usedIds.add(tmp.id);
+            break;
+          }
+        }
+      }
+
+      // ログはプレイヤー視点：プレイヤーに当たった時だけ出す
+      if (ev && me && target.id === me.id){
+        // UI側が2行なので、2行に圧縮（数値は出さない）
+        pushPlayerLog(ev.log1, `${ev.log2}：${ev.log3}`);
+      }
+    }
+  }
+
+  // ===== 優勝決定（簡易：最後の生存）=====
+  function decideChampion(){
+    const alive = aliveTeams();
+    let champ = null;
+
+    if (alive.length === 1){
+      champ = alive[0];
+    }else if (alive.length > 1){
+      // 想定外保険：生存>0優先→名前
+      const s = alive.slice().sort((a,b)=>{
+        const aa = a.alive || 0;
+        const bb = b.alive || 0;
+        if (bb !== aa) return bb - aa;
+        return String(a.name||'').localeCompare(String(b.name||''), 'ja');
+      });
+      champ = s[0];
+    }else{
+      champ = null;
+    }
+
+    state.champion = champ ? { id: champ.id, name: champ.name } : null;
+
+    pushPlayerLog('試合終了！', `チャンピオン：${state.champion?.name || '不明'}`);
+    state.bannerLeft = 'RESULT';
+    state.bannerRight = '';
+    state.logMain = '結果';
+    state.logSub = `チャンピオン：${state.champion?.name || '不明'}`;
   }
 
   // ===== 1ラウンド進行（イベント→交戦）=====
@@ -246,34 +328,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.phase = 'battle';
 
     const ctx = computeCtx();
-    const matches = buildMatchesForRound(round);
-
-    state.bannerLeft = `ROUND ${round}`;
-    state.bannerRight = `交戦：${matches.length}枠`;
-
     const player = ctx.player;
 
-    // このラウンドのイベント（生存チームから抽選）
-    const alive = aliveTeams();
-    const evN = Math.min(eventCountByRound(round), alive.length);
-    for (let i=0; i<evN; i++){
-      const target = alive[(Math.random()*alive.length)|0];
-      ensureTeamRuntimeShape(target);
+    state.bannerLeft = `ROUND ${round}`;
+    state.bannerRight = `交戦：${battleSlots(round)}枠`;
 
-      const ev = window.MOBBR?.sim?.matchEvents?.rollForTeam
-        ? window.MOBBR.sim.matchEvents.rollForTeam(target, round, ctx)
-        : null;
+    // 1) イベント（R別回数）
+    runRoundEvents(round, ctx);
 
-      // ✅ ログはプレイヤー視点のみ
-      if (player && target.id === player.id && ev){
-        pushPlayerLog3(ev.log1, ev.log2, ev.log3, ev.icon);
-      }
-    }
+    // 2) 交戦（枠固定）
+    const matches = buildMatchesForRound(round);
 
-    // 交戦解決（matchFlow.resolveBattle）
     for (const [A,B] of matches){
-      ensureTeamRuntimeShape(A);
-      ensureTeamRuntimeShape(B);
+      ensureTeamShape(A);
+      ensureTeamShape(B);
 
       const res = window.MOBBR?.sim?.matchFlow?.resolveBattle
         ? window.MOBBR.sim.matchFlow.resolveBattle(A, B, round, ctx)
@@ -281,30 +349,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (!res) continue;
 
-      // ✅ プレイヤー関与ログのみ（3段固定に揃える）
+      // プレイヤー関与ログのみ
       if (player && (A.id === player.id || B.id === player.id)){
         const me = (A.id === player.id) ? A : B;
         const foe = (A.id === player.id) ? B : A;
 
         const iWon = (res.winnerId === me.id);
         if (iWon){
-          pushPlayerLog3(
-            '交戦結果！',
-            'ファイト勝利！',
-            `相手：${foe.name} / 自軍生存${me.alive}`,
-            'battle.png'
-          );
+          pushPlayerLog('ファイト勝利！', `相手：${foe.name} / 自軍生存${me.alive}`);
         }else{
-          pushPlayerLog3(
-            '交戦結果！',
-            'ファイト敗北…',
-            `相手：${foe.name} / 自軍生存${me.alive}`,
-            'battle.png'
-          );
+          pushPlayerLog('ファイト敗北…', `相手：${foe.name} / 自軍生存${me.alive}`);
         }
 
         if (me.eliminated){
-          pushPlayerLog3('全滅…', 'プレイヤー脱落', 'ここから先は自動で高速処理します', '');
+          pushPlayerLog('全滅…', 'ここから先は自動で高速処理します');
         }
       }
     }
@@ -319,6 +377,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // プレイヤー全滅後：高速処理
     const playerNow = getPlayer();
     if (playerNow && playerNow.eliminated){
       fastForwardToEnd();
@@ -326,80 +385,42 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     state.phase = 'ready';
-    state.log1 = `ROUND ${round} 終了`;
-    state.log2 = '';
-    state.log3 = '次へで進行';
-  }
-
-  // ===== 優勝決定（ダウン無し）=====
-  function decideChampion(){
-    const alive = aliveTeams();
-    let champ = null;
-
-    if (alive.length === 1){
-      champ = alive[0];
-    }else if (alive.length > 1){
-      // 優先：生存人数（基本は同じ=1想定）→ treasure+flag → power → 名前
-      const s = alive.slice().sort((a,b)=>{
-        const aa = a.alive || 0;
-        const bb = b.alive || 0;
-        if (bb !== aa) return bb - aa;
-
-        const aScore = (a.treasure||0) + (a.flag||0);
-        const bScore = (b.treasure||0) + (b.flag||0);
-        if (bScore !== aScore) return bScore - aScore;
-
-        const ap = a.power || 0;
-        const bp = b.power || 0;
-        if (bp !== ap) return bp - ap;
-
-        return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-      });
-      champ = s[0];
-    }else{
-      // 全滅のみの異常時：power→名前
-      const all = (state.teams || []).slice().sort((a,b)=>{
-        const ap = a.power || 0;
-        const bp = b.power || 0;
-        if (bp !== ap) return bp - ap;
-        return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-      });
-      champ = all[0] || null;
-    }
-
-    state.champion = champ ? { id: champ.id, name: champ.name } : null;
-
-    // 結果は必ずログに残す（プレイヤー視点）
-    pushPlayerLog3('試合終了！', 'RESULT', `チャンピオン：${state.champion?.name || '不明'}`, 'winner.png');
-
-    state.bannerLeft = 'RESULT';
-    state.bannerRight = '';
-    state.log1 = '結果';
-    state.log2 = '';
-    state.log3 = `チャンピオン：${state.champion?.name || '不明'}`;
+    state.logMain = `ROUND ${round} 終了`;
+    state.logSub = '次へで進行';
   }
 
   function fastForwardToEnd(){
+    // プレイヤー全滅後：ログ追加なしで R6 まで回す
     while (state.round < 7){
       const round = state.round;
-      const matches = buildMatchesForRound(round);
       const ctx = computeCtx();
 
-      // イベント（ログ無し）
-      const alive = aliveTeams();
-      const evN = Math.min(eventCountByRound(round), alive.length);
-      for (let i=0; i<evN; i++){
-        const target = alive[(Math.random()*alive.length)|0];
-        ensureTeamRuntimeShape(target);
-        if (window.MOBBR?.sim?.matchEvents?.rollForTeam){
-          window.MOBBR.sim.matchEvents.rollForTeam(target, round, ctx);
+      // イベント（内部反映のみ）
+      const cnt = eventCount(round);
+      if (cnt > 0 && window.MOBBR?.sim?.matchEvents?.rollForTeam){
+        const usedIds = new Set();
+        for (let i=0;i<cnt;i++){
+          const alive = aliveTeams();
+          if (!alive.length) break;
+          const target = alive[(Math.random()*alive.length)|0];
+          ensureTeamShape(target);
+
+          for (let k=0;k<20;k++){
+            const tmp = window.MOBBR.sim.matchEvents.rollForTeam(target, round, ctx);
+            if (!tmp) break;
+            if (!usedIds.has(tmp.id)){
+              usedIds.add(tmp.id);
+              break;
+            }
+          }
         }
       }
 
-      // バトル
+      // 交戦
+      const matches = buildMatchesForRound(round);
       for (const [A,B] of matches){
-        ensureTeamRuntimeShape(A);
-        ensureTeamRuntimeShape(B);
+        ensureTeamShape(A);
+        ensureTeamShape(B);
         if (window.MOBBR?.sim?.matchFlow?.resolveBattle){
           window.MOBBR.sim.matchFlow.resolveBattle(A, B, round, ctx);
         }
@@ -438,9 +459,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     cpu19.forEach((c, i)=>{
       const id = c.teamId || c.id || `CPU_${i+1}`;
-      const nm = c.name || c.teamName || id;
-
-      const power = rollCpuPower(c);
+      const nm = c.teamName || c.name || id;
 
       teams.push({
         id,
@@ -450,7 +469,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         eliminated: false,
         treasure: 0,
         flag: 0,
-        power,
+        power: rollCpuPower(c),
         eventBuffs: { aim:0, mental:0, agi:0 }
       });
     });
@@ -463,12 +482,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       logs: [],
       bannerLeft: 'ローカル大会',
       bannerRight: '20チーム',
-      log1: '大会開始',
-      log2: '',
-      log3: '次へでR1開始'
+      logMain: '大会開始',
+      logSub: '次へでR1開始'
     };
 
-    pushPlayerLog3('大会開始', 'PLAYER', `戦闘力：${player.power}`, '');
+    pushPlayerLog('大会開始', `戦闘力：${player.power}`);
 
     if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
     if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
@@ -479,9 +497,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!state) return;
 
     if (state.phase === 'result'){
-      state.log1 = '結果';
-      state.log2 = '';
-      state.log3 = `チャンピオン：${state.champion?.name || '不明'}`;
+      state.logMain = '結果';
+      state.logSub = `チャンピオン：${state.champion?.name || '不明'}`;
       return;
     }
 
@@ -491,12 +508,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     state.phase = 'ready';
-    state.log1 = `ROUND ${state.round} 準備`;
-    state.log2 = '';
-    state.log3 = '次へで進行';
+    state.logMain = `ROUND ${state.round} 準備`;
+    state.logSub = '次へで進行';
   }
 
-  function getState(){ return state; }
+  function getState(){
+    return state;
+  }
 
   window.MOBBR.sim.tournamentFlow = {
     startLocalTournament,
