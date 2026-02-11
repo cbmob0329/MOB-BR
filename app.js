@@ -129,6 +129,7 @@ async function loadModules(){
     `storage.js${v}`,
     `data_player.js${v}`,
     `data_cards.js${v}`,
+　　`data_cpu_teams.js?v=17`,
 
     // UI
     `ui_main.js?v=18`,
