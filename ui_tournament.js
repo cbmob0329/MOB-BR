@@ -1,17 +1,17 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.2.0（フル）
-  ✅ sim_tournament_flow.js v3.1 の state.request に対応
+  ui_tournament.js v3.3.0（フル）
+  ✅ sim_tournament_flow.js v3.2.0 の state.request に対応
   ✅ HTMLを触れない前提：このJSがUI DOMとCSSを自動生成
 
-  ✅ あなたの追加要件（2026-02）
-   - 大会中の外側背景(backdrop)は常に maps/neonmain.png 固定
-   - Area画像は tent.png と同じ「正方形枠(squareBg)」に表示（サイズ統一）
-   - tent.png は試合開始前のみ
-   - 移動中は squareBg=ido.png、"移動中.."表示しながら次エリア画像をプリロード
-     → 読み込み完了で自動的に到着演出 → squareBgを次エリアへ切替
-   - チームデータ/チーム画像が読めない対策（フォールバック＆パス候補）
+  v3.3.0 変更点（今回の要件対応）
+  ✅ 到着：到着ログは出さない。showMove内で「到着！＋エリア名」中央表示→NEXT待ち
+  ✅ イベントアイコンを大きく
+  ✅ 敵チーム：requestに入る foeName/foeTeamId/foePower を正しく使用
+  ✅ CPU戦でUIが勝手にstepしない（showEncounterの自動step撤去）
+  ✅ 右側エネミー画像は交戦中だけ（他ハンドラで必ずクリア）
+  ✅ 負けたら：showChampion → showMatchResult（flowが制御）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -21,20 +21,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const $ = (sel, root=document) => root.querySelector(sel);
 
-  // ===== Tournament constants =====
-  const TOURNEY_BACKDROP = 'maps/neonmain.png'; // ✅大会中ずっと固定
+  const TOURNEY_BACKDROP = 'maps/neonmain.png';
 
   const ASSET = {
-    // square backgrounds (inside HUD)
     tent: 'tent.png',
     ido: 'ido.png',
-
-    // battle overlays (center top)
     brbattle: 'brbattle.png',
     brwin: 'brwin.png',
     brlose: 'brlose.png',
-
-    // event icons
     bup: 'bup.png',
     bdeba: 'bdeba.png',
     bgeta: 'bgeta.png',
@@ -48,7 +42,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     '被弾した！','カバー頼む！','大丈夫か!?','走れーー！','耐えるぞー！'
   ];
 
-  // ===== helpers =====
   function clamp(n, lo, hi){
     n = Number(n);
     if (!Number.isFinite(n)) n = lo;
@@ -105,11 +98,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function guessTeamImageCandidates(teamId){
     const id = String(teamId || '').trim();
     if (!id) return [];
-    // ✅ よくある配置候補を全部試す（存在するやつを採用）
-    // - root: "A01.png" など
-    // - cpu/: "cpu/A01.png"
-    // - teams/: "teams/A01.png"
-    // - maps/teams/: など（もし使ってたら拾える）
     return [
       `${id}.png`,
       `cpu/${id}.png`,
@@ -123,7 +111,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function guessPlayerImageCandidates(src){
     const s = String(src || '').trim();
     if (!s) return [];
-    // すでにパスならそれ優先、ファイル名だけの場合は候補も追加
     const base = s.includes('/') ? s.split('/').pop() : s;
     return [
       s,
@@ -194,7 +181,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         background: rgba(0,0,0,.25);
       }
 
-      /* ✅ Area/tent/ido はここ(squareBg)で表示 → 常に正方形 */
       #mobbrTournamentOverlay .squareBg{
         position:absolute; inset:0;
         background-size: cover;
@@ -402,10 +388,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
       #mobbrTournamentOverlay td.num{ text-align:right; }
 
-      /* event icon */
+      /* ✅ event icon（大きく） */
       #mobbrTournamentOverlay .eventIcon{
-        position:absolute; left:14px; top:64px;
-        width:44px; height:44px;
+        position:absolute; left:14px; top:72px;
+        width:72px; height:72px;
         image-rendering: pixelated;
         filter: drop-shadow(0 6px 10px rgba(0,0,0,.65));
         display:none;
@@ -413,7 +399,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
       #mobbrTournamentOverlay .eventIcon.isOn{ display:block; }
 
-      /* big splash */
+      /* splash */
       #mobbrTournamentOverlay .splash{
         position:absolute; inset:0;
         display:none;
@@ -527,7 +513,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     };
 
     dom.next.addEventListener('click', onNext);
-
     return dom;
   }
 
@@ -545,8 +530,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     d.backdrop.classList.add('fadeIn');
     busy = false;
     clearAutoTimer();
-
-    // ✅大会中は常にこれ
     setBackdrop(TOURNEY_BACKDROP);
   }
 
@@ -659,7 +642,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       id: t.id, name: t.name, power: t.power, isPlayer: t.isPlayer
     }));
 
-    // よくある置き場所を試す（存在すれば使う）
     const candidates = [
       window.MOBBR?.data?.cpuTeams,
       window.MOBBR?.cpuTeams,
@@ -700,16 +682,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
-    // ✅大会中 backdrop固定
     setBackdrop(TOURNEY_BACKDROP);
-
-    // ✅試合開始前のみ tent
     setSquareBg(ASSET.tent);
 
     setBanners(st.bannerLeft, st.bannerRight);
     setNames('', '');
+    setChars('', '');
 
-    // プレイヤー画像も “候補探索” して確実に表示
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
 
@@ -726,6 +705,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
     setSquareBg(ASSET.tent);
+
+    // 交戦以外は右側クリア
+    setNames('', '');
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
 
     const teams = getTeamsFallback(st, payload);
 
@@ -792,6 +776,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBackdrop(TOURNEY_BACKDROP);
     setSquareBg(ASSET.tent);
 
+    // 交戦以外は右側クリア
+    setNames('', '');
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+
     const equipped = Array.isArray(payload?.equipped) ? payload.equipped : [];
     const master = payload?.master || {};
 
@@ -845,11 +834,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBackdrop(TOURNEY_BACKDROP);
     setSquareBg(ASSET.tent);
 
+    // 交戦以外は右側クリア
+    setNames('', '');
+
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
 
     setBanners(st.bannerLeft, st.bannerRight);
-    setNames('', '');
     setLines(st.ui?.center3?.[0] || 'バトルスタート！', st.ui?.center3?.[1] || '降下開始…！', st.ui?.center3?.[2] || '');
 
     await preloadMany([TOURNEY_BACKDROP, ASSET.tent, leftResolved]);
@@ -863,14 +854,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
 
-    // ✅AreaはsquareBgに出す（正方形統一）
     const areaBg = String(payload?.bg || st.ui?.bg || '');
     const areaResolved = await resolveFirstExisting([areaBg]);
     if (areaResolved) setSquareBg(areaResolved);
 
+    // 交戦以外は右側クリア
+    setNames('', '');
+
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
-    setNames('', '');
 
     setLines(st.ui?.center3?.[0] || '', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
     await preloadMany([TOURNEY_BACKDROP, areaResolved, leftResolved]);
@@ -881,7 +873,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
     setBackdrop(TOURNEY_BACKDROP);
+
+    // 交戦以外は右側クリア
+    setNames('', '');
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
 
     setBanners(st.bannerLeft, st.bannerRight);
     setLines(`Round ${payload?.round || st.round} 開始！`, '', '');
@@ -893,6 +891,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     setBackdrop(TOURNEY_BACKDROP);
 
+    // 交戦以外は右側クリア
+    setNames('', '');
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+
     const icon = payload?.icon ? String(payload.icon) : '';
     setEventIcon(icon);
 
@@ -902,7 +905,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setLines(payload?.log1 || 'イベント発生！', payload?.log2 || '', payload?.log3 || '');
     }
 
-    await preloadMany([icon]);
+    await preloadMany([icon, leftResolved]);
     setNextEnabled(true);
   }
 
@@ -911,13 +914,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  async function handleCpuBattleSilent(){
-    const flow = getFlow();
-    if (!flow) return;
-    flow.step();
-    render();
-  }
-
+  // ✅ showEncounter：自動step禁止（NEXTで進める）
   async function handleShowEncounter(payload){
     hidePanels(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -930,11 +927,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const foeName = payload?.foeName || '';
     setNames(meName, foeName);
 
-    // 左（プレイヤー）
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
 
-    // 右（敵チーム）: teamId.png の候補を広く探索して解決
-    const foeId = payload?.foeTeamId || st.ui?.foeTeamId || '';
+    const foeId = payload?.foeTeamId || '';
     const rightResolved = await resolveFirstExisting(
       guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
     );
@@ -942,23 +937,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setChars(leftResolved, rightResolved);
 
     showSplash('接敵‼︎', `${meName} vs ${foeName}‼︎`);
-    setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, 'ロード中…');
-    setNextEnabled(false);
-    busy = true;
+    setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, '交戦スタート‼︎');
 
     await preloadMany([leftResolved, rightResolved, ASSET.brbattle, ASSET.brwin, ASSET.brlose]);
-
-    setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, '交戦スタート‼︎');
     await sleep(520);
     hideSplash();
 
+    // ✅ここで止める：NEXT待ち
     busy = false;
-
-    const flow = getFlow();
-    if (flow?.step){
-      flow.step();
-      render();
-    }
+    setNextEnabled(true);
   }
 
   function pickChats(n){
@@ -983,12 +970,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     busy = true;
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
-    const foeId = payload?.foeTeamId || st.ui?.foeTeamId || '';
+    const foeId = payload?.foeTeamId || '';
     const rightResolved = await resolveFirstExisting(
       guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
     );
 
+    const meName = payload?.meName || '';
+    const foeName = payload?.foeName || '';
+    setNames(meName, foeName);
     setChars(leftResolved, rightResolved);
+
     await preloadMany([leftResolved, rightResolved, ASSET.brbattle]);
 
     const chats = pickChats(10);
@@ -1017,23 +1008,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  async function handlePlayerEliminatedFastForward(){
-    setBackdrop(TOURNEY_BACKDROP);
-
-    setNextEnabled(false);
-    busy = true;
-    setLines('全滅…', 'この試合はここで終了！', '残りは自動で進行します');
-    await sleep(600);
-
-    const flow = getFlow();
-    if (!flow) { busy=false; return; }
-
-    flow.step();
-    busy = false;
-    render();
-  }
-
-  // ✅ 移動：ido表示中に次エリアを読み込み、完了で自動到着演出
+  // ✅ showMove：移動→到着（中央のみ）→NEXT待ち
   async function handleShowMove(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -1041,64 +1016,69 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
 
-    // 移動中は常に ido を正方形で
+    // 移動中は ido を正方形で
     setSquareBg(ASSET.ido);
+
+    // 交戦以外は右側クリア
+    setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
-    setNames('', '');
 
     setNextEnabled(false);
     busy = true;
 
     const toBg = String(payload?.toBg || '');
-    const toName = String(payload?.toAreaName || payload?.areaName || '次のエリア');
+    const toName = String(payload?.toAreaName || '次のエリア');
 
-    // まず「移動中..」表示
+    // 移動中のログ（到着ログは出さない）
     setLines('移動中..', `目的地：${toName}`, '読み込み中..');
 
-    // idoと次エリア画像を並行で読む（次エリアは解決してから）
     await preloadMany([ASSET.ido, TOURNEY_BACKDROP, leftResolved]);
 
     const toResolved = await resolveFirstExisting([toBg]);
     if (toResolved){
-      // ここまで来たら読み込み完了
       setLines('移動中..', `目的地：${toName}`, '読み込み完了！');
       await sleep(240);
 
-      // 自動到着演出
-      showSplash('到着！', toName);
+      // 到着演出（中央のみ）
       setSquareBg(toResolved);
-      await sleep(520);
+      showSplash('到着！', toName);
+      await sleep(560);
       hideSplash();
 
-      setLines(`${toName}へ到着！`, '', '');
+      // ✅到着ログは出さない（空にする）
+      setLines('', '', '');
+      await preloadMany([toResolved]);
     }else{
-      // 読めなかった場合も進行は止めない（表示だけ出す）
-      setLines('移動中..', `目的地：${toName}`, '画像が見つかりません');
-      // 到着扱いにしてNEXTは押せるようにする
+      // 見つからない場合も止めない
+      showSplash('到着！', toName);
+      await sleep(520);
+      hideSplash();
+      setLines('', '', '');
     }
 
     busy = false;
     setNextEnabled(true);
   }
 
-  async function handleShowArrive(payload){
-    hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
-    const st = getState();
+  async function handleShowChampion(payload){
+    hidePanels(); showCenterStamp(''); setEventIcon('');
     setBackdrop(TOURNEY_BACKDROP);
 
-    const bg = String(payload?.bg || st?.ui?.bg || '');
-    const name = String(payload?.areaName || payload?.toAreaName || '到着！');
-    const resolved = await resolveFirstExisting([bg]);
+    // 交戦以外：右側クリア
+    const st = getState();
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+    setNames('', '');
 
-    if (resolved) setSquareBg(resolved);
-
-    showSplash('到着！', name);
-    await sleep(420);
+    const champ = String(payload?.championName || '???');
+    showSplash('この試合のチャンピオンは', champ);
+    setLines('', '', '');
+    await sleep(820);
     hideSplash();
 
-    setLines(`${name}へ到着！`, '', '');
+    // NEXT待ち
     setNextEnabled(true);
   }
 
@@ -1109,9 +1089,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
 
-    // ここは「試合結果」なので squareBg はそのまま（エリア維持）でも良いが、
-    // battle.png があるなら見せたい場合は下をONに。
-    // setSquareBg('battle.png');
+    // 交戦以外：右側クリア
+    setNames('', '');
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
 
     const rows = Array.isArray(payload?.rows) ? payload.rows : (st.lastMatchResultRows || []);
     const wrap = document.createElement('div');
@@ -1160,6 +1141,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowTournamentResult(payload){
     hideSplash(); showCenterStamp(''); setEventIcon('');
     setBackdrop(TOURNEY_BACKDROP);
+
+    // 交戦以外：右側クリア
+    const st = getState();
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+    setNames('', '');
 
     const total = payload?.total || {};
     const arr = Object.values(total);
@@ -1218,6 +1205,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     setBackdrop(TOURNEY_BACKDROP);
 
+    // ✅毎回 tent
+    setSquareBg(ASSET.tent);
+
+    // 交戦以外：右側クリア
+    const st = getState();
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+    setNames('', '');
+
     setLines('次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, '');
     await sleep(260);
     setNextEnabled(true);
@@ -1229,16 +1225,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
-    // ✅大会中は常に外側は固定
     setBackdrop(TOURNEY_BACKDROP);
-
     setBanners(st.bannerLeft, st.bannerRight);
 
-    // ※ squareBg は request handler 側で管理する（勝手に上書きしない）
-    // ※ キャラ画像/名前は handler で決める（勝手に上書きしない）
-    // ただし center3 の受け取りは残す
     if (Array.isArray(st.ui?.center3)){
-      setLines(st.ui.center3[0], st.ui.center3[1], st.ui.center3[2]);
+      // center3は基本残す（handler側が上書きする）
+      // ※ただし到着ログ廃止のため、showMove等は handler で空にする
     }
 
     const req = st.request || null;
@@ -1266,15 +1258,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         case 'showEvent': await handleShowEvent(req); break;
 
         case 'prepareBattles': await handlePrepareBattles(req); break;
-        case 'cpuBattleSilent': await handleCpuBattleSilent(req); break;
 
         case 'showEncounter': await handleShowEncounter(req); break;
         case 'showBattle': await handleShowBattle(req); break;
 
-        case 'playerEliminatedFastForward': await handlePlayerEliminatedFastForward(req); break;
-
         case 'showMove': await handleShowMove(req); break;
-        case 'showArrive': await handleShowArrive(req); break;
+
+        case 'showChampion': await handleShowChampion(req); break;
 
         case 'showMatchResult': await handleShowMatchResult(req); break;
         case 'showTournamentResult': await handleShowTournamentResult(req); break;
