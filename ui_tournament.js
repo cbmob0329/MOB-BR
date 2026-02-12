@@ -1,12 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.4.2（フル）
-  ✅ v3.4.1を削らず拡張
-  追加：
-  ✅ 交戦時以外は「右（敵）」を丸ごと非表示（CSSの .isBattle で制御）
-  ✅ open() でロード画面を挟み、ido / event icons / stamp / tent を先読みしてから render 開始
-  ✅ チーム画像候補は「直下優先」（フォルダ無し直下が前提）
+  ui_tournament.js v3.4.3（フル）
+  ✅ v3.4.1 を保持しつつ修正
+  変更点：
+  ✅ 非交戦時に敵枠/敵名が残るのを根絶（render先頭で毎回 setBattleMode）
+  ✅ showEncounter を2段階化：
+     1) 「〇〇チームと接敵！」表示（敵名/画像は出さない）→ NEXTはflow.stepしない
+     2) NEXTで敵名/敵画像を表示 → 次のNEXTで通常進行
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -24,10 +25,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     brlose: 'brlose.png'
   };
 
-  const EVENT_ICONS = [
-    'bup.png','bdeba.png','bgeta.png','bgetb.png'
-  ];
-
   const BATTLE_CHAT = [
     'やってやんべ！','裏取るぞ！','展開する！','サポートするぞ！','うわあー！','ミスった！','一気に行くぞ！','今のうちに回復だ！','絶対勝つぞ！','撃て―！',
     'なんて動きだ！','撃ちまくれ！','グレ使う！','グレ投げろ！','リロードする！','被弾した！','カバー頼む！','大丈夫か!?','走れーー！','耐えるぞー！'
@@ -37,6 +34,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   let busy = false;
   let lastReqKey = '';
   let autoTimer = null;
+
+  // ✅「NEXTを押したらflow.stepせず、UI内の1回だけ処理する」ためのフック
+  let localNextAction = null;
 
   function getFlow(){
     return window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null;
@@ -59,6 +59,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function clearAutoTimer(){
     if (autoTimer){ clearTimeout(autoTimer); autoTimer = null; }
+  }
+
+  function clearLocalNext(){
+    localNextAction = null;
   }
 
   // ===== CSS loader =====
@@ -157,7 +161,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nextBtn.addEventListener('click', onNext);
     dom.closeBtn.addEventListener('click', close);
 
-    // iOS double-tap zoom & callout suppression
     overlay.addEventListener('touchstart', (e)=>{
       if (e.touches && e.touches.length>1) e.preventDefault();
     }, { passive:false });
@@ -165,50 +168,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
-  // ✅交戦中フラグ（CSSが右側を出す/消す）
+  // ✅交戦フラグ（CSSで右枠を出す/消す）
   function setBattleMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isBattle', !!on);
     if (!on){
-      // 非交戦なら右側のテキスト/画像も消しておく（念のため）
+      // 非交戦は右側を確実にクリア（残留根絶）
       dom.nameR.textContent = '';
       dom.imgR.src = '';
     }
   }
 
-  // ✅ open を async にしてプリロードを挟む
-  async function open(){
+  function open(){
     ensureDom();
     dom.overlay.classList.add('isOpen');
+    clearLocalNext();
     setBattleMode(false);
-
-    // まずロード画面
-    showSplash('ロード中...', '画像を読み込んでいます');
-
-    // 最低限の先読み（ストレス軽減）
-    const st = getState();
-    const leftCandidates = guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png');
-    const leftResolved = await resolveFirstExisting(leftCandidates);
-
-    await preloadMany([
-      TOURNEY_BACKDROP,
-      ASSET.tent,
-      ASSET.ido,
-      ASSET.brbattle,
-      ASSET.brwin,
-      ASSET.brlose,
-      ...(EVENT_ICONS),
-      leftResolved
-    ]);
-
-    hideSplash();
-
-    // ここから通常のrender
-    render();
   }
 
   function close(){
     clearAutoTimer();
+    clearLocalNext();
     if (!dom) return;
     dom.overlay.classList.remove('isOpen');
     dom.overlay.classList.remove('isBattle');
@@ -304,6 +284,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function onNext(){
     if (busy) return;
+
+    // ✅ローカル段階処理がある場合は flow.step しない
+    if (typeof localNextAction === 'function'){
+      const fn = localNextAction;
+      localNextAction = null;
+      try{ fn(); }catch(e){ console.error('[ui_tournament] localNextAction error:', e); }
+      return;
+    }
+
     const flow = getFlow();
     if (!flow) return;
     flow.step();
@@ -323,9 +312,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const id = String(teamId || '');
     if (!id) return [];
     const arr = [];
-    // ✅直下優先
+    // 直下優先
     arr.push(`${id}.png`);
-    // 互換（将来フォルダに移しても動く）
+    // 互換
     arr.push(`cpu/${id}.png`);
     arr.push(`teams/${id}.png`);
     return arr;
@@ -356,14 +345,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await Promise.all(arr.map(s=>imgExists(s)));
   }
 
+  function escapeHtml(s){
+    return String(s || '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#39;");
+  }
+
   // ===== handlers =====
 
   async function handleShowIntroText(){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
@@ -416,21 +412,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return wrap;
   }
 
-  function escapeHtml(s){
-    return String(s || '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
-
   async function handleShowTeamList(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
@@ -455,8 +440,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
@@ -509,8 +492,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
-    setBattleMode(false);
-
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
     setSquareBg(sq || ASSET.tent);
@@ -530,8 +511,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
 
@@ -554,8 +533,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
-    setBattleMode(false);
-
     setBackdrop(TOURNEY_BACKDROP);
 
     setNames('', '');
@@ -571,8 +548,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp('');
     const st = getState();
     setBackdrop(TOURNEY_BACKDROP);
-
-    setBattleMode(false);
 
     setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
@@ -596,38 +571,44 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ showEncounter：NEXTで進める（あなたの仕様維持）
+  // ✅ showEncounter：2段階
   async function handleShowEncounter(payload){
     hidePanels(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
 
-    setBattleMode(true);
-
+    // まずは「接敵表示だけ」＝非交戦扱い（右枠を出さない）
     setBackdrop(TOURNEY_BACKDROP);
     setBanners(st.bannerLeft, st.bannerRight);
 
     const meName = payload?.meName || '';
     const foeName = payload?.foeName || '';
-    setNames(meName, foeName);
+    const foeId = payload?.foeTeamId || '';
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
-
-    const foeId = payload?.foeTeamId || '';
     const rightResolved = await resolveFirstExisting(
       guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
     );
 
-    setChars(leftResolved, rightResolved);
-
-    showSplash('接敵‼︎', `${meName} vs ${foeName}‼︎`);
-    setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, '交戦スタート‼︎');
-
+    // ✅段階1：敵名/敵画像は出さない
+    setBattleMode(false);
+    setNames('', '');
+    setChars(leftResolved, '');
+    showSplash('接敵‼︎', `${foeName}チームと接敵！`);
+    setLines('接敵‼︎', `${foeName}チームと接敵！`, 'NEXTで詳細を表示');
     await preloadMany([leftResolved, rightResolved, ASSET.brbattle, ASSET.brwin, ASSET.brlose]);
-    await sleep(520);
-    hideSplash();
 
-    busy = false;
+    // ✅NEXTで段階2へ（ここではflow.stepしない）
+    localNextAction = ()=>{
+      // 段階2：敵名/敵画像を表示（交戦枠ON）
+      hideSplash();
+      setBattleMode(true);
+      setNames(meName, foeName);
+      setChars(leftResolved, rightResolved);
+      setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, '交戦スタート‼︎');
+      setNextEnabled(true);
+    };
+
     setNextEnabled(true);
   }
 
@@ -693,7 +674,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ showMove：移動は非交戦
   async function handleShowMove(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -936,7 +916,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== main render =====
-
   async function render(){
     ensureDom();
 
@@ -947,11 +926,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lastReqKey = key;
 
     clearAutoTimer();
+    clearLocalNext();
 
     if (!req || !req.type){
+      setBattleMode(false);
       setNextEnabled(!busy);
       return;
     }
+
+    // ✅ここで毎回「交戦中か」を確定（残留根絶）
+    const isBattleReq = (req.type === 'showEncounter' || req.type === 'showBattle');
+    setBattleMode(isBattleReq);
 
     try{
       switch(req.type){
@@ -987,6 +972,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(e){
       console.error('[ui_tournament] request handler error:', e);
       busy = false;
+      setBattleMode(false);
       setNextEnabled(true);
     }
   }
@@ -995,7 +981,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureDom();
   }
 
-  // ✅ open は async だが、外部は普通に呼べる（戻り値Promiseでも無害）
   window.MOBBR.ui.tournament = { open, close, render };
   window.MOBBR.initTournamentUI = initTournamentUI;
 
