@@ -1,17 +1,19 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.3.0（フル）
+  ui_tournament.js v3.4.0（フル）
   ✅ sim_tournament_flow.js v3.2.0 の state.request に対応
-  ✅ HTMLを触れない前提：このJSがUI DOMとCSSを自動生成
+  ✅ HTMLを触れない前提：このJSがUI DOMを自動生成／CSSは tournament.css を自動読込
 
-  v3.3.0 変更点（今回の要件対応）
+  v3.4.0 変更点（今回の要件対応）
+  ✅ CSSを tournament.css に分離（JS内の巨大CSSを削除）
+  ✅ battle内の if (payload?.win) が壊れていた箇所を修正（payl\n oad になっていた）
+
+  v3.3.0 変更点（前版）
   ✅ 到着：到着ログは出さない。showMove内で「到着！＋エリア名」中央表示→NEXT待ち
   ✅ イベントアイコンを大きく
   ✅ 敵チーム：requestに入る foeName/foeTeamId/foePower を正しく使用
-  ✅ CPU戦でUIが勝手にstepしない（showEncounterの自動step撤去）
-  ✅ 右側エネミー画像は交戦中だけ（他ハンドラで必ずクリア）
-  ✅ 負けたら：showChampion → showMatchResult（flowが制御）
+  ✅ CPU戦でUIが勝手にstepしない（showEncounter など全て NEXT待ちに統一）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -19,414 +21,59 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
 (function(){
 
-  const $ = (sel, root=document) => root.querySelector(sel);
-
-  const TOURNEY_BACKDROP = 'maps/neonmain.png';
+  const TOURNEY_BACKDROP = 'haikeimain.png';
 
   const ASSET = {
     tent: 'tent.png',
     ido: 'ido.png',
     brbattle: 'brbattle.png',
     brwin: 'brwin.png',
-    brlose: 'brlose.png',
-    bup: 'bup.png',
-    bdeba: 'bdeba.png',
-    bgeta: 'bgeta.png',
-    bgetb: 'bgetb.png'
+    brlose: 'brlose.png'
   };
 
   const BATTLE_CHAT = [
-    'やってやんべ！','裏取るぞ！','展開する！','サポートするぞ！','うわあー！',
-    'ミスった！','一気に行くぞ！','今のうちに回復だ！','絶対勝つぞ！','撃て―！',
-    'なんて動きだ！','撃ちまくれ！','グレ使う！','グレ投げろ！','リロードする！',
-    '被弾した！','カバー頼む！','大丈夫か!?','走れーー！','耐えるぞー！'
+    'やってやんべ！','裏取るぞ！','展開する！','サポートするぞ！','うわあー！','ミスった！','一気に行くぞ！','今のうちに回復だ！','絶対勝つぞ！','撃て―！',
+    'なんて動きだ！','撃ちまくれ！','グレ使う！','グレ投げろ！','リロードする！','被弾した！','カバー頼む！','大丈夫か!?','走れーー！','耐えるぞー！'
   ];
 
-  function clamp(n, lo, hi){
-    n = Number(n);
-    if (!Number.isFinite(n)) n = lo;
-    return Math.max(lo, Math.min(hi, n));
-  }
-  function shuffle(arr){
-    const a = (arr || []).slice();
-    for (let i=a.length-1;i>0;i--){
-      const j = (Math.random()*(i+1))|0;
-      [a[i],a[j]] = [a[j],a[i]];
-    }
-    return a;
-  }
-  function sleep(ms){
-    ms = Number(ms || 0);
-    return new Promise(r=>setTimeout(r, ms));
-  }
-  function escapeHtml(s){
-    return String(s||'')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
-
-  // ===== image preload / resolve =====
-  function preloadOne(src){
-    return new Promise((resolve)=>{
-      if (!src){ resolve(false); return; }
-      const img = new Image();
-      img.onload = ()=> resolve(true);
-      img.onerror = ()=> resolve(false);
-      img.src = src;
-    });
-  }
-
-  async function preloadMany(list){
-    const uniq = Array.from(new Set((list||[]).map(x=>String(x||'')).filter(Boolean)));
-    if (!uniq.length) return;
-    await Promise.all(uniq.map(preloadOne));
-  }
-
-  async function resolveFirstExisting(paths){
-    const uniq = Array.from(new Set((paths||[]).map(x=>String(x||'')).filter(Boolean)));
-    for (const p of uniq){
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await preloadOne(p);
-      if (ok) return p;
-    }
-    return '';
-  }
-
-  function guessTeamImageCandidates(teamId){
-    const id = String(teamId || '').trim();
-    if (!id) return [];
-    return [
-      `${id}.png`,
-      `cpu/${id}.png`,
-      `teams/${id}.png`,
-      `team/${id}.png`,
-      `images/${id}.png`,
-      `img/${id}.png`
-    ];
-  }
-
-  function guessPlayerImageCandidates(src){
-    const s = String(src || '').trim();
-    if (!s) return [];
-    const base = s.includes('/') ? s.split('/').pop() : s;
-    return [
-      s,
-      base,
-      `cpu/${base}`,
-      `teams/${base}`,
-      `img/${base}`,
-      `images/${base}`
-    ];
-  }
-
-  // ===== UI runtime =====
   let dom = null;
-  let lastReqKey = '';
   let busy = false;
+  let lastReqKey = '';
   let autoTimer = null;
 
-  function clearAutoTimer(){
-    if (autoTimer){
-      clearTimeout(autoTimer);
-      autoTimer = null;
-    }
+  function getFlow(){
+    return window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null;
+  }
+  function getState(){
+    const f = getFlow();
+    return f?.getState ? f.getState() : (f?.state || null);
   }
 
+  function sleep(ms){ return new Promise(r=>setTimeout(r, ms|0)); }
+
+  function shuffle(a){
+    const arr = (a || []).slice();
+    for (let i=arr.length-1;i>0;i--){
+      const j = (Math.random()*(i+1))|0;
+      const t = arr[i]; arr[i]=arr[j]; arr[j]=t;
+    }
+    return arr;
+  }
+
+  function clearAutoTimer(){
+    if (autoTimer){ clearTimeout(autoTimer); autoTimer = null; }
+  }
+
+  // ===== CSS loader =====
   function ensureCss(){
-    if ($('#mobbrTournamentCss')) return;
-    const st = document.createElement('style');
-    st.id = 'mobbrTournamentCss';
-    st.textContent = `
-      :root{
-        --mobbr-ui-bg: rgba(0,0,0,.55);
-        --mobbr-ui-line: rgba(255,255,255,.18);
-        --mobbr-ui-white: #fff;
-      }
-      #mobbrTournamentOverlay{
-        position: fixed; inset: 0;
-        display: none;
-        z-index: 9999;
-        background: rgba(0,0,0,.65);
-        -webkit-tap-highlight-color: transparent;
-      }
-      #mobbrTournamentOverlay.isOpen{ display:block; }
-      #mobbrTournamentOverlay .stage{
-        position:absolute; inset:0;
-        display:flex; align-items:center; justify-content:center;
-        padding: 12px;
-      }
-      #mobbrTournamentOverlay .backdrop{
-        position:absolute; inset:0;
-        background-size: cover;
-        background-position: center;
-        opacity: 1;
-        filter: saturate(1.05) contrast(1.05);
-      }
-      #mobbrTournamentOverlay .fadeIn{
-        animation: mobbrFadeIn .28s ease-out both;
-      }
-      @keyframes mobbrFadeIn{ from{opacity:0} to{opacity:1} }
+    if (document.getElementById('mobbrTournamentCssLink')) return;
 
-      #mobbrTournamentOverlay .hud{
-        position:relative;
-        width:min(92vw, 420px);
-        aspect-ratio: 1 / 1;
-        border-radius: 18px;
-        overflow:hidden;
-        box-shadow: 0 14px 40px rgba(0,0,0,.55);
-        border: 1px solid rgba(255,255,255,.12);
-        background: rgba(0,0,0,.25);
-      }
-
-      #mobbrTournamentOverlay .squareBg{
-        position:absolute; inset:0;
-        background-size: cover;
-        background-position: center;
-        opacity: 1;
-      }
-
-      #mobbrTournamentOverlay .banner{
-        position:absolute; left:0; right:0; top:0;
-        display:flex; justify-content:space-between; gap:10px;
-        padding: 10px 12px;
-        font-weight: 800;
-        letter-spacing:.04em;
-        color: rgba(255,255,255,.95);
-        text-shadow: 0 2px 8px rgba(0,0,0,.6);
-        pointer-events:none;
-      }
-      #mobbrTournamentOverlay .banner .left{ font-size:14px; }
-      #mobbrTournamentOverlay .banner .right{ font-size:13px; opacity:.92; }
-
-      #mobbrTournamentOverlay .fighters{
-        position:absolute; left:0; right:0; top:46px; bottom:102px;
-        display:flex; align-items:flex-end; justify-content:space-between;
-        padding: 0 10px;
-      }
-      #mobbrTournamentOverlay .fighter{
-        width: 42%;
-        height: 100%;
-        position:relative;
-        display:flex; flex-direction:column;
-        justify-content:flex-end;
-        gap:6px;
-      }
-      #mobbrTournamentOverlay .fighter.right{ align-items:flex-end; }
-      #mobbrTournamentOverlay .nameTag{
-        font-weight: 900;
-        font-size: 12px;
-        color: rgba(255,255,255,.96);
-        text-shadow: 0 2px 8px rgba(0,0,0,.65);
-        max-width: 100%;
-        white-space: nowrap;
-        overflow:hidden;
-        text-overflow: ellipsis;
-      }
-      #mobbrTournamentOverlay .charImg{
-        width: 100%;
-        max-height: 92%;
-        object-fit: contain;
-        image-rendering: pixelated;
-        filter: drop-shadow(0 6px 10px rgba(0,0,0,.55));
-      }
-
-      #mobbrTournamentOverlay .centerOver{
-        position:absolute; left:0; right:0; top:52px;
-        display:flex; align-items:center; justify-content:center;
-        pointer-events:none;
-      }
-      #mobbrTournamentOverlay .centerOver img{
-        width: 46%;
-        max-width: 220px;
-        image-rendering: pixelated;
-        filter: drop-shadow(0 6px 10px rgba(0,0,0,.6));
-        opacity: 0;
-        transform: translateY(-8px) scale(.96);
-        transition: opacity .18s ease, transform .18s ease;
-      }
-      #mobbrTournamentOverlay .centerOver img.show{
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-
-      #mobbrTournamentOverlay .dialog{
-        position:absolute; left:10px; right:10px; bottom:10px;
-        border-radius: 16px;
-        background: rgba(0,0,0,.55);
-        border: 1px solid rgba(255,255,255,.14);
-        padding: 10px 12px 12px;
-        color: rgba(255,255,255,.95);
-      }
-      #mobbrTournamentOverlay .dialog .lines{
-        min-height: 56px;
-        display:flex; flex-direction:column; gap:4px;
-      }
-      #mobbrTournamentOverlay .dialog .line{
-        font-weight: 800;
-        font-size: 14px;
-        letter-spacing:.02em;
-        text-shadow: 0 2px 8px rgba(0,0,0,.65);
-        line-height: 1.22;
-        word-break: keep-all;
-      }
-      #mobbrTournamentOverlay .dialog .mini{
-        font-weight: 700;
-        opacity: .95;
-      }
-      #mobbrTournamentOverlay .controls{
-        display:flex; justify-content:flex-end; margin-top:8px;
-      }
-      #mobbrTournamentOverlay .btnNext{
-        appearance:none; border:0;
-        background: rgba(255,255,255,.92);
-        color: #111;
-        font-weight: 900;
-        border-radius: 14px;
-        padding: 10px 14px;
-        font-size: 14px;
-        letter-spacing:.06em;
-        box-shadow: 0 10px 24px rgba(0,0,0,.35);
-      }
-      #mobbrTournamentOverlay .btnNext:disabled{ opacity:.45; }
-
-      /* Panels */
-      #mobbrTournamentOverlay .panel{
-        position:absolute; left:10px; right:10px; top:58px; bottom:108px;
-        border-radius: 16px;
-        background: rgba(0,0,0,.55);
-        border: 1px solid rgba(255,255,255,.14);
-        overflow:hidden;
-        display:none;
-      }
-      #mobbrTournamentOverlay .panel.isOn{ display:block; }
-      #mobbrTournamentOverlay .panel .panelHead{
-        padding: 10px 12px;
-        font-weight: 900;
-        color: rgba(255,255,255,.96);
-        border-bottom: 1px solid rgba(255,255,255,.14);
-        background: rgba(255,255,255,.06);
-      }
-      #mobbrTournamentOverlay .panel .panelBody{
-        position:absolute; left:0; right:0; top:42px; bottom:0;
-        overflow:hidden;
-      }
-
-      /* team list scroll */
-      #mobbrTournamentOverlay .teamScroll{
-        position:absolute; left:0; right:0; top:0; bottom:0;
-        overflow:hidden;
-      }
-      #mobbrTournamentOverlay .teamList{
-        position:absolute; left:0; right:0; top:0;
-        padding: 10px 10px 18px;
-      }
-      #mobbrTournamentOverlay .teamRow{
-        display:flex; justify-content:space-between; gap:8px;
-        padding: 10px 10px;
-        border-bottom: 1px solid rgba(255,255,255,.12);
-        color: rgba(255,255,255,.95);
-        font-weight: 900;
-      }
-      #mobbrTournamentOverlay .teamRow .nm{
-        flex:1;
-        overflow:hidden; white-space:nowrap; text-overflow: ellipsis;
-      }
-      #mobbrTournamentOverlay .teamRow .pw{
-        width: 56px;
-        text-align:right;
-        opacity:.95;
-      }
-
-      /* coach */
-      #mobbrTournamentOverlay .coachGrid{
-        padding: 10px;
-        display:flex; flex-direction:column; gap:8px;
-        overflow:auto;
-        height:100%;
-        -webkit-overflow-scrolling: touch;
-      }
-      #mobbrTournamentOverlay .coachBtn{
-        display:flex; justify-content:space-between; gap:10px;
-        border: 1px solid rgba(255,255,255,.16);
-        background: rgba(255,255,255,.08);
-        border-radius: 14px;
-        padding: 10px 12px;
-        color: rgba(255,255,255,.96);
-        font-weight: 900;
-      }
-      #mobbrTournamentOverlay .coachBtn .id{ opacity:.95; }
-      #mobbrTournamentOverlay .coachBtn .tag{ opacity:.85; font-weight:800; }
-
-      /* result table */
-      #mobbrTournamentOverlay .resultWrap{
-        width:100%;
-        height:100%;
-        overflow:auto;
-        -webkit-overflow-scrolling: touch;
-      }
-      #mobbrTournamentOverlay table{
-        width:100%;
-        border-collapse: collapse;
-        font-size: 12px;
-        color: rgba(255,255,255,.95);
-      }
-      #mobbrTournamentOverlay th, #mobbrTournamentOverlay td{
-        padding: 8px 8px;
-        border-bottom: 1px solid rgba(255,255,255,.12);
-        text-align: left;
-        white-space: nowrap;
-      }
-      #mobbrTournamentOverlay th{
-        position: sticky;
-        top: 0;
-        background: rgba(0,0,0,.55);
-        z-index: 1;
-        font-weight: 900;
-      }
-      #mobbrTournamentOverlay td.num{ text-align:right; }
-
-      /* ✅ event icon（大きく） */
-      #mobbrTournamentOverlay .eventIcon{
-        position:absolute; left:14px; top:72px;
-        width:72px; height:72px;
-        image-rendering: pixelated;
-        filter: drop-shadow(0 6px 10px rgba(0,0,0,.65));
-        display:none;
-        opacity: .98;
-      }
-      #mobbrTournamentOverlay .eventIcon.isOn{ display:block; }
-
-      /* splash */
-      #mobbrTournamentOverlay .splash{
-        position:absolute; inset:0;
-        display:none;
-        align-items:center;
-        justify-content:center;
-        flex-direction:column;
-        gap:10px;
-        background: rgba(0,0,0,.35);
-        pointer-events:none;
-      }
-      #mobbrTournamentOverlay .splash.isOn{ display:flex; }
-      #mobbrTournamentOverlay .splash .t1{
-        font-size: 28px;
-        font-weight: 1000;
-        letter-spacing:.08em;
-        color: rgba(255,255,255,.98);
-        text-shadow: 0 6px 18px rgba(0,0,0,.65);
-      }
-      #mobbrTournamentOverlay .splash .t2{
-        font-size: 16px;
-        font-weight: 1000;
-        letter-spacing:.06em;
-        color: rgba(255,255,255,.98);
-        text-shadow: 0 6px 18px rgba(0,0,0,.65);
-      }
-    `;
-    document.head.appendChild(st);
+    // tournament.css を読み込む（HTMLは触らない前提）
+    const link = document.createElement('link');
+    link.id = 'mobbrTournamentCssLink';
+    link.rel = 'stylesheet';
+    link.href = 'tournament.css';
+    document.head.appendChild(link);
   }
 
   function ensureDom(){
@@ -448,19 +95,25 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
           <img class="eventIcon" id="mobbrTourEventIcon" alt="event" />
 
-          <div class="fighters">
-            <div class="fighter left">
-              <div class="nameTag" id="mobbrTourNameL"></div>
-              <img class="charImg" id="mobbrTourImgL" alt="player" />
+          <div class="chars">
+            <div class="char left">
+              <div class="name" id="mobbrTourNameL"></div>
+              <img id="mobbrTourImgL" alt="player" />
             </div>
-            <div class="fighter right">
-              <div class="nameTag" id="mobbrTourNameR"></div>
-              <img class="charImg" id="mobbrTourImgR" alt="enemy" />
+            <div class="char right">
+              <div class="name" id="mobbrTourNameR"></div>
+              <img id="mobbrTourImgR" alt="enemy" />
             </div>
           </div>
 
-          <div class="centerOver">
-            <img id="mobbrTourCenterStamp" alt="center" />
+          <div class="centerStamp">
+            <img id="mobbrTourStamp" alt="stamp" />
+          </div>
+
+          <div class="logBox">
+            <div class="line" id="mobbrTourLine1"></div>
+            <div class="line" id="mobbrTourLine2"></div>
+            <div class="line" id="mobbrTourLine3"></div>
           </div>
 
           <div class="panel" id="mobbrTourPanel">
@@ -473,16 +126,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
             <div class="t2" id="mobbrTourSplash2"></div>
           </div>
 
-          <div class="dialog">
-            <div class="lines">
-              <div class="line" id="mobbrTourLine1"></div>
-              <div class="line mini" id="mobbrTourLine2"></div>
-              <div class="line mini" id="mobbrTourLine3"></div>
-            </div>
-            <div class="controls">
-              <button class="btnNext" id="mobbrTourNext">NEXT</button>
-            </div>
-          </div>
+          <button class="nextBtn" id="mobbrTourNextBtn" type="button">NEXT</button>
+          <button class="closeBtn" id="mobbrTourCloseBtn" type="button">×</button>
         </div>
       </div>
     `;
@@ -490,65 +135,57 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     dom = {
       overlay,
-      backdrop: $('#mobbrTourBackdrop', overlay),
-      squareBg: $('#mobbrTourSquareBg', overlay),
-      bannerL: $('#mobbrTourBannerL', overlay),
-      bannerR: $('#mobbrTourBannerR', overlay),
-      nameL: $('#mobbrTourNameL', overlay),
-      nameR: $('#mobbrTourNameR', overlay),
-      imgL: $('#mobbrTourImgL', overlay),
-      imgR: $('#mobbrTourImgR', overlay),
-      line1: $('#mobbrTourLine1', overlay),
-      line2: $('#mobbrTourLine2', overlay),
-      line3: $('#mobbrTourLine3', overlay),
-      next: $('#mobbrTourNext', overlay),
-      centerStamp: $('#mobbrTourCenterStamp', overlay),
-      panel: $('#mobbrTourPanel', overlay),
-      panelHead: $('#mobbrTourPanelHead', overlay),
-      panelBody: $('#mobbrTourPanelBody', overlay),
-      eventIcon: $('#mobbrTourEventIcon', overlay),
-      splash: $('#mobbrTourSplash', overlay),
-      splash1: $('#mobbrTourSplash1', overlay),
-      splash2: $('#mobbrTourSplash2', overlay)
+      backdrop: overlay.querySelector('#mobbrTourBackdrop'),
+      squareBg: overlay.querySelector('#mobbrTourSquareBg'),
+      bannerL: overlay.querySelector('#mobbrTourBannerL'),
+      bannerR: overlay.querySelector('#mobbrTourBannerR'),
+      eventIcon: overlay.querySelector('#mobbrTourEventIcon'),
+      nameL: overlay.querySelector('#mobbrTourNameL'),
+      nameR: overlay.querySelector('#mobbrTourNameR'),
+      imgL: overlay.querySelector('#mobbrTourImgL'),
+      imgR: overlay.querySelector('#mobbrTourImgR'),
+      stamp: overlay.querySelector('#mobbrTourStamp'),
+      line1: overlay.querySelector('#mobbrTourLine1'),
+      line2: overlay.querySelector('#mobbrTourLine2'),
+      line3: overlay.querySelector('#mobbrTourLine3'),
+      panel: overlay.querySelector('#mobbrTourPanel'),
+      panelHead: overlay.querySelector('#mobbrTourPanelHead'),
+      panelBody: overlay.querySelector('#mobbrTourPanelBody'),
+      splash: overlay.querySelector('#mobbrTourSplash'),
+      splash1: overlay.querySelector('#mobbrTourSplash1'),
+      splash2: overlay.querySelector('#mobbrTourSplash2'),
+      nextBtn: overlay.querySelector('#mobbrTourNextBtn'),
+      closeBtn: overlay.querySelector('#mobbrTourCloseBtn')
     };
 
-    dom.next.addEventListener('click', onNext);
+    dom.nextBtn.addEventListener('click', onNext);
+    dom.closeBtn.addEventListener('click', close);
+
+    // iOS double-tap zoom & callout suppression
+    overlay.addEventListener('touchstart', (e)=>{
+      if (e.touches && e.touches.length>1) e.preventDefault();
+    }, { passive:false });
+
     return dom;
   }
 
-  function getFlow(){
-    return window.MOBBR?.sim?.tournamentFlow || null;
-  }
-  function getState(){
-    const flow = getFlow();
-    return flow ? flow.getState() : null;
-  }
-
   function open(){
-    const d = ensureDom();
-    d.overlay.classList.add('isOpen');
-    d.backdrop.classList.add('fadeIn');
-    busy = false;
-    clearAutoTimer();
-    setBackdrop(TOURNEY_BACKDROP);
+    ensureDom();
+    dom.overlay.classList.add('isOpen');
   }
-
   function close(){
+    clearAutoTimer();
     if (!dom) return;
     dom.overlay.classList.remove('isOpen');
-    busy = false;
-    clearAutoTimer();
   }
 
-  function setNextEnabled(on){
+  function setBackdrop(src){
     ensureDom();
-    dom.next.disabled = !on;
+    dom.backdrop.style.backgroundImage = src ? `url(${src})` : 'none';
   }
-  function setLines(a,b,c){
+  function setSquareBg(src){
     ensureDom();
-    dom.line1.textContent = String(a || '');
-    dom.line2.textContent = String(b || '');
-    dom.line3.textContent = String(c || '');
+    dom.squareBg.style.backgroundImage = src ? `url(${src})` : 'none';
   }
   function setBanners(l, r){
     ensureDom();
@@ -560,21 +197,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nameL.textContent = String(l || '');
     dom.nameR.textContent = String(r || '');
   }
-  function setBackdrop(img){
+  function setLines(a, b, c){
     ensureDom();
-    const v = String(img || '');
-    dom.backdrop.style.backgroundImage = v ? `url("${v}")` : '';
-  }
-  function setSquareBg(img){
-    ensureDom();
-    const v = String(img || '');
-    dom.squareBg.style.backgroundImage = v ? `url("${v}")` : '';
+    dom.line1.textContent = String(a || '');
+    dom.line2.textContent = String(b || '');
+    dom.line3.textContent = String(c || '');
   }
   function showCenterStamp(src){
     ensureDom();
-    const v = String(src || '');
-    dom.centerStamp.src = v || '';
-    dom.centerStamp.classList.toggle('show', !!v);
+    if (!src){
+      dom.stamp.src = '';
+      dom.stamp.classList.remove('isOn');
+      return;
+    }
+    dom.stamp.src = src;
+    dom.stamp.classList.add('isOn');
   }
   function hidePanels(){
     ensureDom();
@@ -624,6 +261,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     catch{ return String(req?.type || ''); }
   }
 
+  function setNextEnabled(v){
+    ensureDom();
+    dom.nextBtn.disabled = !v;
+    dom.nextBtn.classList.toggle('isDisabled', !v);
+  }
+
   function onNext(){
     if (busy) return;
     const flow = getFlow();
@@ -632,50 +275,50 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     render();
   }
 
-  // ===== team data fallback =====
-  function getTeamsFallback(st, payload){
-    const pTeams = Array.isArray(payload?.teams) ? payload.teams : null;
-    if (pTeams && pTeams.length) return pTeams;
-
-    const sTeams = Array.isArray(st?.teams) ? st.teams : null;
-    if (sTeams && sTeams.length) return sTeams.map(t=>({
-      id: t.id, name: t.name, power: t.power, isPlayer: t.isPlayer
-    }));
-
-    const candidates = [
-      window.MOBBR?.data?.cpuTeams,
-      window.MOBBR?.cpuTeams,
-      window.cpuTeams,
-      window.MOBBR?.data?.teams,
-      window.MOBBR?.teams,
-      window.teams
-    ].filter(Boolean);
-
-    for (const c of candidates){
-      if (Array.isArray(c) && c.length){
-        return c.map(t=>({
-          id: t.id ?? t.teamId ?? t.key ?? '',
-          name: t.name ?? t.teamName ?? String(t.id ?? t.teamId ?? ''),
-          power: t.power ?? t.str ?? t.rating ?? 0,
-          isPlayer: !!t.isPlayer
-        }));
-      }
-      if (c && typeof c === 'object'){
-        const arr = Object.values(c);
-        if (arr.length){
-          return arr.map(t=>({
-            id: t.id ?? t.teamId ?? t.key ?? '',
-            name: t.name ?? t.teamName ?? String(t.id ?? t.teamId ?? ''),
-            power: t.power ?? t.str ?? t.rating ?? 0,
-            isPlayer: !!t.isPlayer
-          }));
-        }
-      }
-    }
-    return [];
+  // ===== team image candidates =====
+  function guessPlayerImageCandidates(src){
+    const base = (src && String(src)) ? String(src) : 'P1.png';
+    const arr = [];
+    arr.push(base);
+    if (!/\.png$/i.test(base)) arr.push(base + '.png');
+    return arr;
+  }
+  function guessTeamImageCandidates(teamId){
+    const id = String(teamId || '');
+    if (!id) return [];
+    const arr = [];
+    arr.push(`${id}.png`);
+    arr.push(`cpu/${id}.png`);
+    arr.push(`teams/${id}.png`);
+    return arr;
   }
 
-  // ===== request handlers =====
+  async function resolveFirstExisting(cands){
+    const list = (cands || []).filter(Boolean);
+    for (const src of list){
+      const ok = await imgExists(src);
+      if (ok) return src;
+    }
+    return '';
+  }
+
+  function imgExists(src){
+    return new Promise((resolve)=>{
+      if (!src){ resolve(false); return; }
+      const im = new Image();
+      im.onload = ()=>resolve(true);
+      im.onerror = ()=>resolve(false);
+      im.src = src;
+    });
+  }
+
+  async function preloadMany(list){
+    const arr = (list || []).filter(Boolean);
+    if (!arr.length) return;
+    await Promise.all(arr.map(s=>imgExists(s)));
+  }
+
+  // ===== handlers =====
 
   async function handleShowIntroText(){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
@@ -683,147 +326,138 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
-    setSquareBg(ASSET.tent);
-
-    setBanners(st.bannerLeft, st.bannerRight);
-    setNames('', '');
-    setChars('', '');
+    const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
+    setNames('', '');
 
-    setLines(st.ui?.center3?.[0] || '本日のチームをご紹介！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
-
-    await preloadMany([TOURNEY_BACKDROP, ASSET.tent, leftResolved]);
+    setBanners(st.bannerLeft, st.bannerRight);
+    setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
+    await preloadMany([TOURNEY_BACKDROP, sq, leftResolved]);
     setNextEnabled(true);
   }
 
+  function buildTeamListTable(teams){
+    const wrap = document.createElement('div');
+    wrap.className = 'teamListWrap';
+
+    const table = document.createElement('table');
+    table.className = 'teamTable';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>TEAM</th>
+          <th class="num">POWER</th>
+          <th class="num">ALIVE</th>
+          <th class="num">TRE</th>
+          <th class="num">FLG</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tb = table.querySelector('tbody');
+
+    (teams||[]).forEach(t=>{
+      const tr = document.createElement('tr');
+      if (t.isPlayer) tr.classList.add('isPlayer');
+      tr.innerHTML = `
+        <td>${escapeHtml(t.name || t.id || '')}</td>
+        <td class="num">${escapeHtml(String(t.power ?? ''))}</td>
+        <td class="num">${escapeHtml(String(t.alive ?? ''))}</td>
+        <td class="num">${escapeHtml(String(t.treasure ?? 0))}</td>
+        <td class="num">${escapeHtml(String(t.flag ?? 0))}</td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function escapeHtml(s){
+    return String(s || '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#39;");
+  }
+
   async function handleShowTeamList(payload){
-    hideSplash(); showCenterStamp(''); setEventIcon('');
+    hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
-    setSquareBg(ASSET.tent);
+    const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
 
-    // 交戦以外は右側クリア
-    setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
+    setNames('', '');
 
-    const teams = getTeamsFallback(st, payload);
+    setBanners(st.bannerLeft, st.bannerRight);
 
-    const wrap = document.createElement('div');
-    wrap.className = 'teamScroll';
+    const teams = Array.isArray(payload?.teams) ? payload.teams : (Array.isArray(st.teams) ? st.teams : []);
+    const node = buildTeamListTable(teams);
+    showPanel('参加チーム', node);
 
-    const list = document.createElement('div');
-    list.className = 'teamList';
-
-    if (!teams.length){
-      const row = document.createElement('div');
-      row.className = 'teamRow';
-      row.innerHTML = `<div class="nm">チームデータが読み込まれていません</div><div class="pw">--</div>`;
-      list.appendChild(row);
-    }else{
-      for (const t of teams){
-        const row = document.createElement('div');
-        row.className = 'teamRow';
-        const nm = document.createElement('div');
-        nm.className = 'nm';
-        nm.textContent = t.isPlayer ? `★ ${t.name}` : `${t.name}`;
-        const pw = document.createElement('div');
-        pw.className = 'pw';
-        pw.textContent = `${Math.round(Number(t.power||0))}%`;
-        row.appendChild(nm);
-        row.appendChild(pw);
-        list.appendChild(row);
-      }
-    }
-
-    wrap.appendChild(list);
-    showPanel('出場チーム（スクロール）', wrap);
-
-    busy = true;
-    setNextEnabled(false);
-
-    await new Promise(r=>requestAnimationFrame(r));
-
-    const viewH = wrap.clientHeight || 1;
-    const contentH = list.scrollHeight || 1;
-    const maxY = Math.max(0, contentH - viewH);
-    const duration = clamp(6500 + maxY * 6, 6500, 14000);
-    const start = performance.now();
-
-    function tick(now){
-      const t = clamp((now - start) / duration, 0, 1);
-      const y = Math.round(maxY * t);
-      list.style.transform = `translateY(${-y}px)`;
-      if (t < 1){
-        requestAnimationFrame(tick);
-      }else{
-        busy = false;
-        setNextEnabled(true);
-      }
-    }
-    requestAnimationFrame(tick);
+    setLines('本日のチームをご紹介！', '（NEXTで進行）', '');
+    await preloadMany([TOURNEY_BACKDROP, sq, leftResolved]);
+    setNextEnabled(true);
   }
 
   async function handleShowCoachSelect(payload){
-    hideSplash(); showCenterStamp(''); setEventIcon('');
+    hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
-    setSquareBg(ASSET.tent);
+    const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
 
-    // 交戦以外は右側クリア
-    setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
+    setNames('', '');
+
+    setBanners(st.bannerLeft, st.bannerRight);
 
     const equipped = Array.isArray(payload?.equipped) ? payload.equipped : [];
-    const master = payload?.master || {};
+    const master = Array.isArray(payload?.master) ? payload.master : [];
 
-    const box = document.createElement('div');
-    box.className = 'coachGrid';
+    const wrap = document.createElement('div');
+    wrap.className = 'coachWrap';
+    const p = document.createElement('div');
+    p.className = 'coachHint';
+    p.textContent = '装備中のコーチスキル（最大3）から1つ選択（NEXTで進行）';
+    wrap.appendChild(p);
 
-    function addBtn(id, label, tag){
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'coachBtn';
-      b.innerHTML = `<span class="id">${label}</span><span class="tag">${tag||''}</span>`;
-      b.addEventListener('click', async ()=>{
-        if (busy) return;
-        busy = true;
-        setNextEnabled(false);
+    const ul = document.createElement('div');
+    ul.className = 'coachList';
 
+    equipped.forEach(id=>{
+      const item = master.find(x=>String(x.id)===String(id)) || null;
+      const btn = document.createElement('button');
+      btn.className = 'coachBtn';
+      btn.type = 'button';
+      btn.textContent = item ? `${item.name}（${item.price}G）` : String(id);
+      btn.addEventListener('click', ()=>{
         const flow = getFlow();
-        if (flow?.setCoachSkill) flow.setCoachSkill(id);
-
-        const quote = master?.[id]?.quote || (id ? '了解！' : '今回は使わない');
-        setLines('コーチスキル発動！', quote, '');
-        hidePanels();
-
-        await sleep(900);
-        busy = false;
-
-        if (flow?.step){
-          flow.step();
-          render();
-        }
+        if (!flow || !flow.selectCoachSkill) return;
+        flow.selectCoachSkill(String(id));
+        setLines('コーチスキル決定！', item?.quote || '', 'NEXTで進行');
       });
-      box.appendChild(b);
-    }
+      ul.appendChild(btn);
+    });
 
-    addBtn('', '使わない', '');
-    for (const id of equipped){
-      const m = master?.[id];
-      const tag = m?.endgame ? 'R5/R6のみ' : '常時';
-      addBtn(id, id, tag);
-    }
+    wrap.appendChild(ul);
+    showPanel('コーチスキル', wrap);
 
-    showPanel('コーチスキル選択', box);
-    setNextEnabled(false);
+    setLines(st.ui?.center3?.[0] || 'それでは試合を開始します！', st.ui?.center3?.[1] || '使用するコーチスキルを選択してください！', st.ui?.center3?.[2] || '');
+    await preloadMany([TOURNEY_BACKDROP, sq, leftResolved]);
+    setNextEnabled(true);
   }
 
   async function handleShowDropStart(){
@@ -832,17 +466,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
-    setSquareBg(ASSET.tent);
+    const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
 
-    // 交戦以外は右側クリア
+    setBanners(st.bannerLeft, st.bannerRight);
     setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
 
-    setBanners(st.bannerLeft, st.bannerRight);
     setLines(st.ui?.center3?.[0] || 'バトルスタート！', st.ui?.center3?.[1] || '降下開始…！', st.ui?.center3?.[2] || '');
-
     await preloadMany([TOURNEY_BACKDROP, ASSET.tent, leftResolved]);
     setNextEnabled(true);
   }
@@ -1029,211 +662,191 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     busy = true;
 
     const toBg = String(payload?.toBg || '');
-    const toName = String(payload?.toAreaName || '次のエリア');
-
-    // 移動中のログ（到着ログは出さない）
-    setLines('移動中..', `目的地：${toName}`, '読み込み中..');
-
-    await preloadMany([ASSET.ido, TOURNEY_BACKDROP, leftResolved]);
-
     const toResolved = await resolveFirstExisting([toBg]);
+
+    // 移動ログ（中央）
+    setLines(payload?.log1 || '移動中…', payload?.log2 || '', payload?.log3 || '');
+    await preloadMany([ASSET.ido, leftResolved]);
+    await sleep(520);
+
+    // 到着（中央だけで演出）
     if (toResolved){
-      setLines('移動中..', `目的地：${toName}`, '読み込み完了！');
-      await sleep(240);
-
-      // 到着演出（中央のみ）
       setSquareBg(toResolved);
-      showSplash('到着！', toName);
-      await sleep(560);
-      hideSplash();
-
-      // ✅到着ログは出さない（空にする）
-      setLines('', '', '');
-      await preloadMany([toResolved]);
-    }else{
-      // 見つからない場合も止めない
-      showSplash('到着！', toName);
-      await sleep(520);
-      hideSplash();
-      setLines('', '', '');
     }
+    setLines(payload?.arrive1 || '到着！', payload?.arrive2 || (payload?.toName ? String(payload.toName) : ''), payload?.arrive3 || '');
+    await preloadMany([toResolved]);
 
     busy = false;
     setNextEnabled(true);
   }
 
   async function handleShowChampion(payload){
-    hidePanels(); showCenterStamp(''); setEventIcon('');
-    setBackdrop(TOURNEY_BACKDROP);
-
-    // 交戦以外：右側クリア
-    const st = getState();
-    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
-    setChars(leftResolved, '');
-    setNames('', '');
-
-    const champ = String(payload?.championName || '???');
-    showSplash('この試合のチャンピオンは', champ);
-    setLines('', '', '');
-    await sleep(820);
-    hideSplash();
-
-    // NEXT待ち
-    setNextEnabled(true);
-  }
-
-  async function handleShowMatchResult(payload){
-    hideSplash(); showCenterStamp(''); setEventIcon('');
+    hidePanels(); hideSplash(); setEventIcon('');
     const st = getState();
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
 
-    // 交戦以外：右側クリア
-    setNames('', '');
+    // チャンピオン発表は正方形を winner 系に切替してもいいが、今はログ中心で
+    const bg = String(payload?.bg || st.ui?.bg || '');
+    const bgResolved = await resolveFirstExisting([bg]);
+    if (bgResolved) setSquareBg(bgResolved);
+
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
 
-    const rows = Array.isArray(payload?.rows) ? payload.rows : (st.lastMatchResultRows || []);
+    setNames('', '');
+    setBanners(st.bannerLeft, st.bannerRight);
+
+    setLines(payload?.line1 || 'この試合のチャンピオンは…', payload?.line2 || String(payload?.championName || ''), payload?.line3 || 'だった！');
+    setNextEnabled(true);
+  }
+
+  async function handleShowMatchResult(payload){
+    hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
+    const st = getState();
+    if (!st) return;
+
+    setBackdrop(TOURNEY_BACKDROP);
+    const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
+
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
+
+    setNames('', '');
+    setBanners(st.bannerLeft, st.bannerRight);
+
+    const rows = Array.isArray(payload?.result) ? payload.result : [];
     const wrap = document.createElement('div');
     wrap.className = 'resultWrap';
 
     const table = document.createElement('table');
+    table.className = 'resultTable';
     table.innerHTML = `
       <thead>
         <tr>
-          <th>Placement</th>
-          <th>Squad</th>
-          <th class="num">KP</th>
-          <th class="num">AP</th>
-          <th class="num">Treasure</th>
-          <th class="num">Flag</th>
-          <th class="num">Total</th>
-          <th class="num">PlacementP</th>
+          <th>RANK</th>
+          <th>TEAM</th>
+          <th class="num">K</th>
+          <th class="num">TRE</th>
+          <th class="num">FLG</th>
         </tr>
       </thead>
       <tbody></tbody>
     `;
     const tb = table.querySelector('tbody');
-
-    for (const r of rows){
+    rows.forEach(r=>{
       const tr = document.createElement('tr');
+      if (r.isPlayer) tr.classList.add('isPlayer');
       tr.innerHTML = `
-        <td>${r.placement}</td>
-        <td>${escapeHtml(r.squad || '')}</td>
-        <td class="num">${r.KP}</td>
-        <td class="num">${r.AP}</td>
-        <td class="num">${r.Treasure}</td>
-        <td class="num">${r.Flag}</td>
-        <td class="num">${r.Total}</td>
-        <td class="num">${r.PlacementP}</td>
+        <td>${escapeHtml(String(r.rank ?? ''))}</td>
+        <td>${escapeHtml(String(r.name ?? r.id ?? ''))}</td>
+        <td class="num">${escapeHtml(String(r.kills_total ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.treasure ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.flag ?? 0))}</td>
       `;
       tb.appendChild(tr);
-    }
-
+    });
     wrap.appendChild(table);
-    showPanel(`RESULT（MATCH ${payload?.matchIndex || st.matchIndex} / ${payload?.matchCount || st.matchCount}）`, wrap);
 
-    setLines('結果', 'NEXTで次へ', '');
+    showPanel(`MATCH ${payload?.matchIndex || st.matchIndex} 結果`, wrap);
+
+    setLines('試合結果', '（NEXTで次へ）', '');
     setNextEnabled(true);
   }
 
   async function handleShowTournamentResult(payload){
-    hideSplash(); showCenterStamp(''); setEventIcon('');
-    setBackdrop(TOURNEY_BACKDROP);
-
-    // 交戦以外：右側クリア
+    hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
-    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+    if (!st) return;
+
+    setBackdrop(TOURNEY_BACKDROP);
+    const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
+
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
+
     setNames('', '');
+    setBanners('大会結果', '');
 
     const total = payload?.total || {};
     const arr = Object.values(total);
 
     arr.sort((a,b)=>{
-      const at = Number(a.sumTotal||0);
-      const bt = Number(b.sumTotal||0);
-      if (bt !== at) return bt - at;
-      return String(a.squad||'').localeCompare(String(b.squad||''), 'ja');
+      const pa = (a.points ?? a.score ?? 0);
+      const pb = (b.points ?? b.score ?? 0);
+      return pb - pa;
     });
 
     const wrap = document.createElement('div');
-    wrap.className = 'resultWrap';
+    wrap.className = 'tourneyWrap';
 
     const table = document.createElement('table');
+    table.className = 'tourneyTable';
     table.innerHTML = `
       <thead>
         <tr>
-          <th>Rank</th>
-          <th>Squad</th>
-          <th class="num">総合P</th>
-          <th class="num">総合順位P</th>
-          <th class="num">KP</th>
-          <th class="num">AP</th>
-          <th class="num">お宝</th>
-          <th class="num">フラッグ</th>
+          <th>RANK</th>
+          <th>TEAM</th>
+          <th class="num">PT</th>
+          <th class="num">K</th>
+          <th class="num">TRE</th>
+          <th class="num">FLG</th>
         </tr>
       </thead>
       <tbody></tbody>
     `;
     const tb = table.querySelector('tbody');
 
-    arr.forEach((r, idx)=>{
+    arr.forEach((r, i)=>{
       const tr = document.createElement('tr');
+      if (r.isPlayer) tr.classList.add('isPlayer');
       tr.innerHTML = `
-        <td>${idx+1}</td>
-        <td>${escapeHtml(r.squad || '')}</td>
-        <td class="num">${Number(r.sumTotal||0)}</td>
-        <td class="num">${Number(r.sumPlacementP||0)}</td>
-        <td class="num">${Number(r.KP||0)}</td>
-        <td class="num">${Number(r.AP||0)}</td>
-        <td class="num">${Number(r.Treasure||0)}</td>
-        <td class="num">${Number(r.Flag||0)}</td>
+        <td>${escapeHtml(String(i+1))}</td>
+        <td>${escapeHtml(String(r.name ?? r.id ?? ''))}</td>
+        <td class="num">${escapeHtml(String(r.points ?? r.score ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.kills_total ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.treasure ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.flag ?? 0))}</td>
       `;
       tb.appendChild(tr);
     });
 
     wrap.appendChild(table);
-    showPanel('大会RESULT（総合）', wrap);
+    showPanel('トーナメント総合', wrap);
 
-    setLines('大会終了！', 'おつかれさまでした！', '');
+    setLines('大会結果', 'お疲れ様！', '');
     setNextEnabled(true);
   }
 
   async function handleNextMatch(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
-    setBackdrop(TOURNEY_BACKDROP);
-
-    // ✅毎回 tent
-    setSquareBg(ASSET.tent);
-
-    // 交戦以外：右側クリア
-    const st = getState();
-    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
-    setChars(leftResolved, '');
-    setNames('', '');
-
-    setLines('次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, '');
-    await sleep(260);
-    setNextEnabled(true);
-  }
-
-  // ===== main render =====
-  async function render(){
-    ensureDom();
     const st = getState();
     if (!st) return;
 
     setBackdrop(TOURNEY_BACKDROP);
-    setBanners(st.bannerLeft, st.bannerRight);
+    const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
+    setSquareBg(sq || ASSET.tent);
 
-    if (Array.isArray(st.ui?.center3)){
-      // center3は基本残す（handler側が上書きする）
-      // ※ただし到着ログ廃止のため、showMove等は handler で空にする
-    }
+    const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+    setChars(leftResolved, '');
 
-    const req = st.request || null;
+    setNames('', '');
+    setBanners('次の試合へ', `MATCH ${payload?.matchIndex || st.matchIndex} / 5`);
+
+    setLines('準備を整えよう', 'NEXTでコーチ選択へ', '');
+    setNextEnabled(true);
+  }
+
+  // ===== main render =====
+
+  async function render(){
+    ensureDom();
+
+    const st = getState();
+    const req = st?.request || null;
     const key = mkReqKey(req);
     if (key === lastReqKey) return;
     lastReqKey = key;
