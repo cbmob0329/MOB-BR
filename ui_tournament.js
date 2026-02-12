@@ -1,13 +1,12 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.4.1（フル）
-  ✅ sim_tournament_flow.js v3.2.0 / 3分割core の state.request に対応
-  ✅ HTMLを触れない前提：このJSがUI DOMを自動生成／CSSは tournament.css を自動読込
-
-  v3.4.1 変更点（今回）
-  ✅ showMatchResult：payload.rows / payload.result の両対応（coreはrows）
-  ✅ showTournamentResult：payload.total の sumTotal/KP/Treasure/Flag を表示できるよう対応
+  ui_tournament.js v3.4.2（フル）
+  ✅ v3.4.1を削らず拡張
+  追加：
+  ✅ 交戦時以外は「右（敵）」を丸ごと非表示（CSSの .isBattle で制御）
+  ✅ open() でロード画面を挟み、ido / event icons / stamp / tent を先読みしてから render 開始
+  ✅ チーム画像候補は「直下優先」（フォルダ無し直下が前提）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -24,6 +23,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     brwin: 'brwin.png',
     brlose: 'brlose.png'
   };
+
+  const EVENT_ICONS = [
+    'bup.png','bdeba.png','bgeta.png','bgetb.png'
+  ];
 
   const BATTLE_CHAT = [
     'やってやんべ！','裏取るぞ！','展開する！','サポートするぞ！','うわあー！','ミスった！','一気に行くぞ！','今のうちに回復だ！','絶対勝つぞ！','撃て―！',
@@ -62,7 +65,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function ensureCss(){
     if (document.getElementById('mobbrTournamentCssLink')) return;
 
-    // tournament.css を読み込む（HTMLは触らない前提）
     const link = document.createElement('link');
     link.id = 'mobbrTournamentCssLink';
     link.rel = 'stylesheet';
@@ -163,14 +165,53 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
-  function open(){
+  // ✅交戦中フラグ（CSSが右側を出す/消す）
+  function setBattleMode(on){
+    ensureDom();
+    dom.overlay.classList.toggle('isBattle', !!on);
+    if (!on){
+      // 非交戦なら右側のテキスト/画像も消しておく（念のため）
+      dom.nameR.textContent = '';
+      dom.imgR.src = '';
+    }
+  }
+
+  // ✅ open を async にしてプリロードを挟む
+  async function open(){
     ensureDom();
     dom.overlay.classList.add('isOpen');
+    setBattleMode(false);
+
+    // まずロード画面
+    showSplash('ロード中...', '画像を読み込んでいます');
+
+    // 最低限の先読み（ストレス軽減）
+    const st = getState();
+    const leftCandidates = guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png');
+    const leftResolved = await resolveFirstExisting(leftCandidates);
+
+    await preloadMany([
+      TOURNEY_BACKDROP,
+      ASSET.tent,
+      ASSET.ido,
+      ASSET.brbattle,
+      ASSET.brwin,
+      ASSET.brlose,
+      ...(EVENT_ICONS),
+      leftResolved
+    ]);
+
+    hideSplash();
+
+    // ここから通常のrender
+    render();
   }
+
   function close(){
     clearAutoTimer();
     if (!dom) return;
     dom.overlay.classList.remove('isOpen');
+    dom.overlay.classList.remove('isBattle');
   }
 
   function setBackdrop(src){
@@ -277,11 +318,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!/\.png$/i.test(base)) arr.push(base + '.png');
     return arr;
   }
+
   function guessTeamImageCandidates(teamId){
     const id = String(teamId || '');
     if (!id) return [];
     const arr = [];
+    // ✅直下優先
     arr.push(`${id}.png`);
+    // 互換（将来フォルダに移しても動く）
     arr.push(`cpu/${id}.png`);
     arr.push(`teams/${id}.png`);
     return arr;
@@ -318,6 +362,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
@@ -384,6 +430,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
+    setBattleMode(false);
+
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
     setSquareBg(sq || ASSET.tent);
@@ -407,6 +455,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent]);
@@ -459,6 +509,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
+    setBattleMode(false);
+
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
     setSquareBg(sq || ASSET.tent);
@@ -479,13 +531,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
+    setBattleMode(false);
+
     setBackdrop(TOURNEY_BACKDROP);
 
     const areaBg = String(payload?.bg || st.ui?.bg || '');
     const areaResolved = await resolveFirstExisting([areaBg]);
     if (areaResolved) setSquareBg(areaResolved);
 
-    // 交戦以外は右側クリア
     setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -501,9 +554,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     if (!st) return;
 
+    setBattleMode(false);
+
     setBackdrop(TOURNEY_BACKDROP);
 
-    // 交戦以外は右側クリア
     setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
@@ -518,7 +572,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     setBackdrop(TOURNEY_BACKDROP);
 
-    // 交戦以外は右側クリア
+    setBattleMode(false);
+
     setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
@@ -541,11 +596,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ showEncounter：自動step禁止（NEXTで進める）
+  // ✅ showEncounter：NEXTで進める（あなたの仕様維持）
   async function handleShowEncounter(payload){
     hidePanels(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(true);
 
     setBackdrop(TOURNEY_BACKDROP);
     setBanners(st.bannerLeft, st.bannerRight);
@@ -570,7 +627,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await sleep(520);
     hideSplash();
 
-    // ✅ここで止める：NEXT待ち
     busy = false;
     setNextEnabled(true);
   }
@@ -589,6 +645,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(true);
 
     setBackdrop(TOURNEY_BACKDROP);
 
@@ -635,18 +693,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ showMove：移動→到着（中央のみ）→NEXT待ち
+  // ✅ showMove：移動は非交戦
   async function handleShowMove(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
 
-    setBackdrop(TOURNEY_BACKDROP);
+    setBattleMode(false);
 
-    // 移動中は ido を正方形で
+    setBackdrop(TOURNEY_BACKDROP);
     setSquareBg(ASSET.ido);
 
-    // 交戦以外は右側クリア
     setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -658,12 +715,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const toBg = String(payload?.toBg || '');
     const toResolved = await resolveFirstExisting([toBg]);
 
-    // 移動ログ（中央）
     setLines(payload?.log1 || '移動中…', payload?.log2 || '', payload?.log3 || '');
     await preloadMany([ASSET.ido, leftResolved]);
     await sleep(520);
 
-    // 到着（中央だけで演出）
     if (toResolved){
       setSquareBg(toResolved);
     }
@@ -678,6 +733,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
 
@@ -695,11 +752,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ここが今回のズレ修正ポイント：rows/result両対応＋core形式対応
   async function handleShowMatchResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
@@ -711,7 +769,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNames('', '');
     setBanners(st.bannerLeft, st.bannerRight);
 
-    // coreは rows（{ placement, squad, KP, Treasure, Flag ... }）
     const srcRows =
       Array.isArray(payload?.rows) ? payload.rows :
       Array.isArray(payload?.result) ? payload.result :
@@ -769,11 +826,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ここもズレ修正：total(sumTotal/KP/Treasure/Flag)対応
   async function handleShowTournamentResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
@@ -788,7 +846,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const total = payload?.total || {};
     const arr = Object.values(total);
 
-    // points は sumTotal / points / score の順で見る（coreはsumTotal）
     arr.sort((a,b)=>{
       const pa = Number(a.sumTotal ?? a.points ?? a.score ?? 0);
       const pb = Number(b.sumTotal ?? b.points ?? b.score ?? 0);
@@ -861,6 +918,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
     if (!st) return;
+
+    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
@@ -936,6 +995,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureDom();
   }
 
+  // ✅ open は async だが、外部は普通に呼べる（戻り値Promiseでも無害）
   window.MOBBR.ui.tournament = { open, close, render };
   window.MOBBR.initTournamentUI = initTournamentUI;
 
