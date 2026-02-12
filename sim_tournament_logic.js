@@ -2,7 +2,7 @@
 
 /*
   sim_tournament_logic.js（フル）
-  - v3.2.0 の「ロジック/定数/データ取得/マップ/抽選/移動/イベント/バトル解決」担当
+  - ロジック/定数/データ取得/マップ/抽選/移動/イベント/バトル解決
   - state は保持しない（core から渡される state / getPlayer / aliveTeams / computeCtx を使用）
 */
 
@@ -14,8 +14,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   const K = {
     teamName: 'mobbr_team',
     playerTeam: 'mobbr_playerTeam',
-    equippedSkin: 'mobbr_equippedSkin',                // P1〜P5（無ければP1）
-    equippedCoachSkills: 'mobbr_equippedCoachSkills'   // 装備中最大3
+    equippedSkin: 'mobbr_equippedSkin',
+    equippedCoachSkills: 'mobbr_equippedCoachSkills'
   };
 
   // ===== Map Master（固定）=====
@@ -109,7 +109,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // ===== プレイヤー戦闘力：ui_team と完全一致（可能なら委譲）=====
+  // ===== プレイヤー戦闘力 =====
   function calcPlayerTeamPower(){
     try{
       const fn = window.MOBBR?.ui?.team?.calcTeamPower;
@@ -138,7 +138,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return `${n}.png`;
   }
 
-  // ===== CPU 実戦戦闘力抽選（最新仕様）=====
+  // ===== CPU 実戦戦闘力抽選 =====
   function rollCpuTeamPowerFromMembers(cpuTeam){
     const mem = Array.isArray(cpuTeam?.members) ? cpuTeam.members : [];
     const overall = Number(cpuTeam?.overall ?? cpuTeam?.basePower ?? cpuTeam?.teamPower ?? 70);
@@ -202,13 +202,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function eventCount(round){
     if (round === 1) return 1;
     if (round >= 2 && round <= 5) return 2;
-    return 0; // R6 基本なし
+    return 0;
   }
   function playerBattleProb(round, playerContestedAtDrop){
     if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
     if (round === 2) return 0.70;
     if (round === 3) return 0.75;
-    return 1.0; // R4-6
+    return 1.0;
   }
 
   // ===== drop =====
@@ -221,6 +221,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.flag = 0;
       t.kills_total = 0;
       t.assists_total = 0;
+      t.downs_total = 0;
+      // members個人は試合単位で集計したいならここで0へ
+      if (Array.isArray(t.members)){
+        for (const m of t.members){
+          if (m){ m.kills = 0; m.assists = 0; }
+        }
+      }
     }
     state.playerContestedAtDrop = false;
   }
@@ -253,6 +260,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.areaId = areaId;
     }
 
+    // R1の「被りエリアの4戦」を確定させるため保持
+    state._dropAssigned = {};
+    for (const [a, list] of assigned.entries()){
+      state._dropAssigned[a] = list.slice();
+    }
+
     const p = getPlayer();
     state.playerContestedAtDrop = !!(p && (assigned.get(p.areaId)?.length >= 2));
   }
@@ -282,7 +295,35 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const player = getPlayer();
 
-    if (player && !player.eliminated){
+    // ✅ R1は「降下の被り4箇所＝4戦」を優先して確定
+    if (round === 1 && state && state._dropAssigned){
+      const areas = Object.keys(state._dropAssigned).map(n=>Number(n)).filter(Number.isFinite);
+      const dupAreas = areas.filter(a => (state._dropAssigned[a]||[]).length >= 2);
+
+      // dupAreasは4つ想定。順序はシャッフルで良い
+      const pickedAreas = shuffle(dupAreas).slice(0, 4);
+
+      for (const a of pickedAreas){
+        const ids = (state._dropAssigned[a] || []).slice().filter(Boolean);
+        if (ids.length < 2) continue;
+        const A = state.teams.find(t=>t.id===ids[0]);
+        const B = state.teams.find(t=>t.id===ids[1]);
+        if (!A || !B) continue;
+        if (A.eliminated || B.eliminated) continue;
+
+        // プレイヤー戦は「確率」だが、R1は被りなら100%（仕様）
+        // つまりプレイヤーが被りなら必ずこのペアに含まれる
+        matches.push([A,B]);
+        used.add(A.id);
+        used.add(B.id);
+      }
+
+      // 念のため不足時：残りを埋める（通常ロジック）
+      // （本来は不足しない）
+    }
+
+    // player確率戦（R1は被り時は上の固定で入ってる想定）
+    if (player && !player.eliminated && round !== 1){
       const prob = playerBattleProb(round, !!state.playerContestedAtDrop);
       if (Math.random() < prob){
         used.add(player.id);
