@@ -3,6 +3,7 @@
   --mobbr-ui-line: rgba(255,255,255,.18);
   --mobbr-ui-white: #fff;
 }
+
 #mobbrTournamentOverlay{
   position: fixed; inset: 0;
   display: none;
@@ -11,6 +12,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 #mobbrTournamentOverlay.isOpen{ display:block; }
+
 #mobbrTournamentOverlay .stage{
   position:absolute; inset:0;
   display:flex;
@@ -18,6 +20,7 @@
   justify-content:center;
   padding: 10px;
 }
+
 #mobbrTournamentOverlay .hud{
   position:relative;
   width: min(96vw, 520px);
@@ -28,6 +31,8 @@
   box-shadow: 0 16px 40px rgba(0,0,0,.55);
   overflow:hidden;
 }
+
+/* 背景（大会背景） */
 #mobbrTournamentOverlay .backdrop{
   position:absolute; inset:0;
   background-size: cover;
@@ -35,6 +40,8 @@
   filter: blur(0px);
   opacity: .98;
 }
+
+/* 正方形エリア背景（ここにキャラを重ねる） */
 #mobbrTournamentOverlay .squareBg{
   position:absolute; left: 12px; right: 12px; top: 56px;
   height: 320px;
@@ -44,14 +51,16 @@
   background-size: cover;
   background-position: center;
   box-shadow: 0 10px 24px rgba(0,0,0,.45);
+  z-index: 1; /* ✅ 背景として下層固定 */
 }
 
+/* 上部バナー（MATCH / ROUND） */
 #mobbrTournamentOverlay .banner{
   position:absolute; left: 12px; right: 12px; top: 10px;
   display:flex;
   justify-content:space-between;
   gap:10px;
-  z-index: 2;
+  z-index: 6;
 }
 #mobbrTournamentOverlay .banner .left,
 #mobbrTournamentOverlay .banner .right{
@@ -74,19 +83,23 @@
   filter: drop-shadow(0 6px 10px rgba(0,0,0,.65));
   display:none;
   opacity: .98;
+  z-index: 5;
 }
 #mobbrTournamentOverlay .eventIcon.isOn{ display:block; }
 
+/* ✅ キャラ表示：正方形背景の上に重ねる */
 #mobbrTournamentOverlay .chars{
   position:absolute; left: 12px; right: 12px;
-  top: 388px;
-  height: 220px;
+  top: 56px;          /* ✅ 正方形と同じ top */
+  height: 320px;      /* ✅ 正方形と同じ height */
   display:flex;
   justify-content:space-between;
-  align-items:flex-end;
-  z-index:2;
+  align-items:flex-end;     /* 下端に接地 */
+  padding: 0 10px 10px;     /* 下に少し余白 */
+  z-index: 3;
   pointer-events:none;
 }
+
 #mobbrTournamentOverlay .char{
   width: 46%;
   display:flex;
@@ -94,6 +107,7 @@
   align-items:center;
   gap:6px;
 }
+
 #mobbrTournamentOverlay .char .name{
   width: 100%;
   text-align:center;
@@ -108,6 +122,7 @@
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
   min-height: 16px;
 }
+
 #mobbrTournamentOverlay .char img{
   width: 100%;
   height: 190px;
@@ -116,16 +131,19 @@
   filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
 }
 
+/* ✅ BATTLE / WIN / LOSE スタンプ：正方形内に表示 */
 #mobbrTournamentOverlay .centerStamp{
   position:absolute; left: 12px; right: 12px;
-  top: 350px;
-  height: 40px;
+  top: 56px;          /* ✅ 正方形と同じ top */
+  height: 320px;      /* ✅ 正方形と同じ height */
   display:flex;
   justify-content:center;
-  align-items:center;
+  align-items:flex-start;
+  padding-top: 10px;
   pointer-events:none;
-  z-index: 3;
+  z-index: 4;
 }
+
 #mobbrTournamentOverlay .centerStamp img{
   height: 36px;
   image-rendering: pixelated;
@@ -134,6 +152,7 @@
 }
 #mobbrTournamentOverlay .centerStamp img.isOn{ display:block; }
 
+/* 中央ログ枠 */
 #mobbrTournamentOverlay .logBox{
   position:absolute; left: 12px; right: 12px;
   bottom: 74px;
@@ -154,6 +173,7 @@
   min-height: 22px;
 }
 
+/* パネル（チーム紹介 / result / 総合result / コーチ選択など） */
 #mobbrTournamentOverlay .panel{
   position:absolute; left: 12px; right: 12px;
   top: 56px;
@@ -161,12 +181,13 @@
   border-radius: 16px;
   background: rgba(0,0,0,.72);
   border: 2px solid rgba(255,255,255,.18);
-  z-index: 4;
+  z-index: 7;
   display:none;
   overflow:hidden;
   box-shadow: 0 10px 22px rgba(0,0,0,.45);
 }
 #mobbrTournamentOverlay .panel.isOn{ display:block; }
+
 #mobbrTournamentOverlay .panelHead{
   padding: 10px 12px;
   font-size: 13px;
@@ -175,6 +196,7 @@
   border-bottom: 1px solid rgba(255,255,255,.14);
   color: rgba(255,255,255,.98);
 }
+
 #mobbrTournamentOverlay .panelBody{
   height: calc(100% - 44px);
   overflow:auto;
@@ -189,12 +211,15 @@
   font-size: 12px;
   color: rgba(255,255,255,.95);
 }
-#mobbrTournamentOverlay th, #mobbrTournamentOverlay td{
+
+#mobbrTournamentOverlay th,
+#mobbrTournamentOverlay td{
   padding: 8px 8px;
   border-bottom: 1px solid rgba(255,255,255,.12);
   text-align: left;
   white-space: nowrap;
 }
+
 #mobbrTournamentOverlay th{
   position: sticky;
   top: 0;
@@ -202,11 +227,13 @@
   z-index: 1;
   font-weight: 900;
 }
+
 #mobbrTournamentOverlay td.num{ text-align:right; }
 #mobbrTournamentOverlay tr.isPlayer td{
   background: rgba(0,128,255,.18);
 }
 
+/* コーチ選択 */
 #mobbrTournamentOverlay .coachHint{
   font-size: 12px;
   color: rgba(255,255,255,.88);
@@ -231,6 +258,7 @@
   transform: translateY(1px);
 }
 
+/* NEXT */
 #mobbrTournamentOverlay .nextBtn{
   position:absolute; left: 12px; right: 12px; bottom: 14px;
   height: 48px;
@@ -241,11 +269,11 @@
   font-weight: 1000;
   letter-spacing:.08em;
   font-size: 14px;
-  z-index: 5;
+  z-index: 8;
 }
-#mobbrTournamentOverlay .nextBtn.isDisabled{
-  opacity: .5;
-}
+#mobbrTournamentOverlay .nextBtn.isDisabled{ opacity: .5; }
+
+/* CLOSE */
 #mobbrTournamentOverlay .closeBtn{
   position:absolute; right: 10px; top: 10px;
   width: 34px; height: 34px;
@@ -254,7 +282,7 @@
   background: rgba(0,0,0,.35);
   color: rgba(255,255,255,.95);
   font-weight: 1000;
-  z-index: 6;
+  z-index: 9;
 }
 
 /* splash */
@@ -267,8 +295,10 @@
   gap:10px;
   background: rgba(0,0,0,.35);
   pointer-events:none;
+  z-index: 10;
 }
 #mobbrTournamentOverlay .splash.isOn{ display:flex; }
+
 #mobbrTournamentOverlay .splash .t1{
   font-size: 28px;
   font-weight: 1000;
