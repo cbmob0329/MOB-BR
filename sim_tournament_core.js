@@ -7,6 +7,10 @@
   - stepマシン
   - UI request 発行
   - 公開API: window.MOBBR.sim.tournamentFlow（名称維持）
+
+  v3.2.1（今回修正）
+  ✅ CPUチーム名：teamIdではなく data_cpu_teams.js の「name（日本語名）」を優先して採用
+  ✅ ui_tournament.js 側の表示に合わせて showMatchResult / showTournamentResult のpayload形を補正
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -62,6 +66,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // ===== public methods for UI to call =====
   function getCoachMaster(){ return L.COACH_MASTER; }
   function getEquippedCoachList(){ return L.getEquippedCoachSkills(); }
+
+  // UI側（ui_tournament.js）は selectCoachSkill を呼ぶ可能性があるので、両方用意
   function setCoachSkill(skillId){
     const id = String(skillId||'');
     if (!id || !L.COACH_MASTER[id]){
@@ -72,6 +78,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.selectedCoachSkill = id;
     state.selectedCoachQuote = L.COACH_MASTER[id].quote || '';
   }
+  function selectCoachSkill(skillId){ setCoachSkill(skillId); }
+
   function getPlayerSkin(){ return L.getEquippedSkin(); }
   function getAreaInfo(areaId){ return L.getAreaInfo(areaId); }
 
@@ -170,10 +178,51 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.round = 7;
   }
 
+  function _buildUiMatchRows(rows){
+    const byId = new Map((state?.teams || []).map(t=>[t.id, t]));
+    return (rows || []).map(r=>{
+      const t = byId.get(r.id) || {};
+      const kills = Number(r.KP ?? r.kills_total ?? 0); // uiはK列
+      const treasure = Number(r.Treasure ?? r.treasure ?? 0);
+      const flag = Number(r.Flag ?? r.flag ?? 0);
+      return {
+        rank: Number(r.placement ?? r.rank ?? 0),
+        id: String(r.id ?? ''),
+        name: String(r.squad ?? r.name ?? r.id ?? ''),
+        kills_total: kills,
+        treasure,
+        flag,
+        isPlayer: !!t.isPlayer
+      };
+    });
+  }
+
+  function _buildUiTournamentTotal(){
+    const total = state.tournamentTotal || {};
+    const out = {};
+    for (const [id, v] of Object.entries(total)){
+      // v: { id, squad, sumPlacementP, KP, AP, Treasure, Flag, sumTotal }
+      const t = (state.teams || []).find(x=>x.id===id) || null;
+      out[id] = {
+        id: String(id),
+        name: String(v.squad || t?.name || id),
+        points: Number(v.sumTotal ?? 0),
+        kills_total: Number(v.KP ?? 0) + Number(v.AP ?? 0),
+        treasure: Number(v.Treasure ?? 0),
+        flag: Number(v.Flag ?? 0),
+        isPlayer: !!t?.isPlayer
+      };
+    }
+    return out;
+  }
+
   function finishMatchAndBuildResult(){
     const rows = R.computeMatchResultTable(state);
     R.addToTournamentTotal(state, rows);
     state.lastMatchResultRows = rows;
+
+    // ui_tournament.js 表示用（互換）
+    state.lastMatchUiRows = _buildUiMatchRows(rows);
   }
 
   function startNextMatch(){
@@ -532,7 +581,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       setRequest('showMove', {
         fromAreaId: before?.id || 0,
         toAreaId: after?.id || 0,
-        toAreaName: after?.name || '',
+        toName: after?.name || '',
         toBg: after?.img || '',
         holdMs: 0
       });
@@ -558,10 +607,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.ui.topLeftName = '';
       state.ui.topRightName = '';
 
+      // ui_tournament.js は payload.result を見に行くので、互換payloadを渡す
       setRequest('showMatchResult', {
         matchIndex: state.matchIndex,
         matchCount: state.matchCount,
-        rows: state.lastMatchResultRows
+        result: state.lastMatchUiRows || []
       });
       state.phase = 'match_result_done';
       return;
@@ -569,7 +619,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     if (state.phase === 'match_result_done'){
       if (state.matchIndex >= state.matchCount){
-        setRequest('showTournamentResult', { total: state.tournamentTotal });
+        // ui_tournament.js は total の中身を points/score でソートするので points を入れる
+        setRequest('showTournamentResult', { total: _buildUiTournamentTotal() });
         state.phase = 'done';
         return;
       }
@@ -621,7 +672,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     cpu19.forEach((c, i)=>{
       const id = c.teamId || c.id || `localXX_${i+1}`;
-      const nm = String(c.teamId || c.id || id);
+
+      // ✅ここが今回の本題：表示名は teamId じゃなく data_cpu_teams.js の c.name を最優先
+      const nm = String(c.name || c.teamName || c.team_id || c.teamId || c.id || id);
 
       teams.push({
         id,
@@ -696,7 +749,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     getCoachMaster,
     getEquippedCoachList,
+
+    // ui側互換
     setCoachSkill,
+    selectCoachSkill,
+
     getPlayerSkin,
     getAreaInfo,
     initMatchDrop,
