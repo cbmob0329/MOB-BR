@@ -1,16 +1,9 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.8（フル：ローカル大会 1本 / 3分割対応）
-  - data_cpu_teams.js をロード（CPUチームデータ）
-  - sim_match_events.js v2 をロード（イベント：rollForTeam / eventBuffs）
-  - sim_match_flow.js v2 をロード（交戦解決：resolveBattle）
-  - sim_tournament_flow を 3分割ロード（順番厳守）
-      1) sim_tournament_logic.js
-      2) sim_tournament_result.js
-      3) sim_tournament_core.js
-    ※ 3つ読み込み後に window.MOBBR.sim.tournamentFlow が完成する前提
-  - ui_tournament.js をロード（大会UI：state.request を読む）
+  MOB BR - app.js v17.7（フル：ローカル大会 1本 / 3分割対応）
+  - sim_tournament_flow.js は廃止
+  - sim_tournament_logic.js / sim_tournament_result.js / sim_tournament_core.js をロード
 */
 
 const APP_VER = 17;
@@ -59,12 +52,11 @@ function hardResetOverlays(){
     title.style.pointerEvents = 'none';
   }
 
-  const tui = document.querySelector('.mobbrTui');
-  if (tui){
-    tui.classList.remove('isOpen');
-    tui.style.display = 'none';
-    tui.style.pointerEvents = 'none';
-    tui.setAttribute('aria-hidden', 'true');
+  // 大会UI（ui_tournament.js が DOM 自動生成するので、旧クラス参照は不要）
+  // 念のため overlay があれば閉じる
+  const overlay = document.getElementById('mobbrTournamentOverlay');
+  if (overlay){
+    overlay.classList.remove('isOpen');
   }
 }
 
@@ -109,9 +101,6 @@ function loadScript(src){
 async function loadModules(){
   const v = `?v=${APP_VER}`;
 
-  // ✅ 大会だけは分割＆キャッシュ回避を別にかける（必要なら数字を上げる）
-  const TV = `?v=1`;
-
   const files = [
     // core
     `storage.js${v}`,
@@ -133,17 +122,17 @@ async function loadModules(){
     // schedule
     `ui_schedule.js${v}`,
 
-    // tournament core（★依存順が重要）
+    // tournament core（依存順が重要）
     `sim_match_events.js?v=2`,
     `sim_match_flow.js?v=2`,
 
-    // tournament（★3分割：順番厳守）
-    `sim_tournament_logic.js${TV}`,
-    `sim_tournament_result.js${TV}`,
-    `sim_tournament_core.js${TV}`,
+    // ✅ tournament 3分割（依存順：logic -> result -> core）
+    `sim_tournament_logic.js?v=3`,
+    `sim_tournament_result.js?v=3`,
+    `sim_tournament_core.js?v=3`,
 
-    // tournament UI（state.request を読む）
-    `ui_tournament.js${TV}`
+    // UI
+    `ui_tournament.js?v=3`
   ];
 
   for (const f of files){
@@ -168,8 +157,7 @@ async function bootAfterNext(){
   if (window.MOBBR?.initShopUI) window.MOBBR.initShopUI();
   if (window.MOBBR?.initScheduleUI) window.MOBBR.initScheduleUI();
 
-  // 大会UIは ui_tournament.js 側で window.MOBBR.ui.tournament を公開するだけなので
-  // ここは「存在すれば呼ぶ」運用のままでOK（無ければ何もしない）
+  // tournament
   if (window.MOBBR?.initTournamentUI) window.MOBBR.initTournamentUI();
 
   setTitleHint('');
