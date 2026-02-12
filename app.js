@@ -1,12 +1,16 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.7（フル：ローカル大会 1本 / 最新仕様）
+  MOB BR - app.js v17.8（フル：ローカル大会 1本 / 3分割対応）
   - data_cpu_teams.js をロード（CPUチームデータ）
   - sim_match_events.js v2 をロード（イベント：rollForTeam / eventBuffs）
   - sim_match_flow.js v2 をロード（交戦解決：resolveBattle）
-  - sim_tournament_flow.js v3 をロード（大会本体：20チーム / R1〜R6）
-  - ui_tournament.js v3 をロード（大会UI：20チーム表示・3段ログ）
+  - sim_tournament_flow を 3分割ロード（順番厳守）
+      1) sim_tournament_logic.js
+      2) sim_tournament_result.js
+      3) sim_tournament_core.js
+    ※ 3つ読み込み後に window.MOBBR.sim.tournamentFlow が完成する前提
+  - ui_tournament.js をロード（大会UI：state.request を読む）
 */
 
 const APP_VER = 17;
@@ -105,6 +109,9 @@ function loadScript(src){
 async function loadModules(){
   const v = `?v=${APP_VER}`;
 
+  // ✅ 大会だけは分割＆キャッシュ回避を別にかける（必要なら数字を上げる）
+  const TV = `?v=1`;
+
   const files = [
     // core
     `storage.js${v}`,
@@ -130,9 +137,13 @@ async function loadModules(){
     `sim_match_events.js?v=2`,
     `sim_match_flow.js?v=2`,
 
-    // tournament（★キャッシュ回避）
-    `sim_tournament_flow.js?v=3`,
-    `ui_tournament.js?v=3`
+    // tournament（★3分割：順番厳守）
+    `sim_tournament_logic.js${TV}`,
+    `sim_tournament_result.js${TV}`,
+    `sim_tournament_core.js${TV}`,
+
+    // tournament UI（state.request を読む）
+    `ui_tournament.js${TV}`
   ];
 
   for (const f of files){
