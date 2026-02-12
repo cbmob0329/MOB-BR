@@ -2,15 +2,12 @@
 
 /*
   ui_tournament.js v3.4.1（フル）
-  ✅ sim_tournament_flow.js / sim_tournament_core.js の state.request に対応
+  ✅ sim_tournament_flow.js v3.2.0 / 3分割core の state.request に対応
   ✅ HTMLを触れない前提：このJSがUI DOMを自動生成／CSSは tournament.css を自動読込
 
-  v3.4.1 修正点
-  ✅ showCoachSelect:
-     - master が Object( COACH_MASTER ) の場合でも表示できる
-     - flow.selectCoachSkill -> flow.setCoachSkill に統一（core側APIに合わせる）
-  ✅ showMatchResult:
-     - payload.result ではなく payload.rows を参照（flow側に合わせる）
+  v3.4.1 変更点（今回）
+  ✅ showMatchResult：payload.rows / payload.result の両対応（coreはrows）
+  ✅ showTournamentResult：payload.total の sumTotal/KP/Treasure/Flag を表示できるよう対応
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -65,6 +62,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function ensureCss(){
     if (document.getElementById('mobbrTournamentCssLink')) return;
 
+    // tournament.css を読み込む（HTMLは触らない前提）
     const link = document.createElement('link');
     link.id = 'mobbrTournamentCssLink';
     link.rel = 'stylesheet';
@@ -157,6 +155,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nextBtn.addEventListener('click', onNext);
     dom.closeBtn.addEventListener('click', close);
 
+    // iOS double-tap zoom & callout suppression
     overlay.addEventListener('touchstart', (e)=>{
       if (e.touches && e.touches.length>1) e.preventDefault();
     }, { passive:false });
@@ -313,15 +312,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await Promise.all(arr.map(s=>imgExists(s)));
   }
 
-  function escapeHtml(s){
-    return String(s || '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
-
   // ===== handlers =====
 
   async function handleShowIntroText(){
@@ -380,6 +370,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return wrap;
   }
 
+  function escapeHtml(s){
+    return String(s || '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#39;");
+  }
+
   async function handleShowTeamList(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -404,7 +403,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ COACH_MASTER を object/array 両対応にして、setCoachSkill に合わせる
   async function handleShowCoachSelect(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -421,22 +419,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBanners(st.bannerLeft, st.bannerRight);
 
     const equipped = Array.isArray(payload?.equipped) ? payload.equipped : [];
-
-    // master: object or array
-    const masterObj = (payload && payload.master && typeof payload.master === 'object') ? payload.master : {};
-    const masterArr = Array.isArray(payload?.master) ? payload.master : [];
-
-    function getSkill(id){
-      const key = String(id || '');
-      if (!key) return null;
-      if (masterArr.length){
-        const f = masterArr.find(x=>String(x.id)===key);
-        return f || null;
-      }
-      const v = masterObj[key];
-      if (!v) return null;
-      return { id:key, ...(v||{}) };
-    }
+    const master = Array.isArray(payload?.master) ? payload.master : [];
 
     const wrap = document.createElement('div');
     wrap.className = 'coachWrap';
@@ -449,20 +432,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ul.className = 'coachList';
 
     equipped.forEach(id=>{
-      const item = getSkill(id);
+      const item = master.find(x=>String(x.id)===String(id)) || null;
       const btn = document.createElement('button');
       btn.className = 'coachBtn';
       btn.type = 'button';
-      btn.textContent = item ? `${item.id}` : String(id);
-
+      btn.textContent = item ? `${item.name}（${item.price}G）` : String(id);
       btn.addEventListener('click', ()=>{
         const flow = getFlow();
-        // ✅ core側は setCoachSkill
-        if (!flow || typeof flow.setCoachSkill !== 'function') return;
-        flow.setCoachSkill(String(id));
+        if (!flow || !flow.selectCoachSkill) return;
+        flow.selectCoachSkill(String(id));
         setLines('コーチスキル決定！', item?.quote || '', 'NEXTで進行');
       });
-
       ul.appendChild(btn);
     });
 
@@ -505,6 +485,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const areaResolved = await resolveFirstExisting([areaBg]);
     if (areaResolved) setSquareBg(areaResolved);
 
+    // 交戦以外は右側クリア
     setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -522,6 +503,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
 
+    // 交戦以外は右側クリア
     setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
@@ -536,6 +518,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     setBackdrop(TOURNEY_BACKDROP);
 
+    // 交戦以外は右側クリア
     setNames('', '');
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
     setChars(leftResolved, '');
@@ -558,6 +541,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
+  // ✅ showEncounter：自動step禁止（NEXTで進める）
   async function handleShowEncounter(payload){
     hidePanels(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -586,6 +570,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     await sleep(520);
     hideSplash();
 
+    // ✅ここで止める：NEXT待ち
     busy = false;
     setNextEnabled(true);
   }
@@ -650,6 +635,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
+  // ✅ showMove：移動→到着（中央のみ）→NEXT待ち
   async function handleShowMove(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -657,8 +643,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     setBackdrop(TOURNEY_BACKDROP);
 
+    // 移動中は ido を正方形で
     setSquareBg(ASSET.ido);
 
+    // 交戦以外は右側クリア
     setNames('', '');
 
     const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -667,17 +655,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(false);
     busy = true;
 
-    const toBg = String(payload?.toBg || payload?.toResolved || '');
+    const toBg = String(payload?.toBg || '');
     const toResolved = await resolveFirstExisting([toBg]);
 
+    // 移動ログ（中央）
     setLines(payload?.log1 || '移動中…', payload?.log2 || '', payload?.log3 || '');
     await preloadMany([ASSET.ido, leftResolved]);
     await sleep(520);
 
+    // 到着（中央だけで演出）
     if (toResolved){
       setSquareBg(toResolved);
     }
-    setLines(payload?.arrive1 || '到着！', payload?.arrive2 || (payload?.toAreaName ? String(payload.toAreaName) : ''), payload?.arrive3 || '');
+    setLines(payload?.arrive1 || '到着！', payload?.arrive2 || (payload?.toName ? String(payload.toName) : ''), payload?.arrive3 || '');
     await preloadMany([toResolved]);
 
     busy = false;
@@ -705,7 +695,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
-  // ✅ payload.rows を参照
+  // ✅ここが今回のズレ修正ポイント：rows/result両対応＋core形式対応
   async function handleShowMatchResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -721,7 +711,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNames('', '');
     setBanners(st.bannerLeft, st.bannerRight);
 
-    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    // coreは rows（{ placement, squad, KP, Treasure, Flag ... }）
+    const srcRows =
+      Array.isArray(payload?.rows) ? payload.rows :
+      Array.isArray(payload?.result) ? payload.result :
+      [];
 
     const wrap = document.createElement('div');
     wrap.className = 'resultWrap';
@@ -733,30 +727,40 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         <tr>
           <th>RANK</th>
           <th>TEAM</th>
-          <th class="num">KP</th>
-          <th class="num">AP</th>
+          <th class="num">K</th>
           <th class="num">TRE</th>
           <th class="num">FLG</th>
-          <th class="num">PT</th>
         </tr>
       </thead>
       <tbody></tbody>
     `;
     const tb = table.querySelector('tbody');
-    rows.forEach(r=>{
+
+    srcRows.forEach(r=>{
+      const rank = (r.placement ?? r.rank ?? '');
+      const name = (r.squad ?? r.name ?? r.id ?? '');
+      const k = (r.KP ?? r.kills_total ?? 0);
+      const tre = (r.Treasure ?? r.treasure ?? 0);
+      const flg = (r.Flag ?? r.flag ?? 0);
+
       const tr = document.createElement('tr');
-      if (String(r.id) === 'PLAYER') tr.classList.add('isPlayer');
+      const isPlayer =
+        !!r.isPlayer ||
+        (String(r.id||'') === 'PLAYER') ||
+        (String(name||'').toUpperCase().includes('PLAYER'));
+
+      if (isPlayer) tr.classList.add('isPlayer');
+
       tr.innerHTML = `
-        <td>${escapeHtml(String(r.placement ?? ''))}</td>
-        <td>${escapeHtml(String(r.squad ?? r.id ?? ''))}</td>
-        <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.Total ?? 0))}</td>
+        <td>${escapeHtml(String(rank))}</td>
+        <td>${escapeHtml(String(name))}</td>
+        <td class="num">${escapeHtml(String(k))}</td>
+        <td class="num">${escapeHtml(String(tre))}</td>
+        <td class="num">${escapeHtml(String(flg))}</td>
       `;
       tb.appendChild(tr);
     });
+
     wrap.appendChild(table);
 
     showPanel(`MATCH ${payload?.matchIndex || st.matchIndex} 結果`, wrap);
@@ -765,6 +769,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled(true);
   }
 
+  // ✅ここもズレ修正：total(sumTotal/KP/Treasure/Flag)対応
   async function handleShowTournamentResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     const st = getState();
@@ -781,9 +786,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBanners('大会結果', '');
 
     const total = payload?.total || {};
-    const arr = Object.values(total || {});
+    const arr = Object.values(total);
 
-    arr.sort((a,b)=>Number(b.sumTotal||0) - Number(a.sumTotal||0));
+    // points は sumTotal / points / score の順で見る（coreはsumTotal）
+    arr.sort((a,b)=>{
+      const pa = Number(a.sumTotal ?? a.points ?? a.score ?? 0);
+      const pb = Number(b.sumTotal ?? b.points ?? b.score ?? 0);
+      if (pb !== pa) return pb - pa;
+
+      const ka = Number(a.KP ?? a.kills_total ?? 0);
+      const kb = Number(b.KP ?? b.kills_total ?? 0);
+      if (kb !== ka) return kb - ka;
+
+      const ta = Number(a.Treasure ?? a.treasure ?? 0);
+      const tb2 = Number(b.Treasure ?? b.treasure ?? 0);
+      return tb2 - ta;
+    });
 
     const wrap = document.createElement('div');
     wrap.className = 'tourneyWrap';
@@ -796,8 +814,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           <th>RANK</th>
           <th>TEAM</th>
           <th class="num">PT</th>
-          <th class="num">KP</th>
-          <th class="num">AP</th>
+          <th class="num">K</th>
           <th class="num">TRE</th>
           <th class="num">FLG</th>
         </tr>
@@ -808,15 +825,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     arr.forEach((r, i)=>{
       const tr = document.createElement('tr');
-      if (String(r.id) === 'PLAYER') tr.classList.add('isPlayer');
+
+      const isPlayer =
+        !!r.isPlayer ||
+        (String(r.id||'') === 'PLAYER') ||
+        (String(r.squad||'').toUpperCase().includes('PLAYER'));
+
+      if (isPlayer) tr.classList.add('isPlayer');
+
+      const name = (r.squad ?? r.name ?? r.id ?? '');
+      const pt = (r.sumTotal ?? r.points ?? r.score ?? 0);
+      const k = (r.KP ?? r.kills_total ?? 0);
+      const tre = (r.Treasure ?? r.treasure ?? 0);
+      const flg = (r.Flag ?? r.flag ?? 0);
+
       tr.innerHTML = `
         <td>${escapeHtml(String(i+1))}</td>
-        <td>${escapeHtml(String(r.squad ?? r.id ?? ''))}</td>
-        <td class="num">${escapeHtml(String(r.sumTotal ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
-        <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
+        <td>${escapeHtml(String(name))}</td>
+        <td class="num">${escapeHtml(String(pt))}</td>
+        <td class="num">${escapeHtml(String(k))}</td>
+        <td class="num">${escapeHtml(String(tre))}</td>
+        <td class="num">${escapeHtml(String(flg))}</td>
       `;
       tb.appendChild(tr);
     });
@@ -848,6 +877,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== main render =====
+
   async function render(){
     ensureDom();
 
