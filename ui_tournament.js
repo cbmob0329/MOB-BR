@@ -1,15 +1,8 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.0（フル）
-  ✅ スマホでの「イベント→敗北扱い」「交戦が飛ぶ」「順番が逆」の根本対策：
-     - UIロック機構（uiLockCount）を導入
-     - 非同期処理中・描画中は NEXT を物理的に無効化＆onNextでstep禁止
-  ✅ 大会画面オープン時に主要画像を事前ロード（ido.png遅延対策）
-  ✅ result/総合result中に別requestが割り込まないホールド
-  ✅ showEncounter 2段階（NEXTで敵表示→NEXTで交戦開始）
-  ✅ NEXT連打デバウンス（220ms）
-  ✅ showBattle 取りこぼし対策（encounterGatePhase中は保管）
+  ui_tournament.js v3.6.1（フル）
+  ✅ 修正：showChampionで前画面のスタンプ(brwin/brlose/brbattle)が残り、ログと被る問題を解消
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -34,32 +27,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   let dom = null;
 
-  // UIの内部状態
   let busy = false;
   let lastReqKey = '';
   let autoTimer = null;
 
-  // UI内NEXT段階処理
   let localNextAction = null;
 
-  // showBattle を接敵中に通さないゲート
   let encounterGatePhase = 0; // 0:なし / 1:接敵ログ / 2:敵表示
   let pendingBattleReq = null;
 
-  // result等ホールド
   let holdScreenType = null;
   let pendingReqAfterHold = null;
 
-  // NEXT連打デバウンス
   let nextCooldownUntil = 0;
 
-  // 画像プリロード済みフラグ
   let preloadedBasics = false;
 
-  // ✅ スマホ安定化：UIロック（準備完了までNEXTを完全に殺す）
   let uiLockCount = 0;
 
-  // ✅ render多重実行防止
   let rendering = false;
 
   function getFlow(){
@@ -132,7 +117,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ]);
   }
 
-  // ===== UI Lock =====
   function lockUI(){
     uiLockCount++;
     setNextEnabled(false);
@@ -149,7 +133,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return uiLockCount > 0;
   }
 
-  // ===== CSS loader =====
   function ensureCss(){
     if (document.getElementById('mobbrTournamentCssLink')) return;
 
@@ -245,7 +228,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nextBtn.addEventListener('click', onNext);
     dom.closeBtn.addEventListener('click', close);
 
-    // iOS：ダブルタップズーム/ピンチ事故抑止
     overlay.addEventListener('touchstart', (e)=>{
       if (e.touches && e.touches.length>1) e.preventDefault();
     }, { passive:false });
@@ -253,7 +235,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
-  // 交戦フラグ（CSSで右枠を出す/消す）
   function setBattleMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isBattle', !!on);
@@ -263,7 +244,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ チャンピオン強調フラグ
   function setChampionMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isChampion', !!on);
@@ -279,7 +259,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBattleMode(false);
     setChampionMode(false);
 
-    // ✅ ここで事前ロード（ido遅延対策）
     preloadBasics();
   }
 
@@ -392,10 +371,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (now < nextCooldownUntil) return;
     nextCooldownUntil = now + 220;
 
-    // ✅ 完全ガード：ロック中・描画中・busy中は何もしない
     if (isLocked() || rendering || busy) return;
 
-    // UI内部段階があるなら flow.step しない
     if (typeof localNextAction === 'function'){
       const fn = localNextAction;
       localNextAction = null;
@@ -403,7 +380,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // ホールド画面中：保管があれば stepせず描画へ
     if (holdScreenType){
       if (pendingReqAfterHold){
         holdScreenType = null;
@@ -453,8 +429,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       .replaceAll('"','&quot;')
       .replaceAll("'","&#39;");
   }
-
-  // ===== handlers =====
 
   async function handleShowIntroText(){
     lockUI();
@@ -731,7 +705,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ showEncounter：2段階
   async function handleShowEncounter(payload){
     lockUI();
     try{
@@ -742,7 +715,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       hidePanels();
       setEventIcon('');
-      showCenterStamp('');
+      showCenterStamp('');   // ✅ 念のため接敵でスタンプは消す
       hideSplash();
 
       setBattleMode(false);
@@ -762,16 +735,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
       );
 
-      // 段階1：敵を出さない
       setNames('', '');
       setChars(leftResolved, '');
 
       showSplash('接敵‼︎', `${foeName}チームと接敵！`);
       setLines('接敵‼︎', `${foeName}チームと接敵！`, 'NEXTで敵を表示');
 
-      // 段階2へ（ここからはNEXTで進むのでロック解除）
       localNextAction = ()=>{
-        // 次段階を開始する瞬間はロック（描画完了までNEXT禁止）
         lockUI();
         try{
           encounterGatePhase = 2;
@@ -784,9 +754,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           setChars(leftResolved, rightResolved);
           setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, 'NEXTで交戦開始');
 
-          // 段階3：交戦開始（ここでflow.step→showBattleを受け取る）
           localNextAction = ()=>{
-            // 交戦開始時もロック（flow.step/renderのズレ防止）
             lockUI();
             try{
               if (pendingBattleReq){
@@ -938,6 +906,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBackdrop(TOURNEY_BACKDROP);
 
+      // ✅ ここが原因：直前のbrlose/brwinが残って下に落ちて文字と被る
+      showCenterStamp('');   // ←これで完全解決
+
       setLines(
         payload?.line1 || 'この試合のチャンピオンは…',
         payload?.line2 || String(payload?.championName || ''),
@@ -948,7 +919,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ===== APEX風：1試合result =====
   async function handleShowMatchResult(payload){
     lockUI();
     try{
@@ -1012,7 +982,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ===== APEX風：総合result =====
   async function handleShowTournamentResult(payload){
     lockUI();
     try{
@@ -1028,7 +997,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const total = payload?.total || {};
       const arr = Object.values(total);
 
-      // 総合ポイント降順、同点は総合Kでタイブレーク（現行踏襲）
       arr.sort((a,b)=>{
         const pa = Number(a.sumTotal ?? 0);
         const pb = Number(b.sumTotal ?? 0);
@@ -1115,7 +1083,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = getState();
       const req = st?.request || null;
 
-      // ✅ ホールド中は別requestを描画しない（保管）
       if (holdScreenType){
         if (req && req.type && req.type !== holdScreenType){
           pendingReqAfterHold = req;
@@ -1123,7 +1090,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
       }
 
-      // ✅ 接敵中はshowBattleを通さない（保管）
       if (req?.type === 'showBattle' && encounterGatePhase > 0){
         pendingBattleReq = req;
         showCenterStamp('');
@@ -1152,7 +1118,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }else{
         const isBattleReq = (req.type === 'showBattle');
         if (encounterGatePhase === 0) setBattleMode(isBattleReq);
-        // チャンピオン以外では常に解除（表示残りバグ防止）
         if (req.type !== 'showChampion') setChampionMode(false);
       }
 
