@@ -1,12 +1,15 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.2.2（フル）
-  ✅ FIX：step再帰を完全撤廃（1 step = 1 request を保証）
-  ✅ FIX：Flow側デバウンス撤廃（UI側デバウンスのみ）
-  ✅ FIX：イベント→試合終了の“勝手に進む”現象を根絶（隠れ多段stepを潰す）
-  ✅ FIX：接敵したのに交戦が出ない取りこぼしを根絶（debounce由来）
-  ✅ ADD：showMove に arrive1/arrive2 を必ず付与
+  sim_tournament_flow.js v3.2.4（フル）
+  ✅ FIX：イベント中に突然 champion → その後交戦、の残留バグ根絶
+     - トランジェント状態（_afterBattleGo/_roundMatches/_matchCursor/_eventsToShow 等）を
+       試合開始/降下/round開始で必ずクリア
+     - champion分岐は「その試合でプレイヤー全滅→fastForward実行済み」の場合のみ許可（_forcedMatchEnd）
+  ✅ CHANGE：イベント回数をテンポ優先に変更
+     - R1〜R5：常に1回
+     - R6：0回
+  ✅ 継続：1 step = 1 request
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -183,11 +186,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (round === 5) return 2;
     return 1;
   }
+
+  // ✅ テンポ優先：R1〜R5 = 1回 / R6 = 0回
   function eventCount(round){
-    if (round === 1) return 1;
-    if (round >= 2 && round <= 5) return 2;
+    if (round >= 1 && round <= 5) return 1;
     return 0;
   }
+
   function playerBattleProb(round, playerContestedAtDrop){
     if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
     if (round === 2) return 0.70;
@@ -231,6 +236,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { player, playerCoach: coachFlags };
   }
 
+  function clearTransientState(){
+    // ✅ これが今回の本命（残留で champion が誤発火する）
+    state._eventsToShow = 0;
+    state._eventsDoneFlag = false;
+
+    state._roundMatches = null;
+    state._matchCursor = 0;
+
+    state._afterBattleGo = null;
+    state._forcedMatchEnd = false;
+  }
+
   function resetForNewMatch(){
     for(const t of state.teams){
       t.eliminated = false;
@@ -242,6 +259,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.assists_total = 0;
     }
     state.playerContestedAtDrop = false;
+    clearTransientState();
   }
 
   function initDropPositions(){
@@ -529,6 +547,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.round = 1;
     state.selectedCoachSkill = null;
     state.selectedCoachQuote = '';
+    clearTransientState(); // ✅ 次試合でも残留させない
     initMatchDrop();
   }
 
@@ -536,7 +555,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return state.matchIndex > state.matchCount;
   }
 
-  // ===== main step machine（1step=1request）=====
   function step(){
     if (!state) return;
 
@@ -553,12 +571,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.ui.bg = 'maps/neonmain.png';
       state.ui.squareBg = 'tent.png';
-
       state.ui.leftImg = getPlayerSkin();
       state.ui.rightImg = '';
       state.ui.topLeftName = '';
       state.ui.topRightName = '';
 
+      clearTransientState(); // ✅ 念のため
       setCenter3('本日のチームをご紹介！', '', '');
       setRequest('showIntroText', {});
       state.phase = 'teamList';
@@ -566,6 +584,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'teamList'){
+      clearTransientState(); // ✅ 念のため
       setCenter3('', '', '');
       setRequest('showTeamList', { teams: state.teams.map(t=>({
         id:t.id, name:t.name, power:t.power, alive:t.alive, eliminated:t.eliminated, treasure:t.treasure, flag:t.flag, isPlayer:!!t.isPlayer
@@ -575,6 +594,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'teamList_done'){
+      clearTransientState(); // ✅ 念のため
       setCenter3('それでは試合を開始します！', '使用するコーチスキルを選択してください！', '');
       setRequest('showCoachSelect', {
         equipped: getEquippedCoachList(),
@@ -585,6 +605,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'coach_done'){
+      clearTransientState(); // ✅ 試合開始前に必ず掃除
       initMatchDrop();
 
       state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -605,6 +626,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'drop_land'){
+      // ✅ 降下直後も念のため掃除（ここで残留があると変な分岐が起きる）
+      state._afterBattleGo = null;
+      state._forcedMatchEnd = false;
+
       const p2 = getPlayer();
       const info = getAreaInfo(p2?.areaId || 1);
       state.ui.bg = info.img;
@@ -623,6 +648,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'round_start'){
+      // ✅ round開始で毎回掃除（前roundの残りを絶対持ち越さない）
+      state._afterBattleGo = null;
+      state._roundMatches = null;
+      state._matchCursor = 0;
+      state._eventsToShow = eventCount(state.round);
+
       const r = state.round;
 
       state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -636,14 +667,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       setRequest('showRoundStart', { round: r });
 
       state.phase = 'round_events';
-      state._eventsToShow = eventCount(r);
       return;
     }
 
     if (state.phase === 'round_events'){
       const r = state.round;
 
-      // ✅ イベント0回なら「このstepはスキップ表示」を挟む（勝手に次へ行かない）
       if (eventCount(r) === 0 || !p || p.eliminated){
         setRequest('noop', {});
         state.phase = 'round_battles';
@@ -672,18 +701,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         setRequest('showEvent', { icon: '', log1:'イベント発生！', log2:'……', log3:'' });
       }
 
-      // ✅ ここで終わる（1step=1request）
-      // 次のNEXTで、残りイベント or バトルへ進む
-      if (state._eventsToShow <= 0){
-        state._eventsDoneFlag = true;
-      }
       return;
     }
 
     if (state.phase === 'round_battles'){
       const r = state.round;
 
-      // ✅ 直前がイベント終わりなら、次に battle準備request を出す（1step消費）
       const matches = buildMatchesForRound(r);
       state._roundMatches = matches.map(([A,B])=>({ aId:A.id, bId:B.id }));
       state._matchCursor = 0;
@@ -698,7 +721,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const list = Array.isArray(state._roundMatches) ? state._roundMatches : [];
       let cur = Number(state._matchCursor||0);
 
-      // CPU同士は内部で処理（表示無し）だが、プレイヤー交戦が来たらそこで止める
       while (cur < list.length){
         const pair = list[cur];
         const A = state.teams.find(t=>t.id===pair.aId);
@@ -736,7 +758,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         cur++;
       }
 
-      // ラウンド内の交戦が終わった
       state._matchCursor = cur;
       state.phase = (r <= 5) ? 'round_move' : 'match_result';
       setRequest('noop', {});
@@ -797,7 +818,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       });
 
       if (!iWon && me.eliminated){
+        // ✅ ここだけが champion ルートに入れる唯一の入口
         fastForwardToMatchEnd();
+        state._forcedMatchEnd = true;
+
         const championName = getChampionName();
         state._afterBattleGo = { type:'champion', championName };
         state.phase = 'battle_after';
@@ -816,6 +840,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state._afterBattleGo = null;
 
       if (go.type === 'champion'){
+        // ✅ ガード：fastForward実行済みでなければ champion を出さない（残留誤発火防止）
+        if (!state._forcedMatchEnd){
+          state._matchCursor = cur + 1;
+          state.phase = 'battle_one';
+          setRequest('noop', {});
+          return;
+        }
+
         state.ui.rightImg = '';
         state.ui.topLeftName = '';
         state.ui.topRightName = '';
@@ -824,6 +856,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           matchIndex: state.matchIndex,
           championName: String(go.championName || '')
         });
+
+        // ✅ champion表示後は必ず result へ
         state.phase = 'match_result';
         return;
       }
@@ -985,6 +1019,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       request: null
     };
 
+    clearTransientState();
+
     if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
     if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
 
@@ -996,7 +1032,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     startLocalTournament,
     step,
     getState,
-
     getCoachMaster,
     getEquippedCoachList,
     setCoachSkill,
