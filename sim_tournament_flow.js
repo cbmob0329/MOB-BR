@@ -1,10 +1,9 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.5.0（フル）
-  ✅ 修正1：power 55固定 → 候補キー総当たり→最大値採用（66があるなら必ず66）
-  ✅ 修正2：順位がありえない（R2負けで3位） → eliminatedOrder==0 を最速脱落扱いにして下位固定
-  ✅ 既存仕様：撤退なし（勝者+3キル保証）／負けたらfastForward→champion→result
+  sim_tournament_flow.js v3.5.1（フル）
+  ✅ 修正：powerが55固定のまま → "66%" 等のパーセント文字列も数値化して最大値採用
+  ✅ 継続：順位がありえない（R2負けで3位） → eliminatedOrder==0 を最速脱落扱いにして下位固定
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -18,7 +17,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     equippedSkin: 'mobbr_equippedSkin',
     equippedCoachSkills: 'mobbr_equippedCoachSkills',
 
-    // ありがちな保存先候補（存在しうるものを広めに）
     teamPower: 'mobbr_teamPower',
     teamPowerPct: 'mobbr_teamPowerPct',
     teamPercent: 'mobbr_teamPercent',
@@ -95,12 +93,33 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
+  // ✅ "66%" / " 66.0 % " / "power:66%" みたいな文字列も数値にする
+  function parseMaybePercentNumber(x){
+    if (x === null || x === undefined) return null;
+
+    if (typeof x === 'number'){
+      return Number.isFinite(x) ? x : null;
+    }
+
+    const s = String(x).trim();
+    if (!s) return null;
+
+    // そのまま数値化できるケース
+    const n0 = Number(s);
+    if (Number.isFinite(n0)) return n0;
+
+    // %や余計な文字が混ざるケース（先頭付近の数値を拾う）
+    const m = s.match(/-?\d+(\.\d+)?/);
+    if (!m) return null;
+    const n1 = Number(m[0]);
+    return Number.isFinite(n1) ? n1 : null;
+  }
+
   function tryPickNumber(obj, keys){
     if (!obj || typeof obj !== 'object') return null;
     for (const k of keys){
-      const v = obj[k];
-      const n = Number(v);
-      if (Number.isFinite(n)) return n;
+      const v = parseMaybePercentNumber(obj[k]);
+      if (Number.isFinite(v)) return v;
     }
     return null;
   }
@@ -109,11 +128,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const raw = localStorage.getItem(key);
     if (!raw) return null;
 
-    const n = Number(raw);
-    if (Number.isFinite(n)) return { v:n, src:`${key}(num)` };
+    // 1) "66" / "66%" 直接
+    const n = parseMaybePercentNumber(raw);
+    if (Number.isFinite(n)) return { v:n, src:`${key}(raw)` };
 
+    // 2) JSON
     try{
       const obj = JSON.parse(raw);
+
       const v = tryPickNumber(obj, [
         'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
         'percent','pct','teamPct','teamPercent','team_power','team_power_pct'
@@ -133,15 +155,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function calcPlayerTeamPower(){
     const candidates = [];
 
-    // 1) playerTeam
+    // playerTeam
     const a = readAny(K.playerTeam);
     if (a) candidates.push(a);
 
-    // 2) teamName（JSONの可能性）
+    // teamName（JSONの可能性）
     const b = readAny(K.teamName);
     if (b) candidates.push(b);
 
-    // 3) よくあるキー総当たり
+    // よくあるキー総当たり
     const keys = [
       K.teamPower, K.teamPowerPct, K.teamPercent, K.teamOverall, K.mainState, K.main
     ];
@@ -150,22 +172,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (r) candidates.push(r);
     }
 
-    // 4) UI計算関数（最後）
+    // UI計算関数（最後）
     try{
       const fn = window.MOBBR?.ui?.team?.calcTeamPower;
       if (typeof fn === 'function'){
-        const v = Number(fn());
+        const v = parseMaybePercentNumber(fn());
         if (Number.isFinite(v)) candidates.push({ v, src:'ui.team.calcTeamPower()' });
       }
     }catch{}
 
-    // 候補が無ければデフォルト
     if (!candidates.length){
       console.warn('[tournamentFlow] playerPower: fallback 66 (no candidates)');
       return 66;
     }
 
-    // 最大値採用（55と66が混在する状況で66を確実に拾う）
     candidates.sort((x,y)=>Number(y.v)-Number(x.v));
     const pick = candidates[0];
 
@@ -273,7 +293,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
 
-    // ✅ ここ重要：初期値0のまま残ると順位が壊れるので、最低限の安全値を持たせる
     if (!Number.isFinite(Number(t.eliminatedOrder))) t.eliminatedOrder = 0;
     if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
 
@@ -283,11 +302,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function computeCtx(){
-    const player = getPlayer();
     const coachFlags = window.MOBBR?.sim?.matchFlow?.getPlayerCoachFlags
       ? window.MOBBR.sim.matchFlow.getPlayerCoachFlags()
       : {};
-    return { player, playerCoach: coachFlags };
+    return { player: getPlayer(), playerCoach: coachFlags };
   }
 
   function resetForNewMatch(){
@@ -425,7 +443,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 0;
   };
 
-  // ✅ eliminatedOrder==0 を「最速脱落扱い」で必ず下へ落とす
   function safeElimOrder(t){
     const o = Number(t?.eliminatedOrder || 0);
     return (o > 0) ? o : -999999;
@@ -452,7 +469,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return String(a.name||'').localeCompare(String(b.name||''), 'ja');
       }
 
-      // 両方脱落：後に脱落した方が上位（orderが大きい方が上）
       const ao = safeElimOrder(a);
       const bo = safeElimOrder(b);
       if (bo !== ao) return bo - ao;
@@ -511,9 +527,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function setRequest(type, payload){
     state.request = { type, ...(payload||{}) };
-  }
-  function setCenter3(a,b,c){
-    state.ui.center3 = [String(a||''), String(b||''), String(c||'')];
   }
   function getAreaInfo(areaId){
     const a = AREA[areaId];
@@ -661,7 +674,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.ui.leftImg = getPlayerSkin();
       state.ui.rightImg = '';
-      setCenter3('本日のチームをご紹介！', '', '');
+      state.ui.center3 = ['本日のチームをご紹介！','',''];
+
       setRequest('showIntroText', {});
       state.phase = 'teamList';
       return;
@@ -692,7 +706,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.ui.bg = 'tent.png';
       state.ui.squareBg = 'tent.png';
 
-      setCenter3('バトルスタート！', '降下開始…！', '');
+      state.ui.center3 = ['バトルスタート！','降下開始…！',''];
       setRequest('showDropStart', {});
       state.phase = 'drop_land';
       state.round = 1;
@@ -703,7 +717,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const info = getAreaInfo(p?.areaId || 1);
       state.ui.bg = info.img;
       const contested = !!state.playerContestedAtDrop;
-      setCenter3(`${info.name}に降下完了。周囲を確認…`, contested ? '被った…敵影がいる！' : '周囲は静かだ…', 'IGLがコール！戦闘準備！');
+      state.ui.center3 = [
+        `${info.name}に降下完了。周囲を確認…`,
+        contested ? '被った…敵影がいる！' : '周囲は静かだ…',
+        'IGLがコール！戦闘準備！'
+      ];
       setRequest('showDropLanded', { areaId: info.id, areaName: info.name, bg: info.img, contested });
       state.phase = 'round_start';
       return;
@@ -737,7 +755,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state._eventsToShow = remain - 1;
 
       if (ev){
-        setCenter3(ev.log1, ev.log2, ev.log3);
+        state.ui.center3 = [ev.log1, ev.log2, ev.log3];
         setRequest('showEvent', { icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3 });
       }else{
         setRequest('showEvent', { icon:'', log1:'イベント発生！', log2:'……', log3:'' });
@@ -880,12 +898,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
-      // 次試合へ
       state.round = 1;
       state.selectedCoachSkill = null;
       state.selectedCoachQuote = '';
       state.phase = 'coach_done';
-
       return;
     }
 
@@ -902,7 +918,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       id: 'PLAYER',
       name: localStorage.getItem(K.teamName) || 'PLAYER TEAM',
       isPlayer: true,
-      power: playerPower,
+      power: clamp(playerPower, 1, 100),
       alive: 3,
       eliminated: false,
       areaId: 1,
