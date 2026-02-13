@@ -9,6 +9,10 @@
   - キル/アシスト（個人配分）を裏で集計（Assist ≤ Kill保証）
   - downs_total は内部のみ（タイブレーク用）※表示しない
   - バトル後、eventBuffs は「その試合中のみ」なので両チーム分リセット
+
+  ★修正（今回）：
+  - 「交戦勝利 = 必ず3キル」を保証（勝って0キル問題を潰す）
+  - 敗者のキルは 0〜2 を抽選（敗北側もキルが出る）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -155,61 +159,37 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  function rollTeamKillsForBattle(winner, loser, round, diff){
-    // winner: 0〜3 / loser: 0〜2
-    // diffが大きいほどwinnerのキルが寄る（内部のみ）
+  // 敗者のキル抽選（0〜2）
+  function rollLoserKills(round, diff){
     const r = clamp(round, 1, 6);
 
-    // winner kills
-    let wKills = 0;
-    const wBias = clamp(diff / 35, -1, 1); // -1..1
-    // 基本：Rが上がるほど少し増える
-    const baseW = (r <= 2) ? 1.1 : (r <= 4 ? 1.3 : 1.5);
+    // diffが大きいほど（勝者が強いほど）敗者キルが減る
+    // diff>0 で「勝者が上」なので敗者は不利
+    const bias = clamp(diff / 40, -1, 1);
 
-    // 0〜3 の分布を作る
-    const rw = Math.random();
-    let p0 = clamp(0.25 - 0.08*wBias, 0.10, 0.45);
-    let p3 = clamp(0.12 + 0.10*wBias, 0.03, 0.28);
-    let p2 = clamp(0.28 + 0.08*wBias, 0.10, 0.45);
-    let p1 = 1 - (p0+p2+p3);
+    const rl = Math.random();
+    let p0 = clamp(0.55 + 0.18*bias, 0.25, 0.90);
+    let p2 = clamp(0.10 - 0.08*bias, 0.00, 0.18);
+    let p1 = 1 - (p0 + p2);
+
     if (p1 < 0.05){
-      // 破綻防止：p1を確保して残りを正規化
-      const rest = p0+p2+p3;
+      const rest = p0 + p2;
       p1 = 0.05;
       const k = (1-p1)/Math.max(1e-6, rest);
-      p0*=k; p2*=k; p3*=k;
+      p0*=k; p2*=k;
     }
 
-    if (rw < p0) wKills = 0;
-    else if (rw < p0 + p1) wKills = 1;
-    else if (rw < p0 + p1 + p2) wKills = 2;
-    else wKills = 3;
+    let lk = 0;
+    if (rl < p0) lk = 0;
+    else if (rl < p0 + p1) lk = 1;
+    else lk = 2;
 
-    // 少しラウンド補正（終盤はキルが出やすい）
-    if (Math.random() < (baseW - 1.0) * 0.20){
-      wKills = clamp(wKills + 1, 0, 3);
+    // 終盤は少しだけ撃ち合いが伸びることがある（敗者キルが1上振れ）
+    if (r >= 4 && Math.random() < 0.08){
+      lk = clamp(lk + 1, 0, 2);
     }
 
-    // loser kills
-    let lKills = 0;
-    const rl = Math.random();
-    // diffで負け側は減る
-    const lBias = clamp(diff / 40, -1, 1);
-    let lp0 = clamp(0.55 + 0.15*lBias, 0.30, 0.85); // diff>0ならlp0増える
-    let lp2 = clamp(0.08 - 0.06*lBias, 0.00, 0.15);
-    let lp1 = 1 - (lp0 + lp2);
-    if (lp1 < 0.05){
-      const rest = lp0 + lp2;
-      lp1 = 0.05;
-      const k = (1-lp1)/Math.max(1e-6, rest);
-      lp0*=k; lp2*=k;
-    }
-
-    if (rl < lp0) lKills = 0;
-    else if (rl < lp0 + lp1) lKills = 1;
-    else lKills = 2;
-
-    return { wKills, lKills };
+    return lk;
   }
 
   function resetMatchBuffs(team){
@@ -249,11 +229,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     loser.downs_total  += 3;
 
     // ====== キル/アシスト（裏集計）
-    const diff = (aWin ? (pA - pB) : (pB - pA));
-    const ka = rollTeamKillsForBattle(winner, loser, r, diff);
+    // ✅勝者は必ず3キル（仕様保証）
+    for (let i=0;i<3;i++) addKill(winner);
 
-    for (let i=0;i<ka.wKills;i++) addKill(winner);
-    for (let i=0;i<ka.lKills;i++) addKill(loser);
+    // ✅敗者も0〜2キルを取り得る（撃ち合いのトレード表現）
+    const diff = (aWin ? (pA - pB) : (pB - pA)); // 勝者−敗者 が正
+    const loserKills = rollLoserKills(r, diff);
+    for (let i=0;i<loserKills;i++) addKill(loser);
 
     // ====== 結果：敗者は必ず全滅
     loser.alive = 0;
@@ -270,20 +252,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return {
       winnerId: winner.id,
       loserId: loser.id,
-      // UIが使うなら残す（数値は表示しない運用）
       winDrop: 0,
       loseDrop: 3,
-      // 裏検証用
-      winnerKills: ka.wKills,
-      loserKills: ka.lKills
+
+      // 裏検証用（必要ならUIには出さない運用）
+      winnerKills: 3,
+      loserKills: loserKills
     };
   }
 
   // コーチスキルのフラグ口（score_mindなど）
   function getPlayerCoachFlags(){
-    // tournament_core.computeCtx() が参照する口
-    // 現状はUI側で「選択したスキル」からフラグ化して返したいが、
-    // ここは最小で空にしておき、必要になったらui/flow側で差し替える。
     return {};
   }
 
