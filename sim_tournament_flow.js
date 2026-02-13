@@ -100,8 +100,19 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // ===== プレイヤー戦闘力 =====
+  // ===== プレイヤー戦闘力（メイン画面とズレないように取得強化）=====
+  function tryPickNumber(obj, keys){
+    if (!obj || typeof obj !== 'object') return null;
+    for (const k of keys){
+      const v = obj[k];
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  }
+
   function calcPlayerTeamPower(){
+    // 1) UIの計算関数があるなら最優先
     try{
       const fn = window.MOBBR?.ui?.team?.calcTeamPower;
       if (typeof fn === 'function'){
@@ -110,16 +121,42 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }catch(e){}
 
+    // 2) playerTeam（JSON）から拾う（複数フィールド対応）
     try{
       const raw = localStorage.getItem(K.playerTeam);
       if (raw){
         const t = JSON.parse(raw);
-        const v = Number(t?.teamPower);
+        const v = tryPickNumber(t, [
+          'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
+          'percent','pct','teamPct','teamPercent'
+        ]);
         if (Number.isFinite(v)) return clamp(v, 1, 100);
+
+        // ありがちな入れ子構造もフォールバック
+        const v2 = tryPickNumber(t?.team, ['teamPower','power','overall','basePower','percent','pct']);
+        if (Number.isFinite(v2)) return clamp(v2, 1, 100);
       }
     }catch(e){}
 
-    return 55;
+    // 3) teamNameキー側にパワーが入ってるケースにも対応（複数フィールド）
+    try{
+      const raw2 = localStorage.getItem(K.teamName);
+      if (raw2){
+        // teamName は「名前文字列」で使っているが、JSONが入る運用も想定して拾う
+        let obj = null;
+        try{ obj = JSON.parse(raw2); }catch{ obj = null; }
+        if (obj && typeof obj === 'object'){
+          const v = tryPickNumber(obj, [
+            'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
+            'percent','pct','teamPct','teamPercent'
+          ]);
+          if (Number.isFinite(v)) return clamp(v, 1, 100);
+        }
+      }
+    }catch(e){}
+
+    // 4) 最終フォールバック：メイン画面初期値（ユーザー希望：66と大会がズレない）
+    return 66;
   }
 
   function getEquippedSkin(){
@@ -223,7 +260,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function ensureTeamRuntimeShape(t){
     if (!t) return;
     if (!Number.isFinite(Number(t.alive))) t.alive = 3;
-    if (!Number.isFinite(Number(t.power))) t.power = 55;
+    if (!Number.isFinite(Number(t.power))) t.power = 66;
     if (t.eliminated !== true) t.eliminated = false;
     if (!Number.isFinite(Number(t.areaId))) t.areaId = 1;
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
@@ -966,7 +1003,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     cpu19.forEach((c, i)=>{
       const id = c.teamId || c.id || `localXX_${i+1}`;
-      const nm = String(c.teamId || c.id || id);
+      const nm = String(c.name || c.teamName || c.displayName || c.teamId || c.id || id);
 
       teams.push({
         id,
