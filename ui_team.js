@@ -9,6 +9,11 @@
   - 既存機能は維持：
     ・カード効果込み総合% 表示（赤文字 +「カード効果！」）
     ・セーブ削除（完全リセット）時に全ポップアップ/スクリーンを閉じる
+
+  ★今回の修正（power55問題）
+  - window.MOBBR.ui.team.calcTeamPower() を実装（試合側が参照）
+  - renderTeamPower() のたびに localStorage[mobbr_playerTeam].teamPower を保存
+    → 大会/試合側の calcPlayerTeamPower() が 55 に落ちなくなる
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -201,6 +206,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Math.max(0, Math.min(100, v));
   }
 
+  function clamp1to100(n){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return 1;
+    return Math.max(1, Math.min(100, v));
+  }
+
   function calcCharBasePower(stats){
     const s = {
       hp: clamp01to100(stats?.hp),
@@ -303,6 +314,31 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return { baseEl, cardEl, labelEl };
   }
 
+  // ★ power55対策：試合が参照する「チーム戦闘力」をこのUIで確定させる
+  function calcTeamPower(){
+    const team = getPlayerTeam();
+    const base = calcTeamBasePercent(team);
+    const bonus = calcCollectionBonusPercent();
+    const total = base + bonus;     // float
+    const totalInt = Math.round(total);
+    return clamp1to100(totalInt);
+  }
+
+  function persistTeamPower(teamPowerInt){
+    // localStorage[mobbr_playerTeam].teamPower を確実に保存（試合側のフォールバック用）
+    try{
+      const raw = localStorage.getItem(K.playerTeam);
+      if (!raw) return;
+      const t = JSON.parse(raw);
+      if (!t || typeof t !== 'object') return;
+
+      t.teamPower = clamp1to100(teamPowerInt);
+
+      // 念のため members の name など既存構造はそのまま維持して上書き保存
+      localStorage.setItem(K.playerTeam, JSON.stringify(t));
+    }catch(e){}
+  }
+
   function renderTeamPower(){
     const team = getPlayerTeam();
     const base = calcTeamBasePercent(team);
@@ -312,11 +348,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     const ui = ensureCardPowerUI();
+    const bonus = calcCollectionBonusPercent(); // 例 0.27
+    const total = base + bonus;
+
     if (ui.cardEl){
-      const bonus = calcCollectionBonusPercent(); // 例 0.27
-      const total = base + bonus;
       ui.cardEl.textContent = `${total.toFixed(2)}%`;
     }
+
+    // ★大会/試合で使う整数power（1..100）を保存
+    const totalInt = clamp1to100(Math.round(total));
+    persistTeamPower(totalInt);
   }
 
   // ===== Coach Skills: load/save =====
@@ -889,7 +930,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   window.MOBBR.initTeamUI = initTeamUI;
-  window.MOBBR.ui.team = { open, close, render };
+
+  // ★ calcTeamPower を公開（大会/試合が参照する）
+  window.MOBBR.ui.team = { open, close, render, calcTeamPower };
 
   document.addEventListener('DOMContentLoaded', ()=>{
     initTeamUI();
