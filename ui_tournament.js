@@ -263,6 +263,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ✅ チャンピオン強調フラグ
+  function setChampionMode(on){
+    ensureDom();
+    dom.overlay.classList.toggle('isChampion', !!on);
+  }
+
   function open(){
     ensureDom();
     dom.overlay.classList.add('isOpen');
@@ -271,6 +277,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     resetEncounterGate();
     clearHold();
     setBattleMode(false);
+    setChampionMode(false);
 
     // ✅ ここで事前ロード（ido遅延対策）
     preloadBasics();
@@ -288,6 +295,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!dom) return;
     dom.overlay.classList.remove('isOpen');
     dom.overlay.classList.remove('isBattle');
+    dom.overlay.classList.remove('isChampion');
   }
 
   function setBackdrop(src){
@@ -451,6 +459,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowIntroText(){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -514,6 +523,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowTeamList(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -544,6 +554,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowCoachSelect(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -604,6 +615,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowDropStart(){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -630,6 +642,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowDropLanded(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -657,6 +670,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowRoundStart(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -681,6 +695,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowEvent(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp('');
       resetEncounterGate();
       clearHold();
@@ -708,6 +723,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handlePrepareBattles(){
     lockUI();
     try{
+      setChampionMode(false);
       setBattleMode(false);
       setBackdrop(TOURNEY_BACKDROP);
     }finally{
@@ -719,6 +735,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowEncounter(payload){
     lockUI();
     try{
+      setChampionMode(false);
       encounterGatePhase = 1;
       pendingBattleReq = null;
       clearHold();
@@ -776,7 +793,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
                 const req = pendingBattleReq;
                 pendingBattleReq = null;
                 encounterGatePhase = 0;
-                // ここはhandleShowBattle内でbusyロック運用する
                 (async()=>{ await handleShowBattle(req); })();
                 return;
               }
@@ -786,7 +802,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               flow.step();
               render();
             }finally{
-              // render/handleShowBattle が続くので、ここでは一段だけ戻す
               unlockUI();
             }
           };
@@ -811,12 +826,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   async function handleShowBattle(payload){
-    // ✅ showBattle中は「完全に」NEXTを殺す（スマホでの順番破壊根絶）
     lockUI();
     busy = true;
     setNextEnabled(false);
 
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); setEventIcon('');
       clearHold();
 
@@ -863,18 +878,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     }finally{
       busy = false;
-      unlockUI();      // ここで初めてNEXT解放
+      unlockUI();
       setNextEnabled(true);
     }
   }
 
   async function handleShowMove(payload){
-    // ✅ 移動も準備完了までNEXT禁止（ido遅延＆ズレ対策）
     lockUI();
     busy = true;
     setNextEnabled(false);
 
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -885,8 +900,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBattleMode(false);
 
       setBackdrop(TOURNEY_BACKDROP);
-
-      // ✅ 事前ロード済みのidoを即出し
       setSquareBg(ASSET.ido);
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -901,7 +914,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       if (toResolved) setSquareBg(toResolved);
 
-      // ✅ 到着時にエリア名（「〇〇に到着！」）を必ず出す
       setLines(
         payload?.arrive1 || (payload?.toAreaName ? `${String(payload.toAreaName)}に到着！` : '到着！'),
         payload?.arrive2 || '',
@@ -918,6 +930,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowChampion(payload){
     lockUI();
     try{
+      setChampionMode(true);
       hidePanels(); hideSplash(); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -935,9 +948,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ===== APEX風：1試合result =====
   async function handleShowMatchResult(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       setHold('showMatchResult');
@@ -955,11 +970,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       table.innerHTML = `
         <thead>
           <tr>
-            <th>RANK</th>
             <th>TEAM</th>
+            <th class="num">PP</th>
             <th class="num">K</th>
+            <th class="num">A</th>
             <th class="num">TRE</th>
             <th class="num">FLG</th>
+            <th class="num">TOTAL</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -971,18 +988,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
         if (isPlayer) tr.classList.add('isPlayer');
 
+        const place = Number(r.placement ?? 0);
+        const teamLabel = `${place ? `#${place} ` : ''}${String(r.squad ?? r.id ?? '')}`;
+
         tr.innerHTML = `
-          <td>${escapeHtml(String(r.placement ?? ''))}</td>
-          <td>${escapeHtml(String(r.squad ?? r.id ?? ''))}</td>
+          <td>${escapeHtml(teamLabel)}</td>
+          <td class="num">${escapeHtml(String(r.PlacementP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
+          <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
+          <td class="num">${escapeHtml(String(r.Total ?? 0))}</td>
         `;
         tb.appendChild(tr);
       });
 
       wrap.appendChild(table);
-      showPanel(`MATCH ${payload?.matchIndex || ''} 結果`, wrap);
+      showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
       setLines('試合結果', '（NEXTで進行）', '');
     }finally{
@@ -990,9 +1012,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ===== APEX風：総合result =====
   async function handleShowTournamentResult(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       setHold('showTournamentResult');
@@ -1004,6 +1028,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const total = payload?.total || {};
       const arr = Object.values(total);
 
+      // 総合ポイント降順、同点は総合Kでタイブレーク（現行踏襲）
       arr.sort((a,b)=>{
         const pa = Number(a.sumTotal ?? 0);
         const pb = Number(b.sumTotal ?? 0);
@@ -1020,10 +1045,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       table.innerHTML = `
         <thead>
           <tr>
-            <th>RANK</th>
             <th>TEAM</th>
             <th class="num">PT</th>
+            <th class="num">PP</th>
             <th class="num">K</th>
+            <th class="num">A</th>
             <th class="num">TRE</th>
             <th class="num">FLG</th>
           </tr>
@@ -1037,11 +1063,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
         if (isPlayer) tr.classList.add('isPlayer');
 
+        const teamLabel = `#${i+1} ${String(r.squad ?? r.id ?? '')}`;
+
         tr.innerHTML = `
-          <td>${escapeHtml(String(i+1))}</td>
-          <td>${escapeHtml(String(r.squad ?? r.id ?? ''))}</td>
+          <td>${escapeHtml(teamLabel)}</td>
           <td class="num">${escapeHtml(String(r.sumTotal ?? 0))}</td>
+          <td class="num">${escapeHtml(String(r.sumPlacementP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
+          <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
         `;
@@ -1049,7 +1078,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       });
 
       wrap.appendChild(table);
-      showPanel('トーナメント総合', wrap);
+      showPanel('TOURNAMENT RESULT', wrap);
 
       setLines('大会結果', 'お疲れ様！', '');
     }finally{
@@ -1060,6 +1089,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleNextMatch(payload){
     lockUI();
     try{
+      setChampionMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -1109,6 +1139,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       if (!req || !req.type){
         if (encounterGatePhase === 0) setBattleMode(false);
+        setChampionMode(false);
         return;
       }
 
@@ -1117,9 +1148,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         hidePanels();
         showCenterStamp('');
         hideSplash();
+        setChampionMode(false);
       }else{
         const isBattleReq = (req.type === 'showBattle');
         if (encounterGatePhase === 0) setBattleMode(isBattleReq);
+        // チャンピオン以外では常に解除（表示残りバグ防止）
+        if (req.type !== 'showChampion') setChampionMode(false);
       }
 
       switch(req.type){
@@ -1154,6 +1188,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(e){
       console.error('[ui_tournament] request handler error:', e);
       busy = false;
+      setChampionMode(false);
       if (encounterGatePhase === 0) setBattleMode(false);
     }finally{
       rendering = false;
