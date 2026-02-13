@@ -1,12 +1,15 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.4.6（フル）
-  ✅ 非交戦時の敵枠残留：根絶
-  ✅ showEncounter：2段階（接敵ログ → NEXT → 敵名/敵画像 → NEXT → 交戦開始）
-  ✅ FIX：showBattle 強制ゲートを強化
-     - encounterGatePhase === 2 の時だけでなく、>0（接敵中は常に）showBattle をブロック＆保管
-     - タイミング差で勝手に交戦が始まるブレを根絶
+  ui_tournament.js v3.4.7（フル）
+  ✅ FIX1：result中に勝手に接敵が割り込む問題をUI側で根絶
+     - showMatchResult / showTournamentResult を「ホールド画面」にして
+       NEXTを押すまで別requestを絶対に描画しない（裏で進んだ分は保管）
+  ✅ FIX2：接敵演出前に enemy枠が先に出てバレる問題を根絶
+     - render冒頭の isBattle 自動切替を showEncounter だけ例外化
+     - showEncounter は必ず setBattleMode(false) から開始
+  ✅ おまけ：NEXT連打対策（220ms デバウンス）
+  ✅ showBattle 強制ゲート（encounterGatePhase>0中は絶対開始しない）継続
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -42,6 +45,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   let encounterGatePhase = 0;
   let pendingBattleReq = null;
 
+  // ✅ 結果画面など「NEXT押すまで他requestを絶対出さない」ホールド
+  let holdScreenType = null;        // 'showMatchResult' / 'showTournamentResult'
+  let pendingReqAfterHold = null;   // hold中にcoreが進めたrequestを保管
+
+  // ✅ NEXT連打デバウンス
+  let nextCooldownUntil = 0;
+
   function getFlow(){
     return window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null;
   }
@@ -72,6 +82,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function resetEncounterGate(){
     encounterGatePhase = 0;
     pendingBattleReq = null;
+  }
+
+  function setHold(type){
+    holdScreenType = type || null;
+    pendingReqAfterHold = null;
+  }
+  function clearHold(){
+    holdScreenType = null;
+    pendingReqAfterHold = null;
   }
 
   // ===== CSS loader =====
@@ -192,6 +211,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.overlay.classList.add('isOpen');
     clearLocalNext();
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
   }
 
@@ -199,6 +219,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     clearAutoTimer();
     clearLocalNext();
     resetEncounterGate();
+    clearHold();
     if (!dom) return;
     dom.overlay.classList.remove('isOpen');
     dom.overlay.classList.remove('isBattle');
@@ -293,6 +314,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function onNext(){
+    const now = Date.now();
+    if (now < nextCooldownUntil) return;     // ✅連打デバウンス
+    nextCooldownUntil = now + 220;
+
     if (busy) return;
 
     // ✅ローカル段階処理がある場合は flow.step しない
@@ -301,6 +326,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       localNextAction = null;
       try{ fn(); }catch(e){ console.error('[ui_tournament] localNextAction error:', e); }
       return;
+    }
+
+    // ✅ホールド画面中：保管されているrequestがあれば stepせず render で反映
+    if (holdScreenType){
+      if (pendingReqAfterHold){
+        holdScreenType = null;
+        pendingReqAfterHold = null;
+        lastReqKey = ''; // 強制再描画
+        render();
+        return;
+      }
+      // 次へ（通常のflow.step）
+      holdScreenType = null;
     }
 
     const flow = getFlow();
@@ -317,6 +355,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!/\.png$/i.test(base)) arr.push(base + '.png');
     return arr;
   }
+
   function guessTeamImageCandidates(teamId){
     const id = String(teamId || '');
     if (!id) return [];
@@ -366,6 +405,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowIntroText(){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -425,6 +465,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowTeamList(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -452,6 +493,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowCoachSelect(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -506,6 +548,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowDropStart(){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -529,6 +572,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowDropLanded(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -553,6 +597,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowRoundStart(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -572,6 +617,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowEvent(payload){
     hidePanels(); hideSplash(); showCenterStamp('');
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
 
     const st = getState();
@@ -596,6 +642,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   async function handlePrepareBattles(){
     resetEncounterGate();
+    clearHold();
     setBattleMode(false);
     setBackdrop(TOURNEY_BACKDROP);
     setNextEnabled(true);
@@ -606,10 +653,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     // ★最速でゲートを立てる（タイミング差でshowBattleを拾う事故を防ぐ）
     encounterGatePhase = 1;
     pendingBattleReq = null;
+    clearHold();
 
-    hidePanels(); setEventIcon('');
+    // ★「結果パネル残り」や「スタンプ混入」などを最初に全消し（同期で）
+    hidePanels();
+    setEventIcon('');
     showCenterStamp('');
     hideSplash();
+
+    // ★接敵演出前に enemy枠が出ないよう、必ず先にOFF
+    setBattleMode(false);
 
     const st = getState();
     if (!st) return;
@@ -627,7 +680,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     );
 
     // 段階1：敵枠/敵名/敵画像は出さない
-    setBattleMode(false);
     setNames('', '');
     setChars(leftResolved, '');
 
@@ -684,6 +736,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   async function handleShowBattle(payload){
     hidePanels(); hideSplash(); setEventIcon('');
+    clearHold();
 
     const st = getState();
     if (!st) return;
@@ -737,6 +790,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowMove(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
 
     const st = getState();
     if (!st) return;
@@ -774,6 +828,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowChampion(payload){
     hidePanels(); hideSplash(); setEventIcon('');
     resetEncounterGate();
+    clearHold();
 
     const st = getState();
     if (!st) return;
@@ -799,11 +854,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowMatchResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    setHold('showMatchResult');
+    setBattleMode(false);
 
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
@@ -875,11 +930,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleShowTournamentResult(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    setHold('showTournamentResult');
+    setBattleMode(false);
 
     const st = getState();
     if (!st) return;
-
-    setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
     const sq = await resolveFirstExisting([ASSET.tent, st.ui?.squareBg || ASSET.tent]);
@@ -965,6 +1020,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleNextMatch(payload){
     hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
     resetEncounterGate();
+    clearHold();
 
     const st = getState();
     if (!st) return;
@@ -992,6 +1048,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     const req = st?.request || null;
 
+    // ✅【ホールド】結果画面中は別requestを絶対に描画しない（裏で進んだ分は保管）
+    if (holdScreenType){
+      if (req && req.type && req.type !== holdScreenType){
+        pendingReqAfterHold = req;
+        setNextEnabled(true);
+        return;
+      }
+    }
+
     // ✅【最重要】接敵中（phase>0）は showBattle を絶対に通さない（タイミング差根絶）
     if (req?.type === 'showBattle' && encounterGatePhase > 0){
       pendingBattleReq = req;    // 保存
@@ -1013,9 +1078,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // ✅ここで毎回「交戦中か」を確定（残留根絶）
-    const isBattleReq = (req.type === 'showEncounter' || req.type === 'showBattle');
-    if (encounterGatePhase === 0) setBattleMode(isBattleReq);
+    // ✅「接敵演出前に敵枠が出る」チラ見え根絶：
+    //    showEncounter は render時点で絶対に isBattle にしない（handleShowEncounterが制御）
+    if (req.type === 'showEncounter'){
+      setBattleMode(false);
+      // ついでに「混ざり」を最優先で消してからハンドラへ
+      hidePanels();
+      showCenterStamp('');
+      hideSplash();
+    }else{
+      // ✅ここで毎回「交戦中か」を確定（残留根絶）
+      const isBattleReq = (req.type === 'showBattle');
+      if (encounterGatePhase === 0) setBattleMode(isBattleReq);
+    }
 
     try{
       switch(req.type){
