@@ -1,3 +1,9 @@
+/* tournament.css（フル） v3.2.0
+  - ✅ 交戦中バナー（stamp）を上部中央へ
+  - ✅ 交戦中ログをさらに大きく
+  - ✅ 交戦中の上部バナーを中央寄せ（見た目のまとまり）
+*/
+
 :root{
   --mobbr-ui-bg: rgba(0,0,0,.55);
   --mobbr-ui-line: rgba(255,255,255,.18);
@@ -59,6 +65,18 @@
   gap:10px;
   z-index: 2;
 }
+
+/* ✅ 交戦中は上部のまとまりを中央寄せ */
+#mobbrTournamentOverlay.isBattle .banner{
+  justify-content:center;
+  gap: 8px;
+}
+#mobbrTournamentOverlay.isBattle .banner .left,
+#mobbrTournamentOverlay.isBattle .banner .right{
+  padding: 8px 12px;
+  font-size: 15px;
+}
+
 #mobbrTournamentOverlay .banner .left,
 #mobbrTournamentOverlay .banner .right{
   background: rgba(0,0,0,.60);
@@ -143,6 +161,17 @@
   pointer-events:none;
   z-index: 3;
 }
+
+/* ✅ 交戦中バナー（brbattle/brwin/brlose）を上部中央くらいへ */
+#mobbrTournamentOverlay.isBattle .centerStamp{
+  top: 54px;          /* banner(12px)の下、squareBg(64px)の直前 */
+  height: 44px;
+  z-index: 7;         /* bannerより上に見えるように */
+}
+#mobbrTournamentOverlay.isBattle .centerStamp img{
+  height: 40px;
+}
+
 #mobbrTournamentOverlay .centerStamp img{
   height: 36px;
   image-rendering: pixelated;
@@ -170,6 +199,18 @@
   text-shadow: 0 4px 14px rgba(0,0,0,.65);
   letter-spacing:.04em;
   min-height: 26px;
+}
+
+/* ✅ 交戦中ログをさらに大きく */
+#mobbrTournamentOverlay.isBattle .logBox .line{
+  font-size: 22px;
+  min-height: 32px;
+}
+#mobbrTournamentOverlay.isBattle .logBox #mobbrTourLine1{
+  font-size: 24px;
+}
+#mobbrTournamentOverlay.isBattle .logBox #mobbrTourLine2{
+  font-size: 22px;
 }
 
 /* ✅ チャンピオン表示だけ特大（overlayに isChampion を付与） */
