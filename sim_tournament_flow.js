@@ -1,15 +1,10 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.4.0（フル）
-  ✅ 「試合最新版.txt」準拠（運用版）
-  ✅ 交戦以外イベント回数：R1〜R5 共通で 1回
-  ✅ 到着ログ：必ず「〇〇に到着！」を出す
-  ✅ CPU同士はflow内で即resolveして進める
-  ✅ 修正:
-     1) メイン画面の総合力を大会に100%反映（66→55ズレ対策）
-     2) 撤退なし：1交戦勝つごとに確実に +3キル（勝者保証）
-     3) 順位：脱落順（eliminatedOrder）ベースで安定（初動負けで上位にならない）
+  sim_tournament_flow.js v3.5.0（フル）
+  ✅ 修正1：power 55固定 → 候補キー総当たり→最大値採用（66があるなら必ず66）
+  ✅ 修正2：順位がありえない（R2負けで3位） → eliminatedOrder==0 を最速脱落扱いにして下位固定
+  ✅ 既存仕様：撤退なし（勝者+3キル保証）／負けたらfastForward→champion→result
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -20,17 +15,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   const K = {
     teamName: 'mobbr_team',
     playerTeam: 'mobbr_playerTeam',
-    equippedSkin: 'mobbr_equippedSkin',                // P1〜P5（無ければP1）
-    equippedCoachSkills: 'mobbr_equippedCoachSkills',  // 装備中最大3
+    equippedSkin: 'mobbr_equippedSkin',
+    equippedCoachSkills: 'mobbr_equippedCoachSkills',
 
-    // ✅ 追加フォールバック候補（メインがここに保存してる可能性が高いもの）
+    // ありがちな保存先候補（存在しうるものを広めに）
     teamPower: 'mobbr_teamPower',
     teamPowerPct: 'mobbr_teamPowerPct',
     teamPercent: 'mobbr_teamPercent',
-    teamOverall: 'mobbr_teamOverall'
+    teamOverall: 'mobbr_teamOverall',
+    mainState: 'mobbr_main_state',
+    main: 'mobbr_main'
   };
 
-  // ===== Map Master（固定）=====
   const AREA = {
     1:{ name:'ネオン噴水西',  img:'maps/neonhun.png' },
     2:{ name:'ネオン噴水東',  img:'maps/neonhun.png' },
@@ -48,18 +44,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     14:{ name:'ネオン裏路地東', img:'maps/neonura.png' },
     15:{ name:'ネオン裏路地南', img:'maps/neonura.png' },
     16:{ name:'ネオン裏路地北', img:'maps/neonura.png' },
-
     17:{ name:'ネオン大橋', img:'maps/neonbrige.png' },
     18:{ name:'ネオン工場', img:'maps/neonfact.png' },
     19:{ name:'ネオンどんぐり広場西', img:'maps/neondon.png' },
     20:{ name:'ネオンどんぐり広場東', img:'maps/neondon.png' },
-
     21:{ name:'ネオンスケボー広場', img:'maps/neonske.png' },
     22:{ name:'ネオン秘密基地', img:'maps/neonhimi.png' },
-
     23:{ name:'ネオンライブハウス', img:'maps/neonlivehouse.png' },
     24:{ name:'ネオンライブステージ', img:'maps/neonlivestage.png' },
-
     25:{ name:'ネオン街最終エリア', img:'maps/neonfinal.png' }
   };
 
@@ -68,7 +60,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     for(let i=a;i<=b;i++) out.push(i);
     return out;
   }
-
   function areasForRound(r){
     if (r <= 2) return range(1,16);
     if (r === 3) return range(17,20);
@@ -76,13 +67,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (r === 5) return range(23,24);
     return [25];
   }
-
   function clamp(n, lo, hi){
     const v = Number(n);
     if (!Number.isFinite(v)) return lo;
     return Math.max(lo, Math.min(hi, v));
   }
-
   function shuffle(arr){
     const a = (arr || []).slice();
     for (let i=a.length-1;i>0;i--){
@@ -92,16 +81,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return a;
   }
 
-  // ===== DataCPU：ローカルのみ =====
   function getCpuTeamsLocalOnly(){
     const d = window.DataCPU;
     if (!d) return [];
-
     let all = [];
     if (typeof d.getAllTeams === 'function') all = d.getAllTeams() || [];
     else if (typeof d.getALLTeams === 'function') all = d.getALLTeams() || [];
     else if (Array.isArray(d.TEAMS)) all = d.TEAMS;
-
     if (!Array.isArray(all)) all = [];
     return all.filter(t=>{
       const id = String(t.teamId || t.id || '');
@@ -109,7 +95,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // ===== プレイヤー戦闘力（メイン画面と完全一致させる）=====
   function tryPickNumber(obj, keys){
     if (!obj || typeof obj !== 'object') return null;
     for (const k of keys){
@@ -120,79 +105,73 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return null;
   }
 
-  function tryPickFromLocalStorageKeys(keys){
-    for (const k of keys){
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      const n = Number(raw);
-      if (Number.isFinite(n)) return n;
+  function readAny(key){
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
 
-      // JSONの可能性
-      try{
-        const obj = JSON.parse(raw);
-        const v = tryPickNumber(obj, [
-          'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
-          'percent','pct','teamPct','teamPercent'
-        ]);
-        if (Number.isFinite(v)) return v;
-      }catch{}
-    }
+    const n = Number(raw);
+    if (Number.isFinite(n)) return { v:n, src:`${key}(num)` };
+
+    try{
+      const obj = JSON.parse(raw);
+      const v = tryPickNumber(obj, [
+        'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
+        'percent','pct','teamPct','teamPercent','team_power','team_power_pct'
+      ]);
+      if (Number.isFinite(v)) return { v, src:`${key}(json)` };
+
+      const v2 = tryPickNumber(obj?.team, [
+        'teamPower','power','overall','basePower','percent','pct','teamPercent'
+      ]);
+      if (Number.isFinite(v2)) return { v:v2, src:`${key}.team(json)` };
+
+    }catch{}
     return null;
   }
 
+  // ✅ 66がどこかにあるなら必ず66を採用するため、候補を集めて最大値にする
   function calcPlayerTeamPower(){
-    // ✅ 最優先：メイン画面が保存している「確定値」を拾う（UI計算はズレやすいので後回し）
-    // 1) playerTeam（JSON）から拾う
-    try{
-      const raw = localStorage.getItem(K.playerTeam);
-      if (raw){
-        const t = JSON.parse(raw);
-        const v = tryPickNumber(t, [
-          'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
-          'percent','pct','teamPct','teamPercent'
-        ]);
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
+    const candidates = [];
 
-        const v2 = tryPickNumber(t?.team, ['teamPower','power','overall','basePower','percent','pct','teamPercent']);
-        if (Number.isFinite(v2)) return clamp(v2, 1, 100);
-      }
-    }catch(e){}
+    // 1) playerTeam
+    const a = readAny(K.playerTeam);
+    if (a) candidates.push(a);
 
-    // 2) 直キー（よくある保存先）を総当たりで拾う
-    {
-      const v = tryPickFromLocalStorageKeys([
-        K.teamPower, K.teamPowerPct, K.teamPercent, K.teamOverall
-      ]);
-      if (Number.isFinite(v)) return clamp(v, 1, 100);
+    // 2) teamName（JSONの可能性）
+    const b = readAny(K.teamName);
+    if (b) candidates.push(b);
+
+    // 3) よくあるキー総当たり
+    const keys = [
+      K.teamPower, K.teamPowerPct, K.teamPercent, K.teamOverall, K.mainState, K.main
+    ];
+    for (const k of keys){
+      const r = readAny(k);
+      if (r) candidates.push(r);
     }
 
-    // 3) teamNameキー側にJSONが入ってる運用にも対応
-    try{
-      const raw2 = localStorage.getItem(K.teamName);
-      if (raw2){
-        let obj = null;
-        try{ obj = JSON.parse(raw2); }catch{ obj = null; }
-        if (obj && typeof obj === 'object'){
-          const v = tryPickNumber(obj, [
-            'teamPower','power','totalPower','combatPower','battlePower','overall','basePower',
-            'percent','pct','teamPct','teamPercent'
-          ]);
-          if (Number.isFinite(v)) return clamp(v, 1, 100);
-        }
-      }
-    }catch(e){}
-
-    // 4) 最後：UIの計算関数（存在する場合のみ）
+    // 4) UI計算関数（最後）
     try{
       const fn = window.MOBBR?.ui?.team?.calcTeamPower;
       if (typeof fn === 'function'){
-        const v = fn();
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
+        const v = Number(fn());
+        if (Number.isFinite(v)) candidates.push({ v, src:'ui.team.calcTeamPower()' });
       }
-    }catch(e){}
+    }catch{}
 
-    // 5) フォールバック（ユーザー希望：初期値66）
-    return 66;
+    // 候補が無ければデフォルト
+    if (!candidates.length){
+      console.warn('[tournamentFlow] playerPower: fallback 66 (no candidates)');
+      return 66;
+    }
+
+    // 最大値採用（55と66が混在する状況で66を確実に拾う）
+    candidates.sort((x,y)=>Number(y.v)-Number(x.v));
+    const pick = candidates[0];
+
+    const picked = clamp(pick.v, 1, 100);
+    console.warn('[tournamentFlow] playerPower picked:', picked, 'from:', pick.src, 'all:', candidates);
+    return picked;
   }
 
   function getEquippedSkin(){
@@ -202,7 +181,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return `${n}.png`;
   }
 
-  // ===== CPU 実戦戦闘力抽選 =====
   function rollCpuTeamPowerFromMembers(cpuTeam){
     const mem = Array.isArray(cpuTeam?.members) ? cpuTeam.members : [];
     const overall = Number(cpuTeam?.overall ?? cpuTeam?.basePower ?? cpuTeam?.teamPower ?? 70);
@@ -236,7 +214,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return Math.round(clamp(avg, 1, 100));
   }
 
-  // ===== コーチスキル（効果確定5種）=====
   const COACH_MASTER = {
     tactics_note:   { mult:1.01, endgame:false, quote:'戦術を大事にして戦おう！' },
     endgame_power:  { mult:1.03, endgame:true,  quote:'終盤一気に攻めるぞ！' },
@@ -257,32 +234,27 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // ===== round settings =====
   function battleSlots(round){
     if (round <= 4) return 4;
     if (round === 5) return 2;
     return 1;
   }
-
   function eventCount(round){
     if (round >= 1 && round <= 5) return 1;
     return 0;
   }
-
   function playerBattleProb(round, playerContestedAtDrop){
     if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
     if (round === 2) return 0.70;
     if (round === 3) return 0.75;
     return 1.0;
   }
-
   function isAdjacentArea(a,b, round){
     const list = areasForRound(round);
     if (!list.includes(a) || !list.includes(b)) return false;
     return Math.abs(a-b) === 1;
   }
 
-  // ===== State =====
   let state = null;
 
   function getPlayer(){
@@ -301,7 +273,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
 
-    // ✅ 脱落順管理
+    // ✅ ここ重要：初期値0のまま残ると順位が壊れるので、最低限の安全値を持たせる
     if (!Number.isFinite(Number(t.eliminatedOrder))) t.eliminatedOrder = 0;
     if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
 
@@ -318,7 +290,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { player, playerCoach: coachFlags };
   }
 
-  // ===== drop =====
   function resetForNewMatch(){
     state._elimCounter = 0;
 
@@ -375,8 +346,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     for(const t of state.teams){
       if (t.eliminated) continue;
-
       const cur = t.areaId;
+
       let candidates = pool.slice();
       candidates.sort((a,b)=>Math.abs(a-cur)-Math.abs(b-cur));
       const top = candidates.slice(0, Math.min(3, candidates.length));
@@ -385,7 +356,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // ===== matches =====
   function buildMatchesForRound(round){
     const alive = aliveTeams();
     const slots = battleSlots(round);
@@ -436,7 +406,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return matches.slice(0, slots);
   }
 
-  // ===== coach mult =====
   function coachMultForRound(round){
     const sk = state.selectedCoachSkill;
     if (!sk) return 1.0;
@@ -446,7 +415,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return m.mult;
   }
 
-  // ===== result =====
   const PLACEMENT_P = (placement)=>{
     if (placement === 1) return 12;
     if (placement === 2) return 8;
@@ -457,7 +425,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 0;
   };
 
-  // ✅ 脱落順を基準にplacementsを作る（撤退なし前提）
+  // ✅ eliminatedOrder==0 を「最速脱落扱い」で必ず下へ落とす
+  function safeElimOrder(t){
+    const o = Number(t?.eliminatedOrder || 0);
+    return (o > 0) ? o : -999999;
+  }
+
   function computePlacements(){
     const teams = state.teams.slice();
 
@@ -465,12 +438,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const ae = a.eliminated ? 1 : 0;
       const be = b.eliminated ? 1 : 0;
 
-      // 非脱落が常に上位
       if (ae !== be) return ae - be;
 
-      // ここから同じカテゴリ内
       if (!a.eliminated && !b.eliminated){
-        // 生存同士：キル → パワー → 名前
         const ak = Number(a.kills_total||0);
         const bk = Number(b.kills_total||0);
         if (bk !== ak) return bk - ak;
@@ -482,12 +452,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return String(a.name||'').localeCompare(String(b.name||''), 'ja');
       }
 
-      // 両方脱落：後に脱落した方が上位（eliminatedOrderが大きい方が上）
-      const ao = Number(a.eliminatedOrder||0);
-      const bo = Number(b.eliminatedOrder||0);
+      // 両方脱落：後に脱落した方が上位（orderが大きい方が上）
+      const ao = safeElimOrder(a);
+      const bo = safeElimOrder(b);
       if (bo !== ao) return bo - ao;
 
-      // 同時脱落のタイブレーク：キル→パワー→名前
       const ak = Number(a.kills_total||0);
       const bk = Number(b.kills_total||0);
       if (bk !== ak) return bk - ak;
@@ -540,21 +509,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // ===== UI helper =====
   function setRequest(type, payload){
     state.request = { type, ...(payload||{}) };
   }
-
   function setCenter3(a,b,c){
     state.ui.center3 = [String(a||''), String(b||''), String(c||'')];
   }
-
   function getAreaInfo(areaId){
     const a = AREA[areaId];
     return a ? { id:areaId, name:a.name, img:a.img } : { id:areaId, name:`Area${areaId}`, img:'' };
   }
 
-  // ===== public methods =====
   function getState(){ return state; }
 
   function getCoachMaster(){ return COACH_MASTER; }
@@ -600,16 +565,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     team.eliminatedRound = Number(round||0);
   }
 
-  // ✅ 撤退なし：勝者は必ず +3キル（1交戦勝つごとに確実に3キル）
   function awardWinStats(winner, loser, round){
     if (!winner || !loser) return;
     winner.kills_total = Number(winner.kills_total||0) + 3;
-    // assists はここでは固定しない（必要なら後で足せる）
-    // winner.assists_total = Number(winner.assists_total||0) + 0;
     markEliminated(loser, round);
   }
 
-  // ===== internal: resolve one battle =====
   function resolveOneBattle(A, B, round){
     ensureTeamRuntimeShape(A);
     ensureTeamRuntimeShape(B);
@@ -628,7 +589,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (A.isPlayer && aBackup!==null) A.power=aBackup;
     if (B.isPlayer && bBackup!==null) B.power=bBackup;
 
-    // ✅ 結果の取り方を頑丈にして、必ず「勝者+3キル／敗者脱落」を成立させる
     let winnerId = null;
     let loserId = null;
 
@@ -638,7 +598,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (!winnerId){
-      // フォールバック：powerで確率決着（最低限）
       const ap = clamp(A.power, 1, 100);
       const bp = clamp(B.power, 1, 100);
       const pA = ap / (ap + bp);
@@ -652,7 +611,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const winner = (winnerId === String(A.id)) ? A : B;
     const loser  = (winnerId === String(A.id)) ? B : A;
 
-    // ここで「撤退なしルール」を強制
     awardWinStats(winner, loser, round);
 
     return { winnerId: winner.id, loserId: loser.id };
@@ -685,22 +643,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.lastMatchResultRows = rows;
   }
 
-  function startNextMatch(){
-    state.matchIndex += 1;
-    state.round = 1;
-    state.selectedCoachSkill = null;
-    state.selectedCoachQuote = '';
-    initMatchDrop();
-  }
-
-  function isTournamentFinished(){
-    return state.matchIndex > state.matchCount;
-  }
-
-  // ===== main step machine =====
   function step(){
     if (!state) return;
-
     const p = getPlayer();
 
     if (state.phase === 'done'){
@@ -708,7 +652,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
-    // intro
     if (state.phase === 'intro'){
       state.bannerLeft = 'ローカル大会';
       state.bannerRight = '20チーム';
@@ -718,9 +661,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.ui.leftImg = getPlayerSkin();
       state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
       setCenter3('本日のチームをご紹介！', '', '');
       setRequest('showIntroText', {});
       state.phase = 'teamList';
@@ -728,20 +668,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'teamList'){
-      setCenter3('', '', '');
       setRequest('showTeamList', { teams: state.teams.map(t=>({
-        id:t.id, name:t.name, power:t.power, alive:t.alive, eliminated:t.eliminated, treasure:t.treasure, flag:t.flag, isPlayer:!!t.isPlayer
+        id:t.id, name:t.name, power:t.power, alive:t.alive, treasure:t.treasure, flag:t.flag, isPlayer:!!t.isPlayer
       }))});
       state.phase = 'teamList_done';
       return;
     }
 
     if (state.phase === 'teamList_done'){
-      setCenter3('それでは試合を開始します！', '使用するコーチスキルを選択してください！', '');
-      setRequest('showCoachSelect', {
-        equipped: getEquippedCoachList(),
-        master: COACH_MASTER
-      });
+      setRequest('showCoachSelect', { equipped: getEquippedCoachList(), master: COACH_MASTER });
       state.phase = 'coach_done';
       return;
     }
@@ -754,50 +689,31 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.ui.leftImg = getPlayerSkin();
       state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
       state.ui.bg = 'tent.png';
       state.ui.squareBg = 'tent.png';
 
       setCenter3('バトルスタート！', '降下開始…！', '');
       setRequest('showDropStart', {});
       state.phase = 'drop_land';
-      return;
-    }
-
-    if (state.phase === 'drop_land'){
-      const p2 = getPlayer();
-      const info = getAreaInfo(p2?.areaId || 1);
-      state.ui.bg = info.img;
-
-      const contested = !!state.playerContestedAtDrop;
-      setCenter3(`${info.name}に降下完了。周囲を確認…`, contested ? '被った…敵影がいる！' : '周囲は静かだ…', 'IGLがコール！戦闘準備！');
-
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
-      setRequest('showDropLanded', { areaId: info.id, areaName: info.name, bg: info.img, contested });
-      state.phase = 'round_start';
       state.round = 1;
       return;
     }
 
-    // ===== round loop =====
+    if (state.phase === 'drop_land'){
+      const info = getAreaInfo(p?.areaId || 1);
+      state.ui.bg = info.img;
+      const contested = !!state.playerContestedAtDrop;
+      setCenter3(`${info.name}に降下完了。周囲を確認…`, contested ? '被った…敵影がいる！' : '周囲は静かだ…', 'IGLがコール！戦闘準備！');
+      setRequest('showDropLanded', { areaId: info.id, areaName: info.name, bg: info.img, contested });
+      state.phase = 'round_start';
+      return;
+    }
+
     if (state.phase === 'round_start'){
       const r = state.round;
-
       state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
       state.bannerRight = `ROUND ${r}`;
-
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
-      setCenter3(`Round ${r} 開始！`, '', '');
       setRequest('showRoundStart', { round: r });
-
       state.phase = 'round_events';
       state._eventsToShow = eventCount(r);
       return;
@@ -806,12 +722,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'round_events'){
       const r = state.round;
 
-      if (eventCount(r) === 0){
-        state.phase = 'round_battles';
-        return step();
-      }
-
-      if (!p || p.eliminated){
+      if (eventCount(r) === 0 || !p || p.eliminated){
         state.phase = 'round_battles';
         return step();
       }
@@ -825,33 +736,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const ev = applyEventForTeam(p);
       state._eventsToShow = remain - 1;
 
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
       if (ev){
         setCenter3(ev.log1, ev.log2, ev.log3);
         setRequest('showEvent', { icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3 });
       }else{
-        setCenter3('イベント発生！', '……', '');
-        setRequest('showEvent', { icon: '', log1:'イベント発生！', log2:'……', log3:'' });
+        setRequest('showEvent', { icon:'', log1:'イベント発生！', log2:'……', log3:'' });
       }
       return;
     }
 
     if (state.phase === 'round_battles'){
       const r = state.round;
-
       const matches = buildMatchesForRound(r);
       state._roundMatches = matches.map(([A,B])=>({ aId:A.id, bId:B.id }));
       state._matchCursor = 0;
-
       setRequest('prepareBattles', { round: r, slots: battleSlots(r), matches: state._roundMatches });
       state.phase = 'battle_one';
       return;
     }
 
-    // battle_one：CPU同士は即解決してスキップ
     if (state.phase === 'battle_one'){
       const r = state.round;
       const list = Array.isArray(state._roundMatches) ? state._roundMatches : [];
@@ -861,17 +764,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const pair = list[cur];
         const A = state.teams.find(t=>t.id===pair.aId);
         const B = state.teams.find(t=>t.id===pair.bId);
-
-        if (!A || !B){
-          cur++;
-          continue;
-        }
-
-        // すでに脱落してたら飛ばす
-        if (A.eliminated || B.eliminated){
-          cur++;
-          continue;
-        }
+        if (!A || !B){ cur++; continue; }
+        if (A.eliminated || B.eliminated){ cur++; continue; }
 
         const playerIn = (A.isPlayer || B.isPlayer);
         if (playerIn){
@@ -882,10 +776,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
           state.ui.leftImg = getPlayerSkin();
           state.ui.rightImg = `${foe.id}.png`;
-          state.ui.topLeftName = me.name;
-          state.ui.topRightName = foe.name;
 
-          setCenter3('接敵‼︎', `${me.name} vs ${foe.name}‼︎`, '交戦スタート‼︎');
           setRequest('showEncounter', {
             meId: me.id, foeId: foe.id,
             meName: me.name, foeName: foe.name,
@@ -928,16 +819,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return step();
       }
 
-      // すでに脱落してたら次へ
       if (A.eliminated || B.eliminated){
-        state._matchCursor = cur + 1;
-        state.phase = 'battle_one';
-        return step();
-      }
-
-      const playerIn = (A.isPlayer || B.isPlayer);
-      if (!playerIn){
-        resolveOneBattle(A, B, r);
         state._matchCursor = cur + 1;
         state.phase = 'battle_one';
         return step();
@@ -948,11 +830,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       const res = resolveOneBattle(A, B, r);
       const iWon = res ? (String(res.winnerId) === String(me.id)) : false;
-
-      state.ui.leftImg = getPlayerSkin();
-      state.ui.rightImg = `${foe.id}.png`;
-      state.ui.topLeftName = me.name;
-      state.ui.topRightName = foe.name;
 
       setRequest('showBattle', {
         round: r,
@@ -965,84 +842,23 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         holdMs: 2000
       });
 
-      // 負けたら即：その試合を高速処理→チャンピオン→result
       if (!iWon && me.eliminated){
         fastForwardToMatchEnd();
         const championName = getChampionName();
 
-        state._afterBattleGo = { type:'champion', championName };
-        state.phase = 'battle_after';
-        return;
-      }
-
-      state._afterBattleGo = { type:'nextBattle' };
-      state.phase = 'battle_after';
-      return;
-    }
-
-    if (state.phase === 'battle_after'){
-      const cur = Number(state._matchCursor||0);
-      const go = state._afterBattleGo || { type:'nextBattle' };
-
-      state._afterBattleGo = null;
-
-      if (go.type === 'champion'){
-        state.ui.rightImg = '';
-        state.ui.topLeftName = '';
-        state.ui.topRightName = '';
-
-        setCenter3(`この試合のチャンピオンは`, String(go.championName || '???'), '‼︎');
-        setRequest('showChampion', {
-          matchIndex: state.matchIndex,
-          championName: String(go.championName || '')
-        });
-
+        setRequest('showChampion', { matchIndex: state.matchIndex, championName });
         state.phase = 'match_result';
         return;
       }
 
       state._matchCursor = cur + 1;
       state.phase = 'battle_one';
-      setRequest('noop', {});
       return;
     }
 
     if (state.phase === 'round_move'){
       const r = state.round;
-
-      const p3 = getPlayer();
-      const before = p3 ? getAreaInfo(p3.areaId) : null;
-
-      moveAllTeamsToNextRound(r);
-
-      const p4 = getPlayer();
-      const after = p4 ? getAreaInfo(p4.areaId) : null;
-
-      state.ui.bg = 'ido.png';
-      state.ui.leftImg = getPlayerSkin();
-
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
-      setCenter3('', '', '');
-
-      setRequest('showMove', {
-        fromAreaId: before?.id || 0,
-        toAreaId: after?.id || 0,
-        toAreaName: after?.name || '',
-        toBg: after?.img || '',
-        arrive1: (after?.name ? `${after.name}に到着！` : '到着！'),
-        arrive2: '',
-        arrive3: '',
-        holdMs: 0
-      });
-
-      state.phase = 'round_move_done';
-      return;
-    }
-
-    if (state.phase === 'round_move_done'){
+      if (r <= 5) moveAllTeamsToNextRound(r);
       state.round += 1;
       state.phase = (state.round <= 6) ? 'round_start' : 'match_result';
       setRequest('noop', {});
@@ -1051,46 +867,31 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     if (state.phase === 'match_result'){
       finishMatchAndBuildResult();
-
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
       setRequest('showMatchResult', {
         matchIndex: state.matchIndex,
         matchCount: state.matchCount,
         rows: state.lastMatchResultRows
       });
-      state.phase = 'match_result_done';
-      return;
-    }
 
-    if (state.phase === 'match_result_done'){
-      if (state.matchIndex >= state.matchCount){
+      state.matchIndex += 1;
+      if (state.matchIndex > state.matchCount){
         setRequest('showTournamentResult', { total: state.tournamentTotal });
         state.phase = 'done';
         return;
       }
 
-      startNextMatch();
-
-      state.ui.bg = 'tent.png';
-      state.ui.squareBg = 'tent.png';
-      state.ui.leftImg = getPlayerSkin();
-      state.ui.rightImg = '';
-      state.ui.topLeftName = '';
-      state.ui.topRightName = '';
-
-      setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
-      setRequest('nextMatch', { matchIndex: state.matchIndex });
+      // 次試合へ
+      state.round = 1;
+      state.selectedCoachSkill = null;
+      state.selectedCoachQuote = '';
       state.phase = 'coach_done';
+
       return;
     }
 
     setRequest('noop', {});
   }
 
-  // ===== start =====
   function startLocalTournament(){
     const cpuAllLocal = getCpuTeamsLocalOnly();
     const cpu19 = shuffle(cpuAllLocal).slice(0, 19);
@@ -1101,21 +902,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       id: 'PLAYER',
       name: localStorage.getItem(K.teamName) || 'PLAYER TEAM',
       isPlayer: true,
-
-      // ✅ メイン画面の確定値を反映
       power: playerPower,
-
       alive: 3,
       eliminated: false,
       areaId: 1,
-
       kills_total: 0,
       assists_total: 0,
-      members: [],
       treasure: 0,
       flag: 0,
       eventBuffs: { aim:0, mental:0, agi:0 },
-
       eliminatedOrder: 0,
       eliminatedRound: 0
     };
@@ -1130,20 +925,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         id,
         name: nm,
         isPlayer: false,
-
         power: rollCpuTeamPowerFromMembers(c),
-
         alive: 3,
         eliminated: false,
         areaId: 1,
-
         kills_total: 0,
         assists_total: 0,
-        members: [],
         treasure: 0,
         flag: 0,
         eventBuffs: { aim:0, mental:0, agi:0 },
-
         eliminatedOrder: 0,
         eliminatedRound: 0
       });
@@ -1154,64 +944,41 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       matchIndex: 1,
       matchCount: 5,
       round: 1,
-
       phase: 'intro',
-
       teams,
       tournamentTotal: {},
-
       playerContestedAtDrop: false,
-
       selectedCoachSkill: null,
       selectedCoachQuote: '',
-
       bannerLeft: 'ローカル大会',
       bannerRight: '20チーム',
-
       ui: {
         bg: 'maps/neonmain.png',
         squareBg: 'tent.png',
         leftImg: getEquippedSkin(),
         rightImg: '',
-        center3: ['','',''],
-        topLeftName: '',
-        topRightName: ''
+        center3: ['','','']
       },
-
       _elimCounter: 0,
-
       request: null
     };
 
-    if (window.MOBBR?.ui?.tournament?.open){
-      window.MOBBR.ui.tournament.open();
-    }
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
 
     step();
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
   }
 
   window.MOBBR.sim.tournamentFlow = {
     startLocalTournament,
     step,
     getState,
-
     getCoachMaster,
     getEquippedCoachList,
     setCoachSkill,
     getPlayerSkin,
-    getAreaInfo,
-    initMatchDrop,
-    applyEventForTeam,
-    fastForwardToMatchEnd,
-    finishMatchAndBuildResult,
-    startNextMatch,
-    isTournamentFinished
+    getAreaInfo
   };
 
 })();
