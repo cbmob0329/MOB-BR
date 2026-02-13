@@ -1,9 +1,11 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.5.0（フル）
+  ui_tournament.js v3.5.2（フル）
   ✅ 大会画面オープン時に主要画像を事前ロード（ido.png遅延対策）
-  ✅ result/総合result中に別requestが割り込まないホールド
+  ✅ result/総合result中に別requestが割り込まないホールド（取りこぼし修正）
+     - hold中の割り込みは「最初の1件だけ」保存（上書き禁止）
+     - hold解除NEXT時は render() に任せず「保存したrequestを先に直接描画」
   ✅ showEncounter 2段階（NEXTで敵表示→NEXTで交戦開始）
   ✅ NEXT連打デバウンス（220ms）
   ✅ showBattle 取りこぼし対策（Flow側の「1step=1request化」とセット）
@@ -111,7 +113,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function preloadBasics(){
     if (preloadedBasics) return;
     preloadedBasics = true;
-    // ✅ ここでido.pngを先に温める
     await preloadMany([
       TOURNEY_BACKDROP,
       ASSET.tent,
@@ -225,7 +226,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
-  // 交戦フラグ（CSSで右枠を出す/消す）
   function setBattleMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isBattle', !!on);
@@ -244,8 +244,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     clearHold();
     setBattleMode(false);
 
-    // ✅ ここで事前ロード（idoが遅い件の本命）
-    preloadBasics();
+    preloadBasics(); // ✅ ido等の先読み
   }
 
   function close(){
@@ -346,6 +345,67 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nextBtn.classList.toggle('isDisabled', !v);
   }
 
+  // ✅ 保存していた割り込みrequestを「state.requestに頼らず」直接描画する
+  function dispatchRequestDirect(req){
+    return (async()=>{
+      if (!req || !req.type) return;
+
+      // 直接描画のときは「同一キー判定」を無効化（取りこぼし防止）
+      lastReqKey = '';
+
+      // render() と同じ前処理（最低限）
+      clearAutoTimer();
+      clearLocalNext();
+
+      if (req.type === 'showEncounter'){
+        setBattleMode(false);
+        hidePanels();
+        showCenterStamp('');
+        hideSplash();
+      }else{
+        const isBattleReq = (req.type === 'showBattle');
+        if (encounterGatePhase === 0) setBattleMode(isBattleReq);
+      }
+
+      try{
+        switch(req.type){
+          case 'showIntroText': await handleShowIntroText(); break;
+          case 'showTeamList': await handleShowTeamList(req); break;
+          case 'showCoachSelect': await handleShowCoachSelect(req); break;
+
+          case 'showDropStart': await handleShowDropStart(req); break;
+          case 'showDropLanded': await handleShowDropLanded(req); break;
+
+          case 'showRoundStart': await handleShowRoundStart(req); break;
+          case 'showEvent': await handleShowEvent(req); break;
+
+          case 'prepareBattles': await handlePrepareBattles(req); break;
+
+          case 'showEncounter': await handleShowEncounter(req); break;
+          case 'showBattle': await handleShowBattle(req); break;
+
+          case 'showMove': await handleShowMove(req); break;
+          case 'showChampion': await handleShowChampion(req); break;
+
+          case 'showMatchResult': await handleShowMatchResult(req); break;
+          case 'showTournamentResult': await handleShowTournamentResult(req); break;
+
+          case 'nextMatch': await handleNextMatch(req); break;
+
+          case 'noop':
+          default:
+            setNextEnabled(!busy);
+            break;
+        }
+      }catch(e){
+        console.error('[ui_tournament] direct dispatch error:', e);
+        busy = false;
+        if (encounterGatePhase === 0) setBattleMode(false);
+        setNextEnabled(true);
+      }
+    })();
+  }
+
   function onNext(){
     const now = Date.now();
     if (now < nextCooldownUntil) return;
@@ -361,13 +421,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // ホールド画面中：保管があれば stepせず描画へ
+    // ✅ ホールド画面中：保存があるなら「保存requestを先に描画」して順序を守る
     if (holdScreenType){
       if (pendingReqAfterHold){
-        holdScreenType = null;
+        const req = pendingReqAfterHold;
         pendingReqAfterHold = null;
-        lastReqKey = '';
-        render();
+        holdScreenType = null;
+
+        // ここで直接描画（state.requestは見ない）
+        dispatchRequestDirect(req);
         return;
       }
       holdScreenType = null;
@@ -647,13 +709,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   async function handlePrepareBattles(){
-    // ここは表示用の地ならしだけ
     setBattleMode(false);
     setBackdrop(TOURNEY_BACKDROP);
     setNextEnabled(true);
   }
 
-  // ✅ showEncounter：2段階
   async function handleShowEncounter(payload){
     encounterGatePhase = 1;
     pendingBattleReq = null;
@@ -681,14 +741,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
     );
 
-    // 段階1：敵を出さない
     setNames('', '');
     setChars(leftResolved, '');
 
     showSplash('接敵‼︎', `${foeName}チームと接敵！`);
     setLines('接敵‼︎', `${foeName}チームと接敵！`, 'NEXTで敵を表示');
 
-    // 段階2へ
     localNextAction = ()=>{
       encounterGatePhase = 2;
 
@@ -700,7 +758,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, rightResolved);
       setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, 'NEXTで交戦開始');
 
-      // 段階3：交戦開始（ここでflow.step→showBattleを受け取る）
       localNextAction = ()=>{
         if (pendingBattleReq){
           const req = pendingBattleReq;
@@ -790,7 +847,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!st) return;
 
     setBattleMode(false);
-
     setBackdrop(TOURNEY_BACKDROP);
 
     // ✅ 事前ロード済みのidoを即出し
@@ -828,7 +884,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBattleMode(false);
 
     setBackdrop(TOURNEY_BACKDROP);
-    setLines(payload?.line1 || 'この試合のチャンピオンは…', payload?.line2 || String(payload?.championName || ''), payload?.line3 || '‼︎');
+    setLines(
+      payload?.line1 || 'この試合のチャンピオンは…',
+      payload?.line2 || String(payload?.championName || ''),
+      payload?.line3 || '‼︎'
+    );
     setNextEnabled(true);
   }
 
@@ -965,10 +1025,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const st = getState();
     const req = st?.request || null;
 
-    // ✅ ホールド中は別requestを描画しない（保管）
+    // ✅ ホールド中は別requestを描画しない（最初の1件だけ保存。上書きしない）
     if (holdScreenType){
       if (req && req.type && req.type !== holdScreenType){
-        pendingReqAfterHold = req;
+        if (!pendingReqAfterHold) pendingReqAfterHold = req;
         setNextEnabled(true);
         return;
       }
