@@ -7,6 +7,10 @@
   - stepマシン
   - UI request 発行
   - 公開API: window.MOBBR.sim.tournamentFlow（名称維持）
+
+  【修正（powerが55固定になる件）】
+  - startLocalTournament() の player.power を NaN/undefined にならないように保険
+  - ensureTeamRuntimeShape() で player.power が NaN/undefined の時だけ、calcPlayerTeamPower() で再計算して復旧
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -32,7 +36,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function ensureTeamRuntimeShape(t){
     if (!t) return;
     if (!Number.isFinite(Number(t.alive))) t.alive = 3;
-    if (!Number.isFinite(Number(t.power))) t.power = 55;
+
+    // ✅ power が NaN/undefined なら復旧（playerだけは calcPlayerTeamPower で復元）
+    if (!Number.isFinite(Number(t.power))){
+      if (t.isPlayer && L && typeof L.calcPlayerTeamPower === 'function'){
+        const v = Number(L.calcPlayerTeamPower());
+        t.power = Number.isFinite(v) ? v : 55;
+      }else{
+        t.power = 55;
+      }
+    }
+
     if (t.eliminated !== true) t.eliminated = false;
     if (!Number.isFinite(Number(t.areaId))) t.areaId = 1;
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
@@ -596,12 +610,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const cpuAllLocal = L.getCpuTeamsLocalOnly();
     const cpu19 = L.shuffle(cpuAllLocal).slice(0, 19);
 
+    // ✅ player.power の NaN/undefined を防止（66→試合55問題の直撃点）
+    const pPowRaw = (L && typeof L.calcPlayerTeamPower === 'function') ? Number(L.calcPlayerTeamPower()) : NaN;
+    const pPow = Number.isFinite(pPowRaw) ? pPowRaw : 55;
+
     const player = {
       id: 'PLAYER',
       name: localStorage.getItem(L.K.teamName) || 'PLAYER TEAM',
       isPlayer: true,
 
-      power: L.calcPlayerTeamPower(),
+      power: pPow,
 
       alive: 3,
       eliminated: false,
