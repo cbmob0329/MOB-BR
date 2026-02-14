@@ -5,7 +5,7 @@
   ✅「試合最新版.txt」運用向け（大会側から呼ばれる “イベント抽選エンジン” ）
   - rollForTeam(team, round, ctx) を提供（3段ログ / アイコン / 効果反映）
   - resetTeamMatchState(team) を提供（試合中バフ・イベント履歴のリセット）
-  - eventBuffs（aim/mental/agi の%加算）を更新
+  - eventBuffs（aim/mental/agi の%加算）を更新（試合中は継続）
   - Treasure / Flag を更新（勝敗に直結させない）
   - ✅ downs_total は「A運用」：内部だけで常に数値として保持（UIに出さない）
   - 同ラウンド重複なし（同チーム内）：R2〜R5で2回呼ばれても別イベントになる
