@@ -1,7 +1,7 @@
 'use strict';
 
 /*
-  sim_match_events.js v2（フル）
+  sim_match_events.js v2.1（フル）
   ✅「試合最新版.txt」運用向け（大会側から呼ばれる “イベント抽選エンジン” ）
   - rollForTeam(team, round, ctx) を提供（3段ログ / アイコン / 効果反映）
   - resetTeamMatchState(team) を提供（試合中バフ・イベント履歴のリセット）
@@ -9,6 +9,11 @@
   - Treasure / Flag を更新（勝敗に直結させない）
   - ✅ downs_total は「A運用」：内部だけで常に数値として保持（UIに出さない）
   - 同ラウンド重複なし（同チーム内）：R2〜R5で2回呼ばれても別イベントになる
+
+  ✅ v2.1 追加：
+  - A方式：effectText（何が上がった/下がったか）を返す
+  - UI修正ゼロで見えるように、log3 に effectText を自動付与（例：「...（AIM+1）」）
+  - 0%表示/空表示対策：effectTextが空にならない保険
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -88,6 +93,40 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function isUsed(team, round, evId){
     const s = getUsedSet(team, round);
     return s.has(String(evId || ''));
+  }
+
+  // ===== A方式：効果テキスト生成 =====
+  function buildEffectTextFromEff(eff){
+    const e = eff || {};
+    const parts = [];
+
+    const aim = Number(e.aim);
+    const mental = Number(e.mental);
+    const agi = Number(e.agi);
+    const tre = Number(e.treasure);
+    const flg = Number(e.flag);
+
+    if (Number.isFinite(aim) && aim !== 0) parts.push(`AIM${aim>0?'+':''}${aim}`);
+    if (Number.isFinite(mental) && mental !== 0) parts.push(`MENTAL${mental>0?'+':''}${mental}`);
+    if (Number.isFinite(agi) && agi !== 0) parts.push(`AGI${agi>0?'+':''}${agi}`);
+
+    // スコア系
+    if (Number.isFinite(tre) && tre !== 0) parts.push(`TREASURE+${tre|0}`);
+    if (Number.isFinite(flg) && flg !== 0) parts.push(`FLAG+${flg|0}`);
+
+    // 何も無いのは基本ありえないが、保険
+    if (!parts.length) return 'EFFECT+0';
+    return parts.join(' / ');
+  }
+
+  function mergeLog3WithEffect(log3, effectText){
+    const a = String(log3 || '').trim();
+    const b = String(effectText || '').trim();
+    if (!b) return a || '';
+    if (!a) return `（${b}）`;
+    // 既に入ってたら二重にしない
+    if (a.includes(b)) return a;
+    return `${a}（${b}）`;
   }
 
   // ===== Event master (確定) =====
@@ -238,13 +277,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const eff = ev?.eff || {};
 
     // %バフ（試合中のみ）
-    if (Number.isFinite(Number(eff.aim)))    team.eventBuffs.aim    = clamp(team.eventBuffs.aim    + Number(eff.aim),    -99, 99);
-    if (Number.isFinite(Number(eff.mental))) team.eventBuffs.mental = clamp(team.eventBuffs.mental + Number(eff.mental), -99, 99);
-    if (Number.isFinite(Number(eff.agi)))    team.eventBuffs.agi    = clamp(team.eventBuffs.agi    + Number(eff.agi),    -99, 99);
+    // ※「0%の時がある」「デバフが効かない」対策：Number変換を強制して判定
+    const aim = Number(eff.aim);
+    const mental = Number(eff.mental);
+    const agi = Number(eff.agi);
+
+    if (Number.isFinite(aim) && aim !== 0){
+      team.eventBuffs.aim = clamp(Number(team.eventBuffs.aim) + aim, -99, 99);
+    }
+    if (Number.isFinite(mental) && mental !== 0){
+      team.eventBuffs.mental = clamp(Number(team.eventBuffs.mental) + mental, -99, 99);
+    }
+    if (Number.isFinite(agi) && agi !== 0){
+      team.eventBuffs.agi = clamp(Number(team.eventBuffs.agi) + agi, -99, 99);
+    }
 
     // スコア系（勝敗に直結させない）
-    if (Number.isFinite(Number(eff.treasure))){
-      let add = Number(eff.treasure) | 0;
+    const treasure = Number(eff.treasure);
+    if (Number.isFinite(treasure) && treasure !== 0){
+      let add = treasure | 0;
 
       // コーチスキル score_mind：Treasure取得時に +1 追加（合計+2）
       const scoreMind = !!(ctx && ctx.playerCoach && ctx.playerCoach.score_mind);
@@ -255,8 +306,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       team.treasure = clamp((team.treasure|0) + add, 0, 9999);
     }
 
-    if (Number.isFinite(Number(eff.flag))){
-      team.flag = clamp((team.flag|0) + (Number(eff.flag)|0), 0, 9999);
+    const flag = Number(eff.flag);
+    if (Number.isFinite(flag) && flag !== 0){
+      team.flag = clamp((team.flag|0) + (flag|0), 0, 9999);
     }
   }
 
@@ -278,14 +330,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // ここに来るのは通常ありえないが、保険で全体から
       const ev0 = EVENTS[(Math.random() * EVENTS.length) | 0];
       if (!ev0) return null;
+
+      markUsed(team, r, ev0.id);
       applyEffect(team, ev0, ctx);
+
+      const effectText0 = buildEffectTextFromEff(ev0.eff);
+      const raw3 = pickOne(ev0.lines) || '';
+      const log3 = mergeLog3WithEffect(raw3, effectText0);
+
       return {
         id: ev0.id,
         icon: ev0.icon || '',
         name: ev0.name || '',
         log1: 'イベント発生！',
         log2: String(ev0.name || ''),
-        log3: pickOne(ev0.lines) || ''
+        log3,
+        effectText: effectText0
       };
     }
 
@@ -296,13 +356,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     markUsed(team, r, ev.id);
     applyEffect(team, ev, ctx);
 
+    const effectText = buildEffectTextFromEff(ev.eff);
+    const raw3 = pickOne(ev.lines) || '';
+    const log3 = mergeLog3WithEffect(raw3, effectText);
+
     return {
       id: ev.id,
       icon: ev.icon || '',
       name: ev.name || '',
       log1: 'イベント発生！',
       log2: String(ev.name || ''),
-      log3: pickOne(ev.lines) || ''
+      log3,
+      effectText
     };
   }
 
