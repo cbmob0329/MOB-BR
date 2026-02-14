@@ -13,6 +13,8 @@
   ★修正（今回）：
   - 「交戦勝利 = 必ず3キル」を保証（勝って0キル問題を潰す）
   - 敗者のキルは 0〜2 を抽選（敗北側もキルが出る）
+  - ✅ H2H（head-to-head）勝敗を ctx.state.h2h に保存（順位ロジックに使う）
+  - ✅ power 未設定のPLAYERは、members stats から推定計算して 55固定化を回避
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -30,12 +32,90 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return t && !t.eliminated && (t.alive|0) > 0;
   }
 
-  function ensureTeamShape(t){
+  // ===== 推定power（PLAYERだけ55固定回避） =====
+  const WEIGHT = {
+    aim: 0.25,
+    mental: 0.15,
+    agi: 0.10,
+    tech: 0.10,
+    support: 0.10,
+    scan: 0.10,
+    armor: 0.10,
+    hp: 0.10
+  };
+
+  function clamp01to100(n){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return 0;
+    return Math.max(0, Math.min(100, v));
+  }
+
+  function calcCharBasePower(stats){
+    const s = {
+      hp: clamp01to100(stats?.hp),
+      mental: clamp01to100(stats?.mental),
+      aim: clamp01to100(stats?.aim),
+      agi: clamp01to100(stats?.agi),
+      tech: clamp01to100(stats?.tech),
+      support: clamp01to100(stats?.support),
+      scan: clamp01to100(stats?.scan),
+      armor: clamp01to100(Number.isFinite(Number(stats?.armor)) ? stats.armor : 100)
+    };
+
+    let total = 0;
+    total += s.aim * WEIGHT.aim;
+    total += s.mental * WEIGHT.mental;
+    total += s.agi * WEIGHT.agi;
+    total += s.tech * WEIGHT.tech;
+    total += s.support * WEIGHT.support;
+    total += s.scan * WEIGHT.scan;
+    total += s.armor * WEIGHT.armor;
+    total += s.hp * WEIGHT.hp;
+
+    return Math.max(0, Math.min(100, total));
+  }
+
+  function estimateTeamPowerFromMembers(t){
+    try{
+      const mem = Array.isArray(t?.members) ? t.members : [];
+      if (!mem.length) return null;
+
+      // membersが stats を持つケース / 既に数値ステータスを持つケース両対応
+      const vals = mem.slice(0,3).map(m=>{
+        if (m?.stats) return calcCharBasePower(m.stats);
+        // もし member 自体に hp/aim... を持つ形式でも拾う
+        return calcCharBasePower(m || {});
+      }).filter(v=>Number.isFinite(v));
+
+      if (!vals.length) return null;
+      const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+
+      // ui_team.js と同じ +3 の補正（見た目の%と合わせる）
+      return clamp(Math.round(avg + 3), 1, 100);
+    }catch{
+      return null;
+    }
+  }
+
+  function ensureTeamShape(t, ctx){
     if (!t) return;
-    if (!Number.isFinite(Number(t.power))) t.power = 55;
+
+    // power
+    if (!Number.isFinite(Number(t.power))){
+      // ✅ PLAYERだけは members から推定して 55固定を避ける
+      const isPlayer = (t.isPlayer === true) || (String(t.id||'') === 'PLAYER');
+      if (isPlayer){
+        const est = estimateTeamPowerFromMembers(t);
+        if (Number.isFinite(est)) t.power = est;
+      }
+      if (!Number.isFinite(Number(t.power))) t.power = 55; // 最終保険
+    }
+
+    // alive
     if (!Number.isFinite(Number(t.alive))) t.alive = 3;
     if (t.alive < 0) t.alive = 0;
 
+    // totals
     if (!Number.isFinite(Number(t.kills_total))) t.kills_total = 0;
     if (!Number.isFinite(Number(t.assists_total))) t.assists_total = 0;
     if (!Number.isFinite(Number(t.downs_total))) t.downs_total = 0;
@@ -43,6 +123,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
 
+    // eventBuffs
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
     }else{
@@ -51,6 +132,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (!Number.isFinite(Number(t.eventBuffs.agi))) t.eventBuffs.agi = 0;
     }
 
+    // members
     if (!Array.isArray(t.members)) t.members = [];
     // members: [{role,name,kills,assists}, ...] 3人前提。無ければ作る（バグ回避）
     if (t.members.length < 3){
@@ -200,9 +282,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     team.eventBuffs = { aim:0, mental:0, agi:0 };
   }
 
+  // ✅ H2H保存（state.h2h["WIN|LOSE"]=count）
+  function recordH2H(ctx, winnerId, loserId){
+    try{
+      const st = ctx?.state || ctx?.tournamentState || null;
+      if (!st) return;
+      if (!st.h2h || typeof st.h2h !== 'object') st.h2h = {};
+      const k = `${String(winnerId)}|${String(loserId)}`;
+      st.h2h[k] = (Number(st.h2h[k])||0) + 1;
+    }catch(e){}
+  }
+
   function resolveBattle(teamA, teamB, round, ctx){
-    ensureTeamShape(teamA);
-    ensureTeamShape(teamB);
+    ensureTeamShape(teamA, ctx);
+    ensureTeamShape(teamB, ctx);
 
     if (!isAlive(teamA) || !isAlive(teamB)) return null;
 
@@ -244,6 +337,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // 勝者は生存維持（人数は減らさない：ラウンドの生存推移を絶対崩さない）
     winner.alive = clamp(winner.alive, 1, 3);
     winner.eliminated = false;
+
+    // ✅ H2H保存（順位ロジック用）
+    recordH2H(ctx, winner.id, loser.id);
 
     // ====== バフは両チームリセット（試合中のみ）
     resetMatchBuffs(teamA);
