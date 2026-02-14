@@ -1,13 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.4（フル）
-  ✅ v3.6.3 からの追加修正：
-  - 0%問題の根本：戦闘力%の自前生成を完全撤去（"67%"文字列→NaN→0 を起こさない）
-  - A方式：イベントは effectText（AIM +1 / MENTAL -1 ...）を表示
-  - 右上バナーの「%→%」追記を完全削除（ROUNDだけ表示）
-  - チャンピオンチーム画像は表示しない（要望反映）
-  - stamp残留対策は継続
+  ui_tournament.js v3.6.5（フル）
+  ✅ v3.6.4 からの追加修正：
+  - チャンピオン時：画像は出さないまま、右側enemy枠“ガワだけ”出る問題を解消（.char.rightごと非表示）
+  - 大会開始直後：チーム紹介の前に「大会会場へ到着！」演出を1回だけ差し込む（UI側で挿入、Flow改修不要）
+    * 背景以外は何も出さない
+    * 中央に枠付き大文字がズームイン
+    * NEXTでチーム紹介（showTeamList）へ
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -51,6 +51,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   let uiLockCount = 0;
   let rendering = false;
+
+  // ✅ 大会到着演出（チーム紹介前に1回だけ）
+  let didArrivalIntro = false;
 
   function getFlow(){
     return window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null;
@@ -122,7 +125,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ]);
   }
 
-  // ✅ イベントアイコン候補の収集（柔軟に）
   function collectEventIconCandidates(){
     const list = [];
 
@@ -293,17 +295,32 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
+  // ✅ enemy枠そのもの（ガワ）を表示/非表示
+  function setEnemySlotVisible(v){
+    ensureDom();
+    const rightBox = dom.imgR?.closest('.char.right');
+    if (rightBox){
+      rightBox.style.display = v ? '' : 'none';
+    }
+    if (!v){
+      dom.nameR.textContent = '';
+      dom.imgR.src = '';
+    }
+  }
+
   function setBattleMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isBattle', !!on);
 
     if (!on){
-      // ✅ ここで残留を完全に潰す
       setResultStampMode(false);
       showCenterStamp('');
       dom.nameR.textContent = '';
       dom.imgR.src = '';
     }
+
+    // 戦闘/通常は enemy枠を戻す
+    setEnemySlotVisible(true);
   }
 
   function setChampionMode(on){
@@ -329,6 +346,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     showCenterStamp('');
     setEventIcon('');
 
+    // ✅ 到着演出は毎回大会openでリセット
+    didArrivalIntro = false;
+
     preloadBasics();
     preloadEventIcons();
   }
@@ -348,11 +368,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.overlay.classList.remove('isChampion');
     dom.overlay.classList.remove('isResultStamp');
 
-    // ✅ クローズでも残留ゼロ
     showCenterStamp('');
     setEventIcon('');
     dom.nameR.textContent = '';
     dom.imgR.src = '';
+
+    // ✅ close時も戻す
+    setEnemySlotVisible(true);
   }
 
   function setBackdrop(src){
@@ -429,6 +451,42 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.splash.classList.remove('isOn');
     dom.splash1.textContent = '';
     dom.splash2.textContent = '';
+    // 演出用のinlineを戻す
+    dom.splash.style.transition = '';
+    dom.splash.style.transform = '';
+    dom.splash.style.opacity = '';
+  }
+
+  // ✅ 中央ズームイン（枠付き大文字）演出：splashを拡大アニメに使う
+  async function showArrivalZoom(text){
+    ensureDom();
+
+    // 背景以外を消す
+    setEventIcon('');
+    showCenterStamp('');
+    hidePanels();
+    setLines('','','');
+    setNames('','');
+    setChars('', '');
+    setEnemySlotVisible(false); // 右枠も消す
+
+    // bannerは邪魔なら空（背景以外何もない状態）
+    setBanners('', '');
+
+    // squareBgも消して「背景だけ」にする
+    setSquareBg('');
+
+    showSplash(text, '');
+
+    // ズームイン
+    dom.splash.style.opacity = '0';
+    dom.splash.style.transform = 'scale(0.75)';
+    dom.splash.style.transition = 'transform 260ms ease, opacity 260ms ease';
+
+    // 2フレ待って確実に反映
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    dom.splash.style.opacity = '1';
+    dom.splash.style.transform = 'scale(1.0)';
   }
 
   function setChars(leftSrc, rightSrc){
@@ -554,8 +612,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (!st) return;
 
       setBackdrop(TOURNEY_BACKDROP);
+      // introは従来通り（tentなど）
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
+
+      setEnemySlotVisible(true);
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
       setChars(leftResolved, '');
@@ -612,10 +673,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       setChampionMode(false);
       setResultStampMode(false);
-      hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
+      hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -631,6 +694,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBanners(st.bannerLeft, st.bannerRight);
 
       const teams = Array.isArray(payload?.teams) ? payload.teams : (Array.isArray(st.teams) ? st.teams : []);
+      hidePanels();
       showPanel('参加チーム', buildTeamListTable(teams));
 
       setLines('本日のチームをご紹介！', '（NEXTで進行）', '');
@@ -648,6 +712,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -701,7 +767,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  async function handleShowDropStart(){
+  async function handleShowDropStart(payload){
     lockUI();
     try{
       setChampionMode(false);
@@ -710,6 +776,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -738,6 +806,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -768,6 +838,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      setEnemySlotVisible(true);
+
       const st = getState();
       if (!st) return;
 
@@ -777,9 +849,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, '');
       setNames('', '');
 
-      // ✅ 右上バナーはROUNDだけ（%→%は一切追加しない）
       setBanners(st.bannerLeft, st.bannerRight);
-
       setLines(`Round ${payload?.round || st.round} 開始！`, '', '');
     }finally{
       unlockUI();
@@ -796,6 +866,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      setEnemySlotVisible(true);
+
       const st = getState();
       setBackdrop(TOURNEY_BACKDROP);
 
@@ -807,17 +879,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      // ✅ A方式：effectText を最優先で出す（戦闘力%の自前生成はしない）
       const effect = String(payload?.effectText || '').trim();
 
       const l1 = payload?.log1 || st?.ui?.center3?.[0] || 'イベント発生！';
       const l2 = payload?.log2 || st?.ui?.center3?.[1] || '';
-      // line3 = effectText があればそれ、無ければ元のログ文
       const l3 = effect || payload?.log3 || st?.ui?.center3?.[2] || '';
 
-      // ✅ バナーはそのまま（余計な%→%追記なし）
       setBanners(st?.bannerLeft || '', st?.bannerRight || '');
-
       setLines(l1, l2, l3);
     }finally{
       unlockUI();
@@ -831,6 +899,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setResultStampMode(false);
       setBattleMode(false);
       setBackdrop(TOURNEY_BACKDROP);
+      setEnemySlotVisible(true);
     }finally{
       unlockUI();
     }
@@ -851,6 +920,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       hideSplash();
 
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -936,6 +1007,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       hidePanels(); hideSplash(); setEventIcon('');
       clearHold();
 
+      setEnemySlotVisible(true);
+
       const st = getState();
       if (!st) return;
 
@@ -1000,6 +1073,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
 
+      setEnemySlotVisible(true);
+
       const st = getState();
       if (!st) return;
 
@@ -1050,7 +1125,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const st = getState();
 
-      // ✅ 左はプレイヤー、右は表示しない（要望：チャンピオン画像いらない）
+      // ✅ 右側enemy枠（ガワ含む）を消す：これで“枠だけ”問題が消える
+      setEnemySlotVisible(false);
+
+      // 左だけ表示（プレイヤー）
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
       setChars(leftResolved, '');
       setNames('', '');
@@ -1076,6 +1154,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       setHold('showMatchResult');
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
@@ -1140,6 +1220,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       setHold('showTournamentResult');
       setBattleMode(false);
+
+      setEnemySlotVisible(true);
 
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
@@ -1214,6 +1296,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      setEnemySlotVisible(true);
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
@@ -1247,6 +1331,31 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
+      // ✅ チーム紹介(showTeamList)が来たら、最初の1回だけ到着演出に差し替える（NEXTで本来のshowTeamListへ）
+      if (req?.type === 'showTeamList' && !didArrivalIntro){
+        didArrivalIntro = true;
+
+        // キーは固定で進行を止める
+        lastReqKey = 'LOCAL_INTRO_ARRIVAL';
+        clearAutoTimer();
+        clearLocalNext();
+
+        // 到着演出
+        setBackdrop(TOURNEY_BACKDROP);
+        await showArrivalZoom('大会会場へ到着！');
+
+        // NEXTで本来のshowTeamListを描画させる
+        localNextAction = ()=>{
+          // 演出を消して通常描画へ
+          hideSplash();
+          setEnemySlotVisible(true);
+          lastReqKey = ''; // 同じreqでも再描画させる
+          render();
+        };
+
+        return;
+      }
+
       const key = mkReqKey(req);
       if (key === lastReqKey) return;
       lastReqKey = key;
@@ -1263,6 +1372,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (encounterGatePhase === 0) setBattleMode(false);
         setChampionMode(false);
         setResultStampMode(false);
+        setEnemySlotVisible(true);
         return;
       }
 
@@ -1315,6 +1425,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChampionMode(false);
       setResultStampMode(false);
       if (encounterGatePhase === 0) setBattleMode(false);
+      setEnemySlotVisible(true);
     }finally{
       rendering = false;
       unlockUI();
