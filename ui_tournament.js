@@ -1,8 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.1（フル）
-  ✅ 修正：showChampionで前画面のスタンプ(brwin/brlose/brbattle)が残り、ログと被る問題を解消
+  ui_tournament.js v3.6.2（フル）
+  ✅ v3.6.1 からの追加修正：
+  - イベント発生時の右上バナー（eventIcon）遅延対策：大会開始前にイベントアイコン候補をプリロード
+  - イベント時「66%→67%」など変化量表示（payload.powerBefore/powerAfter/delta を利用）
+  - 交戦後のWIN/LOSEスタンプを中央に巨大表示（CSS連携：isResultStamp）
+  - 演出重複防止：mkReqKey を “安定キー” に変更（JSON stringify依存をやめる）
+  - チーム名1行（nowrap/ellipsis）はCSS側で対応（tournament.cssに反映済み）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -42,6 +47,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   let nextCooldownUntil = 0;
 
   let preloadedBasics = false;
+  let preloadedEventIcons = false;
 
   let uiLockCount = 0;
 
@@ -115,6 +121,61 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       ASSET.brwin,
       ASSET.brlose
     ]);
+  }
+
+  // ✅ イベントアイコン候補の収集（柔軟に）
+  function collectEventIconCandidates(){
+    const list = [];
+
+    try{
+      const flow = getFlow();
+      if (flow?.getEventIconList){
+        const a = flow.getEventIconList();
+        if (Array.isArray(a)) list.push(...a);
+      }
+    }catch(e){}
+
+    try{
+      const st = getState();
+      const a = st?.eventIconList;
+      if (Array.isArray(a)) list.push(...a);
+      const b = st?.ui?.eventIconList;
+      if (Array.isArray(b)) list.push(...b);
+    }catch(e){}
+
+    // matchEvents 側に iconPath 群がある想定も拾う（存在すれば）
+    try{
+      const me = window.MOBBR?.sim?.matchEvents;
+      if (me?.getAllEventIcons){
+        const a = me.getAllEventIcons();
+        if (Array.isArray(a)) list.push(...a);
+      }
+      if (Array.isArray(me?.EVENTS)){
+        for (const ev of me.EVENTS){
+          if (ev?.icon) list.push(ev.icon);
+          if (ev?.iconPath) list.push(ev.iconPath);
+        }
+      }
+    }catch(e){}
+
+    // uniq
+    const seen = new Set();
+    const out = [];
+    for (const s of list){
+      const v = String(s||'').trim();
+      if (!v) continue;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+    }
+    return out;
+  }
+
+  async function preloadEventIcons(){
+    if (preloadedEventIcons) return;
+    preloadedEventIcons = true;
+    const icons = collectEventIconCandidates();
+    if (icons.length) await preloadMany(icons);
   }
 
   function lockUI(){
@@ -249,6 +310,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.overlay.classList.toggle('isChampion', !!on);
   }
 
+  // ✅ 交戦後のWIN/LOSEを中央巨大にするモード
+  function setResultStampMode(on){
+    ensureDom();
+    dom.overlay.classList.toggle('isResultStamp', !!on);
+  }
+
   function open(){
     ensureDom();
     dom.overlay.classList.add('isOpen');
@@ -258,8 +325,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     clearHold();
     setBattleMode(false);
     setChampionMode(false);
+    setResultStampMode(false);
 
+    // ✅ 大会開始前に読む
     preloadBasics();
+    preloadEventIcons();
   }
 
   function close(){
@@ -275,6 +345,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.overlay.classList.remove('isOpen');
     dom.overlay.classList.remove('isBattle');
     dom.overlay.classList.remove('isChampion');
+    dom.overlay.classList.remove('isResultStamp');
   }
 
   function setBackdrop(src){
@@ -354,9 +425,40 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.imgR.src = rightSrc ? String(rightSrc) : '';
   }
 
+  // ✅ 演出重複防止：安定キー（JSON stringify依存をやめる）
   function mkReqKey(req){
-    try{ return JSON.stringify(req || {}); }
-    catch{ return String(req?.type || ''); }
+    const t = String(req?.type || '');
+    if (!t) return '';
+
+    const st = getState() || {};
+
+    const matchIndex = (req?.matchIndex ?? st?.matchIndex ?? st?.match ?? '');
+    const round = (req?.round ?? st?.round ?? '');
+    const foeId = (req?.foeTeamId ?? req?.foeId ?? '');
+    const meId = (req?.meTeamId ?? 'PLAYER');
+
+    // 主要演出だけキーにする（ログ文など揺れる要素は入れない）
+    if (t === 'showBattle'){
+      return `showBattle|m:${matchIndex}|r:${round}|me:${meId}|foe:${foeId}|win:${req?.win?1:0}|final:${req?.final?1:0}`;
+    }
+    if (t === 'showEncounter'){
+      return `showEncounter|m:${matchIndex}|r:${round}|me:${meId}|foe:${foeId}`;
+    }
+    if (t === 'showEvent'){
+      return `showEvent|m:${matchIndex}|r:${round}|id:${String(req?.eventId||req?.id||req?.icon||'')}`;
+    }
+    if (t === 'showChampion'){
+      return `showChampion|m:${matchIndex}|name:${String(req?.championName||'')}`;
+    }
+    if (t === 'showMatchResult'){
+      return `showMatchResult|m:${matchIndex}`;
+    }
+    if (t === 'showTournamentResult'){
+      return `showTournamentResult`;
+    }
+
+    // その他は type + round + matchIndex
+    return `${t}|m:${matchIndex}|r:${round}`;
   }
 
   function setNextEnabled(v){
@@ -434,6 +536,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -452,6 +555,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBanners(st.bannerLeft, st.bannerRight);
       setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
+
+      // ✅ このタイミングでもイベントアイコン候補を先読み（flowがstate整える前でもOK）
+      preloadEventIcons();
+
     }finally{
       unlockUI();
     }
@@ -498,6 +605,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -529,6 +637,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -590,6 +699,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -617,6 +727,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -645,6 +756,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -670,6 +782,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp('');
       resetEncounterGate();
       clearHold();
@@ -682,12 +795,41 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, '');
       setNames('', '');
 
+      // ✅ イベントアイコンを事前プリロードしておく（この瞬間でも拾う）
+      preloadEventIcons();
+
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      if (st?.ui?.center3){
-        setLines(st.ui.center3[0], st.ui.center3[1], st.ui.center3[2]);
+      // ✅ power変化表示（66%→67%）
+      const pb = Number(payload?.powerBefore);
+      const pa = Number(payload?.powerAfter);
+      const hasPowerDelta = Number.isFinite(pb) && Number.isFinite(pa);
+
+      const deltaLine = hasPowerDelta ? `${pb}%→${pa}%` : '';
+      const deltaSign = (hasPowerDelta && Number.isFinite(payload?.delta))
+        ? (payload.delta >= 0 ? `(+${payload.delta}%)` : `(${payload.delta}%)`)
+        : '';
+
+      // 右上バナーにも入れる（見落とし防止）
+      if (hasPowerDelta){
+        const curL = String(st?.bannerLeft || '');
+        const curR = String(st?.bannerRight || '');
+        setBanners(curL, `${curR}  ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}`);
       }else{
-        setLines(payload?.log1 || 'イベント発生！', payload?.log2 || '', payload?.log3 || '');
+        setBanners(st?.bannerLeft || '', st?.bannerRight || '');
+      }
+
+      if (st?.ui?.center3){
+        // center3優先だと差分が埋もれるので line3 に必ず差分を出す
+        const l1 = st.ui.center3[0] || 'イベント発生！';
+        const l2 = st.ui.center3[1] || '';
+        const l3 = deltaLine ? `戦闘力 ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}` : (st.ui.center3[2] || '');
+        setLines(l1, l2, l3);
+      }else{
+        const l1 = payload?.log1 || 'イベント発生！';
+        const l2 = payload?.log2 || '';
+        const l3 = deltaLine ? `戦闘力 ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}` : (payload?.log3 || '');
+        setLines(l1, l2, l3);
       }
     }finally{
       unlockUI();
@@ -698,6 +840,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       setBattleMode(false);
       setBackdrop(TOURNEY_BACKDROP);
     }finally{
@@ -709,13 +852,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       encounterGatePhase = 1;
       pendingBattleReq = null;
       clearHold();
 
       hidePanels();
       setEventIcon('');
-      showCenterStamp('');   // ✅ 念のため接敵でスタンプは消す
+      showCenterStamp('');   // 接敵でスタンプ消す
       hideSplash();
 
       setBattleMode(false);
@@ -800,6 +944,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); setEventIcon('');
       clearHold();
 
@@ -809,6 +954,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBattleMode(true);
       setBackdrop(TOURNEY_BACKDROP);
 
+      // 戦闘開始スタンプは上部
+      setResultStampMode(false);
       showCenterStamp(ASSET.brbattle);
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
@@ -830,6 +977,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         await sleep(90);
       }
 
+      // ✅ 結果スタンプは中央巨大
+      setResultStampMode(true);
       showCenterStamp(payload?.win ? ASSET.brwin : ASSET.brlose);
 
       if (payload?.win){
@@ -843,6 +992,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
 
       await sleep(Number(payload?.holdMs || 2000));
+
+      // 次へ行く時はスタンプ位置を通常へ戻す（残留バグ防止）
+      setResultStampMode(false);
 
     }finally{
       busy = false;
@@ -858,6 +1010,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -899,6 +1052,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(true);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -906,8 +1060,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBackdrop(TOURNEY_BACKDROP);
 
-      // ✅ ここが原因：直前のbrlose/brwinが残って下に落ちて文字と被る
-      showCenterStamp('');   // ←これで完全解決
+      // ✅ 直前のbrlose/brwin残留対策
+      showCenterStamp('');
+      setResultStampMode(false);
 
       setLines(
         payload?.line1 || 'この試合のチャンピオンは…',
@@ -923,6 +1078,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       setHold('showMatchResult');
@@ -986,6 +1142,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       setHold('showTournamentResult');
@@ -1058,6 +1215,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     lockUI();
     try{
       setChampionMode(false);
+      setResultStampMode(false);
       hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
@@ -1106,6 +1264,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (!req || !req.type){
         if (encounterGatePhase === 0) setBattleMode(false);
         setChampionMode(false);
+        setResultStampMode(false);
         return;
       }
 
@@ -1115,10 +1274,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         showCenterStamp('');
         hideSplash();
         setChampionMode(false);
+        setResultStampMode(false);
       }else{
         const isBattleReq = (req.type === 'showBattle');
         if (encounterGatePhase === 0) setBattleMode(isBattleReq);
         if (req.type !== 'showChampion') setChampionMode(false);
+        if (req.type !== 'showBattle') setResultStampMode(false);
       }
 
       switch(req.type){
@@ -1154,6 +1315,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       console.error('[ui_tournament] request handler error:', e);
       busy = false;
       setChampionMode(false);
+      setResultStampMode(false);
       if (encounterGatePhase === 0) setBattleMode(false);
     }finally{
       rendering = false;
