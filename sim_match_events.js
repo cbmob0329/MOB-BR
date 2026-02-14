@@ -1,7 +1,7 @@
 'use strict';
 
 /*
-  sim_match_events.js v2.1（フル）
+  sim_match_events.js v2.1.0（フル）
   ✅「試合最新版.txt」運用向け（大会側から呼ばれる “イベント抽選エンジン” ）
   - rollForTeam(team, round, ctx) を提供（3段ログ / アイコン / 効果反映）
   - resetTeamMatchState(team) を提供（試合中バフ・イベント履歴のリセット）
@@ -9,11 +9,7 @@
   - Treasure / Flag を更新（勝敗に直結させない）
   - ✅ downs_total は「A運用」：内部だけで常に数値として保持（UIに出さない）
   - 同ラウンド重複なし（同チーム内）：R2〜R5で2回呼ばれても別イベントになる
-
-  ✅ v2.1 追加：
-  - A方式：effectText（何が上がった/下がったか）を返す
-  - UI修正ゼロで見えるように、log3 に effectText を自動付与（例：「...（AIM+1）」）
-  - 0%表示/空表示対策：effectTextが空にならない保険
+  - ✅ A方式：effectText（今回の増減）を返す（UIはこれを表示するだけでOK）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -95,38 +91,21 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return s.has(String(evId || ''));
   }
 
-  // ===== A方式：効果テキスト生成 =====
-  function buildEffectTextFromEff(eff){
-    const e = eff || {};
+  function buildEffectText(delta){
     const parts = [];
+    const a = Number(delta?.aim||0);
+    const m = Number(delta?.mental||0);
+    const g = Number(delta?.agi||0);
+    const tr = Number(delta?.treasure||0);
+    const fl = Number(delta?.flag||0);
 
-    const aim = Number(e.aim);
-    const mental = Number(e.mental);
-    const agi = Number(e.agi);
-    const tre = Number(e.treasure);
-    const flg = Number(e.flag);
+    if (a)  parts.push(`AIM ${a>0?'+':''}${a}`);
+    if (m)  parts.push(`MENTAL ${m>0?'+':''}${m}`);
+    if (g)  parts.push(`AGI ${g>0?'+':''}${g}`);
+    if (tr) parts.push(`TREASURE +${tr}`);
+    if (fl) parts.push(`FLAG +${fl}`);
 
-    if (Number.isFinite(aim) && aim !== 0) parts.push(`AIM${aim>0?'+':''}${aim}`);
-    if (Number.isFinite(mental) && mental !== 0) parts.push(`MENTAL${mental>0?'+':''}${mental}`);
-    if (Number.isFinite(agi) && agi !== 0) parts.push(`AGI${agi>0?'+':''}${agi}`);
-
-    // スコア系
-    if (Number.isFinite(tre) && tre !== 0) parts.push(`TREASURE+${tre|0}`);
-    if (Number.isFinite(flg) && flg !== 0) parts.push(`FLAG+${flg|0}`);
-
-    // 何も無いのは基本ありえないが、保険
-    if (!parts.length) return 'EFFECT+0';
     return parts.join(' / ');
-  }
-
-  function mergeLog3WithEffect(log3, effectText){
-    const a = String(log3 || '').trim();
-    const b = String(effectText || '').trim();
-    if (!b) return a || '';
-    if (!a) return `（${b}）`;
-    // 既に入ってたら二重にしない
-    if (a.includes(b)) return a;
-    return `${a}（${b}）`;
   }
 
   // ===== Event master (確定) =====
@@ -276,98 +255,73 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     ensureTeamShape(team);
     const eff = ev?.eff || {};
 
-    // %バフ（試合中のみ）
-    // ※「0%の時がある」「デバフが効かない」対策：Number変換を強制して判定
-    const aim = Number(eff.aim);
-    const mental = Number(eff.mental);
-    const agi = Number(eff.agi);
+    // このイベントの“差分”だけ取り出す（A方式表示用）
+    const delta = {
+      aim:     Number.isFinite(Number(eff.aim)) ? (Number(eff.aim)|0) : 0,
+      mental:  Number.isFinite(Number(eff.mental)) ? (Number(eff.mental)|0) : 0,
+      agi:     Number.isFinite(Number(eff.agi)) ? (Number(eff.agi)|0) : 0,
+      treasure:Number.isFinite(Number(eff.treasure)) ? (Number(eff.treasure)|0) : 0,
+      flag:    Number.isFinite(Number(eff.flag)) ? (Number(eff.flag)|0) : 0
+    };
 
-    if (Number.isFinite(aim) && aim !== 0){
-      team.eventBuffs.aim = clamp(Number(team.eventBuffs.aim) + aim, -99, 99);
-    }
-    if (Number.isFinite(mental) && mental !== 0){
-      team.eventBuffs.mental = clamp(Number(team.eventBuffs.mental) + mental, -99, 99);
-    }
-    if (Number.isFinite(agi) && agi !== 0){
-      team.eventBuffs.agi = clamp(Number(team.eventBuffs.agi) + agi, -99, 99);
-    }
+    // %バフ（試合中のみ）
+    if (delta.aim)    team.eventBuffs.aim    = clamp(team.eventBuffs.aim    + delta.aim,    -99, 99);
+    if (delta.mental) team.eventBuffs.mental = clamp(team.eventBuffs.mental + delta.mental, -99, 99);
+    if (delta.agi)    team.eventBuffs.agi    = clamp(team.eventBuffs.agi    + delta.agi,    -99, 99);
 
     // スコア系（勝敗に直結させない）
-    const treasure = Number(eff.treasure);
-    if (Number.isFinite(treasure) && treasure !== 0){
-      let add = treasure | 0;
+    if (delta.treasure){
+      let add = delta.treasure;
 
       // コーチスキル score_mind：Treasure取得時に +1 追加（合計+2）
       const scoreMind = !!(ctx && ctx.playerCoach && ctx.playerCoach.score_mind);
       if (scoreMind && ev && ev.id === 'treasure'){
         add += 1;
+        delta.treasure += 1; // 表示も +2 にする
       }
 
-      team.treasure = clamp((team.treasure|0) + add, 0, 9999);
+      team.treasure = clamp((team.treasure|0) + (add|0), 0, 9999);
     }
 
-    const flag = Number(eff.flag);
-    if (Number.isFinite(flag) && flag !== 0){
-      team.flag = clamp((team.flag|0) + (flag|0), 0, 9999);
+    if (delta.flag){
+      team.flag = clamp((team.flag|0) + (delta.flag|0), 0, 9999);
     }
+
+    return delta;
   }
 
   function rollForTeam(team, round, ctx){
     if (!team) return null;
     ensureTeamShape(team);
 
-    // eliminated は呼び出し側で弾く想定だが、念のため
     if (team.eliminated) return null;
 
     const r = clamp(round, 1, 6);
 
-    // R6 基本なし（呼ばれたら null 返す）
+    // R6 基本なし（呼ばれたら null）
     if (r === 6) return null;
 
     // 同ラウンド重複なし：使われてないイベントだけで抽選
     const candidates = EVENTS.filter(ev => !isUsed(team, r, ev.id));
-    if (candidates.length === 0){
-      // ここに来るのは通常ありえないが、保険で全体から
-      const ev0 = EVENTS[(Math.random() * EVENTS.length) | 0];
-      if (!ev0) return null;
-
-      markUsed(team, r, ev0.id);
-      applyEffect(team, ev0, ctx);
-
-      const effectText0 = buildEffectTextFromEff(ev0.eff);
-      const raw3 = pickOne(ev0.lines) || '';
-      const log3 = mergeLog3WithEffect(raw3, effectText0);
-
-      return {
-        id: ev0.id,
-        icon: ev0.icon || '',
-        name: ev0.name || '',
-        log1: 'イベント発生！',
-        log2: String(ev0.name || ''),
-        log3,
-        effectText: effectText0
-      };
-    }
-
     const pick = weightedPick(candidates.map(ev => ({ id: ev.id, w: ev.w })));
     const ev = pick ? candidates.find(x => x.id === pick.id) : candidates[(Math.random() * candidates.length) | 0];
     if (!ev) return null;
 
     markUsed(team, r, ev.id);
-    applyEffect(team, ev, ctx);
 
-    const effectText = buildEffectTextFromEff(ev.eff);
-    const raw3 = pickOne(ev.lines) || '';
-    const log3 = mergeLog3WithEffect(raw3, effectText);
+    const delta = applyEffect(team, ev, ctx) || { aim:0, mental:0, agi:0, treasure:0, flag:0 };
+    const effectText = buildEffectText(delta);
 
     return {
       id: ev.id,
+      eventId: ev.id,
       icon: ev.icon || '',
       name: ev.name || '',
       log1: 'イベント発生！',
       log2: String(ev.name || ''),
-      log3,
-      effectText
+      log3: pickOne(ev.lines) || '',
+      delta,        // ← UIで必要なら使える
+      effectText    // ← UIはこれをそのまま表示すればOK
     };
   }
 
@@ -375,8 +329,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!team) return;
 
     // A運用：存在させて常に数値（初期0）
-    if (!Number.isFinite(Number(team.downs_total))) team.downs_total = 0;
-    else team.downs_total = 0;
+    team.downs_total = 0;
 
     // 試合中のみのバフをリセット
     team.eventBuffs = { aim:0, mental:0, agi:0 };
@@ -388,8 +341,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   window.MOBBR.sim.matchEvents = {
     rollForTeam,
     resetTeamMatchState,
-
-    // デバッグ等で参照したい場合用（任意）
     _EVENTS: EVENTS.slice()
   };
 
