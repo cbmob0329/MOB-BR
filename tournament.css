@@ -1,7 +1,10 @@
-/* tournament.css（フル） v3.2.0
+/* tournament.css（フル） v3.2.1
   - ✅ 交戦中バナー（stamp）を上部中央へ
   - ✅ 交戦中ログをさらに大きく
   - ✅ 交戦中の上部バナーを中央寄せ（見た目のまとまり）
+  - ✅ イベント演出：eventIcon をふわふわ（遅延対策はJSでプリロード）
+  - ✅ 交戦後WIN/LOSEを中央巨大（.isResultStamp）
+  - ✅ チーム名は1行（nowrap + ellipsis）
 */
 
 :root{
@@ -88,6 +91,9 @@
   color: rgba(255,255,255,.96);
   letter-spacing:.06em;
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ✅ event icon（右側・大きく） */
@@ -100,7 +106,11 @@
   opacity: .98;
   z-index: 6;
 }
-#mobbrTournamentOverlay .eventIcon.isOn{ display:block; }
+#mobbrTournamentOverlay .eventIcon.isOn{
+  display:block;
+  animation: mobbrFloat 1.8s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
 
 /* ✅ chars：スクエアの上に固定 */
 #mobbrTournamentOverlay .chars{
@@ -140,6 +150,11 @@
   color: rgba(255,255,255,.95);
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
   min-height: 16px;
+
+  /* ✅ 1行固定 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #mobbrTournamentOverlay .char img{
@@ -170,6 +185,17 @@
 }
 #mobbrTournamentOverlay.isBattle .centerStamp img{
   height: 40px;
+}
+
+/* ✅ 交戦結果スタンプ（WIN/LOSE）だけ中央巨大 */
+#mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp{
+  top: 170px;         /* キャラに被ってOK：中央寄せ */
+  height: 140px;
+  z-index: 12;
+}
+#mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp img{
+  height: 128px;
+  filter: drop-shadow(0 14px 26px rgba(0,0,0,.75));
 }
 
 #mobbrTournamentOverlay .centerStamp img{
@@ -371,4 +397,11 @@
 @keyframes mobbrSpin{
   from{ transform: rotate(0deg); }
   to{ transform: rotate(360deg); }
+}
+
+/* ✅ ふわふわ */
+@keyframes mobbrFloat{
+  0%   { transform: translateY(0px) rotate(-1deg); }
+  50%  { transform: translateY(-8px) rotate(1deg); }
+  100% { transform: translateY(0px) rotate(-1deg); }
 }
