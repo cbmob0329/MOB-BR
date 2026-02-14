@@ -1,10 +1,9 @@
-/* tournament.css（フル） v3.2.1
-  - ✅ 交戦中バナー（stamp）を上部中央へ
-  - ✅ 交戦中ログをさらに大きく
-  - ✅ 交戦中の上部バナーを中央寄せ（見た目のまとまり）
-  - ✅ イベント演出：eventIcon をふわふわ（遅延対策はJSでプリロード）
+/* tournament.css（フル） v3.2.2
+  - ✅ 交戦開始BATTLEバナーを「プレイヤーと敵の間」へ（見切れ解消）
   - ✅ 交戦後WIN/LOSEを中央巨大（.isResultStamp）
+  - ✅ イベント演出：eventIconふわふわ
   - ✅ チーム名は1行（nowrap + ellipsis）
+  - ✅ チャンピオン表示で右チーム（画像）を表示（isChampion時）
 */
 
 :root{
@@ -91,6 +90,7 @@
   color: rgba(255,255,255,.96);
   letter-spacing:.06em;
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
+
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -137,6 +137,11 @@
   display:none !important;
 }
 
+/* ✅チャンピオン表示だけは右チームを表示したい */
+#mobbrTournamentOverlay.isChampion .char.right{
+  display:flex !important;
+}
+
 #mobbrTournamentOverlay .char .name{
   width: 100%;
   text-align:center;
@@ -165,6 +170,12 @@
   filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
 }
 
+/* ✅ チャンピオン表示：右側は小さめで素早く */
+#mobbrTournamentOverlay.isChampion .char.right img{
+  height: 170px;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,.55));
+}
+
 /* Stamp */
 #mobbrTournamentOverlay .centerStamp{
   position:absolute; left: 12px; right: 12px;
@@ -177,11 +188,13 @@
   z-index: 3;
 }
 
-/* ✅ 交戦中バナー（brbattle/brwin/brlose）を上部中央くらいへ */
+/* ✅ 交戦開始BATTLEバナー：プレイヤーと敵の間（見切れ防止）
+   squareBg: top=64px height=320px → 中央は約224px付近
+*/
 #mobbrTournamentOverlay.isBattle .centerStamp{
-  top: 54px;          /* banner(12px)の下、squareBg(64px)の直前 */
+  top: 228px;
   height: 44px;
-  z-index: 7;         /* bannerより上に見えるように */
+  z-index: 7;
 }
 #mobbrTournamentOverlay.isBattle .centerStamp img{
   height: 40px;
