@@ -1,9 +1,13 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.5.1（フル）
-  ✅ 修正：powerが55固定のまま → "66%" 等のパーセント文字列も数値化して最大値採用
-  ✅ 継続：順位がありえない（R2負けで3位） → eliminatedOrder==0 を最速脱落扱いにして下位固定
+  sim_tournament_flow.js v3.5.2（フル）
+  ✅ v3.5.1 からの追加修正（あなたの要望）
+  - ✅ イベントで 0% 表示が出る問題を潰す：showEvent に powerBefore/powerAfter/delta を必ず付与
+  - ✅ デバフが効かない時がある問題を潰す：勝敗計算に eventBuffs（aim/mental/agi）を反映（試合中継続）
+  - ✅ イベント効果は試合中継続：eventBuffs をラウンドでリセットしない（元から維持）＋勝敗に反映する
+  - ✅ 試合終了で解除：resetForNewMatch で eventBuffs を0に戻す（従来通り）
+  - ✅ 既存の 66% 読み取り / eliminatedOrder 修正は保持
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -298,6 +302,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
+    }else{
+      if (!Number.isFinite(Number(t.eventBuffs.aim))) t.eventBuffs.aim = 0;
+      if (!Number.isFinite(Number(t.eventBuffs.mental))) t.eventBuffs.mental = 0;
+      if (!Number.isFinite(Number(t.eventBuffs.agi))) t.eventBuffs.agi = 0;
     }
   }
 
@@ -308,13 +316,30 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { player: getPlayer(), playerCoach: coachFlags };
   }
 
+  // ✅ eventBuffs（aim/mental/agi）の合計を「戦闘力表示/勝敗補正」に使う
+  function sumEventBuffs(t){
+    if (!t || !t.eventBuffs) return 0;
+    const a = Number(t.eventBuffs.aim||0);
+    const m = Number(t.eventBuffs.mental||0);
+    const g = Number(t.eventBuffs.agi||0);
+    return (Number.isFinite(a)?a:0) + (Number.isFinite(m)?m:0) + (Number.isFinite(g)?g:0);
+  }
+  function computeDisplayPower(t){
+    const base = clamp(Number(t?.power||0), 1, 100);
+    const buf = sumEventBuffs(t);
+    return clamp(Math.round(base + buf), 1, 100);
+  }
+
   function resetForNewMatch(){
     state._elimCounter = 0;
 
     for(const t of state.teams){
       t.eliminated = false;
       t.alive = 3;
+
+      // ✅ 試合終了で解除（バフ/デバフリセット）
       t.eventBuffs = { aim:0, mental:0, agi:0 };
+
       t.treasure = 0;
       t.flag = 0;
       t.kills_total = 0;
@@ -322,6 +347,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       t.eliminatedOrder = 0;
       t.eliminatedRound = 0;
+
+      // 任意：matchEvents側の履歴もリセットしたい場合（存在すれば）
+      try{
+        if (window.MOBBR?.sim?.matchEvents?.resetTeamMatchState){
+          window.MOBBR.sim.matchEvents.resetTeamMatchState(t);
+        }
+      }catch{}
     }
     state.playerContestedAtDrop = false;
   }
@@ -590,6 +622,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const ctx = computeCtx();
 
+    // ✅ この勝敗計算では eventBuffs を power に反映して戦う（試合中は継続）
+    const aOrg = Number(A.power||0);
+    const bOrg = Number(B.power||0);
+
+    // eventBuffs込みの「実戦パワー」
+    A.power = computeDisplayPower(A);
+    B.power = computeDisplayPower(B);
+
+    // コーチ倍率は「実戦パワー」に掛ける
     const mult = coachMultForRound(round);
     let aBackup=null, bBackup=null;
     if (A.isPlayer){ aBackup=A.power; A.power=clamp(A.power*mult,1,100); }
@@ -625,6 +666,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const loser  = (winnerId === String(A.id)) ? B : A;
 
     awardWinStats(winner, loser, round);
+
+    // ✅ 戻す：基礎powerは維持（eventBuffsが継続＝試合中持続）
+    A.power = aOrg;
+    B.power = bOrg;
 
     return { winnerId: winner.id, loserId: loser.id };
   }
@@ -751,14 +796,30 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return step();
       }
 
+      // ✅ 0%回避：イベント前後の表示用パワーを必ず渡す
+      const before = computeDisplayPower(p);
+
       const ev = applyEventForTeam(p);
       state._eventsToShow = remain - 1;
 
+      const after = computeDisplayPower(p);
+      const delta = after - before;
+
       if (ev){
         state.ui.center3 = [ev.log1, ev.log2, ev.log3];
-        setRequest('showEvent', { icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3 });
+        setRequest('showEvent', {
+          icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3,
+          powerBefore: before,
+          powerAfter: after,
+          delta
+        });
       }else{
-        setRequest('showEvent', { icon:'', log1:'イベント発生！', log2:'……', log3:'' });
+        setRequest('showEvent', {
+          icon:'', log1:'イベント発生！', log2:'……', log3:'',
+          powerBefore: before,
+          powerAfter: before,
+          delta: 0
+        });
       }
       return;
     }
