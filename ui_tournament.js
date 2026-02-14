@@ -1,13 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.2（フル）
-  ✅ v3.6.1 からの追加修正：
-  - イベント発生時の右上バナー（eventIcon）遅延対策：大会開始前にイベントアイコン候補をプリロード
-  - イベント時「66%→67%」など変化量表示（payload.powerBefore/powerAfter/delta を利用）
-  - 交戦後のWIN/LOSEスタンプを中央に巨大表示（CSS連携：isResultStamp）
-  - 演出重複防止：mkReqKey を “安定キー” に変更（JSON stringify依存をやめる）
-  - チーム名1行（nowrap/ellipsis）はCSS側で対応（tournament.cssに反映済み）
+  ui_tournament.js v3.6.3（フル）
+  ✅ v3.6.2 からの追加修正（今回の要望対応）：
+  - 勝利演出が「大→小」で二重に出る問題：stamp残留を完全に潰す（setBattleMode(false)/close/renderで確実に消す）
+  - イベント効果の実感：payload依存をやめ、stateの eventBuffs から「実効戦闘力%」を計算して表示
+      例: 現在の戦闘力 67% → 68% (+1%)
+  - チャンピオン表示：チャンピオンチームの画像を右側に表示（小さめ・高速）
+  - BATTLEバナー位置：CSS側で「プレイヤーと敵の間」へ（isBattle .centerStamp top変更）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -50,7 +50,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   let preloadedEventIcons = false;
 
   let uiLockCount = 0;
-
   let rendering = false;
 
   function getFlow(){
@@ -143,7 +142,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (Array.isArray(b)) list.push(...b);
     }catch(e){}
 
-    // matchEvents 側に iconPath 群がある想定も拾う（存在すれば）
     try{
       const me = window.MOBBR?.sim?.matchEvents;
       if (me?.getAllEventIcons){
@@ -158,7 +156,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(e){}
 
-    // uniq
     const seen = new Set();
     const out = [];
     for (const s of list){
@@ -299,7 +296,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function setBattleMode(on){
     ensureDom();
     dom.overlay.classList.toggle('isBattle', !!on);
+
     if (!on){
+      // ✅ ここで残留を完全に潰す（大→小の二重スタンプ対策の本丸）
+      setResultStampMode(false);
+      showCenterStamp('');
       dom.nameR.textContent = '';
       dom.imgR.src = '';
     }
@@ -326,8 +327,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setBattleMode(false);
     setChampionMode(false);
     setResultStampMode(false);
+    showCenterStamp('');
+    setEventIcon('');
 
-    // ✅ 大会開始前に読む
     preloadBasics();
     preloadEventIcons();
   }
@@ -346,6 +348,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.overlay.classList.remove('isBattle');
     dom.overlay.classList.remove('isChampion');
     dom.overlay.classList.remove('isResultStamp');
+
+    // ✅ クローズでも残留ゼロ
+    showCenterStamp('');
+    setEventIcon('');
+    dom.nameR.textContent = '';
+    dom.imgR.src = '';
   }
 
   function setBackdrop(src){
@@ -372,6 +380,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.line2.textContent = String(b || '');
     dom.line3.textContent = String(c || '');
   }
+
   function showCenterStamp(src){
     ensureDom();
     if (!src){
@@ -382,12 +391,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.stamp.src = src;
     dom.stamp.classList.add('isOn');
   }
+
   function hidePanels(){
     ensureDom();
     dom.panel.classList.remove('isOn');
     dom.panelHead.textContent = '';
     dom.panelBody.innerHTML = '';
   }
+
   function showPanel(title, node){
     ensureDom();
     dom.panel.classList.add('isOn');
@@ -395,6 +406,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.panelBody.innerHTML = '';
     dom.panelBody.appendChild(node);
   }
+
   function setEventIcon(iconPath){
     ensureDom();
     const v = String(iconPath || '');
@@ -406,6 +418,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.eventIcon.src = v;
     dom.eventIcon.classList.add('isOn');
   }
+
   function showSplash(t1, t2){
     ensureDom();
     dom.splash1.textContent = String(t1 || '');
@@ -425,19 +438,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.imgR.src = rightSrc ? String(rightSrc) : '';
   }
 
-  // ✅ 演出重複防止：安定キー（JSON stringify依存をやめる）
+  // ✅ 演出重複防止：安定キー
   function mkReqKey(req){
     const t = String(req?.type || '');
     if (!t) return '';
 
     const st = getState() || {};
-
     const matchIndex = (req?.matchIndex ?? st?.matchIndex ?? st?.match ?? '');
     const round = (req?.round ?? st?.round ?? '');
     const foeId = (req?.foeTeamId ?? req?.foeId ?? '');
     const meId = (req?.meTeamId ?? 'PLAYER');
 
-    // 主要演出だけキーにする（ログ文など揺れる要素は入れない）
     if (t === 'showBattle'){
       return `showBattle|m:${matchIndex}|r:${round}|me:${meId}|foe:${foeId}|win:${req?.win?1:0}|final:${req?.final?1:0}`;
     }
@@ -457,7 +468,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return `showTournamentResult`;
     }
 
-    // その他は type + round + matchIndex
     return `${t}|m:${matchIndex}|r:${round}`;
   }
 
@@ -532,6 +542,65 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       .replaceAll("'","&#39;");
   }
 
+  // =========================
+  // ✅ イベント効果表示（stateのeventBuffs→実効戦闘力%）
+  // sim_match_flow.js と同じ式（UI用に軽量コピー）
+  // =========================
+  function clamp(n, lo, hi){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return lo;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  function buffMultiplierFromEventBuffs(team){
+    const eb = (team && team.eventBuffs && typeof team.eventBuffs === 'object') ? team.eventBuffs : {};
+    const aim = clamp(eb.aim ?? 0, -99, 99);
+    const mental = clamp(eb.mental ?? 0, -99, 99);
+    const agi = clamp(eb.agi ?? 0, -99, 99);
+
+    const mAim = 1 + (aim / 100);
+    const mMental = 1 + (mental / 120);
+    const mAgi = 1 + (agi / 140);
+
+    return clamp(mAim * mMental * mAgi, 0.70, 1.35);
+  }
+
+  function getPlayerTeam(state){
+    const teams = Array.isArray(state?.teams) ? state.teams : [];
+    // 優先：isPlayer → id===PLAYER → nameがPLAYER TEAMっぽい
+    let t = teams.find(x=>!!x?.isPlayer);
+    if (!t) t = teams.find(x=>String(x?.id||'') === 'PLAYER');
+    if (!t) t = teams.find(x=>String(x?.name||'').toUpperCase().includes('PLAYER'));
+    return t || null;
+  }
+
+  function computeEventPowerLine(state, payload){
+    // payloadに powerBefore/After が来てる場合はそれを最優先（互換）
+    const pb0 = Number(payload?.powerBefore);
+    const pa0 = Number(payload?.powerAfter);
+    if (Number.isFinite(pb0) && Number.isFinite(pa0)){
+      const d = pa0 - pb0;
+      const sign = d >= 0 ? `(+${d}%)` : `(${d}%)`;
+      return { before: pb0, after: pa0, delta: d, line: `${pb0}%→${pa0}% ${sign}` };
+    }
+
+    const pt = getPlayerTeam(state);
+    if (!pt) return { before: null, after: null, delta: null, line: '' };
+
+    const base = clamp(pt.power ?? 0, 0, 999);
+    const mult = buffMultiplierFromEventBuffs(pt);
+
+    // “実効戦闘力%” は見やすさ最優先で整数丸め
+    const eff = Math.round(base * mult);
+
+    const d = eff - base;
+    const sign = d >= 0 ? `(+${d}%)` : `(${d}%)`;
+
+    return { before: base, after: eff, delta: d, line: `${base}%→${eff}% ${sign}` };
+  }
+
+  // =========================
+
   async function handleShowIntroText(){
     lockUI();
     try{
@@ -556,9 +625,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBanners(st.bannerLeft, st.bannerRight);
       setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
 
-      // ✅ このタイミングでもイベントアイコン候補を先読み（flowがstate整える前でもOK）
       preloadEventIcons();
-
     }finally{
       unlockUI();
     }
@@ -795,40 +862,32 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, '');
       setNames('', '');
 
-      // ✅ イベントアイコンを事前プリロードしておく（この瞬間でも拾う）
       preloadEventIcons();
 
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      // ✅ power変化表示（66%→67%）
-      const pb = Number(payload?.powerBefore);
-      const pa = Number(payload?.powerAfter);
-      const hasPowerDelta = Number.isFinite(pb) && Number.isFinite(pa);
+      // ✅ イベント効果（実効戦闘力%）を必ず見せる
+      const p = computeEventPowerLine(st, payload);
+      const deltaLine = p.line ? `戦闘力 ${p.line}` : '';
 
-      const deltaLine = hasPowerDelta ? `${pb}%→${pa}%` : '';
-      const deltaSign = (hasPowerDelta && Number.isFinite(payload?.delta))
-        ? (payload.delta >= 0 ? `(+${payload.delta}%)` : `(${payload.delta}%)`)
-        : '';
-
-      // 右上バナーにも入れる（見落とし防止）
-      if (hasPowerDelta){
-        const curL = String(st?.bannerLeft || '');
+      // 右上バナーにも反映（見落とし防止）
+      setBanners(st?.bannerLeft || '', st?.bannerRight || '');
+      if (deltaLine){
+        // 右バナーに付け足す（長い時はellipsisで1行維持）
         const curR = String(st?.bannerRight || '');
-        setBanners(curL, `${curR}  ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}`);
-      }else{
-        setBanners(st?.bannerLeft || '', st?.bannerRight || '');
+        setBanners(st?.bannerLeft || '', `${curR}  ${p.before}%→${p.after}%`);
       }
 
+      // center3優先でも “差分” はline3に押し込む
       if (st?.ui?.center3){
-        // center3優先だと差分が埋もれるので line3 に必ず差分を出す
         const l1 = st.ui.center3[0] || 'イベント発生！';
         const l2 = st.ui.center3[1] || '';
-        const l3 = deltaLine ? `戦闘力 ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}` : (st.ui.center3[2] || '');
+        const l3 = deltaLine || (st.ui.center3[2] || '');
         setLines(l1, l2, l3);
       }else{
         const l1 = payload?.log1 || 'イベント発生！';
         const l2 = payload?.log2 || '';
-        const l3 = deltaLine ? `戦闘力 ${deltaLine}${deltaSign ? ' ' + deltaSign : ''}` : (payload?.log3 || '');
+        const l3 = deltaLine || (payload?.log3 || '');
         setLines(l1, l2, l3);
       }
     }finally{
@@ -859,7 +918,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       hidePanels();
       setEventIcon('');
-      showCenterStamp('');   // 接敵でスタンプ消す
+      showCenterStamp('');
       hideSplash();
 
       setBattleMode(false);
@@ -954,7 +1013,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBattleMode(true);
       setBackdrop(TOURNEY_BACKDROP);
 
-      // 戦闘開始スタンプは上部
+      // ✅ 戦闘開始スタンプ：通常（CSSで“間”に出る）
       setResultStampMode(false);
       showCenterStamp(ASSET.brbattle);
 
@@ -977,7 +1036,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         await sleep(90);
       }
 
-      // ✅ 結果スタンプは中央巨大
+      // ✅ 結果スタンプ：中央巨大
       setResultStampMode(true);
       showCenterStamp(payload?.win ? ASSET.brwin : ASSET.brlose);
 
@@ -993,7 +1052,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       await sleep(Number(payload?.holdMs || 2000));
 
-      // 次へ行く時はスタンプ位置を通常へ戻す（残留バグ防止）
+      // ✅ 次へ行く前に“巨大モード”だけ解除（stamp自体は setBattleMode(false) でも消える）
       setResultStampMode(false);
 
     }finally{
@@ -1048,6 +1107,33 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  function findChampionTeam(state, payload){
+    const teams = Array.isArray(state?.teams) ? state.teams : [];
+    const name = String(payload?.championName || payload?.line2 || '').trim();
+
+    let t = null;
+
+    // idが来る場合はそれが最優先
+    if (payload?.championTeamId){
+      const id = String(payload.championTeamId);
+      t = teams.find(x=>String(x?.id||'') === id) || null;
+      if (t) return t;
+    }
+
+    // 名前一致（完全一致優先）
+    if (name){
+      t = teams.find(x=>String(x?.name||'') === name) || null;
+      if (t) return t;
+
+      // 部分一致（保険）
+      t = teams.find(x=>String(x?.name||'').includes(name)) || null;
+      if (t) return t;
+    }
+
+    // どうしても無ければ placements がstateにあれば…は今回は触らない
+    return null;
+  }
+
   async function handleShowChampion(payload){
     lockUI();
     try{
@@ -1060,13 +1146,31 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBackdrop(TOURNEY_BACKDROP);
 
-      // ✅ 直前のbrlose/brwin残留対策
+      // ✅ 直前のbrlose/brwin残留対策（ここでも確実に消す）
       showCenterStamp('');
       setResultStampMode(false);
 
+      const st = getState();
+
+      // 左はプレイヤー、右にチャンピオン画像（小さめでOK）
+      const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
+
+      const champTeam = findChampionTeam(st, payload);
+      const champName = String(payload?.championName || champTeam?.name || payload?.line2 || '').trim();
+
+      let champImg = '';
+      if (champTeam?.id){
+        champImg = await resolveFirstExisting(
+          guessTeamImageCandidates(champTeam.id).concat(guessPlayerImageCandidates(champTeam?.img || ''))
+        );
+      }
+
+      setChars(leftResolved, champImg || '');
+      setNames('', champName || '');
+
       setLines(
         payload?.line1 || 'この試合のチャンピオンは…',
-        payload?.line2 || String(payload?.championName || ''),
+        champName || '',
         payload?.line3 || '‼︎'
       );
     }finally{
@@ -1260,6 +1364,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       clearAutoTimer();
       clearLocalNext();
+
+      // ✅ “showBattle以外へ遷移する瞬間”に stamp残留を確実に消す（保険）
+      if (req?.type !== 'showBattle'){
+        setResultStampMode(false);
+        showCenterStamp('');
+      }
 
       if (!req || !req.type){
         if (encounterGatePhase === 0) setBattleMode(false);
