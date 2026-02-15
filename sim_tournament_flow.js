@@ -1,13 +1,17 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.5.2（フル）
-  ✅ v3.5.1 からの追加修正（あなたの要望）
-  - ✅ イベントで 0% 表示が出る問題を潰す：showEvent に powerBefore/powerAfter/delta を必ず付与
-  - ✅ デバフが効かない時がある問題を潰す：勝敗計算に eventBuffs（aim/mental/agi）を反映（試合中継続）
-  - ✅ イベント効果は試合中継続：eventBuffs をラウンドでリセットしない（元から維持）＋勝敗に反映する
-  - ✅ 試合終了で解除：resetForNewMatch で eventBuffs を0に戻す（従来通り）
-  - ✅ 既存の 66% 読み取り / eliminatedOrder 修正は保持
+  sim_tournament_flow.js v3.6.0（フル）
+  ✅ v3.5.2 からの統合修正（今回の要望まとめ）
+  - ✅ 順位/結果/チャンピオン決定を sim_tournament_result.js に一本化（flow内の重複ロジック撤去）
+  - ✅ H2H（state.h2h）を必ず記録：winner|loser を +1（「負けた相手が下」防止の根拠）
+  - ✅ eliminatedRound を必ず付与（markEliminatedで確実セット）
+  - ✅ イベント 0% 表示対策：showEvent に powerBefore/powerAfter/delta を必ず付与（従来通り）
+  - ✅ eventBuffs を勝敗計算へ反映（試合中継続、試合終了でリセット）
+  - ✅ 新演出：
+      * 大会会場へ到着！(showArrival) → NEXTでチーム紹介へ
+      * 大会終了後：TOP10なら(showNationalNotice: qualified) / 11位以下なら(failed)
+      * その後(endTournament)で大会終了→メニュー復帰＋1週進め（存在する関数があれば呼ぶ）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -108,11 +112,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const s = String(x).trim();
     if (!s) return null;
 
-    // そのまま数値化できるケース
     const n0 = Number(s);
     if (Number.isFinite(n0)) return n0;
 
-    // %や余計な文字が混ざるケース（先頭付近の数値を拾う）
     const m = s.match(/-?\d+(\.\d+)?/);
     if (!m) return null;
     const n1 = Number(m[0]);
@@ -132,11 +134,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const raw = localStorage.getItem(key);
     if (!raw) return null;
 
-    // 1) "66" / "66%" 直接
     const n = parseMaybePercentNumber(raw);
     if (Number.isFinite(n)) return { v:n, src:`${key}(raw)` };
 
-    // 2) JSON
     try{
       const obj = JSON.parse(raw);
 
@@ -159,15 +159,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function calcPlayerTeamPower(){
     const candidates = [];
 
-    // playerTeam
     const a = readAny(K.playerTeam);
     if (a) candidates.push(a);
 
-    // teamName（JSONの可能性）
     const b = readAny(K.teamName);
     if (b) candidates.push(b);
 
-    // よくあるキー総当たり
     const keys = [
       K.teamPower, K.teamPowerPct, K.teamPercent, K.teamOverall, K.mainState, K.main
     ];
@@ -176,7 +173,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (r) candidates.push(r);
     }
 
-    // UI計算関数（最後）
     try{
       const fn = window.MOBBR?.ui?.team?.calcTeamPower;
       if (typeof fn === 'function'){
@@ -316,7 +312,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { player: getPlayer(), playerCoach: coachFlags };
   }
 
-  // ✅ eventBuffs（aim/mental/agi）の合計を「戦闘力表示/勝敗補正」に使う
+  // ✅ eventBuffs（aim/mental/agi）の合計を「表示/勝敗補正」に使う
   function sumEventBuffs(t){
     if (!t || !t.eventBuffs) return 0;
     const a = Number(t.eventBuffs.aim||0);
@@ -333,6 +329,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function resetForNewMatch(){
     state._elimCounter = 0;
 
+    // ✅ H2H 初期化（この試合内だけで矯正に使う）
+    state.h2h = Object.create(null);
+
     for(const t of state.teams){
       t.eliminated = false;
       t.alive = 3;
@@ -348,7 +347,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.eliminatedOrder = 0;
       t.eliminatedRound = 0;
 
-      // 任意：matchEvents側の履歴もリセットしたい場合（存在すれば）
       try{
         if (window.MOBBR?.sim?.matchEvents?.resetTeamMatchState){
           window.MOBBR.sim.matchEvents.resetTeamMatchState(t);
@@ -465,110 +463,19 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return m.mult;
   }
 
-  const PLACEMENT_P = (placement)=>{
-    if (placement === 1) return 12;
-    if (placement === 2) return 8;
-    if (placement === 3) return 5;
-    if (placement === 4) return 3;
-    if (placement === 5) return 2;
-    if (placement >= 6 && placement <= 10) return 1;
-    return 0;
-  };
-
-  function safeElimOrder(t){
-    const o = Number(t?.eliminatedOrder || 0);
-    return (o > 0) ? o : -999999;
-  }
-
-  function computePlacements(){
-    const teams = state.teams.slice();
-
-    teams.sort((a,b)=>{
-      const ae = a.eliminated ? 1 : 0;
-      const be = b.eliminated ? 1 : 0;
-
-      if (ae !== be) return ae - be;
-
-      if (!a.eliminated && !b.eliminated){
-        const ak = Number(a.kills_total||0);
-        const bk = Number(b.kills_total||0);
-        if (bk !== ak) return bk - ak;
-
-        const ap = Number(a.power||0);
-        const bp = Number(b.power||0);
-        if (bp !== ap) return bp - ap;
-
-        return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-      }
-
-      const ao = safeElimOrder(a);
-      const bo = safeElimOrder(b);
-      if (bo !== ao) return bo - ao;
-
-      const ak = Number(a.kills_total||0);
-      const bk = Number(b.kills_total||0);
-      if (bk !== ak) return bk - ak;
-
-      const ap = Number(a.power||0);
-      const bp = Number(b.power||0);
-      if (bp !== ap) return bp - ap;
-
-      return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-    });
-
-    return teams.map((t, idx)=>({ id:t.id, name:t.name, placement: idx+1 }));
-  }
-
-  function getChampionName(){
-    const placements = computePlacements();
-    const top = placements && placements[0];
-    return top ? String(top.name || top.id || '') : '';
-  }
-
-  function computeMatchResultTable(){
-    const placements = computePlacements();
-    const byId = new Map(state.teams.map(t=>[t.id,t]));
-
-    return placements.map(p=>{
-      const t = byId.get(p.id) || {};
-      const KP = Number(t.kills_total||0);
-      const AP = Number(t.assists_total||0);
-      const Treasure = Number(t.treasure||0);
-      const Flag = Number(t.flag||0);
-      const PlacementP = PLACEMENT_P(p.placement);
-      const Total = PlacementP + KP + AP + Treasure + (Flag*2);
-
-      return { placement:p.placement, id:p.id, squad:p.name, KP, AP, Treasure, Flag, Total, PlacementP };
-    });
-  }
-
-  function addToTournamentTotal(matchRows){
-    const total = state.tournamentTotal;
-    for(const r of matchRows){
-      if (!total[r.id]){
-        total[r.id] = { id:r.id, squad:r.squad, sumPlacementP:0, KP:0, AP:0, Treasure:0, Flag:0, sumTotal:0 };
-      }
-      total[r.id].sumPlacementP += r.PlacementP;
-      total[r.id].KP += r.KP;
-      total[r.id].AP += r.AP;
-      total[r.id].Treasure += r.Treasure;
-      total[r.id].Flag += r.Flag;
-      total[r.id].sumTotal += r.Total;
-    }
-  }
-
   function setRequest(type, payload){
     state.request = { type, ...(payload||{}) };
   }
+
   function getAreaInfo(areaId){
     const a = AREA[areaId];
     return a ? { id:areaId, name:a.name, img:a.img } : { id:areaId, name:`Area${areaId}`, img:'' };
   }
 
   function getState(){ return state; }
-
   function getCoachMaster(){ return COACH_MASTER; }
   function getEquippedCoachList(){ return getEquippedCoachSkills(); }
+
   function setCoachSkill(skillId){
     const id = String(skillId||'');
     if (!id || !COACH_MASTER[id]){
@@ -579,6 +486,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.selectedCoachSkill = id;
     state.selectedCoachQuote = COACH_MASTER[id].quote || '';
   }
+
   function getPlayerSkin(){ return getEquippedSkin(); }
 
   function applyEventForTeam(team){
@@ -607,12 +515,27 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     state._elimCounter = Number(state._elimCounter||0) + 1;
     team.eliminatedOrder = state._elimCounter;
-    team.eliminatedRound = Number(round||0);
+
+    // ✅ eliminatedRound は必ず入れる（これが順位の根拠）
+    team.eliminatedRound = Number(round||0) || 0;
+  }
+
+  // ✅ H2H 記録：winner|loser を +1
+  function recordH2H(winnerId, loserId){
+    try{
+      if (!state.h2h || typeof state.h2h !== 'object') state.h2h = Object.create(null);
+      const k = `${String(winnerId)}|${String(loserId)}`;
+      state.h2h[k] = Number(state.h2h[k] || 0) + 1;
+    }catch{}
   }
 
   function awardWinStats(winner, loser, round){
     if (!winner || !loser) return;
     winner.kills_total = Number(winner.kills_total||0) + 3;
+
+    // ✅ H2H 先に記録（結果側で順位矯正に使う）
+    recordH2H(winner.id, loser.id);
+
     markEliminated(loser, round);
   }
 
@@ -622,7 +545,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const ctx = computeCtx();
 
-    // ✅ この勝敗計算では eventBuffs を power に反映して戦う（試合中は継続）
+    // ✅ 勝敗計算では eventBuffs を power に反映して戦う（試合中は継続）
     const aOrg = Number(A.power||0);
     const bOrg = Number(B.power||0);
 
@@ -696,9 +619,76 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function finishMatchAndBuildResult(){
-    const rows = computeMatchResultTable();
-    addToTournamentTotal(rows);
+    const tr = window.MOBBR?.sim?.tournamentResult;
+
+    // ✅ 結果計算は result.js を唯一の正にする
+    const rows = (tr && tr.computeMatchResultTable)
+      ? tr.computeMatchResultTable(state)
+      : [];
+
+    if (tr && tr.addToTournamentTotal){
+      tr.addToTournamentTotal(state, rows);
+    }else{
+      // 互換保険（本来ここは通らない）
+      if (!state.tournamentTotal) state.tournamentTotal = {};
+      for (const r of rows){
+        if (!state.tournamentTotal[r.id]){
+          state.tournamentTotal[r.id] = { id:r.id, squad:r.squad, sumPlacementP:0, KP:0, AP:0, Treasure:0, Flag:0, sumTotal:0 };
+        }
+        state.tournamentTotal[r.id].sumPlacementP += r.PlacementP||0;
+        state.tournamentTotal[r.id].KP += r.KP||0;
+        state.tournamentTotal[r.id].AP += r.AP||0;
+        state.tournamentTotal[r.id].Treasure += r.Treasure||0;
+        state.tournamentTotal[r.id].Flag += r.Flag||0;
+        state.tournamentTotal[r.id].sumTotal += r.Total||0;
+      }
+    }
+
     state.lastMatchResultRows = rows;
+  }
+
+  function getChampionNameFromResult(){
+    const tr = window.MOBBR?.sim?.tournamentResult;
+    if (tr && tr.getChampionName) return tr.getChampionName(state) || '';
+    return '';
+  }
+
+  function getPlayerOverallPlacement(){
+    const tr = window.MOBBR?.sim?.tournamentResult;
+    if (!tr || !tr.computePlacements) return 999;
+
+    const placements = tr.computePlacements(state) || [];
+    const idx = placements.findIndex(x=>String(x.id||'') === 'PLAYER');
+    return (idx >= 0) ? (idx + 1) : 999;
+  }
+
+  // ✅ 大会終了 → メニューへ戻す + 1週進める（存在する関数があれば呼ぶ）
+  function endTournamentAndAdvanceWeek(){
+    try{
+      if (window.MOBBR?.ui?.tournament?.close) window.MOBBR.ui.tournament.close();
+    }catch{}
+
+    // 1) 週進行（あれば）
+    try{
+      const fn =
+        window.MOBBR?.sim?.main?.advanceWeek ||
+        window.MOBBR?.sim?.main?.nextWeek ||
+        window.MOBBR?.advanceWeek ||
+        window.MOBBR?.nextWeek;
+
+      if (typeof fn === 'function') fn();
+    }catch{}
+
+    // 2) メニュー表示（あれば）
+    try{
+      const m =
+        window.MOBBR?.ui?.main ||
+        window.MOBBR?.ui?.menu ||
+        window.MOBBR?.ui?.home;
+
+      if (m?.open) m.open();
+      if (m?.render) m.render();
+    }catch{}
   }
 
   function step(){
@@ -710,6 +700,24 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // =========================
+    // 0) 大会到着演出（最初に1回だけ）
+    // =========================
+    if (state.phase === 'arrival'){
+      state.bannerLeft = 'ローカル大会';
+      state.bannerRight = '会場';
+
+      setRequest('showArrival', {
+        line1: '大会会場へ到着！'
+      });
+
+      state.phase = 'intro';
+      return;
+    }
+
+    // =========================
+    // 1) Intro → TeamList → Coach → Drop
+    // =========================
     if (state.phase === 'intro'){
       state.bannerLeft = 'ローカル大会';
       state.bannerRight = '20チーム';
@@ -772,6 +780,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // =========================
+    // 2) Round
+    // =========================
     if (state.phase === 'round_start'){
       const r = state.round;
       state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -921,9 +932,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         holdMs: 2000
       });
 
+      // ✅ プレイヤー敗北→その試合は高速処理→チャンピオン発表→結果へ
       if (!iWon && me.eliminated){
         fastForwardToMatchEnd();
-        const championName = getChampionName();
+        const championName = getChampionNameFromResult();
 
         setRequest('showChampion', { matchIndex: state.matchIndex, championName });
         state.phase = 'match_result';
@@ -944,8 +956,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // =========================
+    // 3) Match Result / Tournament Result / National Notice / End
+    // =========================
     if (state.phase === 'match_result'){
       finishMatchAndBuildResult();
+
       setRequest('showMatchResult', {
         matchIndex: state.matchIndex,
         matchCount: state.matchCount,
@@ -953,16 +969,42 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       });
 
       state.matchIndex += 1;
+
+      // 大会が終わったら「総合結果」へ
       if (state.matchIndex > state.matchCount){
         setRequest('showTournamentResult', { total: state.tournamentTotal });
-        state.phase = 'done';
+        state.phase = 'tournament_result_shown';
         return;
       }
 
+      // 次試合へ
       state.round = 1;
       state.selectedCoachSkill = null;
       state.selectedCoachQuote = '';
       state.phase = 'coach_done';
+      return;
+    }
+
+    if (state.phase === 'tournament_result_shown'){
+      // ✅ 次のNEXTで「ナショナル出場決定 / 行けなかった」演出
+      const place = getPlayerOverallPlacement();
+      const qualified = (place <= 10);
+
+      setRequest('showNationalNotice', {
+        qualified,
+        line1: qualified ? 'ナショナル大会 出場決定！' : 'ナショナル大会に行けなかった..',
+        line2: qualified ? `総合順位 #${place}（TOP10）` : `総合順位 #${place}`,
+        line3: '（NEXTで大会終了）'
+      });
+
+      state.phase = 'national_notice_shown';
+      return;
+    }
+
+    if (state.phase === 'national_notice_shown'){
+      setRequest('endTournament', {});
+      endTournamentAndAdvanceWeek();
+      state.phase = 'done';
       return;
     }
 
@@ -1021,9 +1063,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       matchIndex: 1,
       matchCount: 5,
       round: 1,
-      phase: 'intro',
+
+      // ✅ いきなり intro じゃなく arrival を1枚挟む
+      phase: 'arrival',
+
       teams,
       tournamentTotal: {},
+      h2h: Object.create(null),
+
       playerContestedAtDrop: false,
       selectedCoachSkill: null,
       selectedCoachQuote: '',
