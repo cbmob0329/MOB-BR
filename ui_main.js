@@ -410,7 +410,9 @@ window.MOBBR = window.MOBBR || {};
       hideBack();
       render();
 
-      const Flow = window.MOBBR?.sim?.tournamentFlow;
+      // ✅ ui_tournament.js と同じ参照優先順に揃える（これが重要）
+      const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
+
       if (Flow && typeof Flow.startLocalTournament === 'function'){
         setRecent('大会：ローカル大会を開始！');
         try{
@@ -422,8 +424,8 @@ window.MOBBR = window.MOBBR || {};
         return;
       }
 
-      // Flowが無い場合（読み込み漏れ）
-      setRecent('大会：未実装（sim_tournament_flow.js の読み込みを確認）');
+      // ✅ 古いファイル名を出さない（判断を誤らせる）
+      setRecent('大会：Flowが見つかりません（sim_tournament_core.js / ui_tournament.js の読み込みを確認）');
     });
 
     // ===== DOM直開き保険の閉じる =====
