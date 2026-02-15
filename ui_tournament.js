@@ -1,13 +1,11 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.4（フル）
-  ✅ v3.6.3 からの追加修正（今回の要望対応）
-  - ✅ チャンピオン演出で enemy枠が“枠だけ残る”問題：右キャラ枠を「画像も名前も空なら自動で非表示」
-  - ✅ 大会到着演出：showArrival を追加（背景以外何も無し＋中央ズーム文字）
-  - ✅ ローカル大会TOP10判定後の表示：showNationalNotice を追加（大きいバナー表示）
-  - ✅ endTournament を受けたら UI を閉じる（flow側でメニュー復帰/週進行を試行）
-  - 既存：スタンプ残留潰し、eventBuffs由来の戦闘力表示、resultホールド、showEncounter2段階、NEXTデバウンス等は維持
+  ui_tournament.js v3.6.5（フル）
+  ✅ v3.6.4 からの追加修正（今回の要望対応）
+  - ✅ イベント発生時の％表示を削除（バナー/ログへの%追記を一切しない）
+  - 既存：右枠自動非表示、showArrival、showNationalNotice、endTournamentでUI閉じる、
+          スタンプ残留潰し、resultホールド、showEncounter2段階、NEXTデバウンス等は維持
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -582,6 +580,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Math.max(lo, Math.min(hi, v));
   }
 
+  // ※ v3.6.4までの残置：eventBuffs表示用（今回は%表示を削除するが、関数自体は残す）
   function buffMultiplierFromEventBuffs(team){
     const eb = (team && team.eventBuffs && typeof team.eventBuffs === 'object') ? team.eventBuffs : {};
     const aim = clampNum(eb.aim ?? 0, -99, 99);
@@ -603,6 +602,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return t || null;
   }
 
+  // ※ v3.6.4までの残置：%表示は今回削除するため、ここは使わない（関数は残す）
   function computeEventPowerLine(state, payload){
     const pb0 = Number(payload?.powerBefore);
     const pa0 = Number(payload?.powerAfter);
@@ -638,12 +638,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBattleMode(false);
 
       setBackdrop(TOURNEY_BACKDROP);
-      setSquareBg('');           // ✅ 背景以外何もない
-      setChars('', '');          // ✅ キャラ無し
+      setSquareBg('');
+      setChars('', '');
       setNames('', '');
       hideSplash();
 
-      // ✅ 中央へズームインで枠付き文字：splash を使う（CSS側の演出に乗せる）
       showSplash(payload?.line1 || '大会会場へ到着！', '');
       setLines(payload?.line1 || '大会会場へ到着！', '', 'NEXTで進行');
     }finally{
@@ -915,24 +914,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       preloadEventIcons();
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      const p = computeEventPowerLine(st, payload);
-      const deltaLine = p.line ? `戦闘力 ${p.line}` : '';
-
+      // ✅ %表示は一切しない（バナーにもログにも追記しない）
       setBanners(st?.bannerLeft || '', st?.bannerRight || '');
-      if (deltaLine){
-        const curR = String(st?.bannerRight || '');
-        setBanners(st?.bannerLeft || '', `${curR}  ${p.before}%→${p.after}%`);
-      }
 
       if (st?.ui?.center3){
         const l1 = st.ui.center3[0] || 'イベント発生！';
         const l2 = st.ui.center3[1] || '';
-        const l3 = deltaLine || (st.ui.center3[2] || '');
+        const l3 = st.ui.center3[2] || '';
         setLines(l1, l2, l3);
       }else{
         const l1 = payload?.log1 || 'イベント発生！';
         const l2 = payload?.log2 || '';
-        const l3 = deltaLine || (payload?.log3 || '');
+        const l3 = payload?.log3 || '';
         setLines(l1, l2, l3);
       }
     }finally{
@@ -1201,7 +1194,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         );
       }
 
-      // ✅ チャンピオン時は “敵枠が残らない” ように、右が空なら自動で消える
       setChars(leftResolved, champImg || '');
       setNames('', champName || '');
 
@@ -1363,9 +1355,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBattleMode(false);
 
       setBackdrop(TOURNEY_BACKDROP);
-      setSquareBg('');      // 背景だけ
+      setSquareBg('');
 
-      // キャラ無しで大きく
       setChars('', '');
       setNames('', '');
       showCenterStamp('');
@@ -1380,7 +1371,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleEndTournament(){
     lockUI();
     try{
-      // UIだけ閉じる（週進行/メニュー復帰はflow側でやる）
       close();
     }finally{
       unlockUI();
