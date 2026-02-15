@@ -443,20 +443,9 @@
        JS（重要）
        app.js だけ読み込む
        → app.js が分割JSを順序ロードして init する
-       
-       ただし「大会だけ」は確実に読みたいので、
-       3分割sim＋ui_tournament をここで先に読み込む（deferで順番保証）
-       ※ app.js 側でも同じファイルを読むなら、二重読み込みになるので
-          app.js の大会ロード処理は外す/コメントアウト推奨
+
+       ✅重要：大会ファイルはここで直読みしない（app.js 側に統一）
   ========================== -->
-
-  <!-- Tournament (sim 3-split + UI) : defer順序厳守 -->
-  <script src="sim_tournament_logic.js?v=1" defer></script>
-  <script src="sim_tournament_result.js?v=1" defer></script>
-  <script src="sim_tournament_core.js?v=1" defer></script>
-  <script src="ui_tournament.js?v=1" defer></script>
-
-  <!-- App -->
   <script src="app.js?v=17" defer></script>
 </body>
 </html>
