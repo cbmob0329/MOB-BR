@@ -1,17 +1,14 @@
 'use strict';
 
 /*
-  sim_tournament_flow.js v3.6.0（フル）
-  ✅ v3.5.2 からの統合修正（今回の要望まとめ）
-  - ✅ 順位/結果/チャンピオン決定を sim_tournament_result.js に一本化（flow内の重複ロジック撤去）
-  - ✅ H2H（state.h2h）を必ず記録：winner|loser を +1（「負けた相手が下」防止の根拠）
-  - ✅ eliminatedRound を必ず付与（markEliminatedで確実セット）
-  - ✅ イベント 0% 表示対策：showEvent に powerBefore/powerAfter/delta を必ず付与（従来通り）
-  - ✅ eventBuffs を勝敗計算へ反映（試合中継続、試合終了でリセット）
-  - ✅ 新演出：
-      * 大会会場へ到着！(showArrival) → NEXTでチーム紹介へ
-      * 大会終了後：TOP10なら(showNationalNotice: qualified) / 11位以下なら(failed)
-      * その後(endTournament)で大会終了→メニュー復帰＋1週進め（存在する関数があれば呼ぶ）
+  sim_tournament_flow.js v3.6.1（フル）
+  ✅ v3.6.0 からの修正（今回の要望対応）
+  - ✅ 大会開始演出を復活：
+      * arrival → 次に「ローカル大会開幕！」（tent + プレイヤー表示）→ NEXT → チーム紹介
+  - ✅ イベント発生時の％表示を削除：
+      * showEvent へ powerBefore / powerAfter / delta を渡さない（UIにも出ない）
+  - 既存：result.js一本化、H2H記録、eliminatedRound付与、eventBuffs勝敗反映、敗北時高速処理、
+          TOP10通知→endTournament→週進行＆メニュー復帰は維持
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -711,6 +708,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         line1: '大会会場へ到着！'
       });
 
+      // ✅ 次は「ローカル大会開幕！」へ（開始演出を確実に出す）
       state.phase = 'intro';
       return;
     }
@@ -727,7 +725,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.ui.leftImg = getPlayerSkin();
       state.ui.rightImg = '';
-      state.ui.center3 = ['本日のチームをご紹介！','',''];
+
+      // ✅ 開幕演出を明示（ここが消えない）
+      state.ui.center3 = ['ローカル大会開幕！','', 'NEXTでチーム紹介へ'];
 
       setRequest('showIntroText', {});
       state.phase = 'teamList';
@@ -807,29 +807,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return step();
       }
 
-      // ✅ 0%回避：イベント前後の表示用パワーを必ず渡す
-      const before = computeDisplayPower(p);
-
       const ev = applyEventForTeam(p);
       state._eventsToShow = remain - 1;
 
-      const after = computeDisplayPower(p);
-      const delta = after - before;
-
+      // ✅ %表示を削除：showEventへ powerBefore/powerAfter/delta を渡さない
       if (ev){
         state.ui.center3 = [ev.log1, ev.log2, ev.log3];
         setRequest('showEvent', {
-          icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3,
-          powerBefore: before,
-          powerAfter: after,
-          delta
+          icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3
         });
       }else{
         setRequest('showEvent', {
-          icon:'', log1:'イベント発生！', log2:'……', log3:'',
-          powerBefore: before,
-          powerAfter: before,
-          delta: 0
+          icon:'', log1:'イベント発生！', log2:'……', log3:''
         });
       }
       return;
@@ -986,7 +975,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     if (state.phase === 'tournament_result_shown'){
-      // ✅ 次のNEXTで「ナショナル出場決定 / 行けなかった」演出
       const place = getPlayerOverallPlacement();
       const qualified = (place <= 10);
 
