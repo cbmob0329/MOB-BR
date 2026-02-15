@@ -8,13 +8,17 @@
   - eventBuffs（aim/mental/agi の%加算）を勝率に反映
   - キル/アシスト（個人配分）を裏で集計（Assist ≤ Kill保証）
   - downs_total は内部のみ（タイブレーク用）※表示しない
-  - バトル後、eventBuffs は「その試合中のみ」なので両チーム分リセット
 
   ★修正（今回）：
   - 「交戦勝利 = 必ず3キル」を保証（勝って0キル問題を潰す）
   - 敗者のキルは 0〜2 を抽選（敗北側もキルが出る）
   - ✅ H2H（head-to-head）勝敗を ctx.state.h2h に保存（順位ロジックに使う）
   - ✅ power 未設定のPLAYERは、members stats から推定計算して 55固定化を回避
+  - ✅ eliminatedRound を敗者に付与（順位の逆転バグ対策の本丸）
+
+  ★重要：
+  - eventBuffs は「試合中に蓄積して効く」前提で、ここではリセットしない
+    （試合開始時：tournamentLogic.resetForNewMatch でリセット）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -80,10 +84,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const mem = Array.isArray(t?.members) ? t.members : [];
       if (!mem.length) return null;
 
-      // membersが stats を持つケース / 既に数値ステータスを持つケース両対応
       const vals = mem.slice(0,3).map(m=>{
         if (m?.stats) return calcCharBasePower(m.stats);
-        // もし member 自体に hp/aim... を持つ形式でも拾う
         return calcCharBasePower(m || {});
       }).filter(v=>Number.isFinite(v));
 
@@ -97,7 +99,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  function ensureTeamShape(t, ctx){
+  function ensureTeamShape(t){
     if (!t) return;
 
     // power
@@ -123,6 +125,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
 
+    // eliminatedRound
+    if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
+
     // eventBuffs
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
@@ -134,7 +139,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // members
     if (!Array.isArray(t.members)) t.members = [];
-    // members: [{role,name,kills,assists}, ...] 3人前提。無ければ作る（バグ回避）
     if (t.members.length < 3){
       const base = t.members.slice();
       const roles = ['IGL','ATTACKER','SUPPORT'];
@@ -195,7 +199,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // 勝率式（仕様の「差×1.8 / clamp(22..78)」に合わせる）
   function computeWinRateA(powerA, powerB){
     const diff = powerA - powerB;
-    let pct = 50 + diff * 1.8;           // 22..78 にクランプ
+    let pct = 50 + diff * 1.8;
     pct = clamp(pct, 22, 78);
     return pct / 100;
   }
@@ -228,7 +232,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     team.kills_total += 1;
 
     // 1キルにつき最大1アシスト（Assist ≤ Kill保証）
-    // なるべく別メンバーに付くようにする
     if (team.members.length >= 2){
       const assistChance = 0.70;
       if (Math.random() < assistChance){
@@ -245,8 +248,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function rollLoserKills(round, diff){
     const r = clamp(round, 1, 6);
 
-    // diffが大きいほど（勝者が強いほど）敗者キルが減る
-    // diff>0 で「勝者が上」なので敗者は不利
     const bias = clamp(diff / 40, -1, 1);
 
     const rl = Math.random();
@@ -266,20 +267,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     else if (rl < p0 + p1) lk = 1;
     else lk = 2;
 
-    // 終盤は少しだけ撃ち合いが伸びることがある（敗者キルが1上振れ）
     if (r >= 4 && Math.random() < 0.08){
       lk = clamp(lk + 1, 0, 2);
     }
 
     return lk;
-  }
-
-  function resetMatchBuffs(team){
-    if (window.MOBBR?.sim?.matchEvents?.resetTeamMatchState){
-      window.MOBBR.sim.matchEvents.resetTeamMatchState(team);
-      return;
-    }
-    team.eventBuffs = { aim:0, mental:0, agi:0 };
   }
 
   // ✅ H2H保存（state.h2h["WIN|LOSE"]=count）
@@ -294,8 +286,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function resolveBattle(teamA, teamB, round, ctx){
-    ensureTeamShape(teamA, ctx);
-    ensureTeamShape(teamB, ctx);
+    ensureTeamShape(teamA);
+    ensureTeamShape(teamB);
 
     if (!isAlive(teamA) || !isAlive(teamB)) return null;
 
@@ -308,7 +300,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const winner = aWin ? teamA : teamB;
     const loser  = aWin ? teamB : teamA;
 
-    // ====== downs_total（内部のみ。表示しない。バグりにくい最小構造）
+    // ====== downs_total（内部のみ）
     // 敗者は必ず全滅＝3ダウン扱い、勝者は0〜2の軽傷
     const r = clamp(round, 1, 6);
     let winDowns = 0;
@@ -325,25 +317,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ✅勝者は必ず3キル（仕様保証）
     for (let i=0;i<3;i++) addKill(winner);
 
-    // ✅敗者も0〜2キルを取り得る（撃ち合いのトレード表現）
+    // ✅敗者も0〜2キルを取り得る
     const diff = (aWin ? (pA - pB) : (pB - pA)); // 勝者−敗者 が正
     const loserKills = rollLoserKills(r, diff);
     for (let i=0;i<loserKills;i++) addKill(loser);
 
-    // ====== 結果：敗者は必ず全滅
+    // ====== 敗者は必ず全滅 + eliminatedRound 付与（順位の本丸）
     loser.alive = 0;
     loser.eliminated = true;
+    loser.eliminatedRound = (round|0);
 
-    // 勝者は生存維持（人数は減らさない：ラウンドの生存推移を絶対崩さない）
+    // 勝者は生存維持（人数は減らさない）
     winner.alive = clamp(winner.alive, 1, 3);
     winner.eliminated = false;
 
     // ✅ H2H保存（順位ロジック用）
     recordH2H(ctx, winner.id, loser.id);
-
-    // ====== バフは両チームリセット（試合中のみ）
-    resetMatchBuffs(teamA);
-    resetMatchBuffs(teamB);
 
     return {
       winnerId: winner.id,
