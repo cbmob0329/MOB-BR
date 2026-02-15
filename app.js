@@ -1,12 +1,12 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.7（フル：ローカル大会 1本 / 3分割対応）
-  - sim_tournament_flow.js は廃止
-  - sim_tournament_logic.js / sim_tournament_result.js / sim_tournament_core.js をロード
+  MOB BR - app.js v17.8（フル：ローカル大会 1本 / 3分割対応）
+  - 重要：全モジュールを APP_VER で統一してキャッシュ差分を確実に潰す
+  - 重要：読み込み確認ログを追加（どれが読めてない/古いか即判定）
 */
 
-const APP_VER = 17;
+const APP_VER = 18; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,8 +52,6 @@ function hardResetOverlays(){
     title.style.pointerEvents = 'none';
   }
 
-  // 大会UI（ui_tournament.js が DOM 自動生成するので、旧クラス参照は不要）
-  // 念のため overlay があれば閉じる
   const overlay = document.getElementById('mobbrTournamentOverlay');
   if (overlay){
     overlay.classList.remove('isOpen');
@@ -98,9 +96,15 @@ function loadScript(src){
   });
 }
 
+// ★読み込み状況を“必ず”見える化（原因切り分け用）
+function logLoaded(tag){
+  try{ console.log(`[LOADED] ${tag} (APP_VER=${APP_VER})`); }catch(e){}
+}
+
 async function loadModules(){
   const v = `?v=${APP_VER}`;
 
+  // ★ここが最重要：固定vを一切残さない（全部APP_VERで統一）
   const files = [
     // core
     `storage.js${v}`,
@@ -109,7 +113,7 @@ async function loadModules(){
     `data_cpu_teams.js${v}`,
 
     // UI
-    `ui_main.js?v=18`,
+    `ui_main.js${v}`,
     `ui_team.js${v}`,
     `ui_training.js${v}`,
     `ui_card.js${v}`,
@@ -123,16 +127,16 @@ async function loadModules(){
     `ui_schedule.js${v}`,
 
     // tournament core（依存順が重要）
-    `sim_match_events.js?v=2`,
-    `sim_match_flow.js?v=2`,
+    `sim_match_events.js${v}`,
+    `sim_match_flow.js${v}`,
 
-    // ✅ tournament 3分割（依存順：logic -> result -> core）
-    `sim_tournament_logic.js?v=3`,
-    `sim_tournament_result.js?v=3`,
-    `sim_tournament_core.js?v=3`,
+    // tournament 3分割（依存順：logic -> result -> core）
+    `sim_tournament_logic.js${v}`,
+    `sim_tournament_result.js${v}`,
+    `sim_tournament_core.js${v}`,
 
     // UI
-    `ui_tournament.js?v=3`
+    `ui_tournament.js${v}`,
   ];
 
   for (const f of files){
@@ -145,8 +149,37 @@ let modulesLoaded = false;
 async function bootAfterNext(){
   if (!modulesLoaded){
     setTitleHint('読み込み中...');
+    logLoaded('app.js boot start');
+
+    // ★ServiceWorkerが居ると古いJSを配ることがあるので存在だけログ出す
+    try{
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (regs && regs.length){
+          console.warn('[SW] serviceWorker registrations exist:', regs);
+        }
+      }
+    }catch(e){}
+
     await loadModules();
     modulesLoaded = true;
+
+    // ★分割側が読めてるかチェック（最低限）
+    try{
+      const ok = !!(window.MOBBR && window.MOBBR.sim &&
+        window.MOBBR.sim.tournamentFlow &&
+        window.MOBBR.sim.tournamentLogic &&
+        window.MOBBR.sim.tournamentResult &&
+        window.MOBBR.sim.matchFlow &&
+        window.MOBBR.sim.matchEvents);
+      console.log('[CHECK] sim modules ready =', ok, {
+        tournamentFlow: !!window.MOBBR?.sim?.tournamentFlow,
+        tournamentLogic: !!window.MOBBR?.sim?.tournamentLogic,
+        tournamentResult: !!window.MOBBR?.sim?.tournamentResult,
+        matchFlow: !!window.MOBBR?.sim?.matchFlow,
+        matchEvents: !!window.MOBBR?.sim?.matchEvents
+      });
+    }catch(e){}
   }
 
   if (window.MOBBR?.initStorage) window.MOBBR.initStorage();
@@ -162,6 +195,7 @@ async function bootAfterNext(){
 
   setTitleHint('');
   hardResetOverlays();
+  logLoaded('app.js boot done');
 }
 
 function bindGlobalEvents(){
@@ -173,6 +207,9 @@ function bindGlobalEvents(){
 document.addEventListener('DOMContentLoaded', () => {
   bindGlobalEvents();
   showTitle();
+
+  // ★起動確認（これが出ないなら app.js 自体が古い/読まれてない）
+  logLoaded('app.js DOMContentLoaded');
 
   const btn = $('btnTitleNext');
   if (btn){
