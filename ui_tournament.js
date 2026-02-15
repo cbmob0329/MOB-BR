@@ -6,6 +6,9 @@
   - ✅ イベント発生時の％表示を削除（バナー/ログへの%追記を一切しない）
   - 既存：右枠自動非表示、showArrival、showNationalNotice、endTournamentでUI閉じる、
           スタンプ残留潰し、resultホールド、showEncounter2段階、NEXTデバウンス等は維持
+
+  ✅ v3.6.5+ (patch)
+  - ✅ endNationalWeek を受け取って「UIを閉じる→週進行を外側へ通知」
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -498,6 +501,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
     if (t === 'endTournament'){
       return `endTournament`;
+    }
+
+    // ✅ 追加：ナショナル週終了
+    if (t === 'endNationalWeek'){
+      return `endNationalWeek|w:${String(req?.weeks ?? 1)}`;
     }
 
     return `${t}|m:${matchIndex}|r:${round}`;
@@ -1377,6 +1385,37 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ✅ 追加：ナショナル週終了（UI閉じる→外側へ通知）
+  async function handleEndNationalWeek(payload){
+    lockUI();
+    try{
+      // 大会UIは閉じる
+      close();
+    }finally{
+      unlockUI();
+    }
+
+    // 週進行は「外側（メイン）」がやる。ここは通知だけ。
+    try{
+      const weeks = Number(payload?.weeks ?? 1) || 1;
+
+      // もしメイン側に関数があるなら呼ぶ（あれば動く / 無ければイベントへ）
+      if (window.MOBBR?.ui?.main?.advanceWeeks && typeof window.MOBBR.ui.main.advanceWeeks === 'function'){
+        window.MOBBR.ui.main.advanceWeeks(weeks);
+        return;
+      }
+      if (window.MOBBR?.advanceWeeks && typeof window.MOBBR.advanceWeeks === 'function'){
+        window.MOBBR.advanceWeeks(weeks);
+        return;
+      }
+
+      // 汎用：イベント通知（メイン側で addEventListener できる）
+      window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
+    }catch(e){
+      console.error('[ui_tournament] endNationalWeek notify error:', e);
+    }
+  }
+
   async function handleNextMatch(payload){
     lockUI();
     try{
@@ -1478,7 +1517,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         case 'showTournamentResult': await handleShowTournamentResult(req); break;
 
         case 'showNationalNotice': await handleShowNationalNotice(req); break;
+
         case 'endTournament': await handleEndTournament(req); break;
+
+        // ✅ 追加：ナショナル週終了
+        case 'endNationalWeek': await handleEndNationalWeek(req); break;
 
         case 'nextMatch': await handleNextMatch(req); break;
 
