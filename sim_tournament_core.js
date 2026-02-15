@@ -11,6 +11,10 @@
   【修正（powerが55固定になる件）】
   - startLocalTournament() の player.power を NaN/undefined にならないように保険
   - ensureTeamRuntimeShape() で player.power が NaN/undefined の時だけ、calcPlayerTeamPower() で再計算して復旧
+
+  【今回の修正（順位矯正/逆転バグ関連）】
+  ✅ computeCtx() に ctx.state を渡す（match_flow が H2H を state.h2h に保存できるように）
+  ✅ 各試合開始ごとに state.h2h を必ずリセット（前試合のH2H汚染を防ぐ）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -56,6 +60,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.assists_total))) t.assists_total = 0;
     if (!Number.isFinite(Number(t.downs_total))) t.downs_total = 0;
 
+    // eliminatedRound は result 側が見る（ここでは shape だけ）
+    if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
+
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
     }
@@ -90,7 +97,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const coachFlags = window.MOBBR?.sim?.matchFlow?.getPlayerCoachFlags
       ? window.MOBBR.sim.matchFlow.getPlayerCoachFlags()
       : {};
-    return { player, playerCoach: coachFlags };
+    // ✅ ctx.state を渡す（H2H保存/順位矯正で必須）
+    return { state, player, playerCoach: coachFlags };
   }
 
   // ===== UI helper =====
@@ -123,6 +131,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function initMatchDrop(){
+    // ✅ 試合開始ごとに H2H をリセット（前試合の汚染を防ぐ）
+    state.h2h = {};
+
     L.resetForNewMatch(state);
     L.initDropPositions(state, getPlayer);
 
@@ -623,6 +634,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       alive: 3,
       eliminated: false,
+      eliminatedRound: 0,
       areaId: 1,
 
       kills_total: 0,
@@ -670,6 +682,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         alive: 3,
         eliminated: false,
+        eliminatedRound: 0,
         areaId: 1,
 
         kills_total: 0,
@@ -694,6 +707,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       teams,
       tournamentTotal: {},
+
+      // ✅ H2H（順位矯正用）…試合ごとに initMatchDrop でリセット
+      h2h: {},
 
       playerContestedAtDrop: false,
       _dropAssigned: null,
