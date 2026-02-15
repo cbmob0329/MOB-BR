@@ -1,13 +1,13 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.5（フル）
-  ✅ v3.6.4 からの追加修正：
-  - チャンピオン時：画像は出さないまま、右側enemy枠“ガワだけ”出る問題を解消（.char.rightごと非表示）
-  - 大会開始直後：チーム紹介の前に「大会会場へ到着！」演出を1回だけ差し込む（UI側で挿入、Flow改修不要）
-    * 背景以外は何も出さない
-    * 中央に枠付き大文字がズームイン
-    * NEXTでチーム紹介（showTeamList）へ
+  ui_tournament.js v3.6.4（フル）
+  ✅ v3.6.3 からの追加修正（今回の要望対応）
+  - ✅ チャンピオン演出で enemy枠が“枠だけ残る”問題：右キャラ枠を「画像も名前も空なら自動で非表示」
+  - ✅ 大会到着演出：showArrival を追加（背景以外何も無し＋中央ズーム文字）
+  - ✅ ローカル大会TOP10判定後の表示：showNationalNotice を追加（大きいバナー表示）
+  - ✅ endTournament を受けたら UI を閉じる（flow側でメニュー復帰/週進行を試行）
+  - 既存：スタンプ残留潰し、eventBuffs由来の戦闘力表示、resultホールド、showEncounter2段階、NEXTデバウンス等は維持
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -51,9 +51,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   let uiLockCount = 0;
   let rendering = false;
-
-  // ✅ 大会到着演出（チーム紹介前に1回だけ）
-  let didArrivalIntro = false;
 
   function getFlow(){
     return window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null;
@@ -150,6 +147,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const a = me.getAllEventIcons();
         if (Array.isArray(a)) list.push(...a);
       }
+      if (Array.isArray(me?.EVENTS)){
+        for (const ev of me.EVENTS){
+          if (ev?.icon) list.push(ev.icon);
+          if (ev?.iconPath) list.push(ev.iconPath);
+        }
+      }
       if (Array.isArray(me?._EVENTS)){
         for (const ev of me._EVENTS){
           if (ev?.icon) list.push(ev.icon);
@@ -223,11 +226,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           <img class="eventIcon" id="mobbrTourEventIcon" alt="event" />
 
           <div class="chars">
-            <div class="char left">
+            <div class="char left" id="mobbrTourCharL">
               <div class="name" id="mobbrTourNameL"></div>
               <img id="mobbrTourImgL" alt="player" />
             </div>
-            <div class="char right">
+            <div class="char right" id="mobbrTourCharR">
               <div class="name" id="mobbrTourNameR"></div>
               <img id="mobbrTourImgR" alt="enemy" />
             </div>
@@ -267,6 +270,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       bannerL: overlay.querySelector('#mobbrTourBannerL'),
       bannerR: overlay.querySelector('#mobbrTourBannerR'),
       eventIcon: overlay.querySelector('#mobbrTourEventIcon'),
+      charL: overlay.querySelector('#mobbrTourCharL'),
+      charR: overlay.querySelector('#mobbrTourCharR'),
       nameL: overlay.querySelector('#mobbrTourNameL'),
       nameR: overlay.querySelector('#mobbrTourNameR'),
       imgL: overlay.querySelector('#mobbrTourImgL'),
@@ -295,17 +300,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return dom;
   }
 
-  // ✅ enemy枠そのもの（ガワ）を表示/非表示
-  function setEnemySlotVisible(v){
+  // ✅ 右キャラ枠を「中身が空なら」自動で消す（枠だけ残る問題の決定打）
+  function syncEnemyVisibility(){
     ensureDom();
-    const rightBox = dom.imgR?.closest('.char.right');
-    if (rightBox){
-      rightBox.style.display = v ? '' : 'none';
-    }
-    if (!v){
-      dom.nameR.textContent = '';
-      dom.imgR.src = '';
-    }
+
+    const hasImg = !!(dom.imgR && dom.imgR.src && String(dom.imgR.src).trim());
+    const hasName = !!(dom.nameR && String(dom.nameR.textContent||'').trim());
+
+    const on = (hasImg || hasName);
+    dom.charR.style.display = on ? '' : 'none';
   }
 
   function setBattleMode(on){
@@ -317,10 +320,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showCenterStamp('');
       dom.nameR.textContent = '';
       dom.imgR.src = '';
+      syncEnemyVisibility();
     }
-
-    // 戦闘/通常は enemy枠を戻す
-    setEnemySlotVisible(true);
   }
 
   function setChampionMode(on){
@@ -345,9 +346,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setResultStampMode(false);
     showCenterStamp('');
     setEventIcon('');
+    hidePanels();
+    hideSplash();
 
-    // ✅ 到着演出は毎回大会openでリセット
-    didArrivalIntro = false;
+    // 初期は右枠を隠しておく
+    dom.nameR.textContent = '';
+    dom.imgR.src = '';
+    syncEnemyVisibility();
 
     preloadBasics();
     preloadEventIcons();
@@ -372,9 +377,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setEventIcon('');
     dom.nameR.textContent = '';
     dom.imgR.src = '';
-
-    // ✅ close時も戻す
-    setEnemySlotVisible(true);
+    syncEnemyVisibility();
   }
 
   function setBackdrop(src){
@@ -394,6 +397,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureDom();
     dom.nameL.textContent = String(l || '');
     dom.nameR.textContent = String(r || '');
+    syncEnemyVisibility();
   }
   function setLines(a, b, c){
     ensureDom();
@@ -451,48 +455,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.splash.classList.remove('isOn');
     dom.splash1.textContent = '';
     dom.splash2.textContent = '';
-    // 演出用のinlineを戻す
-    dom.splash.style.transition = '';
-    dom.splash.style.transform = '';
-    dom.splash.style.opacity = '';
-  }
-
-  // ✅ 中央ズームイン（枠付き大文字）演出：splashを拡大アニメに使う
-  async function showArrivalZoom(text){
-    ensureDom();
-
-    // 背景以外を消す
-    setEventIcon('');
-    showCenterStamp('');
-    hidePanels();
-    setLines('','','');
-    setNames('','');
-    setChars('', '');
-    setEnemySlotVisible(false); // 右枠も消す
-
-    // bannerは邪魔なら空（背景以外何もない状態）
-    setBanners('', '');
-
-    // squareBgも消して「背景だけ」にする
-    setSquareBg('');
-
-    showSplash(text, '');
-
-    // ズームイン
-    dom.splash.style.opacity = '0';
-    dom.splash.style.transform = 'scale(0.75)';
-    dom.splash.style.transition = 'transform 260ms ease, opacity 260ms ease';
-
-    // 2フレ待って確実に反映
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    dom.splash.style.opacity = '1';
-    dom.splash.style.transform = 'scale(1.0)';
   }
 
   function setChars(leftSrc, rightSrc){
     ensureDom();
     dom.imgL.src = leftSrc ? String(leftSrc) : '';
     dom.imgR.src = rightSrc ? String(rightSrc) : '';
+    syncEnemyVisibility();
   }
 
   function mkReqKey(req){
@@ -522,6 +491,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
     if (t === 'showTournamentResult'){
       return `showTournamentResult`;
+    }
+    if (t === 'showArrival'){
+      return `showArrival|m:${matchIndex}|r:${round}`;
+    }
+    if (t === 'showNationalNotice'){
+      return `showNationalNotice|q:${req?.qualified?1:0}|p:${String(req?.line2||'')}`;
+    }
+    if (t === 'endTournament'){
+      return `endTournament`;
     }
 
     return `${t}|m:${matchIndex}|r:${round}`;
@@ -598,6 +576,81 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       .replaceAll("'","&#39;");
   }
 
+  function clampNum(n, lo, hi){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return lo;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  function buffMultiplierFromEventBuffs(team){
+    const eb = (team && team.eventBuffs && typeof team.eventBuffs === 'object') ? team.eventBuffs : {};
+    const aim = clampNum(eb.aim ?? 0, -99, 99);
+    const mental = clampNum(eb.mental ?? 0, -99, 99);
+    const agi = clampNum(eb.agi ?? 0, -99, 99);
+
+    const mAim = 1 + (aim / 100);
+    const mMental = 1 + (mental / 120);
+    const mAgi = 1 + (agi / 140);
+
+    return clampNum(mAim * mMental * mAgi, 0.70, 1.35);
+  }
+
+  function getPlayerTeam(state){
+    const teams = Array.isArray(state?.teams) ? state.teams : [];
+    let t = teams.find(x=>!!x?.isPlayer);
+    if (!t) t = teams.find(x=>String(x?.id||'') === 'PLAYER');
+    if (!t) t = teams.find(x=>String(x?.name||'').toUpperCase().includes('PLAYER'));
+    return t || null;
+  }
+
+  function computeEventPowerLine(state, payload){
+    const pb0 = Number(payload?.powerBefore);
+    const pa0 = Number(payload?.powerAfter);
+    if (Number.isFinite(pb0) && Number.isFinite(pa0)){
+      const d = pa0 - pb0;
+      const sign = d >= 0 ? `(+${d}%)` : `(${d}%)`;
+      return { before: pb0, after: pa0, delta: d, line: `${pb0}%→${pa0}% ${sign}` };
+    }
+
+    const pt = getPlayerTeam(state);
+    if (!pt) return { before: null, after: null, delta: null, line: '' };
+
+    const base = clampNum(pt.power ?? 0, 0, 999);
+    const mult = buffMultiplierFromEventBuffs(pt);
+    const eff = Math.round(base * mult);
+
+    const d = eff - base;
+    const sign = d >= 0 ? `(+${d}%)` : `(${d}%)`;
+
+    return { before: base, after: eff, delta: d, line: `${base}%→${eff}% ${sign}` };
+  }
+
+  async function handleShowArrival(payload){
+    lockUI();
+    try{
+      setChampionMode(false);
+      setResultStampMode(false);
+      hidePanels();
+      setEventIcon('');
+      showCenterStamp('');
+      resetEncounterGate();
+      clearHold();
+      setBattleMode(false);
+
+      setBackdrop(TOURNEY_BACKDROP);
+      setSquareBg('');           // ✅ 背景以外何もない
+      setChars('', '');          // ✅ キャラ無し
+      setNames('', '');
+      hideSplash();
+
+      // ✅ 中央へズームインで枠付き文字：splash を使う（CSS側の演出に乗せる）
+      showSplash(payload?.line1 || '大会会場へ到着！', '');
+      setLines(payload?.line1 || '大会会場へ到着！', '', 'NEXTで進行');
+    }finally{
+      unlockUI();
+    }
+  }
+
   async function handleShowIntroText(){
     lockUI();
     try{
@@ -612,11 +665,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (!st) return;
 
       setBackdrop(TOURNEY_BACKDROP);
-      // introは従来通り（tentなど）
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
-
-      setEnemySlotVisible(true);
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
       setChars(leftResolved, '');
@@ -673,12 +723,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       setChampionMode(false);
       setResultStampMode(false);
-      hideSplash(); showCenterStamp(''); setEventIcon('');
+      hidePanels(); hideSplash(); showCenterStamp(''); setEventIcon('');
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -694,7 +742,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBanners(st.bannerLeft, st.bannerRight);
 
       const teams = Array.isArray(payload?.teams) ? payload.teams : (Array.isArray(st.teams) ? st.teams : []);
-      hidePanels();
       showPanel('参加チーム', buildTeamListTable(teams));
 
       setLines('本日のチームをご紹介！', '（NEXTで進行）', '');
@@ -712,8 +759,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -767,7 +812,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  async function handleShowDropStart(payload){
+  async function handleShowDropStart(){
     lockUI();
     try{
       setChampionMode(false);
@@ -776,8 +821,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -806,8 +849,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -838,8 +879,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      setEnemySlotVisible(true);
-
       const st = getState();
       if (!st) return;
 
@@ -866,8 +905,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      setEnemySlotVisible(true);
-
       const st = getState();
       setBackdrop(TOURNEY_BACKDROP);
 
@@ -876,17 +913,28 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
 
       preloadEventIcons();
-
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      const effect = String(payload?.effectText || '').trim();
-
-      const l1 = payload?.log1 || st?.ui?.center3?.[0] || 'イベント発生！';
-      const l2 = payload?.log2 || st?.ui?.center3?.[1] || '';
-      const l3 = effect || payload?.log3 || st?.ui?.center3?.[2] || '';
+      const p = computeEventPowerLine(st, payload);
+      const deltaLine = p.line ? `戦闘力 ${p.line}` : '';
 
       setBanners(st?.bannerLeft || '', st?.bannerRight || '');
-      setLines(l1, l2, l3);
+      if (deltaLine){
+        const curR = String(st?.bannerRight || '');
+        setBanners(st?.bannerLeft || '', `${curR}  ${p.before}%→${p.after}%`);
+      }
+
+      if (st?.ui?.center3){
+        const l1 = st.ui.center3[0] || 'イベント発生！';
+        const l2 = st.ui.center3[1] || '';
+        const l3 = deltaLine || (st.ui.center3[2] || '');
+        setLines(l1, l2, l3);
+      }else{
+        const l1 = payload?.log1 || 'イベント発生！';
+        const l2 = payload?.log2 || '';
+        const l3 = deltaLine || (payload?.log3 || '');
+        setLines(l1, l2, l3);
+      }
     }finally{
       unlockUI();
     }
@@ -899,7 +947,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setResultStampMode(false);
       setBattleMode(false);
       setBackdrop(TOURNEY_BACKDROP);
-      setEnemySlotVisible(true);
     }finally{
       unlockUI();
     }
@@ -920,8 +967,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       hideSplash();
 
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       const st = getState();
       if (!st) return;
@@ -1007,8 +1052,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       hidePanels(); hideSplash(); setEventIcon('');
       clearHold();
 
-      setEnemySlotVisible(true);
-
       const st = getState();
       if (!st) return;
 
@@ -1073,8 +1116,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
 
-      setEnemySlotVisible(true);
-
       const st = getState();
       if (!st) return;
 
@@ -1108,6 +1149,29 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  function findChampionTeam(state, payload){
+    const teams = Array.isArray(state?.teams) ? state.teams : [];
+    const name = String(payload?.championName || payload?.line2 || '').trim();
+
+    let t = null;
+
+    if (payload?.championTeamId){
+      const id = String(payload.championTeamId);
+      t = teams.find(x=>String(x?.id||'') === id) || null;
+      if (t) return t;
+    }
+
+    if (name){
+      t = teams.find(x=>String(x?.name||'') === name) || null;
+      if (t) return t;
+
+      t = teams.find(x=>String(x?.name||'').includes(name)) || null;
+      if (t) return t;
+    }
+
+    return null;
+  }
+
   async function handleShowChampion(payload){
     lockUI();
     try{
@@ -1125,15 +1189,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const st = getState();
 
-      // ✅ 右側enemy枠（ガワ含む）を消す：これで“枠だけ”問題が消える
-      setEnemySlotVisible(false);
-
-      // 左だけ表示（プレイヤー）
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st?.ui?.leftImg || 'P1.png'));
-      setChars(leftResolved, '');
-      setNames('', '');
 
-      const champName = String(payload?.championName || payload?.line2 || '').trim();
+      const champTeam = findChampionTeam(st, payload);
+      const champName = String(payload?.championName || champTeam?.name || payload?.line2 || '').trim();
+
+      let champImg = '';
+      if (champTeam?.id){
+        champImg = await resolveFirstExisting(
+          guessTeamImageCandidates(champTeam.id).concat(guessPlayerImageCandidates(champTeam?.img || ''))
+        );
+      }
+
+      // ✅ チャンピオン時は “敵枠が残らない” ように、右が空なら自動で消える
+      setChars(leftResolved, champImg || '');
+      setNames('', champName || '');
 
       setLines(
         payload?.line1 || 'この試合のチャンピオンは…',
@@ -1154,8 +1224,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       setHold('showMatchResult');
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
@@ -1221,8 +1289,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setHold('showTournamentResult');
       setBattleMode(false);
 
-      setEnemySlotVisible(true);
-
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
@@ -1280,7 +1346,42 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       wrap.appendChild(table);
       showPanel('TOURNAMENT RESULT', wrap);
 
-      setLines('大会結果', 'お疲れ様！', '');
+      setLines('大会結果', '（NEXTで進行）', '');
+    }finally{
+      unlockUI();
+    }
+  }
+
+  async function handleShowNationalNotice(payload){
+    lockUI();
+    try{
+      setChampionMode(false);
+      setResultStampMode(false);
+      hidePanels(); setEventIcon('');
+      resetEncounterGate();
+      clearHold();
+      setBattleMode(false);
+
+      setBackdrop(TOURNEY_BACKDROP);
+      setSquareBg('');      // 背景だけ
+
+      // キャラ無しで大きく
+      setChars('', '');
+      setNames('', '');
+      showCenterStamp('');
+      showSplash(payload?.line1 || '', payload?.line2 || '');
+
+      setLines(payload?.line1 || '', payload?.line2 || '', payload?.line3 || 'NEXTで進行');
+    }finally{
+      unlockUI();
+    }
+  }
+
+  async function handleEndTournament(){
+    lockUI();
+    try{
+      // UIだけ閉じる（週進行/メニュー復帰はflow側でやる）
+      close();
     }finally{
       unlockUI();
     }
@@ -1295,8 +1396,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      setEnemySlotVisible(true);
 
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
@@ -1331,31 +1430,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // ✅ チーム紹介(showTeamList)が来たら、最初の1回だけ到着演出に差し替える（NEXTで本来のshowTeamListへ）
-      if (req?.type === 'showTeamList' && !didArrivalIntro){
-        didArrivalIntro = true;
-
-        // キーは固定で進行を止める
-        lastReqKey = 'LOCAL_INTRO_ARRIVAL';
-        clearAutoTimer();
-        clearLocalNext();
-
-        // 到着演出
-        setBackdrop(TOURNEY_BACKDROP);
-        await showArrivalZoom('大会会場へ到着！');
-
-        // NEXTで本来のshowTeamListを描画させる
-        localNextAction = ()=>{
-          // 演出を消して通常描画へ
-          hideSplash();
-          setEnemySlotVisible(true);
-          lastReqKey = ''; // 同じreqでも再描画させる
-          render();
-        };
-
-        return;
-      }
-
       const key = mkReqKey(req);
       if (key === lastReqKey) return;
       lastReqKey = key;
@@ -1372,7 +1446,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (encounterGatePhase === 0) setBattleMode(false);
         setChampionMode(false);
         setResultStampMode(false);
-        setEnemySlotVisible(true);
         return;
       }
 
@@ -1391,6 +1464,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
 
       switch(req.type){
+        case 'showArrival': await handleShowArrival(req); break;
+
         case 'showIntroText': await handleShowIntroText(); break;
         case 'showTeamList': await handleShowTeamList(req); break;
         case 'showCoachSelect': await handleShowCoachSelect(req); break;
@@ -1412,6 +1487,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         case 'showMatchResult': await handleShowMatchResult(req); break;
         case 'showTournamentResult': await handleShowTournamentResult(req); break;
 
+        case 'showNationalNotice': await handleShowNationalNotice(req); break;
+        case 'endTournament': await handleEndTournament(req); break;
+
         case 'nextMatch': await handleNextMatch(req); break;
 
         case 'noop':
@@ -1425,7 +1503,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChampionMode(false);
       setResultStampMode(false);
       if (encounterGatePhase === 0) setBattleMode(false);
-      setEnemySlotVisible(true);
     }finally{
       rendering = false;
       unlockUI();
