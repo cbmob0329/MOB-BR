@@ -1,9 +1,13 @@
 'use strict';
 
 /*
-  MOB BR - app.js v17.8（フル：ローカル大会 1本 / 3分割対応）
+  MOB BR - app.js v18.0（フル：ローカル大会 1本 / 3分割対応 + post対応）
   - 重要：全モジュールを APP_VER で統一してキャッシュ差分を確実に潰す
   - 重要：読み込み確認ログを追加（どれが読めてない/古いか即判定）
+
+  v18.0 追加：
+  - sim_tournament_core_post.js をロード（ローカル大会終了後：週進行→メイン復帰）
+  - mobbr:advanceWeek / mobbr:goMain を app.js 側で受けて実処理する
 */
 
 const APP_VER = 18; // ★ここを上げる（キャッシュ強制更新の核）
@@ -135,6 +139,9 @@ async function loadModules(){
     `sim_tournament_result.js${v}`,
     `sim_tournament_core.js${v}`,
 
+    // ★ローカル大会終了後処理（週進行→メイン復帰 / TOP10でナショナル権）
+    `sim_tournament_core_post.js${v}`,
+
     // UI
     `ui_tournament.js${v}`,
   ];
@@ -177,7 +184,8 @@ async function bootAfterNext(){
         tournamentLogic: !!window.MOBBR?.sim?.tournamentLogic,
         tournamentResult: !!window.MOBBR?.sim?.tournamentResult,
         matchFlow: !!window.MOBBR?.sim?.matchFlow,
-        matchEvents: !!window.MOBBR?.sim?.matchEvents
+        matchEvents: !!window.MOBBR?.sim?.matchEvents,
+        tournamentCorePost: !!window.MOBBR?.sim?.tournamentCorePost
       });
     }catch(e){}
   }
@@ -198,9 +206,108 @@ async function bootAfterNext(){
   logLoaded('app.js boot done');
 }
 
+// ==========================================
+// 大会post用：週進行＆メイン復帰イベント受け
+// ==========================================
+
+// storage keys（ui_main.js と同じ）
+const KLS = {
+  year:'mobbr_year',
+  month:'mobbr_month',
+  week:'mobbr_week',
+  gold:'mobbr_gold',
+  rank:'mobbr_rank',
+  recent:'mobbr_recent'
+};
+
+function weeklyGoldByRank(rank){
+  if (rank >= 1 && rank <= 5) return 500;
+  if (rank >= 6 && rank <= 10) return 800;
+  if (rank >= 11 && rank <= 20) return 1000;
+  if (rank >= 21 && rank <= 30) return 2000;
+  return 3000;
+}
+
+function getNumLS(key, def){
+  const v = Number(localStorage.getItem(key));
+  return Number.isFinite(v) ? v : def;
+}
+function setNumLS(key, val){ localStorage.setItem(key, String(Number(val))); }
+function setStrLS(key, val){ localStorage.setItem(key, String(val)); }
+
+function advanceWeekBy(weeks){
+  const add = Math.max(1, Number(weeks || 1));
+  let y = getNumLS(KLS.year, 1989);
+  let m = getNumLS(KLS.month, 1);
+  let w = getNumLS(KLS.week, 1);
+
+  for (let i=0;i<add;i++){
+    w += 1;
+    if (w >= 5){
+      w = 1;
+      m += 1;
+      if (m >= 13){
+        m = 1;
+        y += 1;
+      }
+    }
+  }
+
+  const rank = getNumLS(KLS.rank, 10);
+  const gain = weeklyGoldByRank(rank);
+  const gold = getNumLS(KLS.gold, 0);
+
+  setNumLS(KLS.year, y);
+  setNumLS(KLS.month, m);
+  setNumLS(KLS.week, w);
+  setNumLS(KLS.gold, gold + gain);
+  setStrLS(KLS.recent, `週が進んだ（+${gain}G）`);
+}
+
+function closeTournamentOverlayHard(){
+  // 大会UIがcloseを持つなら優先
+  try{
+    if (window.MOBBR?.ui?.tournament?.close){
+      window.MOBBR.ui.tournament.close();
+      return;
+    }
+  }catch(e){}
+
+  // フォールバック：DOM直落とし
+  const overlay = document.getElementById('mobbrTournamentOverlay');
+  if (overlay){
+    overlay.classList.remove('isOpen');
+    overlay.style.display = 'none';
+  }
+}
+
 function bindGlobalEvents(){
   window.addEventListener('mobbr:goTitle', () => {
     showTitle();
+  });
+
+  // ★大会post：週進行
+  window.addEventListener('mobbr:advanceWeek', (e) => {
+    try{
+      const weeks = e?.detail?.weeks || 1;
+      advanceWeekBy(weeks);
+    }catch(err){
+      console.error(err);
+    }
+  });
+
+  // ★大会post：メイン復帰
+  window.addEventListener('mobbr:goMain', (e) => {
+    try{
+      showMain();
+      hardResetOverlays();
+      closeTournamentOverlayHard();
+
+      // メインUI再描画（initMainUIは二重bind防止が入ってる前提）
+      if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
+    }catch(err){
+      console.error(err);
+    }
   });
 }
 
