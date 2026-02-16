@@ -3,6 +3,7 @@
    - 進行（state/step/公開API）を担当
    - National専用は tournamentCoreNational を使う（無ければ内蔵フォールバック）
    - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ（Local完走時）
+     ※「総合RESULT表示 → 次のNEXTで post実行（1週進行+メイン復帰）」にしている
    ========================================================= */
 'use strict';
 
@@ -432,6 +433,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const p = getPlayer();
 
+    // ✅ 総合RESULTを見せたあと、次のNEXTでローカル終了処理 → メインへ
+    if (state.phase === 'local_total_result_wait_post'){
+      try{
+        if (P?.onLocalTournamentFinished){
+          P.onLocalTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLocalTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLocalTournamentFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onLocalTournamentFinished error:', e);
+      }
+      state.phase = 'done';
+      setRequest('noop', {});
+      return;
+    }
+
     if (state.phase === 'done'){
       setRequest('noop', {});
       return;
@@ -810,22 +827,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ===== match result done =====
     if (state.phase === 'match_result_done'){
 
-      // LOCAL（従来通り）
+      // LOCAL
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
 
-          // ✅ 大会終了後の追加処理（存在すれば呼ぶ）
-          // - ここでは「結果表示へ進む直前」に呼ぶ（state/tournamentTotalを渡す）
-          try{
-            if (window.MOBBR?.sim?.tournamentCorePost?.onLocalTournamentFinished){
-              window.MOBBR.sim.tournamentCorePost.onLocalTournamentFinished(state, state.tournamentTotal);
-            }
-          }catch(e){
-            console.error('[tournament_core] onLocalTournamentFinished error:', e);
-          }
-
+          // ✅ まず総合RESULTを表示
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'done';
+
+          // ✅ 次のNEXTで post を実行してメインへ戻す
+          state.phase = 'local_total_result_wait_post';
           return;
         }
 
