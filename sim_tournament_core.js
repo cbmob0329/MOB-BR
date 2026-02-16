@@ -1,10 +1,11 @@
 /* =========================================================
-   sim_tournament_core.js（FULL / split版）
+   sim_tournament_core.js（FULL / split版・改修）
    - 進行（state/step/公開API）を担当
    - National専用は tournamentCoreNational を使う（無ければ内蔵フォールバック）
    - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ
      ✅ Local: 「総合RESULT表示 → 次のNEXTで post実行 → UI閉じる」
      ✅ National: 「総合RESULT表示 → 次のNEXTで post実行（あれば） → 無ければ endNationalWeek 通知」
+   - ✅重要：player power（メイン画面の%）を必ず反映（55固定化バグ潰し）
    ========================================================= */
 'use strict';
 
@@ -16,8 +17,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   const L = window.MOBBR.sim.tournamentLogic;
   const R = window.MOBBR.sim.tournamentResult;
 
+  // Optional modules
   const N = window.MOBBR?.sim?.tournamentCoreNational || null;
   const P = window.MOBBR?.sim?.tournamentCorePost || null;
+
+  if (!L || !R){
+    console.warn('[sim_tournament_core] tournamentLogic / tournamentResult not found');
+  }
 
   // ===== State =====
   let state = null;
@@ -31,17 +37,30 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return (state?.teams || []).filter(t => !t.eliminated);
   }
 
+  // ===== player power（メイン画面%）を「今の値」で復元する =====
+  function calcPlayerPowerNow(){
+    try{
+      if (L && typeof L.calcPlayerTeamPower === 'function'){
+        const v = Number(L.calcPlayerTeamPower());
+        if (Number.isFinite(v) && v > 0) return v;
+      }
+    }catch(e){}
+    return 55;
+  }
+
+  // ===== runtime shape =====
   function ensureTeamRuntimeShape(t){
     if (!t) return;
+
     if (!Number.isFinite(Number(t.alive))) t.alive = 3;
 
-    // ✅ power が NaN/undefined なら復旧（playerだけは calcPlayerTeamPower で復元）
+    // ✅ power 復旧（player は必ずメイン%へ）
     if (!Number.isFinite(Number(t.power))){
-      if (t.isPlayer && L && typeof L.calcPlayerTeamPower === 'function'){
-        const v = Number(L.calcPlayerTeamPower());
-        t.power = Number.isFinite(v) ? v : 55;
-      }else{
-        t.power = 55;
+      t.power = t.isPlayer ? calcPlayerPowerNow() : 55;
+    }else{
+      // ✅ playerは「常に最新%」へ寄せる（55固定化/古い値を引きずるのを防止）
+      if (t.isPlayer){
+        t.power = calcPlayerPowerNow();
       }
     }
 
@@ -58,6 +77,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
+    }else{
+      if (!Number.isFinite(Number(t.eventBuffs.aim))) t.eventBuffs.aim = 0;
+      if (!Number.isFinite(Number(t.eventBuffs.mental))) t.eventBuffs.mental = 0;
+      if (!Number.isFinite(Number(t.eventBuffs.agi))) t.eventBuffs.agi = 0;
     }
 
     if (!Array.isArray(t.members)) t.members = [];
@@ -81,7 +104,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         if (!Number.isFinite(Number(m.kills))) m.kills = 0;
         if (!Number.isFinite(Number(m.assists))) m.assists = 0;
       }
+      if (t.members.length > 3) t.members.length = 3;
     }
+  }
+
+  function ensureAllTeams(){
+    if (!state || !Array.isArray(state.teams)) return;
+    for (const t of state.teams) ensureTeamRuntimeShape(t);
   }
 
   function computeCtx(){
@@ -94,19 +123,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== UI helper =====
   function setRequest(type, payload){
+    if (!state) return;
     state.request = { type, ...(payload||{}) };
   }
 
   function setCenter3(a,b,c){
+    if (!state) return;
     state.ui.center3 = [String(a||''), String(b||''), String(c||'')];
   }
 
   // ===== public methods for UI to call =====
-  function getCoachMaster(){ return L.COACH_MASTER; }
-  function getEquippedCoachList(){ return L.getEquippedCoachSkills(); }
+  function getCoachMaster(){ return L?.COACH_MASTER || {}; }
+  function getEquippedCoachList(){
+    if (L && typeof L.getEquippedCoachSkills === 'function') return L.getEquippedCoachSkills();
+    return [];
+  }
   function setCoachSkill(skillId){
+    if (!state) return;
     const id = String(skillId||'');
-    if (!id || !L.COACH_MASTER[id]){
+    if (!id || !L?.COACH_MASTER?.[id]){
       state.selectedCoachSkill = null;
       state.selectedCoachQuote = '';
       return;
@@ -114,18 +149,29 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.selectedCoachSkill = id;
     state.selectedCoachQuote = L.COACH_MASTER[id].quote || '';
   }
-  function getPlayerSkin(){ return L.getEquippedSkin(); }
-  function getAreaInfo(areaId){ return L.getAreaInfo(areaId); }
+  function getPlayerSkin(){
+    if (L && typeof L.getEquippedSkin === 'function') return L.getEquippedSkin();
+    return 'P1.png';
+  }
+  function getAreaInfo(areaId){
+    if (L && typeof L.getAreaInfo === 'function') return L.getAreaInfo(areaId);
+    return { id: areaId, name: `AREA ${areaId}`, img: 'maps/neonmain.png' };
+  }
 
   function applyEventForTeam(team){
+    if (!L || typeof L.applyEventForTeam !== 'function') return null;
     return L.applyEventForTeam(state, team, computeCtx);
   }
 
   function initMatchDrop(){
+    if (!state) return;
+
     state.h2h = {};
 
-    L.resetForNewMatch(state);
-    L.initDropPositions(state, getPlayer);
+    if (L && typeof L.resetForNewMatch === 'function') L.resetForNewMatch(state);
+    if (L && typeof L.initDropPositions === 'function') L.initDropPositions(state, getPlayer);
+
+    ensureAllTeams();
 
     const p = getPlayer();
     if (p){
@@ -136,6 +182,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== core sim =====
   function simulateRound(round){
+    if (!state || !L) return null;
+
+    ensureAllTeams();
+
     const ctx = computeCtx();
     const matches = L.buildMatchesForRound(state, round, getPlayer, aliveTeams);
 
@@ -148,22 +198,23 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       ensureTeamRuntimeShape(A);
       ensureTeamRuntimeShape(B);
 
-      const mult = L.coachMultForRound(state, round);
+      const mult = (L && typeof L.coachMultForRound === 'function') ? L.coachMultForRound(state, round) : 1;
       let aBackup = null, bBackup = null;
 
       if (A.isPlayer){
         aBackup = A.power;
-        A.power = L.clamp(A.power * mult, 1, 100);
+        A.power = (L && typeof L.clamp === 'function') ? L.clamp(A.power * mult, 1, 100) : Math.max(1, Math.min(100, A.power * mult));
       }
       if (B.isPlayer){
         bBackup = B.power;
-        B.power = L.clamp(B.power * mult, 1, 100);
+        B.power = (L && typeof L.clamp === 'function') ? L.clamp(B.power * mult, 1, 100) : Math.max(1, Math.min(100, B.power * mult));
       }
 
       const res = window.MOBBR?.sim?.matchFlow?.resolveBattle
         ? window.MOBBR.sim.matchFlow.resolveBattle(A, B, round, ctx)
         : null;
 
+      // 復旧
       if (A.isPlayer && aBackup !== null) A.power = aBackup;
       if (B.isPlayer && bBackup !== null) B.power = bBackup;
 
@@ -179,8 +230,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }
 
-    if (round <= 5) L.moveAllTeamsToNextRound(state, round);
-    else{
+    if (round <= 5){
+      if (L && typeof L.moveAllTeamsToNextRound === 'function') L.moveAllTeamsToNextRound(state, round);
+    }else{
       for(const t of state.teams){
         if (!t.eliminated) t.areaId = 25;
       }
@@ -190,6 +242,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function fastForwardToMatchEnd(){
+    if (!state || !L) return;
+
+    ensureAllTeams();
+
     while(state.round <= 6){
       const r = state.round;
 
@@ -203,24 +259,76 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const ctx = computeCtx();
 
       for(const [A,B] of matches){
+        ensureTeamRuntimeShape(A);
+        ensureTeamRuntimeShape(B);
         if (window.MOBBR?.sim?.matchFlow?.resolveBattle){
           window.MOBBR.sim.matchFlow.resolveBattle(A, B, r, ctx);
         }
       }
 
-      if (r <= 5) L.moveAllTeamsToNextRound(state, r);
+      if (r <= 5 && typeof L.moveAllTeamsToNextRound === 'function') L.moveAllTeamsToNextRound(state, r);
       state.round++;
     }
     state.round = 7;
   }
 
+  // ===== result shape adapter（Apex風表示に必要なキーを揃える）=====
+  function normalizeMatchRows(rows){
+    const out = Array.isArray(rows) ? rows : [];
+    for (const r of out){
+      // 期待：placementP / killP / assistP / treasureP / flagP / totalP
+      // 互換：killsP 等が来ても拾う
+      if (!Number.isFinite(Number(r.placementP))) r.placementP = Number(r.placeP ?? r.placement ?? 0) || 0;
+      if (!Number.isFinite(Number(r.killP)))      r.killP      = Number(r.kp ?? r.killsP ?? r.kill ?? 0) || 0;
+      if (!Number.isFinite(Number(r.assistP)))    r.assistP    = Number(r.ap ?? r.assistsP ?? r.assist ?? 0) || 0;
+      if (!Number.isFinite(Number(r.treasureP)))  r.treasureP  = Number(r.tp ?? r.treasure ?? 0) || 0;
+      if (!Number.isFinite(Number(r.flagP)))      r.flagP      = Number(r.fp ?? r.flag ?? 0) || 0;
+
+      // totalP は計算で保証
+      const tot = Number(r.totalP);
+      if (!Number.isFinite(tot)){
+        r.totalP = (r.placementP||0) + (r.killP||0) + (r.assistP||0) + (r.treasureP||0) + (r.flagP||0);
+      }
+    }
+    return out;
+  }
+
+  function normalizeTournamentTotal(total){
+    // total は tournamentResult が作る前提だが、表示に必要な sum* を確実にする
+    if (!total || typeof total !== 'object') return total;
+
+    for (const id of Object.keys(total)){
+      const t = total[id] || (total[id] = {});
+      if (!Number.isFinite(Number(t.sumPlacementP))) t.sumPlacementP = Number(t.sumPlaceP ?? 0) || 0;
+      if (!Number.isFinite(Number(t.sumKillP)))      t.sumKillP      = Number(t.sumKP ?? t.sumKillsP ?? 0) || 0;
+      if (!Number.isFinite(Number(t.sumAssistP)))    t.sumAssistP    = Number(t.sumAP ?? t.sumAssistsP ?? 0) || 0;
+      if (!Number.isFinite(Number(t.sumTreasureP)))  t.sumTreasureP  = Number(t.sumTP ?? 0) || 0;
+      if (!Number.isFinite(Number(t.sumFlagP)))      t.sumFlagP      = Number(t.sumFP ?? 0) || 0;
+
+      const tot = Number(t.sumTotal);
+      if (!Number.isFinite(tot)){
+        t.sumTotal = (t.sumPlacementP||0)+(t.sumKillP||0)+(t.sumAssistP||0)+(t.sumTreasureP||0)+(t.sumFlagP||0);
+      }
+    }
+    return total;
+  }
+
   function finishMatchAndBuildResult(){
-    const rows = R.computeMatchResultTable(state);
-    R.addToTournamentTotal(state, rows);
+    if (!state || !R) return;
+
+    ensureAllTeams();
+
+    const rowsRaw = (typeof R.computeMatchResultTable === 'function') ? R.computeMatchResultTable(state) : [];
+    const rows = normalizeMatchRows(rowsRaw);
+
+    if (typeof R.addToTournamentTotal === 'function') R.addToTournamentTotal(state, rows);
+    normalizeTournamentTotal(state.tournamentTotal);
+
     state.lastMatchResultRows = rows;
   }
 
   function startNextMatch(){
+    if (!state) return;
     state.matchIndex += 1;
     state.round = 1;
     state.selectedCoachSkill = null;
@@ -246,6 +354,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function resolveOneBattle(A, B, round){
+    if (!L || typeof L.resolveOneBattle !== 'function') return null;
+    ensureTeamRuntimeShape(A);
+    ensureTeamRuntimeShape(B);
     return L.resolveOneBattle(state, A, B, round, ensureTeamRuntimeShape, computeCtx);
   }
 
@@ -260,7 +371,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _getCpuTeamsByPrefix(prefix){
     if (N?.getCpuTeamsByPrefix) return N.getCpuTeamsByPrefix(prefix);
 
-    // フォールバック（従来と同等）
     try{
       const d = window.DataCPU;
       if (!d) return [];
@@ -298,11 +408,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       });
     }
 
+    const pow = (L && typeof L.rollCpuTeamPowerFromMembers === 'function')
+      ? L.rollCpuTeamPowerFromMembers(c)
+      : 55;
+
     return {
       id,
       name: nm,
       isPlayer: false,
-      power: L.rollCpuTeamPowerFromMembers(c),
+      power: Number.isFinite(Number(pow)) ? Number(pow) : 55,
 
       alive: 3,
       eliminated: false,
@@ -324,7 +438,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _buildNationalPlan(cpu39){
     if (N?.buildNationalPlan) return N.buildNationalPlan(cpu39);
 
-    const ids = L.shuffle((cpu39||[]).map(t=>String(t.teamId||t.id||'')).filter(Boolean));
+    const ids = (L && typeof L.shuffle === 'function')
+      ? L.shuffle((cpu39||[]).map(t=>String(t.teamId||t.id||'')).filter(Boolean))
+      : (cpu39||[]).map(t=>String(t.teamId||t.id||'')).filter(Boolean);
+
     const A = ids.slice(0, 9);
     const B = ids.slice(9, 19);
     const C = ids.slice(19, 29);
@@ -344,12 +461,21 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _makePlayerRuntime(){
     if (N?.makePlayerRuntime) return N.makePlayerRuntime();
 
-    const pPowRaw = (L && typeof L.calcPlayerTeamPower === 'function') ? Number(L.calcPlayerTeamPower()) : NaN;
-    const pPow = Number.isFinite(pPowRaw) ? pPowRaw : 55;
+    const pPow = calcPlayerPowerNow();
+
+    // 名前は tournamentLogic側キー優先（無ければ既存ローカル）
+    let nm = 'PLAYER TEAM';
+    try{
+      if (L?.K?.teamName){
+        nm = localStorage.getItem(L.K.teamName) || nm;
+      }else{
+        nm = localStorage.getItem('mobbr_team') || nm;
+      }
+    }catch(e){}
 
     return {
       id: 'PLAYER',
-      name: localStorage.getItem(L.K.teamName) || 'PLAYER TEAM',
+      name: nm,
       isPlayer: true,
 
       power: pPow,
@@ -415,6 +541,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function _setNationalBanners(){
+    if (!state) return;
     if (N?.setNationalBanners) return N.setNationalBanners(state);
 
     const s = state.national || {};
@@ -431,6 +558,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // =========================================================
   function step(){
     if (!state) return;
+
+    // player power を常に復元してから進行
+    ensureAllTeams();
 
     const p = getPlayer();
 
@@ -469,10 +599,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.phase = 'done';
 
       if (handled){
-        // post側で週進行/メイン復帰が完結している前提。UIだけ閉じる。
         setRequest('endTournament', {});
       }else{
-        // postが無い場合は UIに任せて「閉じる→外側へ週進行通知」
         setRequest('endNationalWeek', { weeks: 1 });
       }
       return;
@@ -507,7 +635,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const key = String(s.sessions?.[si]?.key || `S${si+1}`);
         setCenter3('ナショナルリーグ開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
       }else{
-        setCenter3('本日のチームをご紹介！', '', '');
+        setCenter3('ローカル大会開幕！', '本日のチームをご紹介！', '');
       }
 
       setRequest('showIntroText', {});
@@ -530,7 +658,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       setCenter3('それでは試合を開始します！', '使用するコーチスキルを選択してください！', '');
       setRequest('showCoachSelect', {
         equipped: getEquippedCoachList(),
-        master: L.COACH_MASTER
+        master: L?.COACH_MASTER || {}
       });
       state.phase = 'coach_done';
       return;
@@ -601,7 +729,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       setRequest('showRoundStart', { round: r });
 
       state.phase = 'round_events';
-      state._eventsToShow = L.eventCount(r);
+      state._eventsToShow = (L && typeof L.eventCount === 'function') ? L.eventCount(r) : 1;
       return;
     }
 
@@ -609,7 +737,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'round_events'){
       const r = state.round;
 
-      if (L.eventCount(r) === 0){
+      const cnt = (L && typeof L.eventCount === 'function') ? L.eventCount(r) : 0;
+      if (cnt === 0){
         state.phase = 'round_battles';
         return step();
       }
@@ -646,11 +775,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'round_battles'){
       const r = state.round;
 
-      const matches = L.buildMatchesForRound(state, r, getPlayer, aliveTeams);
+      const matches = (L && typeof L.buildMatchesForRound === 'function')
+        ? L.buildMatchesForRound(state, r, getPlayer, aliveTeams)
+        : [];
+
       state._roundMatches = matches.map(([A,B])=>({ aId:A.id, bId:B.id }));
       state._matchCursor = 0;
 
-      setRequest('prepareBattles', { round: r, slots: L.battleSlots(r), matches: state._roundMatches });
+      const slots = (L && typeof L.battleSlots === 'function') ? L.battleSlots(r) : [];
+      setRequest('prepareBattles', { round: r, slots, matches: state._roundMatches });
+
       state.phase = 'battle_one';
       return;
     }
@@ -677,6 +811,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
           const me = A.isPlayer ? A : B;
           const foe = A.isPlayer ? B : A;
+
+          // powerをここでも最新へ
+          ensureTeamRuntimeShape(me);
+          ensureTeamRuntimeShape(foe);
 
           state.ui.leftImg = getPlayerSkin();
           state.ui.rightImg = `${foe.id}.png`;
@@ -738,6 +876,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const me = A.isPlayer ? A : B;
       const foe = A.isPlayer ? B : A;
 
+      ensureTeamRuntimeShape(me);
+      ensureTeamRuntimeShape(foe);
+
       const res = resolveOneBattle(A, B, r);
       const iWon = res ? (res.winnerId === me.id) : false;
 
@@ -759,7 +900,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (!iWon && me.eliminated){
         fastForwardToMatchEnd();
-        const championName = R.getChampionName(state);
+        const championName = (R && typeof R.getChampionName === 'function') ? R.getChampionName(state) : '???';
         state._afterBattleGo = { type:'champion', championName };
         state.phase = 'battle_after';
         return;
@@ -781,7 +922,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         state.ui.topLeftName = '';
         state.ui.topRightName = '';
 
-        setCenter3(`この試合のチャンピオンは`, String(go.championName || '???'), '‼︎');
+        setCenter3('この試合のチャンピオンは', String(go.championName || '???'), '‼︎');
         setRequest('showChampion', {
           matchIndex: state.matchIndex,
           championName: String(go.championName || '')
@@ -804,7 +945,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const p3 = getPlayer();
       const before = p3 ? getAreaInfo(p3.areaId) : null;
 
-      L.moveAllTeamsToNextRound(state, r);
+      if (L && typeof L.moveAllTeamsToNextRound === 'function') L.moveAllTeamsToNextRound(state, r);
 
       const p4 = getPlayer();
       const after = p4 ? getAreaInfo(p4.areaId) : null;
@@ -859,11 +1000,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // LOCAL
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
-
-          // ✅ まず総合RESULTを表示
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-
-          // ✅ 次のNEXTで post を実行してメインへ戻す（UI閉じる）
           state.phase = 'local_total_result_wait_post';
           return;
         }
@@ -877,7 +1014,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         state.ui.topLeftName = '';
         state.ui.topRightName = '';
 
-        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
+        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / 5`, '');
         setRequest('nextMatch', { matchIndex: state.matchIndex });
         state.phase = 'coach_done';
         return;
@@ -900,7 +1037,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.ui.topRightName = '';
 
           _setNationalBanners();
-          setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+          setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
           setRequest('nextMatch', { matchIndex: state.matchIndex });
           state.phase = 'coach_done';
           return;
@@ -909,10 +1046,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const isLastSession = (si >= sc - 1);
 
         if (isLastSession){
-          // ✅ まず総合RESULTを表示
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-
-          // ✅ 次のNEXTで post（あれば）→ 無ければ endNationalWeek 通知
           state.phase = 'national_total_result_wait_post';
           return;
         }
@@ -970,15 +1104,31 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // start: LOCAL
   // =========================================================
   function startLocalTournament(){
-    const cpuAllLocal = L.getCpuTeamsLocalOnly();
-    const cpu19 = L.shuffle(cpuAllLocal).slice(0, 19);
+    if (!L){
+      console.error('[tournament_core] tournamentLogic missing');
+      return;
+    }
 
-    const pPowRaw = (L && typeof L.calcPlayerTeamPower === 'function') ? Number(L.calcPlayerTeamPower()) : NaN;
-    const pPow = Number.isFinite(pPowRaw) ? pPowRaw : 55;
+    // ✅ local用CPU19
+    const cpuAllLocal = (typeof L.getCpuTeamsLocalOnly === 'function') ? L.getCpuTeamsLocalOnly() : [];
+    const cpu19 = (typeof L.shuffle === 'function') ? L.shuffle(cpuAllLocal).slice(0, 19) : (cpuAllLocal||[]).slice(0,19);
+
+    // ✅ player power
+    const pPow = calcPlayerPowerNow();
+
+    // ✅ team name
+    let teamName = 'PLAYER TEAM';
+    try{
+      if (L?.K?.teamName){
+        teamName = localStorage.getItem(L.K.teamName) || teamName;
+      }else{
+        teamName = localStorage.getItem('mobbr_team') || teamName;
+      }
+    }catch(e){}
 
     const player = {
       id: 'PLAYER',
-      name: localStorage.getItem(L.K.teamName) || 'PLAYER TEAM',
+      name: teamName,
       isPlayer: true,
 
       power: pPow,
@@ -1022,12 +1172,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         });
       }
 
+      const pow = (typeof L.rollCpuTeamPowerFromMembers === 'function')
+        ? L.rollCpuTeamPowerFromMembers(c)
+        : 55;
+
       teams.push({
         id,
         name: nm,
         isPlayer: false,
 
-        power: L.rollCpuTeamPowerFromMembers(c),
+        power: Number.isFinite(Number(pow)) ? Number(pow) : 55,
 
         alive: 3,
         eliminated: false,
@@ -1071,7 +1225,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       ui: {
         bg: 'maps/neonmain.png',
         squareBg: 'tent.png',
-        leftImg: L.getEquippedSkin(),
+        leftImg: getPlayerSkin(),
         rightImg: '',
         center3: ['','',''],
         topLeftName: '',
@@ -1081,26 +1235,28 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       request: null
     };
 
-    if (window.MOBBR?.ui?.tournament?.open){
-      window.MOBBR.ui.tournament.open();
-    }
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    ensureAllTeams();
+
+    if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
 
     step();
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
   }
 
   // =========================================================
   // start: NATIONAL
   // =========================================================
   function startNationalTournament(){
+    if (!L){
+      console.error('[tournament_core] tournamentLogic missing');
+      return;
+    }
+
     const cpu39 = _getCpuTeamsByPrefix('national');
     if (!cpu39 || cpu39.length < 10){
       console.error('[tournament_core] National teams not found. Check data_cpu_teams.js');
+      // fallback
       startLocalTournament();
       return;
     }
@@ -1154,7 +1310,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       ui: {
         bg: 'maps/neonmain.png',
         squareBg: 'tent.png',
-        leftImg: L.getEquippedSkin(),
+        leftImg: getPlayerSkin(),
         rightImg: '',
         center3: ['','',''],
         topLeftName: '',
@@ -1164,17 +1320,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       request: null
     };
 
-    if (window.MOBBR?.ui?.tournament?.open){
-      window.MOBBR.ui.tournament.open();
-    }
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    ensureAllTeams();
+
+    if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
 
     step();
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
   }
 
   // =========================================================
