@@ -8,6 +8,11 @@
   - メイン画面の「次の大会」が更新されない問題を解消
   - スケジュール(ui_schedule.js) が参照する mobbr_tour_state を必ず更新する
 
+  追加で根治（今回の指摘）：
+  - ローカル敗退を「ナショナル落ち」扱いにしない
+  - ローカル敗退で “ナショナルラストチャンス” が出ないようにする
+    ✅ ラストチャンスは「ナショナルを実際にプレイして落ちた場合」のみ
+
   仕様（ユーザー指定）：
   - 2月第1週：ローカル大会
     * TOP10 → 3月第1週〜3週のナショナルへ
@@ -114,7 +119,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { y, m, w };
   }
 
-  // ===== Split1 スケジュール（nextTour算出に最低限必要な分だけ）=====
+  // ===== Split スケジュール（nextTour算出に最低限必要な分だけ）=====
   // ui_schedule.js と整合する名称に寄せる
   const SCHEDULE = [
     // Split 1
@@ -124,7 +129,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     { split: 1, m: 3, w: 3, name: 'ナショナルラストチャンス', phase: 'lastchance' },
     { split: 1, m: 4, w: 1, name: 'ワールドファイナル', phase: 'world' },
 
-    // Split 2（参考：今はSplit1だけでOKだが、次大会更新のため残す）
+    // Split 2
     { split: 2, m: 7, w: 1, name: 'ローカル大会', phase: 'local' },
     { split: 2, m: 8, w: 1, name: 'ナショナル大会', phase: 'national' },
     { split: 2, m: 8, w: 2, name: 'ナショナル大会後半', phase: 'national' },
@@ -139,23 +144,31 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     { split: 3, m: 1,  w: 2, name: 'チャンピオンシップ ワールドファイナル', phase: 'world' },
   ];
 
-  // ===== eligibility（ui_schedule.js と同じ思想：誤ロック防止）=====
+  // ===== eligibility（誤ロック防止）=====
+  // ✅ ラストチャンスは「ナショナルを実際にプレイして落ちた場合」のみ
   function isEligible(item, tourState){
     if (item.phase === 'local') return true;
 
     if (!tourState) return false;
 
-    const qN = !!tourState.qualifiedNational;
+    const qN = !!tourState.qualifiedNational; // ナショナル出場権（次にナショナルへ進める権利）
     const qW = !!tourState.qualifiedWorld;
     const clearedN = !!tourState.clearedNational;
+
+    // 「ナショナルを実際にプレイしたか」フラグ（今回追加）
+    const nationalPlayed = !!tourState.nationalPlayed;
 
     if (item.phase === 'national') return qN;
 
     if (item.phase === 'lastchance'){
+      // クリア済み / 既にワールド権利なら不要
       if (clearedN) return false;
       if (qW) return false;
-      // “ナショナル出場権が無い時だけ”ラストチャンス対象
-      return !qN;
+
+      // ✅ ここが根治：
+      // ローカル敗退（qN=false）だけでは lastchance に行かない
+      // 「ナショナルをプレイしたがクリアできなかった」場合のみ lastchance 対象
+      return nationalPlayed === true;
     }
 
     if (item.phase === 'world') return qW;
@@ -233,7 +246,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     list.sort((a,b)=>{
       if ((b.sumTotal||0) !== (a.sumTotal||0)) return (b.sumTotal||0)-(a.sumTotal||0);
       if ((b.sumPlacementP||0) !== (a.sumPlacementP||0)) return (b.sumPlacementP||0)-(a.sumPlacementP||0);
-      // 以降は UI/仕様に任せる（ここは権利判定のため最小）
       return 0;
     });
 
@@ -247,21 +259,23 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     setJSON(K.split1Top10, top10Ids);
 
     // ---- ツアー状態（ui_schedule.js が参照する本命）----
-    // Split1：ローカル終了直後
     const tourState = getJSON(K.tourState, null) || {};
     tourState.split = 1;
 
-    // stage は “現在地” として扱う（次の大会表示・ロック制御に使う）
-    // TOP10 → 次は national
-    // 11位以下 → Split1敗退（done）
+    // ✅ ローカル終了時点では「ナショナルをプレイしていない」ので必ず false
+    // （ここが無いと過去値が残ってローカル敗退→ラストチャンスが出る事故になる）
+    tourState.nationalPlayed = false;
+
+    // stage は “現在地” として扱う
     tourState.stage = qualifiedNational ? 'national' : 'done';
 
     tourState.qualifiedNational = qualifiedNational;
+
     // world/lastchance はこの時点で未確定
     if (typeof tourState.qualifiedWorld !== 'boolean') tourState.qualifiedWorld = false;
     if (typeof tourState.clearedNational !== 'boolean') tourState.clearedNational = false;
 
-    // 参考情報（なくても良いが便利）
+    // 参考情報
     tourState.lastLocalRank = rank;
     tourState.lastLocalTop10 = top10Ids;
 
@@ -283,22 +297,29 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       setStr(K.recent, `ローカル大会 ${rank}位：スプリット1敗退…`);
     }
 
-    // ---- メインへ戻す（既存のUI側ハンドラがあればそれで遷移）----
+    // ---- メインへ戻す ----
     dispatch('mobbr:goMain', {
       localFinished: true,
       rank,
       qualified: qualifiedNational
     });
 
-    // ---- 念のため：週進行イベント（既存が使っていれば活きる／使ってなくても害なし）----
+    // ---- 念のため：週進行イベント ----
     dispatch('mobbr:advanceWeek', { weeks: 1 });
   }
 
   // ============================================
-  // ナショナル終了処理（今後：Split1の結果を反映）
-  // ※ 今は雛形（ここは次の段階で作り込む）
+  // ナショナル終了処理（ここで nationalPlayed を true にしないとラストチャンスが出ない）
+  // ※ 今は雛形。次の段階で確定ロジックを入れる
   // ============================================
   function onNationalTournamentFinished(state, total){
+    // ✅ 最低限：ナショナルをプレイした事実を残す
+    try{
+      const tourState = getJSON(K.tourState, null) || {};
+      tourState.nationalPlayed = true;
+      setJSON(K.tourState, tourState);
+    }catch(e){}
+
     dispatch('mobbr:goMain', { nationalFinished: true });
   }
 
