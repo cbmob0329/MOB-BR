@@ -14,12 +14,19 @@
 
   v17 変更点：
   - schedule ルート追加（ui_schedule.js が open を持てばそれを優先）
+
+  v18.1 追加（今回の追記だけ）
+  - sim_tournament_core_post.js が投げるイベントを受ける
+    * mobbr:advanceWeek  （weeks回 週進行）
+    * mobbr:goMain       （大会終了通知：recent更新＆フタ事故防止）
+  - ui_tournament.js の endNationalWeek から呼べるように
+    * window.MOBBR.ui.main.advanceWeeks(weeks) を用意
 */
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v18';
+  const VERSION = 'v18.1';
 
   // ===== Storage Keys（storage.js / ui_team.js と揃える）=====
   const K = {
@@ -464,4 +471,58 @@ window.MOBBR = window.MOBBR || {};
 
   // 動的ロードでも確実に起動
   initMainUI();
+
+  // =========================================================
+  // ✅ v18.1 追記：大会終了イベント受信（post / endNationalWeek）
+  // =========================================================
+  (function bindTournamentPost(){
+    try{
+      window.MOBBR = window.MOBBR || {};
+      window.MOBBR.ui = window.MOBBR.ui || {};
+      window.MOBBR.ui.main = window.MOBBR.ui.main || {};
+    }catch(e){}
+
+    // ui_tournament.js（endNationalWeek）が探しに来る
+    // ※中で週進行を回す（weekPopが出るので「見える」）
+    if (!window.MOBBR.ui.main.advanceWeeks){
+      window.MOBBR.ui.main.advanceWeeks = function(weeks){
+        const n = Math.max(1, Number(weeks || 1) | 0);
+        for (let i=0;i<n;i++){
+          advanceWeek();
+        }
+      };
+    }
+
+    // sim_tournament_core_post.js（ローカル終了処理）が投げる
+    window.addEventListener('mobbr:advanceWeek', (e)=>{
+      const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
+      for (let i=0;i<n;i++){
+        advanceWeek();
+      }
+    });
+
+    window.addEventListener('mobbr:goMain', (e)=>{
+      try{
+        // フタ事故潰し（メインに戻る前提）
+        hideBack();
+        hideWeekPop();
+      }catch(_){}
+
+      const d = e?.detail || {};
+
+      if (d.localFinished){
+        const r = Number(d.rank || 0);
+        const q = !!d.qualified;
+        setRecent(`ローカル大会終了：${r ? r+'位' : ''}${q ? ' / ナショナル出場権獲得' : ''}`);
+      }else if (d.nationalFinished){
+        setRecent('ナショナル終了');
+      }else{
+        setRecent('大会終了');
+      }
+
+      // 画面自体はメインなので、ここでは open/close しない（事故防止）
+      render();
+    });
+  })();
+
 })();
