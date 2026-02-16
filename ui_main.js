@@ -1,35 +1,21 @@
+/* =========================================================
+   ui_main.js（FULL）
+   - メイン画面の表示/タップ処理
+   - BATTLEボタン：次大会に応じて Local / National に分岐
+     ✅「大会週（nextTourW一致）」のときだけ大会を開始
+     ✅ nextTour に "ナショナル" が含まれていれば National を起動
+     ✅ それ以外は Local を起動（ローカル大会）
+   - 透明フタ(modalBack)事故を潰す
+   - 大会終了イベント（mobbr:goMain / mobbr:advanceWeek）受信
+   ========================================================= */
 'use strict';
-
-/*
-  MOB BR - ui_main.js v18.2（フル）
-  目的：
-  - メイン画面の表示/タップ処理
-  - TEAM/TRAINING/SHOP/CARD/SCHEDULE のルーティングを「各UIの open() 優先」に統一
-  - modalBack（透明フタ）が残ってボタンが押せなくなる事故を徹底排除
-  - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
-
-  v18.2 変更点（今回）：
-  - BATTLE（大会）ボタンを「今週が大会週なら該当大会へ」分岐
-    * nextTour / nextTourW（storage）を参照
-    * 今週が大会週でなければ「今週は大会週ではありません」
-    * ナショナル/ローカル/ワールド に応じて Flow の startXxx を呼ぶ
-      - startNationalTournament / startLocalTournament / startWorldTournament
-      ※ 未実装なら「対応する大会開始処理がありません」
-
-  v18.1 追加：
-  - sim_tournament_core_post.js が投げるイベントを受ける
-    * mobbr:advanceWeek  （weeks回 週進行）
-    * mobbr:goMain       （大会終了通知：recent更新＆フタ事故防止）
-  - ui_tournament.js の endNationalWeek から呼べるように
-    * window.MOBBR.ui.main.advanceWeeks(weeks) を用意
-*/
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v18.2';
+  const VERSION = 'v19';
 
-  // ===== Storage Keys（storage.js / ui_team.js と揃える）=====
+  // ===== Storage Keys（storage.js と揃える）=====
   const K = {
     company: 'mobbr_company',
     team: 'mobbr_team',
@@ -50,7 +36,7 @@ window.MOBBR = window.MOBBR || {};
     playerTeam: 'mobbr_playerTeam'
   };
 
-  const $ = (id) => document.getElementById(id);
+  const $ = (id)=>document.getElementById(id);
 
   function getNum(key, def){
     const v = Number(localStorage.getItem(key));
@@ -77,7 +63,6 @@ window.MOBBR = window.MOBBR || {};
 
   function collectDom(){
     ui = {
-      // top info
       company: $('uiCompany'),
       team: $('uiTeam'),
       gold: $('uiGold'),
@@ -92,19 +77,15 @@ window.MOBBR = window.MOBBR || {};
       tapCompany: $('tapCompany'),
       tapTeamName: $('tapTeamName'),
 
-      // modal back (shared)
       modalBack: $('modalBack'),
 
-      // week pop（無い場合もある）
       weekPop: $('weekPop'),
       popTitle: $('popTitle'),
       popSub: $('popSub'),
       btnPopNext: $('btnPopNext'),
 
-      // NEXT（この画面では使わない＝常に隠す）
       btnWeekNext: $('btnWeekNext'),
 
-      // left menu
       btnTeam: $('btnTeam'),
       btnBattle: $('btnBattle'),
       btnTraining: $('btnTraining'),
@@ -112,7 +93,6 @@ window.MOBBR = window.MOBBR || {};
       btnSchedule: $('btnSchedule'),
       btnCard: $('btnCard'),
 
-      // member popup
       btnMembers: $('btnMembers'),
       membersPop: $('membersPop'),
       rowM1: $('rowM1'),
@@ -123,7 +103,6 @@ window.MOBBR = window.MOBBR || {};
       uiM3: $('uiM3'),
       btnCloseMembers: $('btnCloseMembers'),
 
-      // screens (DOM直開き保険)
       teamScreen: $('teamScreen'),
       btnCloseTeam: $('btnCloseTeam'),
 
@@ -191,16 +170,14 @@ window.MOBBR = window.MOBBR || {};
     if (ui.nextTourW) ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
     if (ui.recent) ui.recent.textContent = getStr(K.recent, '未定');
 
-    // member popup values
     if (ui.uiM1) ui.uiM1.textContent = m1;
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
 
-    // NEXTボタンはここでは使わない（常に隠す）
     if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
   }
 
-  // ===== modal back helper（pointer-events まで制御）=====
+  // ===== modal back helper =====
   function showBack(){
     if (!ui.modalBack) return;
     ui.modalBack.style.display = 'block';
@@ -245,7 +222,6 @@ window.MOBBR = window.MOBBR || {};
 
     setStr(key, nv);
 
-    // メンバー名は playerTeam にも同期して「全画面反映」
     if (key === K.m1 || key === K.m2 || key === K.m3){
       syncPlayerTeamNamesFromStorage();
     }
@@ -254,7 +230,7 @@ window.MOBBR = window.MOBBR || {};
     notifyTeamRender();
   }
 
-  // ===== week progression（必要なら呼ぶ）=====
+  // ===== week progression（popを出す版）=====
   function advanceWeek(){
     const y = getNum(K.year, 1989);
     const m = getNum(K.month, 1);
@@ -310,9 +286,7 @@ window.MOBBR = window.MOBBR || {};
     el.setAttribute('aria-hidden', 'true');
   }
 
-  // ===== safe open（open()優先→DOM直開き）=====
   function safeOpenByUI(key){
-    // 透明フタ事故防止：何か開く前に必ず閉じる
     hideBack();
 
     const u = window.MOBBR?.ui || null;
@@ -351,6 +325,7 @@ window.MOBBR = window.MOBBR || {};
     render();
   }
 
+  // ===== 大会週判定（nextTour / nextTourW 基準）=====
   function parseTourW(str){
     const s = String(str || '').trim();
     const m = s.match(/^(\d{1,2})-(\d{1,2})$/);
@@ -363,13 +338,76 @@ window.MOBBR = window.MOBBR || {};
     return { m: mm, w: ww };
   }
 
+  function isTournamentWeekNow(){
+    const now = { m: getNum(K.month,1), w: getNum(K.week,1) };
+    const tourName = getStr(K.nextTour,'未定');
+    const tourWStr = getStr(K.nextTourW,'未定');
+
+    if (!tourName || tourName === '未定') return { locked:false };
+    if (!tourWStr || tourWStr === '未定') return { locked:false };
+
+    const tw = parseTourW(tourWStr);
+    if (!tw) return { locked:false };
+
+    const locked = (now.m === tw.m && now.w === tw.w);
+    return { locked, tourName, tourWStr, now };
+  }
+
+  // ===== 大会起動（Local / National 分岐）=====
+  function startTournamentByNextTour(){
+    const lock = isTournamentWeekNow();
+    if (!lock.locked){
+      setRecent('大会：大会週ではありません（SCHEDULEで次の大会を確認）');
+      return;
+    }
+
+    const tourName = String(lock.tourName || '');
+
+    const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
+    if (!Flow){
+      setRecent('大会：Flowが見つかりません（sim_tournament_core.js / ui_tournament.js 読み込み確認）');
+      return;
+    }
+
+    // ✅ "ナショナル" を含むなら National
+    const isNational = tourName.includes('ナショナル');
+
+    try{
+      hideBack();
+      render();
+
+      if (isNational && typeof Flow.startNationalTournament === 'function'){
+        setRecent('大会：ナショナル大会を開始！');
+        Flow.startNationalTournament();
+        return;
+      }
+
+      if (!isNational && typeof Flow.startLocalTournament === 'function'){
+        setRecent('大会：ローカル大会を開始！');
+        Flow.startLocalTournament();
+        return;
+      }
+
+      // フォールバック（startLocalがあるならローカル）
+      if (typeof Flow.startLocalTournament === 'function'){
+        setRecent('大会：ローカル大会を開始！');
+        Flow.startLocalTournament();
+        return;
+      }
+
+      setRecent('大会：開始関数が見つかりません（Flow API確認）');
+    }catch(err){
+      console.error(err);
+      setRecent('大会：開始に失敗（コンソール確認）');
+    }
+  }
+
   // ===== bind =====
   let bound = false;
   function bind(){
     if (bound) return;
     bound = true;
 
-    // modalBack：押して閉じない
     if (ui.modalBack){
       ui.modalBack.addEventListener('click', (e) => e.preventDefault(), { passive:false });
     }
@@ -392,13 +430,11 @@ window.MOBBR = window.MOBBR || {};
     if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', 'B'));
     if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', 'C'));
 
-    // btnWeekNext はこの画面では使わない（誤爆防止）
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
       ui.btnWeekNext.classList.remove('show');
     }
 
-    // ===== 左メニュー =====
     if (ui.btnTeam) ui.btnTeam.addEventListener('click', () => {
       render();
       if (!safeOpenByUI('team')) setRecent('TEAM：画面DOMが見つかりません（index.htmlを確認）');
@@ -425,73 +461,12 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
-    // ★★★ BATTLE（大会）分岐版：今週が大会週なら該当大会へ ★★★
+    // ★★★ BATTLE（大会）：次大会に応じて分岐 ★★★
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => {
-      hideBack();
-      render();
-
-      const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
-      if (!Flow){
-        setRecent('大会：Flowが見つかりません（読み込みを確認）');
-        return;
-      }
-
-      const nowM = getNum(K.month, 1);
-      const nowW = getNum(K.week, 1);
-
-      const nextName = getStr(K.nextTour, '未定');
-      const nextWStr = getStr(K.nextTourW, '未定');
-      const tw = parseTourW(nextWStr);
-
-      // 今週が大会週ではない
-      if (!tw || tw.m !== nowM || tw.w !== nowW){
-        setRecent('今週は大会週ではありません');
-        return;
-      }
-
-      // 大会週：名称で分岐（storageの nextTour を信頼）
-      try{
-        // ナショナル（前半/後半/ラストチャンス も含む）
-        if (String(nextName).includes('ナショナル')){
-          if (typeof Flow.startNationalTournament === 'function'){
-            setRecent('大会：ナショナル大会へ！');
-            Flow.startNationalTournament();
-            return;
-          }
-          setRecent('大会：ナショナル開始処理が未実装です（startNationalTournament）');
-          return;
-        }
-
-        // ローカル
-        if (String(nextName).includes('ローカル')){
-          if (typeof Flow.startLocalTournament === 'function'){
-            setRecent('大会：ローカル大会を開始！');
-            Flow.startLocalTournament();
-            return;
-          }
-          setRecent('大会：ローカル開始処理が未実装です（startLocalTournament）');
-          return;
-        }
-
-        // ワールド
-        if (String(nextName).includes('ワールド')){
-          if (typeof Flow.startWorldTournament === 'function'){
-            setRecent('大会：ワールドファイナルへ！');
-            Flow.startWorldTournament();
-            return;
-          }
-          setRecent('大会：ワールド開始処理が未実装です（startWorldTournament）');
-          return;
-        }
-
-        setRecent('大会：対応する大会開始処理がありません');
-      }catch(err){
-        console.error(err);
-        setRecent('大会：開始に失敗（コンソール確認）');
-      }
+      startTournamentByNextTour();
     });
 
-    // ===== DOM直開き保険の閉じる =====
+    // DOM直開き保険の閉じる
     if (ui.btnCloseTeam && ui.teamScreen){
       ui.btnCloseTeam.addEventListener('click', () => closeScreenEl(ui.teamScreen));
     }
@@ -513,12 +488,9 @@ window.MOBBR = window.MOBBR || {};
     collectDom();
     bind();
 
-    // 起動時点で playerTeam があるなら、storageの名前に寄せる
     syncPlayerTeamNamesFromStorage();
 
-    // 透明フタ事故の保険
     hideBack();
-
     render();
   }
 
@@ -529,7 +501,7 @@ window.MOBBR = window.MOBBR || {};
   initMainUI();
 
   // =========================================================
-  // ✅ v18.1 追記：大会終了イベント受信（post / endNationalWeek）
+  // 大会終了イベント受信（post / endNationalWeek）
   // =========================================================
   (function bindTournamentPost(){
     try{
@@ -538,8 +510,6 @@ window.MOBBR = window.MOBBR || {};
       window.MOBBR.ui.main = window.MOBBR.ui.main || {};
     }catch(e){}
 
-    // ui_tournament.js（endNationalWeek）が探しに来る
-    // ※中で週進行を回す（weekPopが出るので「見える」）
     if (!window.MOBBR.ui.main.advanceWeeks){
       window.MOBBR.ui.main.advanceWeeks = function(weeks){
         const n = Math.max(1, Number(weeks || 1) | 0);
@@ -549,7 +519,6 @@ window.MOBBR = window.MOBBR || {};
       };
     }
 
-    // sim_tournament_core_post.js（ローカル終了処理）が投げる
     window.addEventListener('mobbr:advanceWeek', (e)=>{
       const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
       for (let i=0;i<n;i++){
@@ -559,7 +528,6 @@ window.MOBBR = window.MOBBR || {};
 
     window.addEventListener('mobbr:goMain', (e)=>{
       try{
-        // フタ事故潰し（メインに戻る前提）
         hideBack();
         hideWeekPop();
       }catch(_){}
@@ -576,7 +544,6 @@ window.MOBBR = window.MOBBR || {};
         setRecent('大会終了');
       }
 
-      // 画面自体はメインなので、ここでは open/close しない（事故防止）
       render();
     });
   })();
