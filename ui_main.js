@@ -6,14 +6,14 @@
      ✅ nextTour に "ナショナル" が含まれていれば National を起動
      ✅ それ以外は Local を起動（ローカル大会）
    - 透明フタ(modalBack)事故を潰す
-   - 大会終了イベント（mobbr:goMain / mobbr:advanceWeek）受信
+   - 大会終了イベント（mobbr:goMain / mobbr:advanceWeek / mobbr:endNationalWeek）受信
    ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19';
+  const VERSION = 'v19.1';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -230,7 +230,7 @@ window.MOBBR = window.MOBBR || {};
     notifyTeamRender();
   }
 
-  // ===== week progression（popを出す版）=====
+  // ===== week progression（popを出す版：単週）=====
   function advanceWeek(){
     const y = getNum(K.year, 1989);
     const m = getNum(K.month, 1);
@@ -261,6 +261,58 @@ window.MOBBR = window.MOBBR || {};
         setNum(K.gold, gold + gain);
 
         setStr(K.recent, `週が進んだ（+${gain}G）`);
+
+        hideWeekPop();
+        render();
+
+        if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
+      };
+    }
+  }
+
+  // ===== week progression（複数週：まとめて1回だけ確定＆1回だけポップ）=====
+  function advanceWeeksBatch(weeks){
+    const n = Math.max(1, Number(weeks || 1) | 0);
+
+    const y0 = getNum(K.year, 1989);
+    const m0 = getNum(K.month, 1);
+    const w0 = getNum(K.week, 1);
+
+    let ny = y0, nm = m0, nw = w0;
+
+    const rank = getNum(K.rank, 10);
+    const gainPer = weeklyGoldByRank(rank);
+    const totalGain = gainPer * n;
+
+    for (let i=0;i<n;i++){
+      nw += 1;
+      if (nw >= 5){
+        nw = 1;
+        nm += 1;
+        if (nm >= 13){
+          nm = 1;
+          ny += 1;
+        }
+      }
+    }
+
+    // ポップは1回だけ
+    const msg = (n === 1)
+      ? `企業ランクにより ${gainPer}G 獲得！`
+      : `企業ランクにより ${totalGain}G 獲得！（${n}週分）`;
+
+    showWeekPop(`${ny}年${nm}月 第${nw}週`, msg);
+
+    if (ui.btnPopNext){
+      ui.btnPopNext.onclick = () => {
+        setNum(K.year, ny);
+        setNum(K.month, nm);
+        setNum(K.week, nw);
+
+        const gold = getNum(K.gold, 0);
+        setNum(K.gold, gold + totalGain);
+
+        setStr(K.recent, `週が進んだ（+${totalGain}G）`);
 
         hideWeekPop();
         render();
@@ -510,20 +562,23 @@ window.MOBBR = window.MOBBR || {};
       window.MOBBR.ui.main = window.MOBBR.ui.main || {};
     }catch(e){}
 
+    // ✅ UI側から呼べる週進行API（まとめ進行）
     if (!window.MOBBR.ui.main.advanceWeeks){
       window.MOBBR.ui.main.advanceWeeks = function(weeks){
-        const n = Math.max(1, Number(weeks || 1) | 0);
-        for (let i=0;i<n;i++){
-          advanceWeek();
-        }
+        advanceWeeksBatch(weeks);
       };
     }
 
+    // 旧イベント（postが投げる可能性）
     window.addEventListener('mobbr:advanceWeek', (e)=>{
       const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
-      for (let i=0;i<n;i++){
-        advanceWeek();
-      }
+      advanceWeeksBatch(n);
+    });
+
+    // ✅ 新イベント（ui_tournament.js が投げる可能性）に対応
+    window.addEventListener('mobbr:endNationalWeek', (e)=>{
+      const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
+      advanceWeeksBatch(n);
     });
 
     window.addEventListener('mobbr:goMain', (e)=>{
