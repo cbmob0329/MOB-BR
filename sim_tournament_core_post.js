@@ -1,26 +1,11 @@
 'use strict';
 
 /*
-  sim_tournament_core_post.js（ローカル終了処理：Split制御 + 権利付与 + 次大会更新）
+  sim_tournament_core_post.js（ローカル/ナショナル終了処理：権利付与 + 次大会更新 + 週進行）
 
-  目的（今回の不具合の根治）：
-  - TOP10入りしたのに「ナショナル権利が無い」扱いになる問題を解消
-  - メイン画面の「次の大会」が更新されない問題を解消
-  - スケジュール(ui_schedule.js) が参照する mobbr_tour_state を必ず更新する
-
-  追加で根治（今回の指摘）：
-  - ローカル敗退を「ナショナル落ち」扱いにしない
-  - ローカル敗退で “ナショナルラストチャンス” が出ないようにする
-    ✅ ラストチャンスは「ナショナルを実際にプレイして落ちた場合」のみ
-
-  仕様（ユーザー指定）：
-  - 2月第1週：ローカル大会
-    * TOP10 → 3月第1週〜3週のナショナルへ
-    * 11位以下 → Split1敗退
-  - ローカル終了後：
-    * 1週進行
-    * メインへ戻す
-    * 次大会(nextTour/nextTourW)を更新
+  ✅ 今回の追加要件
+  - ナショナル大会終了後に「1週進んでいない」→ 必ず 1週進める
+  - nextTour / nextTourW を必ず更新する
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -47,7 +32,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     split1Top10: 'mobbr_split1_local_top10'
   };
 
-  // ===== 安全な localStorage helper =====
+  // ===== safe localStorage helper =====
   function getNum(key, def){
     try{
       const v = Number(localStorage.getItem(key));
@@ -90,8 +75,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(e){}
   }
 
-  // ===== 1週進行（UIポップ無し・確実にストレージ更新）=====
-  // ※月=4週のゲーム仕様
+  // ===== 1週進行（ストレージ更新）=====
   function advanceWeekStorage(weeks){
     const add = Number(weeks || 1);
     if (add <= 0) return;
@@ -119,8 +103,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { y, m, w };
   }
 
-  // ===== Split スケジュール（nextTour算出に最低限必要な分だけ）=====
-  // ui_schedule.js と整合する名称に寄せる
+  // ===== schedule（nextTour算出の最低限）=====
   const SCHEDULE = [
     // Split 1
     { split: 1, m: 2, w: 1, name: 'ローカル大会', phase: 'local' },
@@ -144,30 +127,21 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     { split: 3, m: 1,  w: 2, name: 'チャンピオンシップ ワールドファイナル', phase: 'world' },
   ];
 
-  // ===== eligibility（誤ロック防止）=====
   // ✅ ラストチャンスは「ナショナルを実際にプレイして落ちた場合」のみ
   function isEligible(item, tourState){
     if (item.phase === 'local') return true;
-
     if (!tourState) return false;
 
-    const qN = !!tourState.qualifiedNational; // ナショナル出場権（次にナショナルへ進める権利）
+    const qN = !!tourState.qualifiedNational;
     const qW = !!tourState.qualifiedWorld;
     const clearedN = !!tourState.clearedNational;
-
-    // 「ナショナルを実際にプレイしたか」フラグ（今回追加）
     const nationalPlayed = !!tourState.nationalPlayed;
 
     if (item.phase === 'national') return qN;
 
     if (item.phase === 'lastchance'){
-      // クリア済み / 既にワールド権利なら不要
       if (clearedN) return false;
       if (qW) return false;
-
-      // ✅ ここが根治：
-      // ローカル敗退（qN=false）だけでは lastchance に行かない
-      // 「ナショナルをプレイしたがクリアできなかった」場合のみ lastchance 対象
       return nationalPlayed === true;
     }
 
@@ -178,7 +152,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function calcDistanceWeeks(now, item){
     let dm = item.m - now.m;
-    if (dm < 0) dm += 12; // 年跨ぎ
+    if (dm < 0) dm += 12;
     const dw = item.w - now.w;
     return (dm * 4) + dw;
   }
@@ -186,7 +160,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function isFutureOrNow(item, now){
     if (item.m === now.m) return item.w >= now.w;
     if (item.m > now.m) return true;
-    // 年跨ぎ未来扱い
     return true;
   }
 
@@ -228,7 +201,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { next, ww };
   }
 
-  // ===== legacy qualified key（互換）=====
   function setNationalQualifiedLegacy(v){
     try{ localStorage.setItem(K.qualifyLegacy, v ? '1' : '0'); }catch(e){}
   }
@@ -241,7 +213,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const playerId = 'PLAYER';
 
-    // ---- 総合順位計算（sumTotal → sumPlacementP の順）----
     const list = Object.values(total || []);
     list.sort((a,b)=>{
       if ((b.sumTotal||0) !== (a.sumTotal||0)) return (b.sumTotal||0)-(a.sumTotal||0);
@@ -250,77 +221,77 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
 
     const rank = list.findIndex(x => x && x.id === playerId) + 1;
-
-    // ---- TOP10判定 ----
     const qualifiedNational = (rank > 0 && rank <= 10);
 
-    // ---- TOP10のチームIDを保存（ローカル勝ち上がり10チーム）----
     const top10Ids = list.slice(0,10).map(x => String(x.id || '')).filter(Boolean);
     setJSON(K.split1Top10, top10Ids);
 
-    // ---- ツアー状態（ui_schedule.js が参照する本命）----
     const tourState = getJSON(K.tourState, null) || {};
     tourState.split = 1;
 
-    // ✅ ローカル終了時点では「ナショナルをプレイしていない」ので必ず false
-    // （ここが無いと過去値が残ってローカル敗退→ラストチャンスが出る事故になる）
+    // ✅ ローカル終了時点ではナショナル未プレイ
     tourState.nationalPlayed = false;
 
-    // stage は “現在地” として扱う
     tourState.stage = qualifiedNational ? 'national' : 'done';
-
     tourState.qualifiedNational = qualifiedNational;
 
-    // world/lastchance はこの時点で未確定
     if (typeof tourState.qualifiedWorld !== 'boolean') tourState.qualifiedWorld = false;
     if (typeof tourState.clearedNational !== 'boolean') tourState.clearedNational = false;
 
-    // 参考情報
     tourState.lastLocalRank = rank;
     tourState.lastLocalTop10 = top10Ids;
 
     setJSON(K.tourState, tourState);
-
-    // ---- legacy flag（互換）----
     setNationalQualifiedLegacy(qualifiedNational);
 
-    // ---- 1週進行（確実にストレージ更新）----
+    // 1週進行
     advanceWeekStorage(1);
 
-    // ---- 次の大会（nextTour / nextTourW）を確定更新 ----
+    // 次大会更新
     setNextTourFromState();
 
-    // ---- recent更新（メイン画面に出る）----
     if (qualifiedNational){
       setStr(K.recent, `ローカル大会 ${rank}位：ナショナル出場権獲得！`);
     }else{
       setStr(K.recent, `ローカル大会 ${rank}位：スプリット1敗退…`);
     }
 
-    // ---- メインへ戻す ----
-    dispatch('mobbr:goMain', {
-      localFinished: true,
-      rank,
-      qualified: qualifiedNational
-    });
-
-    // ---- 念のため：週進行イベント ----
+    dispatch('mobbr:goMain', { localFinished:true, rank, qualified:qualifiedNational });
     dispatch('mobbr:advanceWeek', { weeks: 1 });
   }
 
   // ============================================
-  // ナショナル終了処理（ここで nationalPlayed を true にしないとラストチャンスが出ない）
-  // ※ 今は雛形。次の段階で確定ロジックを入れる
+  // ナショナル終了処理（✅ 1週進行を必ず実行）
   // ============================================
   function onNationalTournamentFinished(state, total){
-    // ✅ 最低限：ナショナルをプレイした事実を残す
-    try{
-      const tourState = getJSON(K.tourState, null) || {};
-      tourState.nationalPlayed = true;
-      setJSON(K.tourState, tourState);
-    }catch(e){}
+    // ✅ 最低限：ナショナルをプレイした事実を保存（ラストチャンス判定の材料）
+    const tourState = getJSON(K.tourState, null) || {};
+    tourState.nationalPlayed = true;
 
-    dispatch('mobbr:goMain', { nationalFinished: true });
+    // stageは「ナショナル終了」扱いに進める（ワールド等の権利判定は次段で確定）
+    // ここで雑に lastchance/world を決めない（壊れる原因になるため）
+    tourState.stage = 'national_done';
+
+    // 既存の値が無ければfalseで初期化
+    if (typeof tourState.qualifiedWorld !== 'boolean') tourState.qualifiedWorld = false;
+    if (typeof tourState.clearedNational !== 'boolean') tourState.clearedNational = false;
+
+    setJSON(K.tourState, tourState);
+
+    // ✅ ナショナル終了後：1週進行
+    advanceWeekStorage(1);
+
+    // ✅ 次大会更新
+    setNextTourFromState();
+
+    // recent
+    setStr(K.recent, 'ナショナル大会終了');
+
+    // メインへ戻す通知
+    dispatch('mobbr:goMain', { nationalFinished:true });
+
+    // 週進行イベント（既存互換）
+    dispatch('mobbr:advanceWeek', { weeks: 1 });
   }
 
   window.MOBBR.sim.tournamentCorePost = {
