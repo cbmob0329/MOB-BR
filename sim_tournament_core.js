@@ -2,7 +2,7 @@
    sim_tournament_core.js（FULL / split版）
    - 進行（state/step/公開API）を担当
    - National専用は tournamentCoreNational を使う（無ければ内蔵フォールバック）
-   - “大会終了後処理” は tournamentCorePost が存在すれば将来呼べる（現状の挙動は変えない）
+   - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ（Local完走時）
    ========================================================= */
 'use strict';
 
@@ -813,7 +813,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // LOCAL（従来通り）
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
-          // ※挙動はそのまま：大会結果を出して done へ（終了後処理はまだ入れない）
+
+          // ✅ 大会終了後の追加処理（存在すれば呼ぶ）
+          // - ここでは「結果表示へ進む直前」に呼ぶ（state/tournamentTotalを渡す）
+          try{
+            if (window.MOBBR?.sim?.tournamentCorePost?.onLocalTournamentFinished){
+              window.MOBBR.sim.tournamentCorePost.onLocalTournamentFinished(state, state.tournamentTotal);
+            }
+          }catch(e){
+            console.error('[tournament_core] onLocalTournamentFinished error:', e);
+          }
+
           setRequest('showTournamentResult', { total: state.tournamentTotal });
           state.phase = 'done';
           return;
