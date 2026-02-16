@@ -1,14 +1,12 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.5（フル）
-  ✅ v3.6.4 からの追加修正（今回の要望対応）
-  - ✅ イベント発生時の％表示を削除（バナー/ログへの%追記を一切しない）
-  - 既存：右枠自動非表示、showArrival、showNationalNotice、endTournamentでUI閉じる、
-          スタンプ残留潰し、resultホールド、showEncounter2段階、NEXTデバウンス等は維持
-
-  ✅ v3.6.5+ (patch)
-  - ✅ endNationalWeek を受け取って「UIを閉じる→週進行を外側へ通知」
+  ui_tournament.js v3.6.6（フル）
+  ✅ v3.6.5 からの追加修正（今回：ナショナル実装のためのUI側の整合）
+  - ✅ 「MATCH x / 5」の固定表記を撤去し、state.matchCount を参照する
+    （National / LastChance など matchCount が可変になっても UI が壊れない）
+  - ✅ それ以外の既存仕様（％表示削除、右枠自動非表示、resultホールド、encounter2段階、
+     NEXTデバウンス、endNationalWeek 等）は一切削除せず維持
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -502,8 +500,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (t === 'endTournament'){
       return `endTournament`;
     }
-
-    // ✅ 追加：ナショナル週終了
     if (t === 'endNationalWeek'){
       return `endNationalWeek|w:${String(req?.weeks ?? 1)}`;
     }
@@ -1429,7 +1425,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
-      setLines('次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, 'NEXTで進行');
+      // ✅ v3.6.6: matchCount は固定せず state を参照
+      const st = getState() || {};
+      const mc = Number(payload?.matchCount ?? st.matchCount ?? 5);
+      const mi = Number(payload?.matchIndex ?? st.matchIndex ?? 1);
+
+      setLines('次の試合へ', `MATCH ${mi} / ${mc}`, 'NEXTで進行');
     }finally{
       unlockUI();
     }
@@ -1520,7 +1521,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
         case 'endTournament': await handleEndTournament(req); break;
 
-        // ✅ 追加：ナショナル週終了
         case 'endNationalWeek': await handleEndNationalWeek(req); break;
 
         case 'nextMatch': await handleNextMatch(req); break;
