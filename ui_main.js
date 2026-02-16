@@ -1,21 +1,22 @@
 'use strict';
 
 /*
-  MOB BR - ui_main.js v18（フル）
+  MOB BR - ui_main.js v18.2（フル）
   目的：
   - メイン画面の表示/タップ処理
   - TEAM/TRAINING/SHOP/CARD/SCHEDULE のルーティングを「各UIの open() 優先」に統一
   - modalBack（透明フタ）が残ってボタンが押せなくなる事故を徹底排除
   - メンバー名変更は「全画面に反映」：localStorage + mobbr_playerTeam のmembers名も同期
 
-  v18 変更点（今回）：
-  - BATTLE（大会）ボタンで、tournamentFlow.startLocalTournament() を呼ぶ
-    （大会UIが存在すればそちらで進行。無ければログのみ）
+  v18.2 変更点（今回）：
+  - BATTLE（大会）ボタンを「今週が大会週なら該当大会へ」分岐
+    * nextTour / nextTourW（storage）を参照
+    * 今週が大会週でなければ「今週は大会週ではありません」
+    * ナショナル/ローカル/ワールド に応じて Flow の startXxx を呼ぶ
+      - startNationalTournament / startLocalTournament / startWorldTournament
+      ※ 未実装なら「対応する大会開始処理がありません」
 
-  v17 変更点：
-  - schedule ルート追加（ui_schedule.js が open を持てばそれを優先）
-
-  v18.1 追加（今回の追記だけ）
+  v18.1 追加：
   - sim_tournament_core_post.js が投げるイベントを受ける
     * mobbr:advanceWeek  （weeks回 週進行）
     * mobbr:goMain       （大会終了通知：recent更新＆フタ事故防止）
@@ -26,7 +27,7 @@
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v18.1';
+  const VERSION = 'v18.2';
 
   // ===== Storage Keys（storage.js / ui_team.js と揃える）=====
   const K = {
@@ -350,6 +351,18 @@ window.MOBBR = window.MOBBR || {};
     render();
   }
 
+  function parseTourW(str){
+    const s = String(str || '').trim();
+    const m = s.match(/^(\d{1,2})-(\d{1,2})$/);
+    if (!m) return null;
+    const mm = Number(m[1]);
+    const ww = Number(m[2]);
+    if (!Number.isFinite(mm) || !Number.isFinite(ww)) return null;
+    if (mm < 1 || mm > 12) return null;
+    if (ww < 1 || ww > 4) return null;
+    return { m: mm, w: ww };
+  }
+
   // ===== bind =====
   let bound = false;
   function bind(){
@@ -412,27 +425,70 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
-    // ★★★ BATTLE（大会）実装：Flow を呼ぶ ★★★
+    // ★★★ BATTLE（大会）分岐版：今週が大会週なら該当大会へ ★★★
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => {
       hideBack();
       render();
 
-      // ✅ ui_tournament.js と同じ参照優先順に揃える（これが重要）
       const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
-
-      if (Flow && typeof Flow.startLocalTournament === 'function'){
-        setRecent('大会：ローカル大会を開始！');
-        try{
-          Flow.startLocalTournament();
-        }catch(err){
-          console.error(err);
-          setRecent('大会：開始に失敗（コンソール確認）');
-        }
+      if (!Flow){
+        setRecent('大会：Flowが見つかりません（読み込みを確認）');
         return;
       }
 
-      // ✅ 古いファイル名を出さない（判断を誤らせる）
-      setRecent('大会：Flowが見つかりません（sim_tournament_core.js / ui_tournament.js の読み込みを確認）');
+      const nowM = getNum(K.month, 1);
+      const nowW = getNum(K.week, 1);
+
+      const nextName = getStr(K.nextTour, '未定');
+      const nextWStr = getStr(K.nextTourW, '未定');
+      const tw = parseTourW(nextWStr);
+
+      // 今週が大会週ではない
+      if (!tw || tw.m !== nowM || tw.w !== nowW){
+        setRecent('今週は大会週ではありません');
+        return;
+      }
+
+      // 大会週：名称で分岐（storageの nextTour を信頼）
+      try{
+        // ナショナル（前半/後半/ラストチャンス も含む）
+        if (String(nextName).includes('ナショナル')){
+          if (typeof Flow.startNationalTournament === 'function'){
+            setRecent('大会：ナショナル大会へ！');
+            Flow.startNationalTournament();
+            return;
+          }
+          setRecent('大会：ナショナル開始処理が未実装です（startNationalTournament）');
+          return;
+        }
+
+        // ローカル
+        if (String(nextName).includes('ローカル')){
+          if (typeof Flow.startLocalTournament === 'function'){
+            setRecent('大会：ローカル大会を開始！');
+            Flow.startLocalTournament();
+            return;
+          }
+          setRecent('大会：ローカル開始処理が未実装です（startLocalTournament）');
+          return;
+        }
+
+        // ワールド
+        if (String(nextName).includes('ワールド')){
+          if (typeof Flow.startWorldTournament === 'function'){
+            setRecent('大会：ワールドファイナルへ！');
+            Flow.startWorldTournament();
+            return;
+          }
+          setRecent('大会：ワールド開始処理が未実装です（startWorldTournament）');
+          return;
+        }
+
+        setRecent('大会：対応する大会開始処理がありません');
+      }catch(err){
+        console.error(err);
+        setRecent('大会：開始に失敗（コンソール確認）');
+      }
     });
 
     // ===== DOM直開き保険の閉じる =====
