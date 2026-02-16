@@ -2,8 +2,9 @@
    sim_tournament_core.js（FULL / split版）
    - 進行（state/step/公開API）を担当
    - National専用は tournamentCoreNational を使う（無ければ内蔵フォールバック）
-   - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ（Local完走時）
-     ※「総合RESULT表示 → 次のNEXTで post実行（1週進行+メイン復帰）」にしている
+   - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ
+     ✅ Local: 「総合RESULT表示 → 次のNEXTで post実行 → UI閉じる」
+     ✅ National: 「総合RESULT表示 → 次のNEXTで post実行（あれば） → 無ければ endNationalWeek 通知」
    ========================================================= */
 'use strict';
 
@@ -433,7 +434,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const p = getPlayer();
 
-    // ✅ 総合RESULTを見せたあと、次のNEXTでローカル終了処理 → メインへ
+    // ✅ Local: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
     if (state.phase === 'local_total_result_wait_post'){
       try{
         if (P?.onLocalTournamentFinished){
@@ -445,7 +446,35 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         console.error('[tournament_core] onLocalTournamentFinished error:', e);
       }
       state.phase = 'done';
-      setRequest('noop', {});
+      setRequest('endTournament', {});
+      return;
+    }
+
+    // ✅ National: 総合RESULTを見せたあと、次のNEXTで終了後処理 → post優先 / 無ければ endNationalWeek
+    if (state.phase === 'national_total_result_wait_post'){
+      let handled = false;
+
+      try{
+        if (P?.onNationalTournamentFinished){
+          P.onNationalTournamentFinished(state, state.tournamentTotal);
+          handled = true;
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onNationalTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onNationalTournamentFinished(state, state.tournamentTotal);
+          handled = true;
+        }
+      }catch(e){
+        console.error('[tournament_core] onNationalTournamentFinished error:', e);
+      }
+
+      state.phase = 'done';
+
+      if (handled){
+        // post側で週進行/メイン復帰が完結している前提。UIだけ閉じる。
+        setRequest('endTournament', {});
+      }else{
+        // postが無い場合は UIに任せて「閉じる→外側へ週進行通知」
+        setRequest('endNationalWeek', { weeks: 1 });
+      }
       return;
     }
 
@@ -834,7 +863,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           // ✅ まず総合RESULTを表示
           setRequest('showTournamentResult', { total: state.tournamentTotal });
 
-          // ✅ 次のNEXTで post を実行してメインへ戻す
+          // ✅ 次のNEXTで post を実行してメインへ戻す（UI閉じる）
           state.phase = 'local_total_result_wait_post';
           return;
         }
@@ -880,8 +909,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const isLastSession = (si >= sc - 1);
 
         if (isLastSession){
+          // ✅ まず総合RESULTを表示
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'done';
+
+          // ✅ 次のNEXTで post（あれば）→ 無ければ endNationalWeek 通知
+          state.phase = 'national_total_result_wait_post';
           return;
         }
 
