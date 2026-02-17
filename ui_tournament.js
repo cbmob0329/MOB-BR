@@ -1,12 +1,12 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.6（フル）
-  ✅ v3.6.5 からの追加修正（今回：ナショナル実装のためのUI側の整合）
-  - ✅ 「MATCH x / 5」の固定表記を撤去し、state.matchCount を参照する
-    （National / LastChance など matchCount が可変になっても UI が壊れない）
-  - ✅ それ以外の既存仕様（％表示削除、右枠自動非表示、resultホールド、encounter2段階、
-     NEXTデバウンス、endNationalWeek 等）は一切削除せず維持
+  ui_tournament.js v3.6.6（FULL）
+  ✅ v3.6.5 の全機能維持
+  追加：
+  - ✅ ナショナル進捗バー（AB CD AC AD BC BD）を上部に常時表示
+  - ✅ 終了済みセッションを赤表示（state.national.doneSessions）
+  - ✅ 現在セッションを強調表示（state.national.sessionIndex）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -222,6 +222,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
             <div class="right" id="mobbrTourBannerR"></div>
           </div>
 
+          <!-- ✅ National Session Progress -->
+          <div class="sessionBar" id="mobbrTourSessionBar" aria-label="national-progress"></div>
+
           <img class="eventIcon" id="mobbrTourEventIcon" alt="event" />
 
           <div class="chars">
@@ -268,6 +271,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       squareBg: overlay.querySelector('#mobbrTourSquareBg'),
       bannerL: overlay.querySelector('#mobbrTourBannerL'),
       bannerR: overlay.querySelector('#mobbrTourBannerR'),
+      sessionBar: overlay.querySelector('#mobbrTourSessionBar'),
       eventIcon: overlay.querySelector('#mobbrTourEventIcon'),
       charL: overlay.querySelector('#mobbrTourCharL'),
       charR: overlay.querySelector('#mobbrTourCharR'),
@@ -297,6 +301,42 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }, { passive:false });
 
     return dom;
+  }
+
+  // ✅ National progress bar
+  function syncSessionBar(){
+    ensureDom();
+    const st = getState();
+    if (!st || st.mode !== 'national' || !st.national || !dom.sessionBar){
+      dom.sessionBar.style.display = 'none';
+      dom.sessionBar.innerHTML = '';
+      return;
+    }
+
+    const sessions = Array.isArray(st.national.sessions) ? st.national.sessions : [];
+    const si = Number(st.national.sessionIndex || 0);
+    const done = Array.isArray(st.national.doneSessions) ? st.national.doneSessions : [];
+
+    if (!sessions.length){
+      dom.sessionBar.style.display = 'none';
+      dom.sessionBar.innerHTML = '';
+      return;
+    }
+
+    dom.sessionBar.style.display = '';
+    dom.sessionBar.innerHTML = '';
+
+    sessions.forEach((s, idx)=>{
+      const key = String(s?.key || '');
+      const el = document.createElement('div');
+      el.className = 'seg';
+      el.textContent = key || `S${idx+1}`;
+
+      if (idx === si) el.classList.add('isCurrent');
+      if (done.includes(key)) el.classList.add('isDone');
+
+      dom.sessionBar.appendChild(el);
+    });
   }
 
   // ✅ 右キャラ枠を「中身が空なら」自動で消す（枠だけ残る問題の決定打）
@@ -355,6 +395,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     preloadBasics();
     preloadEventIcons();
+
+    syncSessionBar();
   }
 
   function close(){
@@ -377,6 +419,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.nameR.textContent = '';
     dom.imgR.src = '';
     syncEnemyVisibility();
+
+    if (dom.sessionBar){
+      dom.sessionBar.style.display = 'none';
+      dom.sessionBar.innerHTML = '';
+    }
   }
 
   function setBackdrop(src){
@@ -391,6 +438,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureDom();
     dom.bannerL.textContent = String(l || '');
     dom.bannerR.textContent = String(r || '');
+    syncSessionBar();
   }
   function setNames(l, r){
     ensureDom();
@@ -584,7 +632,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Math.max(lo, Math.min(hi, v));
   }
 
-  // ※ v3.6.4までの残置：eventBuffs表示用（今回は%表示を削除するが、関数自体は残す）
   function buffMultiplierFromEventBuffs(team){
     const eb = (team && team.eventBuffs && typeof team.eventBuffs === 'object') ? team.eventBuffs : {};
     const aim = clampNum(eb.aim ?? 0, -99, 99);
@@ -606,7 +653,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return t || null;
   }
 
-  // ※ v3.6.4までの残置：%表示は今回削除するため、ここは使わない（関数は残す）
   function computeEventPowerLine(state, payload){
     const pb0 = Number(payload?.powerBefore);
     const pa0 = Number(payload?.powerAfter);
@@ -649,6 +695,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       showSplash(payload?.line1 || '大会会場へ到着！', '');
       setLines(payload?.line1 || '大会会場へ到着！', '', 'NEXTで進行');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -679,6 +726,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
 
       preloadEventIcons();
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -748,6 +796,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showPanel('参加チーム', buildTeamListTable(teams));
 
       setLines('本日のチームをご紹介！', '（NEXTで進行）', '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -810,6 +859,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showPanel('コーチスキル', wrap);
 
       setLines(st.ui?.center3?.[0] || 'それでは試合を開始します！', st.ui?.center3?.[1] || '使用するコーチスキルを選択してください！', st.ui?.center3?.[2] || '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -838,6 +888,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, '');
 
       setLines(st.ui?.center3?.[0] || 'バトルスタート！', st.ui?.center3?.[1] || '降下開始…！', st.ui?.center3?.[2] || '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -867,6 +918,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
 
       setLines(st.ui?.center3?.[0] || '', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -893,6 +945,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBanners(st.bannerLeft, st.bannerRight);
       setLines(`Round ${payload?.round || st.round} 開始！`, '', '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -918,7 +971,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       preloadEventIcons();
       setEventIcon(payload?.icon ? String(payload.icon) : '');
 
-      // ✅ %表示は一切しない（バナーにもログにも追記しない）
       setBanners(st?.bannerLeft || '', st?.bannerRight || '');
 
       if (st?.ui?.center3){
@@ -932,6 +984,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const l3 = payload?.log3 || '';
         setLines(l1, l2, l3);
       }
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -944,6 +997,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setResultStampMode(false);
       setBattleMode(false);
       setBackdrop(TOURNEY_BACKDROP);
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1023,6 +1077,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
       };
 
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1094,6 +1149,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setResultStampMode(false);
 
+      syncSessionBar();
     }finally{
       busy = false;
       unlockUI();
@@ -1139,6 +1195,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         payload?.arrive3 || ''
       );
 
+      syncSessionBar();
     }finally{
       busy = false;
       unlockUI();
@@ -1206,6 +1263,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         champName || '',
         payload?.line3 || '‼︎'
       );
+
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1270,6 +1329,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
       setLines('試合結果', '（NEXTで進行）', '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1343,6 +1403,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showPanel('TOURNAMENT RESULT', wrap);
 
       setLines('大会結果', '（NEXTで進行）', '');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1367,6 +1428,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showSplash(payload?.line1 || '', payload?.line2 || '');
 
       setLines(payload?.line1 || '', payload?.line2 || '', payload?.line3 || 'NEXTで進行');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1381,21 +1443,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ 追加：ナショナル週終了（UI閉じる→外側へ通知）
   async function handleEndNationalWeek(payload){
     lockUI();
     try{
-      // 大会UIは閉じる
       close();
     }finally{
       unlockUI();
     }
 
-    // 週進行は「外側（メイン）」がやる。ここは通知だけ。
     try{
       const weeks = Number(payload?.weeks ?? 1) || 1;
 
-      // もしメイン側に関数があるなら呼ぶ（あれば動く / 無ければイベントへ）
       if (window.MOBBR?.ui?.main?.advanceWeeks && typeof window.MOBBR.ui.main.advanceWeeks === 'function'){
         window.MOBBR.ui.main.advanceWeeks(weeks);
         return;
@@ -1405,7 +1463,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // 汎用：イベント通知（メイン側で addEventListener できる）
       window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
     }catch(e){
       console.error('[ui_tournament] endNationalWeek notify error:', e);
@@ -1425,12 +1482,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
-      // ✅ v3.6.6: matchCount は固定せず state を参照
-      const st = getState() || {};
-      const mc = Number(payload?.matchCount ?? st.matchCount ?? 5);
-      const mi = Number(payload?.matchIndex ?? st.matchIndex ?? 1);
-
-      setLines('次の試合へ', `MATCH ${mi} / ${mc}`, 'NEXTで進行');
+      setLines('次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, 'NEXTで進行');
+      syncSessionBar();
     }finally{
       unlockUI();
     }
@@ -1446,6 +1499,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       const st = getState();
       const req = st?.request || null;
+
+      syncSessionBar();
 
       if (holdScreenType){
         if (req && req.type && req.type !== holdScreenType){
@@ -1476,6 +1531,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (encounterGatePhase === 0) setBattleMode(false);
         setChampionMode(false);
         setResultStampMode(false);
+        syncSessionBar();
         return;
       }
 
@@ -1520,7 +1576,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         case 'showNationalNotice': await handleShowNationalNotice(req); break;
 
         case 'endTournament': await handleEndTournament(req); break;
-
         case 'endNationalWeek': await handleEndNationalWeek(req); break;
 
         case 'nextMatch': await handleNextMatch(req); break;
@@ -1530,12 +1585,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           break;
       }
 
+      syncSessionBar();
+
     }catch(e){
       console.error('[ui_tournament] request handler error:', e);
       busy = false;
       setChampionMode(false);
       setResultStampMode(false);
       if (encounterGatePhase === 0) setBattleMode(false);
+      syncSessionBar();
     }finally{
       rendering = false;
       unlockUI();
