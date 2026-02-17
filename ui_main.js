@@ -1,19 +1,23 @@
 /* =========================================================
-   ui_main.js（FULL）
+   ui_main.js（FULL） v19.2
    - メイン画面の表示/タップ処理
    - BATTLEボタン：次大会に応じて Local / National に分岐
      ✅「大会週（nextTourW一致）」のときだけ大会を開始
      ✅ nextTour に "ナショナル" が含まれていれば National を起動
      ✅ それ以外は Local を起動（ローカル大会）
    - 透明フタ(modalBack)事故を潰す
-   - 大会終了イベント（mobbr:goMain / mobbr:advanceWeek / mobbr:endNationalWeek）受信
-   ========================================================= */
+
+   v19.2 修正（最重要）：
+   ✅ mobbr:advanceWeek / mobbr:endNationalWeek でストレージを進めない（受信しない）
+   ✅ 大会終了の mobbr:goMain は「表示だけ」（recentの表示反映、ポップ閉じ等）
+   ✅ 週進行ポップは app.js から呼ぶ表示専用API showWeekAdvancePop を提供
+========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.1';
+  const VERSION = 'v19.2';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -191,16 +195,43 @@ window.MOBBR = window.MOBBR || {};
     ui.modalBack.setAttribute('aria-hidden', 'true');
   }
 
-  // ===== week popup =====
-  function showWeekPop(title, sub){
+  // ===== week popup（表示専用）=====
+  function showWeekPop(title, sub, onOk){
     if (ui.popTitle) ui.popTitle.textContent = title;
     if (ui.popSub) ui.popSub.textContent = sub;
     showBack();
     if (ui.weekPop) ui.weekPop.style.display = 'block';
+
+    if (ui.btnPopNext){
+      ui.btnPopNext.onclick = () => {
+        try{ if (typeof onOk === 'function') onOk(); }catch(_){}
+        hideWeekPop();
+      };
+    }
   }
   function hideWeekPop(){
     if (ui.weekPop) ui.weekPop.style.display = 'none';
     hideBack();
+  }
+
+  // ✅ app.js から呼ぶ「週進行ポップ：表示だけ」
+  function showWeekAdvancePop(info){
+    if (!ui) collectDom();
+    const y = Number(info?.y || getNum(K.year, 1989));
+    const m = Number(info?.m || getNum(K.month, 1));
+    const w = Number(info?.w || getNum(K.week, 1));
+    const weeks = Number(info?.weeks || 1);
+    const gainPer = Number(info?.gainPer || weeklyGoldByRank(getNum(K.rank, 10)));
+    const totalGain = Number(info?.totalGain || gainPer * weeks);
+
+    const msg = (weeks === 1)
+      ? `企業ランクにより ${gainPer}G 獲得！`
+      : `企業ランクにより ${totalGain}G 獲得！（${weeks}週分）`;
+
+    showWeekPop(`${y}年${m}月 第${w}週`, msg, () => {
+      // 表示専用：ストレージは一切触らない
+      render();
+    });
   }
 
   // ===== member popup =====
@@ -228,98 +259,6 @@ window.MOBBR = window.MOBBR || {};
 
     render();
     notifyTeamRender();
-  }
-
-  // ===== week progression（popを出す版：単週）=====
-  function advanceWeek(){
-    const y = getNum(K.year, 1989);
-    const m = getNum(K.month, 1);
-    const w = getNum(K.week, 1);
-
-    let ny = y, nm = m, nw = w + 1;
-    if (nw >= 5){
-      nw = 1;
-      nm = m + 1;
-      if (nm >= 13){
-        nm = 1;
-        ny = y + 1;
-      }
-    }
-
-    const rank = getNum(K.rank, 10);
-    const gain = weeklyGoldByRank(rank);
-
-    showWeekPop(`${ny}年${nm}月 第${nw}週`, `企業ランクにより ${gain}G 獲得！`);
-
-    if (ui.btnPopNext){
-      ui.btnPopNext.onclick = () => {
-        setNum(K.year, ny);
-        setNum(K.month, nm);
-        setNum(K.week, nw);
-
-        const gold = getNum(K.gold, 0);
-        setNum(K.gold, gold + gain);
-
-        setStr(K.recent, `週が進んだ（+${gain}G）`);
-
-        hideWeekPop();
-        render();
-
-        if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
-      };
-    }
-  }
-
-  // ===== week progression（複数週：まとめて1回だけ確定＆1回だけポップ）=====
-  function advanceWeeksBatch(weeks){
-    const n = Math.max(1, Number(weeks || 1) | 0);
-
-    const y0 = getNum(K.year, 1989);
-    const m0 = getNum(K.month, 1);
-    const w0 = getNum(K.week, 1);
-
-    let ny = y0, nm = m0, nw = w0;
-
-    const rank = getNum(K.rank, 10);
-    const gainPer = weeklyGoldByRank(rank);
-    const totalGain = gainPer * n;
-
-    for (let i=0;i<n;i++){
-      nw += 1;
-      if (nw >= 5){
-        nw = 1;
-        nm += 1;
-        if (nm >= 13){
-          nm = 1;
-          ny += 1;
-        }
-      }
-    }
-
-    // ポップは1回だけ
-    const msg = (n === 1)
-      ? `企業ランクにより ${gainPer}G 獲得！`
-      : `企業ランクにより ${totalGain}G 獲得！（${n}週分）`;
-
-    showWeekPop(`${ny}年${nm}月 第${nw}週`, msg);
-
-    if (ui.btnPopNext){
-      ui.btnPopNext.onclick = () => {
-        setNum(K.year, ny);
-        setNum(K.month, nm);
-        setNum(K.week, nw);
-
-        const gold = getNum(K.gold, 0);
-        setNum(K.gold, gold + totalGain);
-
-        setStr(K.recent, `週が進んだ（+${totalGain}G）`);
-
-        hideWeekPop();
-        render();
-
-        if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
-      };
-    }
   }
 
   // ===== screen open/close helpers =====
@@ -553,34 +492,23 @@ window.MOBBR = window.MOBBR || {};
   initMainUI();
 
   // =========================================================
-  // 大会終了イベント受信（post / endNationalWeek）
+  // 大会終了イベント受信（表示のみ）
   // =========================================================
-  (function bindTournamentPost(){
+  (function bindTournamentPostDisplayOnly(){
     try{
       window.MOBBR = window.MOBBR || {};
       window.MOBBR.ui = window.MOBBR.ui || {};
       window.MOBBR.ui.main = window.MOBBR.ui.main || {};
     }catch(e){}
 
-    // ✅ UI側から呼べる週進行API（まとめ進行）
-    if (!window.MOBBR.ui.main.advanceWeeks){
-      window.MOBBR.ui.main.advanceWeeks = function(weeks){
-        advanceWeeksBatch(weeks);
+    // ✅ app.js が呼ぶ：週進行ポップ（表示だけ）
+    if (!window.MOBBR.ui.main.showWeekAdvancePop){
+      window.MOBBR.ui.main.showWeekAdvancePop = function(info){
+        try{ showWeekAdvancePop(info); }catch(_){}
       };
     }
 
-    // 旧イベント（postが投げる可能性）
-    window.addEventListener('mobbr:advanceWeek', (e)=>{
-      const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
-      advanceWeeksBatch(n);
-    });
-
-    // ✅ 新イベント（ui_tournament.js が投げる可能性）に対応
-    window.addEventListener('mobbr:endNationalWeek', (e)=>{
-      const n = Math.max(1, Number(e?.detail?.weeks ?? 1) | 0);
-      advanceWeeksBatch(n);
-    });
-
+    // ✅ 大会終了：UI側は「閉じ/描画」だけ。ストレージは触らない。
     window.addEventListener('mobbr:goMain', (e)=>{
       try{
         hideBack();
@@ -589,17 +517,13 @@ window.MOBBR = window.MOBBR || {};
 
       const d = e?.detail || {};
 
-      if (d.localFinished){
-        const r = Number(d.rank || 0);
-        const q = !!d.qualified;
-        setRecent(`ローカル大会終了：${r ? r+'位' : ''}${q ? ' / ナショナル出場権獲得' : ''}`);
-      }else if (d.nationalFinished){
-        setRecent('ナショナル終了');
+      // recentは app.js が最終責務で保存する。
+      // ここでは保存せず表示更新だけ。
+      if (d.localFinished || d.nationalFinished || d.worldFinished || d.tournamentFinished){
+        render();
       }else{
-        setRecent('大会終了');
+        render();
       }
-
-      render();
     });
   })();
 
