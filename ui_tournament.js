@@ -1,12 +1,18 @@
 'use strict';
 
 /*
-  ui_tournament.js v3.6.6（FULL）
-  ✅ v3.6.5 の全機能維持
-  追加：
-  - ✅ ナショナル進捗バー（AB CD AC AD BC BD）を上部に常時表示
-  - ✅ 終了済みセッションを赤表示（state.national.doneSessions）
-  - ✅ 現在セッションを強調表示（state.national.sessionIndex）
+  ui_tournament.js v3.6.7（FULL）
+  ✅ v3.6.6 の全機能維持
+  ✅ 変更点（重要）：
+  - ★週進行/メイン復帰の責務を app.js に一本化するため、
+    handleEndNationalWeek() から
+      ・window.MOBBR.ui.main.advanceWeeks()
+      ・window.MOBBR.advanceWeeks()
+      ・mobbr:endNationalWeek
+    を完全撤廃。
+  - 代わりに、close() の後に mobbr:goMain を 1回だけ投げる。
+    detail: { nationalFinished:true, advanceWeeks: weeks }
+    → 週進行は app.js（mobbr:goMain 受信側）で実行する前提。
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -1443,6 +1449,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ★v3.6.7：ここだけ責務を app.js に寄せて一本化
   async function handleEndNationalWeek(payload){
     lockUI();
     try{
@@ -1454,18 +1461,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       const weeks = Number(payload?.weeks ?? 1) || 1;
 
-      if (window.MOBBR?.ui?.main?.advanceWeeks && typeof window.MOBBR.ui.main.advanceWeeks === 'function'){
-        window.MOBBR.ui.main.advanceWeeks(weeks);
-        return;
-      }
-      if (window.MOBBR?.advanceWeeks && typeof window.MOBBR.advanceWeeks === 'function'){
-        window.MOBBR.advanceWeeks(weeks);
-        return;
-      }
-
-      window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
+      // ✅ 週進行もメイン復帰も app.js 側で実処理（一本化）
+      window.dispatchEvent(new CustomEvent('mobbr:goMain', {
+        detail: {
+          tournamentFinished: true,
+          nationalFinished: true,
+          advanceWeeks: weeks
+        }
+      }));
     }catch(e){
-      console.error('[ui_tournament] endNationalWeek notify error:', e);
+      console.error('[ui_tournament] endNationalWeek goMain dispatch error:', e);
     }
   }
 
