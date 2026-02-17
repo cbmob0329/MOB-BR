@@ -1,12 +1,14 @@
+/* =========================================================
+   sim_tournament_core_post.js（FULL） v3.0
+   - ローカル/ナショナル終了処理：権利付与 + tourState更新 + 次大会算出API
+
+   ✅ v3.0 修正（最重要）：
+   ✅ 週進行（year/month/week/gold/recent）は一切しない（app.jsに一本化）
+   ✅ mobbr:advanceWeek は投げない
+   ✅ 大会終了は mobbr:goMain(detail.advanceWeeks=1) で統一
+   ✅ nextTour更新は app.js が週進行後に呼ぶ（setNextTourFromState を公開）
+========================================================= */
 'use strict';
-
-/*
-  sim_tournament_core_post.js（ローカル/ナショナル終了処理：権利付与 + 次大会更新 + 週進行）
-
-  ✅ 今回の追加要件
-  - ナショナル大会終了後に「1週進んでいない」→ 必ず 1週進める
-  - nextTour / nextTourW を必ず更新する
-*/
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.sim = window.MOBBR.sim || {};
@@ -73,34 +75,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     try{
       window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
     }catch(e){}
-  }
-
-  // ===== 1週進行（ストレージ更新）=====
-  function advanceWeekStorage(weeks){
-    const add = Number(weeks || 1);
-    if (add <= 0) return;
-
-    let y = getNum(K.year, 1989);
-    let m = getNum(K.month, 1);
-    let w = getNum(K.week, 1);
-
-    for (let i=0;i<add;i++){
-      w += 1;
-      if (w >= 5){
-        w = 1;
-        m += 1;
-        if (m >= 13){
-          m = 1;
-          y += 1;
-        }
-      }
-    }
-
-    setNum(K.year, y);
-    setNum(K.month, m);
-    setNum(K.week, w);
-
-    return { y, m, w };
   }
 
   // ===== schedule（nextTour算出の最低限）=====
@@ -180,6 +154,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return best;
   }
 
+  // ✅ app.js が「週進行した後」に呼ぶ想定
   function setNextTourFromState(){
     const now = {
       y: getNum(K.year, 1989),
@@ -244,24 +219,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     setJSON(K.tourState, tourState);
     setNationalQualifiedLegacy(qualifiedNational);
 
-    // 1週進行
-    advanceWeekStorage(1);
+    // ✅ 週進行は app.js がやる
+    // ✅ nextTour更新も app.js が「週進行後」に setNextTourFromState() を呼ぶ
 
-    // 次大会更新
-    setNextTourFromState();
-
-    if (qualifiedNational){
-      setStr(K.recent, `ローカル大会 ${rank}位：ナショナル出場権獲得！`);
-    }else{
-      setStr(K.recent, `ローカル大会 ${rank}位：スプリット1敗退…`);
-    }
-
-    dispatch('mobbr:goMain', { localFinished:true, rank, qualified:qualifiedNational });
-    dispatch('mobbr:advanceWeek', { weeks: 1 });
+    dispatch('mobbr:goMain', {
+      localFinished: true,
+      tournamentFinished: true,
+      rank,
+      qualified: qualifiedNational,
+      advanceWeeks: 1
+    });
   }
 
   // ============================================
-  // ナショナル終了処理（✅ 1週進行を必ず実行）
+  // ナショナル終了処理（✅ 1週進行は app.js に委譲）
   // ============================================
   function onNationalTournamentFinished(state, total){
     // ✅ 最低限：ナショナルをプレイした事実を保存（ラストチャンス判定の材料）
@@ -278,25 +249,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     setJSON(K.tourState, tourState);
 
-    // ✅ ナショナル終了後：1週進行
-    advanceWeekStorage(1);
-
-    // ✅ 次大会更新
-    setNextTourFromState();
-
-    // recent
-    setStr(K.recent, 'ナショナル大会終了');
-
-    // メインへ戻す通知
-    dispatch('mobbr:goMain', { nationalFinished:true });
-
-    // 週進行イベント（既存互換）
-    dispatch('mobbr:advanceWeek', { weeks: 1 });
+    // ✅ 週進行は app.js がやる
+    dispatch('mobbr:goMain', {
+      nationalFinished: true,
+      tournamentFinished: true,
+      advanceWeeks: 1
+    });
   }
 
   window.MOBBR.sim.tournamentCorePost = {
     onLocalTournamentFinished,
-    onNationalTournamentFinished
+    onNationalTournamentFinished,
+
+    // ✅ app.js が週進行後に呼ぶ
+    setNextTourFromState
   };
 
 })();
