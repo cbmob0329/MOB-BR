@@ -1,14 +1,11 @@
 'use strict';
 
-/*
-  ui_tournament.js v3.6.7（FULL）
-  ✅ v3.6.6 の全機能維持
-  追加（ユーザー要件）：
-  - ✅ ナショナル6セッション終了後、必ず「タイトル」へ戻す（多重セーフティ）
-  - ✅ ローカル大会終了メッセージ（TOP10/圏外）を豪華表示（showNationalNotice拡張）
-  - ✅ ナショナル大会終了メッセージ（TOP8/9-28/29以下）を豪華表示（showNationalNotice拡張 + 2段階NEXT）
-  - ✅ 各マッチのチャンピオン：画像表示なし／中央にチーム名のみ大きく表示
-*/
+/* =========================================================
+   ui_tournament.js v3.6.7（FULL）
+   ✅ v3.6.6 の全機能維持
+   追加：
+   - ✅ showAutoSession / showAutoSessionDone を表示（プレイヤー不在セッション用）
+   ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
@@ -544,7 +541,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return `showArrival|m:${matchIndex}|r:${round}`;
     }
     if (t === 'showNationalNotice'){
-      return `showNationalNotice|k:${String(req?.kind||'')}|r:${String(req?.rank||'')}|q:${req?.qualified?1:0}|p:${String(req?.line2||'')}`;
+      return `showNationalNotice|q:${req?.qualified?1:0}|p:${String(req?.line2||'')}`;
+    }
+    if (t === 'showAutoSession'){
+      return `showAutoSession|k:${String(req?.sessionKey||req?.key||'')}`;
+    }
+    if (t === 'showAutoSessionDone'){
+      return `showAutoSessionDone|k:${String(req?.sessionKey||req?.key||'')}`;
     }
     if (t === 'endTournament'){
       return `endTournament`;
@@ -727,6 +730,66 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
 
       preloadEventIcons();
+      syncSessionBar();
+    }finally{
+      unlockUI();
+    }
+  }
+
+  // ✅ AUTOセッション（プレイヤー不在）表示：○&○ 試合進行中..
+  async function handleShowAutoSession(payload){
+    lockUI();
+    try{
+      setChampionMode(false);
+      setResultStampMode(false);
+      hidePanels();
+      setEventIcon('');
+      showCenterStamp('');
+      resetEncounterGate();
+      clearHold();
+      setBattleMode(false);
+
+      setBackdrop(TOURNEY_BACKDROP);
+      setSquareBg('');
+      setChars('', '');
+      setNames('', '');
+      hideSplash();
+
+      const t1 = payload?.title || payload?.line1 || '';
+      const t2 = payload?.sub || payload?.line2 || '';
+
+      showSplash(t1, t2);
+      setLines(payload?.line1 || t1 || '', payload?.line2 || t2 || '', payload?.line3 || 'NEXTで進行');
+      syncSessionBar();
+    }finally{
+      unlockUI();
+    }
+  }
+
+  // ✅ AUTOセッション完了：全試合終了！→ NEXTでRESULT
+  async function handleShowAutoSessionDone(payload){
+    lockUI();
+    try{
+      setChampionMode(false);
+      setResultStampMode(false);
+      hidePanels();
+      setEventIcon('');
+      showCenterStamp('');
+      resetEncounterGate();
+      clearHold();
+      setBattleMode(false);
+
+      setBackdrop(TOURNEY_BACKDROP);
+      setSquareBg('');
+      setChars('', '');
+      setNames('', '');
+      hideSplash();
+
+      const t1 = payload?.title || payload?.line1 || '全試合終了！';
+      const t2 = payload?.sub || payload?.line2 || '現在の総合ポイントはこちら！';
+
+      showSplash(t1, t2);
+      setLines(payload?.line1 || t1, payload?.line2 || t2, payload?.line3 || 'NEXTでRESULT表示');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1227,13 +1290,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return null;
   }
 
-  // ✅ チャンピオン：画像なし、中央にチーム名だけ大きく表示
   async function handleShowChampion(payload){
     lockUI();
     try{
       setChampionMode(true);
       setResultStampMode(false);
-      hidePanels(); setEventIcon('');
+      hidePanels(); hideSplash(); setEventIcon('');
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
@@ -1250,14 +1312,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const champTeam = findChampionTeam(st, payload);
       const champName = String(payload?.championName || champTeam?.name || payload?.line2 || '').trim();
 
-      // 左はプレイヤー、右は空（＝画像無し）
-      setChars(leftResolved, '');
-      setNames('', ''); // 右枠も消す
-      syncEnemyVisibility();
+      let champImg = '';
+      if (champTeam?.id){
+        champImg = await resolveFirstExisting(
+          guessTeamImageCandidates(champTeam.id).concat(guessPlayerImageCandidates(champTeam?.img || ''))
+        );
+      }
 
-      // 中央スプラッシュで豪華に見せる（名前だけドン！）
-      hideSplash();
-      showSplash(payload?.line1 || 'この試合のチャンピオンは…', champName || '');
+      setChars(leftResolved, champImg || '');
+      setNames('', champName || '');
 
       setLines(
         payload?.line1 || 'この試合のチャンピオンは…',
@@ -1395,7 +1458,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
           <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.sumFlag ?? r.Flag ?? 0))}</td>
+          <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
         `;
         tb.appendChild(tr);
       });
@@ -1408,58 +1471,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }finally{
       unlockUI();
     }
-  }
-
-  // ✅ ローカル/ナショナル終了メッセージを豪華に（拡張）
-  function buildNoticeByPayload(payload){
-    const kind = String(payload?.kind || '').trim();
-    const rank = Number(payload?.rank ?? payload?.placement ?? 0) || 0;
-
-    // Local
-    if (kind === 'localQualified'){
-      return {
-        step1: { t1: 'ナショナル大会進出！', t2: `${rank}位でナショナル大会進出を決めた！` },
-        step2: { t1: '大会に備えよう！', t2: '' },
-        twoStep: true
-      };
-    }
-    if (kind === 'localFailed'){
-      return {
-        step1: { t1: '敗退…', t2: `${rank}位で敗退。。` },
-        step2: { t1: '次こそはナショナル大会に出られるよう頑張ろう！', t2: '' },
-        twoStep: true
-      };
-    }
-
-    // National
-    if (kind === 'nationalTop8'){
-      return {
-        step1: { t1: '世界大会出場決定！', t2: '' },
-        step2: { t1: 'ワールドファイナルに向けて特訓だ！', t2: '' },
-        twoStep: true
-      };
-    }
-    if (kind === 'nationalLastChance'){
-      return {
-        step1: { t1: 'ラストチャンスへ！', t2: 'ラストチャンスへの繋がった！' },
-        step2: { t1: '絶対勝つぞ！', t2: '' },
-        twoStep: true
-      };
-    }
-    if (kind === 'nationalFailed'){
-      return {
-        step1: { t1: '敗退…', t2: 'ここで敗退。' },
-        step2: { t1: '次のシーズンこそは。。', t2: '' },
-        twoStep: true
-      };
-    }
-
-    // Fallback（既存互換）
-    return {
-      step1: { t1: String(payload?.line1 || ''), t2: String(payload?.line2 || '') },
-      step2: { t1: '', t2: '' },
-      twoStep: false
-    };
   }
 
   async function handleShowNationalNotice(payload){
@@ -1478,28 +1489,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars('', '');
       setNames('', '');
       showCenterStamp('');
+      showSplash(payload?.line1 || '', payload?.line2 || '');
 
-      const n = buildNoticeByPayload(payload);
-
-      // step1 表示
-      hideSplash();
-      showSplash(n.step1.t1 || '', n.step1.t2 || '');
-      setLines(n.step1.t1 || '', n.step1.t2 || '', n.twoStep ? 'NEXTで進行' : (payload?.line3 || 'NEXTで進行'));
-
-      // 2段階NEXT
-      if (n.twoStep){
-        localNextAction = ()=>{
-          lockUI();
-          try{
-            hideSplash();
-            showSplash(n.step2.t1 || '', n.step2.t2 || '');
-            setLines(n.step2.t1 || '', n.step2.t2 || '', 'NEXTで進行');
-          }finally{
-            unlockUI();
-          }
-        };
-      }
-
+      setLines(payload?.line1 || '', payload?.line2 || '', payload?.line3 || 'NEXTで進行');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1515,7 +1507,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ ナショナル6セッション終了後：必ずタイトルへ戻す（多重セーフティ）
   async function handleEndNationalWeek(payload){
     lockUI();
     try{
@@ -1524,41 +1515,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       unlockUI();
     }
 
-    // 週進行の通知（既存互換）
     try{
       const weeks = Number(payload?.weeks ?? 1) || 1;
 
-      // まずUIメイン側APIがあれば使う
       if (window.MOBBR?.ui?.main?.advanceWeeks && typeof window.MOBBR.ui.main.advanceWeeks === 'function'){
         window.MOBBR.ui.main.advanceWeeks(weeks);
-      }else if (window.MOBBR?.advanceWeeks && typeof window.MOBBR.advanceWeeks === 'function'){
-        window.MOBBR.advanceWeeks(weeks);
-      }else{
-        // 互換イベント（ui_main.jsが拾う）
-        window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
-        window.dispatchEvent(new CustomEvent('mobbr:advanceWeek', { detail:{ weeks } }));
+        return;
       }
+      if (window.MOBBR?.advanceWeeks && typeof window.MOBBR.advanceWeeks === 'function'){
+        window.MOBBR.advanceWeeks(weeks);
+        return;
+      }
+
+      window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
     }catch(e){
       console.error('[ui_tournament] endNationalWeek notify error:', e);
     }
-
-    // ✅ ここが本命：タイトルへ戻す
-    try{
-      // 受け口が app.js（showTitle）ならこれで確実
-      window.dispatchEvent(new CustomEvent('mobbr:goTitle', { detail:{} }));
-    }catch(e){}
-
-    // 念のため：goMainも投げる（環境によってはメイン→タイトル導線がある）
-    try{
-      window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ nationalFinished:true } }));
-    }catch(e){}
-
-    // 最終保険：もし mainUI に明示APIがあるなら呼ぶ（存在チェックのみ）
-    try{
-      const mm = window.MOBBR?.ui?.main;
-      if (mm && typeof mm.showTitle === 'function') mm.showTitle();
-      else if (mm && typeof mm.openTitle === 'function') mm.openTitle();
-    }catch(e){}
   }
 
   async function handleNextMatch(payload){
@@ -1666,6 +1638,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         case 'showTournamentResult': await handleShowTournamentResult(req); break;
 
         case 'showNationalNotice': await handleShowNationalNotice(req); break;
+
+        case 'showAutoSession': await handleShowAutoSession(req); break;
+        case 'showAutoSessionDone': await handleShowAutoSessionDone(req); break;
 
         case 'endTournament': await handleEndTournament(req); break;
         case 'endNationalWeek': await handleEndNationalWeek(req); break;
