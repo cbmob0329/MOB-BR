@@ -1,6 +1,6 @@
 /* =========================================================
-   sim_tournament_core_post.js（FULL） v4.1
-   - ローカル/ナショナル/ラストチャンス終了処理：
+   sim_tournament_core_post.js（FULL） v4.2
+   - ローカル/ナショナル/ラストチャンス/ワールド終了処理：
      権利付与 + tourState更新 + 次大会算出API
    - ✅ 週進行（year/month/week/gold/recent）は一切しない（app.jsに一本化）
    - ✅ mobbr:advanceWeek は投げない
@@ -9,6 +9,11 @@
 
    v4.1 追加点
    - ✅ ラストチャンス終了処理（TOP8→World、9位以下→敗退）
+
+   v4.2 追加点
+   - ✅ ワールドファイナル 予選リーグ 終了処理（world.phase='wl'へ）
+   - ✅ ワールドファイナル WL 終了処理（world.phase='final'へ）
+   - ✅ ワールドファイナル 決勝戦 終了処理（world.phase='done'、split終了へ）
 ========================================================= */
 'use strict';
 
@@ -118,7 +123,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const clearedN = !!tourState.clearedNational;
     const lastChanceUnlocked = !!tourState.lastChanceUnlocked;
 
-    const worldPhase = String(tourState?.world?.phase || '').trim(); // 'qual'|'wl'|'final' or ''
+    const worldPhase = String(tourState?.world?.phase || '').trim(); // 'qual'|'wl'|'final'|'done' or ''
     const qChamp = !!tourState.qualifiedChampionship;
     const companyRank = Number(tourState.playerCompanyRank ?? tourState.companyRank ?? 0);
 
@@ -415,10 +420,132 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
+  // =========================================================
+  // ✅ v4.2：ワールド三段階の終了処理
+  //   world.phase : 'qual' → 'wl' → 'final' → 'done'
+  //   ※ 週進行/賞金は app.js 側（ここでは触らない）
+  // =========================================================
+  function ensureWorldObj(tourState){
+    if (!tourState.world || typeof tourState.world !== 'object'){
+      tourState.world = { phase: 'qual' };
+    }
+    if (!tourState.world.phase) tourState.world.phase = 'qual';
+  }
+
+  // 予選リーグ終了：次週 WL へ
+  function onWorldQualFinished(state, total){
+    const tourState = getJSON(K.tourState, null) || {};
+    if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
+
+    ensureWorldObj(tourState);
+
+    // 出場権が無いのに呼ばれた時の安全弁：誤更新しない
+    if (!tourState.qualifiedWorld){
+      setJSON(K.lastResult, { type:'world_qual_blocked', split:tourState.split||0, at:Date.now() });
+      dispatch('mobbr:goMain', { worldQualFinished:false, blocked:true, advanceWeeks:1 });
+      return;
+    }
+
+    tourState.stage = 'world';
+    tourState.world.phase = 'wl';
+    tourState.world.qualDoneAt = Date.now();
+
+    setJSON(K.tourState, tourState);
+
+    setJSON(K.lastResult, {
+      type: 'world_qual',
+      split: tourState.split || 0,
+      at: Date.now()
+    });
+
+    dispatch('mobbr:goMain', {
+      worldQualFinished: true,
+      tournamentFinished: true,
+      advanceWeeks: 1
+    });
+  }
+
+  // WL終了：次週 決勝へ
+  function onWorldWLFinished(state, total){
+    const tourState = getJSON(K.tourState, null) || {};
+    if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
+
+    ensureWorldObj(tourState);
+
+    if (!tourState.qualifiedWorld){
+      setJSON(K.lastResult, { type:'world_wl_blocked', split:tourState.split||0, at:Date.now() });
+      dispatch('mobbr:goMain', { worldWLFinished:false, blocked:true, advanceWeeks:1 });
+      return;
+    }
+
+    tourState.stage = 'world';
+    tourState.world.phase = 'final';
+    tourState.world.wlDoneAt = Date.now();
+
+    setJSON(K.tourState, tourState);
+
+    setJSON(K.lastResult, {
+      type: 'world_wl',
+      split: tourState.split || 0,
+      at: Date.now()
+    });
+
+    dispatch('mobbr:goMain', {
+      worldWLFinished: true,
+      tournamentFinished: true,
+      advanceWeeks: 1
+    });
+  }
+
+  // 決勝終了：世界大会完了（split終了へ）
+  function onWorldFinalFinished(state, total){
+    const { rank } = getRankFromTotal(total);
+
+    const tourState = getJSON(K.tourState, null) || {};
+    if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
+
+    ensureWorldObj(tourState);
+
+    if (!tourState.qualifiedWorld){
+      setJSON(K.lastResult, { type:'world_final_blocked', split:tourState.split||0, at:Date.now() });
+      dispatch('mobbr:goMain', { worldFinalFinished:false, blocked:true, advanceWeeks:1 });
+      return;
+    }
+
+    tourState.stage = 'done';
+    tourState.world.phase = 'done';
+    tourState.world.finalRank = rank;
+    tourState.world.finalDoneAt = Date.now();
+
+    // split終了なので world権利は消す（次splitへ）
+    tourState.qualifiedWorld = false;
+
+    setJSON(K.tourState, tourState);
+
+    setJSON(K.lastResult, {
+      type: 'world_final',
+      split: tourState.split || 0,
+      rank,
+      at: Date.now()
+    });
+
+    dispatch('mobbr:goMain', {
+      worldFinalFinished: true,
+      tournamentFinished: true,
+      rank,
+      advanceWeeks: 1
+    });
+  }
+
   window.MOBBR.sim.tournamentCorePost = {
     onLocalTournamentFinished,
     onNationalTournamentFinished,
     onLastChanceTournamentFinished,
+
+    // ✅ v4.2
+    onWorldQualFinished,
+    onWorldWLFinished,
+    onWorldFinalFinished,
 
     // ✅ app.js が週進行後に呼ぶ
     setNextTourFromState
