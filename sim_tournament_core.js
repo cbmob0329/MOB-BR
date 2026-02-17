@@ -10,10 +10,13 @@
      ✅ ローカルTOP10（Player除く9チーム）を A～D に 1/3/2/3 で振り分け
         （AはPlayerが別枠で入るので合計 2/3/2/3 になる）
    - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ
-     ✅ Local: 「総合RESULT表示 → 次のNEXTで notice → 次のNEXTで post実行 → UI閉じる」
-     ✅ National: 「総合RESULT表示 → 次のNEXTで notice → 次のNEXTで post実行（あれば） → 無ければ endNationalWeek 通知」
-   - FIX:
-     ✅ セッション6後に存在しないセッション7へ行こうとして BD が無限ループする問題を完全修正
+     ✅ Local: 「総合RESULT表示 → 次のNEXTで post実行 → UI閉じる」
+     ✅ National: 「最終総合RESULT表示 → 次のNEXTで post実行（あれば） → 無ければ endNationalWeek 通知」
+   - 追加（今回）：
+     ✅ プレイヤー不在セッションは中央に
+        「○&○ 試合進行中..」→（NEXT）→高速処理→
+        「全試合終了！現在の総合ポイントはこちら！NEXTでRESULT」→（NEXT）→総合RESULT
+     ✅ 最終セッション（BD）がAUTOでも「セッション7へ進まない」永久ループ完全停止
    ========================================================= */
 'use strict';
 
@@ -262,55 +265,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
-  // FINAL順位算出（notice用）
-  // =========================================================
-  function _buildSortedTotalRows(total){
-    const t = total || {};
-    const arr = Object.values(t || {});
-    arr.sort((a,b)=>{
-      const pa = Number(a.sumTotal ?? 0);
-      const pb = Number(b.sumTotal ?? 0);
-      if (pb !== pa) return pb - pa;
-
-      const ppa = Number(a.sumPlacementP ?? 0);
-      const ppb = Number(b.sumPlacementP ?? 0);
-      if (ppb !== ppa) return ppb - ppa;
-
-      const ka = Number(a.sumKP ?? a.KP ?? 0);
-      const kb = Number(b.sumKP ?? b.KP ?? 0);
-      if (kb !== ka) return kb - ka;
-
-      const aa = Number(a.sumAP ?? a.AP ?? 0);
-      const ab = Number(b.sumAP ?? b.AP ?? 0);
-      if (ab !== aa) return ab - aa;
-
-      const da = Number(a.downs_total ?? 0);
-      const db = Number(b.downs_total ?? 0);
-      if (da !== db) return da - db; // downsは少ない方が上（タイブレ）
-
-      const pwa = Number(a.power ?? 0);
-      const pwb = Number(b.power ?? 0);
-      if (pwb !== pwa) return pwb - pwa;
-
-      const na = String(a.squad ?? a.id ?? '');
-      const nb = String(b.squad ?? b.id ?? '');
-      return na.localeCompare(nb);
-    });
-    return arr;
-  }
-
-  function _findTeamRankFromTotal(teamId){
-    const id = String(teamId || 'PLAYER');
-    const arr = _buildSortedTotalRows(state?.tournamentTotal || {});
-    for (let i=0;i<arr.length;i++){
-      const r = arr[i];
-      const rid = String(r.id ?? r.teamId ?? '');
-      if (rid === id) return { rank:i+1, row:r, arr };
-    }
-    return { rank:999, row:null, arr };
-  }
-
-  // =========================================================
   // NATIONAL（分離モジュールがあればそれを使う）
   // =========================================================
   function _cloneDeep(v){
@@ -532,10 +486,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.bannerRight = `MATCH ${state.matchIndex} / ${state.matchCount}`;
   }
 
-  function _getSessionKey(){
+  function _getSessionKey(idx){
     const s = state?.national || {};
-    const si = Number(s.sessionIndex||0);
-    return String(s.sessions?.[si]?.key || '');
+    const i = Number.isFinite(Number(idx)) ? Number(idx) : Number(s.sessionIndex||0);
+    return String(s.sessions?.[i]?.key || '');
   }
 
   function _markSessionDone(key){
@@ -577,31 +531,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const p = getPlayer();
 
-    // ✅ Local: 総合RESULTを見せたあと、次のNEXTで「進出/敗退メッセージ」→ 次のNEXTで post → UI閉じる
-    if (state.phase === 'local_total_result_wait_notice'){
-      const rk = _findTeamRankFromTotal('PLAYER');
-      const rank = Number(rk.rank || 999);
-
-      if (rank <= 10){
-        setRequest('showNationalNotice', {
-          qualified: true,
-          line1: `${rank}位でナショナル大会進出を決めた！`,
-          line2: '大会に備えよう！',
-          line3: 'NEXTで進行'
-        });
-      }else{
-        setRequest('showNationalNotice', {
-          qualified: false,
-          line1: `${rank}位で敗退。。`,
-          line2: '次こそはナショナル大会に出られるよう頑張ろう！',
-          line3: 'NEXTで進行'
-        });
-      }
-      state.phase = 'local_total_result_wait_post';
-      return;
-    }
-
-    // ✅ Local: post 実行 → UI閉じる
+    // ✅ Local: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
     if (state.phase === 'local_total_result_wait_post'){
       try{
         if (P?.onLocalTournamentFinished){
@@ -614,54 +544,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
       state.phase = 'done';
       setRequest('endTournament', {});
-      return;
-    }
-
-    // ✅ National: 最終総合RESULT後 → 次のNEXTで「進出/敗退メッセージ」→ 次のNEXTで post or endNationalWeek
-    if (state.phase === 'national_total_result_wait_notice'){
-      const rk = _findTeamRankFromTotal('PLAYER');
-      const rank = Number(rk.rank || 999);
-
-      if (rank <= 8){
-        setRequest('showNationalNotice', {
-          qualified: true,
-          line1: '世界大会出場決定！',
-          line2: 'NEXTで進行',
-          line3: ''
-        });
-        // 次のNEXTで追加メッセージを出したい → もう1段階
-        state.phase = 'national_total_result_wait_notice2';
-        return;
-      }
-
-      if (rank >= 9 && rank <= 28){
-        setRequest('showNationalNotice', {
-          qualified: true,
-          line1: 'ラストチャンスへの繋がった！',
-          line2: '絶対勝つぞ！',
-          line3: 'NEXTで進行'
-        });
-      }else{
-        setRequest('showNationalNotice', {
-          qualified: false,
-          line1: 'ここで敗退。',
-          line2: '次のシーズンこそは。。',
-          line3: 'NEXTで進行'
-        });
-      }
-
-      state.phase = 'national_total_result_wait_post';
-      return;
-    }
-
-    if (state.phase === 'national_total_result_wait_notice2'){
-      setRequest('showNationalNotice', {
-        qualified: true,
-        line1: 'ワールドファイナルに向けて特訓だ！',
-        line2: '',
-        line3: 'NEXTで進行'
-      });
-      state.phase = 'national_total_result_wait_post';
       return;
     }
 
@@ -691,21 +573,67 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: AUTOセッション開始表示（○&○ 試合進行中..）
+    if (state.phase === 'national_auto_session_wait_run'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const key = _getSessionKey(si) || `S${si+1}`;
+
+      // ここで高速処理を実行
+      _autoRunNationalSession();
+
+      // セッション完了マーク（UIで赤）
+      _markSessionDone(key);
+
+      // 次は「全試合終了！」表示へ
+      const label = String((nat.sessions?.[si]?.groups || []).join(' & ') || key);
+      setRequest('showAutoSessionDone', {
+        sessionKey: key,
+        line1: '全試合終了！',
+        line2: '現在の総合ポイントはこちら！',
+        line3: 'NEXTでRESULT表示',
+        title: '全試合終了！',
+        sub: '現在の総合ポイントはこちら！',
+        sessionLabel: label
+      });
+      state.phase = 'national_auto_session_done_wait_result';
+      return;
+    }
+
+    // ✅ National: AUTOセッション完了表示の次 → 総合RESULT表示
+    if (state.phase === 'national_auto_session_done_wait_result'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+      const isLastSession = (si >= sc - 1);
+
+      setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+      // ★重要：最終AUTO（BD）ならここで終了へ。セッション7へ行かない。
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+      }else{
+        state.phase = 'national_session_total_result_wait_notice';
+      }
+      return;
+    }
+
     // ✅ National: セッションごとの総合RESULT表示後（= 5試合終わるごと）
     if (state.phase === 'national_session_total_result_wait_notice'){
       const nat = state.national || {};
       const si = Number(nat.sessionIndex||0);
       const sc = Number(nat.sessionCount||6);
 
-      // ★★★ FIX（決定打）：最終セッションなら「存在しない次セッション」へ行かず、最終処理へ ★★★
-      if (si >= sc - 1){
-        // ここに来るのは「A無しのオート最終(BD)」などのケース
-        setRequest('showTournamentResult', { total: state.tournamentTotal });
-        state.phase = 'national_total_result_wait_notice';
+      const curKey  = String(nat.sessions?.[si]?.key || `S${si+1}`);
+      const isLastSession = (si >= sc - 1);
+
+      // 最終セッションは Noticeを出さずに終了処理へ（安全弁）
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
         return;
       }
 
-      const curKey  = String(nat.sessions?.[si]?.key || `S${si+1}`);
       const nextKey = String(nat.sessions?.[si+1]?.key || `S${si+2}`);
 
       // このタイミングで完了マーク（UIで赤）
@@ -727,7 +655,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const si = Number(nat.sessionIndex||0);
       const sc = Number(nat.sessionCount||6);
 
-      const nextIndex = Math.min(sc-1, si+1);
+      // 最終なら進めない（安全弁）
+      if (si >= sc - 1){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      const nextIndex = si + 1;
       nat.sessionIndex = nextIndex;
       state.national = nat;
 
@@ -776,24 +711,23 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const key = String(s.sessions?.[si]?.key || `S${si+1}`);
         setCenter3('ナショナルリーグ開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
 
-        // ✅ Aが出ないセッションは即オート
+        // ✅ Aが出ないセッションは「進行中..」表示 → 次のNEXTでオート実行
         if (!_sessionHasPlayer(si)){
-          // バナー更新
           _setNationalBanners();
           state.bannerRight = `AUTO SESSION ${key}`;
 
-          // ここでオート実行し、いきなり総合RESULTへ
-          _autoRunNationalSession();
+          const groups = s.sessions?.[si]?.groups || [];
+          const label = groups.length === 2 ? `${groups[0]} & ${groups[1]}` : key;
 
-          // ★★★ FIX（保険）：最終セッションなら notice→postへ ★★★
-          if (si >= (state.national.sessionCount - 1)){
-            setRequest('showTournamentResult', { total: state.tournamentTotal });
-            state.phase = 'national_total_result_wait_notice';
-            return;
-          }
-
-          setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'national_session_total_result_wait_notice';
+          setRequest('showAutoSession', {
+            sessionKey: key,
+            line1: `${label} 試合進行中..`,
+            line2: '',
+            line3: 'NEXTで進行',
+            title: `${label} 試合進行中..`,
+            sub: ''
+          });
+          state.phase = 'national_auto_session_wait_run';
           return;
         }
       }else{
@@ -1075,7 +1009,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         setRequest('showChampion', {
           matchIndex: state.matchIndex,
           championName: String(go.championName || '')
-          // ※チャンピオン画像不要は ui_tournament.js 側で最終対応（次）
         });
 
         state.phase = 'match_result';
@@ -1151,7 +1084,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'local_total_result_wait_notice'; // ★追加：notice を挟む
+          state.phase = 'local_total_result_wait_post';
           return;
         }
 
@@ -1200,8 +1133,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         setRequest('showTournamentResult', { total: state.tournamentTotal });
 
         if (isLastSession){
-          // ★変更：最終は notice を挟んでから post/endNationalWeek
-          state.phase = 'national_total_result_wait_notice';
+          // 最終だけは「次のNEXTでpost」へ
+          state.phase = 'national_total_result_wait_post';
           return;
         }
 
