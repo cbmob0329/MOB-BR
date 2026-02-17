@@ -1,311 +1,284 @@
-/* =========================================================
-   tournament.css（FULL）
-   ※ 既存の見た目は維持しつつ、
-      ✅ sessionBar（AB CD AC AD BC BD）を追加
-      ✅ done（赤）/ current（強調）を追加
-   ========================================================= */
+/* tournament.css（フル） v3.2.1
+  - ✅ 交戦中バナー（stamp）を上部中央へ
+  - ✅ 交戦中ログをさらに大きく
+  - ✅ 交戦中の上部バナーを中央寄せ（見た目のまとまり）
+  - ✅ イベント演出：eventIcon をふわふわ（遅延対策はJSでプリロード）
+/* tournament.css（フル） v3.2.2
+  - ✅ 交戦開始BATTLEバナーを「プレイヤーと敵の間」へ（見切れ解消）
+  - ✅ 交戦後WIN/LOSEを中央巨大（.isResultStamp）
+  - ✅ イベント演出：eventIconふわふわ
+  - ✅ チーム名は1行（nowrap + ellipsis）
+  - ✅ チャンピオン表示で右チーム（画像）を表示（isChampion時）
+*/
 
-/* ---- 既存CSSがある前提でも壊れないよう “追加” でまとめる ---- */
+:root{
+@@ -91,6 +90,7 @@
+  color: rgba(255,255,255,.96);
+  letter-spacing:.06em;
+  text-shadow: 0 3px 10px rgba(0,0,0,.55);
 
-#mobbrTournamentOverlay{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: none;
-}
-#mobbrTournamentOverlay.isOpen{ display:block; }
-
-#mobbrTournamentOverlay .backdrop{
-  position:absolute;
-  inset:0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-#mobbrTournamentOverlay .stage{
-  position:absolute;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+@@ -137,6 +137,11 @@
+  display:none !important;
 }
 
-#mobbrTournamentOverlay .hud{
-  position:relative;
-  width:min(92vw, 520px);
-  height:min(92vh, 860px);
-  border-radius: 18px;
-  overflow:hidden;
-  background: rgba(0,0,0,0.55);
-  box-shadow: 0 18px 44px rgba(0,0,0,0.55);
+/* ✅チャンピオン表示だけは右チームを表示したい */
+#mobbrTournamentOverlay.isChampion .char.right{
+  display:flex !important;
 }
 
-#mobbrTournamentOverlay .squareBg{
-  position:absolute;
-  left: 50%;
-  top: 86px;
-  transform: translateX(-50%);
-  width: min(84vw, 460px);
-  height: min(84vw, 460px);
-  max-height: 460px;
-  background-size: cover;
-  background-position: center;
-  border-radius: 16px;
-  opacity: 0.95;
-}
-
-#mobbrTournamentOverlay .banner{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  top: 12px;
-  display:flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-weight: 800;
-  letter-spacing: .5px;
-  color: #fff;
-  text-shadow: 0 2px 0 rgba(0,0,0,0.35);
-}
-#mobbrTournamentOverlay .banner .left,
-#mobbrTournamentOverlay .banner .right{
-  padding: 8px 10px;
-  background: rgba(0,0,0,0.25);
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.12);
-}
-
-/* ✅ National progress bar */
-#mobbrTournamentOverlay .sessionBar{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  top: 56px;
-  display:none;
-  gap: 6px;
-  justify-content: space-between;
-  align-items: center;
-  user-select: none;
-  pointer-events: none;
-}
-#mobbrTournamentOverlay .sessionBar .seg{
-  flex: 1 1 0;
-  text-align: center;
-  padding: 6px 0;
-  border-radius: 10px;
-  font-weight: 900;
-  font-size: 14px;
-  letter-spacing: 0.8px;
-
-  background: rgba(0,0,0,0.25);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.85);
-}
-#mobbrTournamentOverlay .sessionBar .seg.isCurrent{
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.35);
-  color: #fff;
-}
-#mobbrTournamentOverlay .sessionBar .seg.isDone{
-  background: rgba(255, 0, 0, 0.22);
-  border: 1px solid rgba(255, 0, 0, 0.55);
-  color: #fff;
-}
-
-/* event icon */
-#mobbrTournamentOverlay .eventIcon{
-  position:absolute;
-  right: 16px;
-  top: 100px;
-  width: 110px;
-  height: 110px;
-  object-fit: contain;
-  opacity: 0;
-  transform: scale(0.98);
-  transition: opacity .15s ease, transform .15s ease;
-  filter: drop-shadow(0 8px 14px rgba(0,0,0,0.55));
-}
-#mobbrTournamentOverlay .eventIcon.isOn{
-  opacity: 1;
-  transform: scale(1);
-}
-
-/* chars */
-#mobbrTournamentOverlay .chars{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  top: 580px;
-  display:flex;
-  justify-content: space-between;
-  gap: 10px;
-  pointer-events:none;
-}
-#mobbrTournamentOverlay .char{
-  width: 48%;
-  display:flex;
-  flex-direction: column;
-  align-items:center;
-  gap: 6px;
-}
 #mobbrTournamentOverlay .char .name{
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 2px 0 rgba(0,0,0,0.35);
-}
-#mobbrTournamentOverlay .char img{
   width: 100%;
-  max-width: 220px;
-  height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 10px 18px rgba(0,0,0,0.55));
+  text-align:center;
+@@ -165,6 +170,12 @@
+  filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
 }
 
+/* ✅ チャンピオン表示：右側は小さめで素早く */
+#mobbrTournamentOverlay.isChampion .char.right img{
+  height: 170px;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,.55));
+}
+
+/* Stamp */
 #mobbrTournamentOverlay .centerStamp{
-  position:absolute;
-  left: 50%;
-  top: 520px;
-  transform: translateX(-50%);
-  width: 230px;
-  height: 90px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-}
-#mobbrTournamentOverlay .centerStamp img{
-  max-width: 100%;
-  max-height: 100%;
-  opacity: 0;
-  transform: scale(0.98);
-  transition: opacity .12s ease, transform .12s ease;
-}
-#mobbrTournamentOverlay .centerStamp img.isOn{
-  opacity: 1;
-  transform: scale(1);
+  position:absolute; left: 12px; right: 12px;
+@@ -177,231 +188,233 @@
+  z-index: 3;
 }
 
-/* log */
+/* ✅ 交戦中バナー（brbattle/brwin/brlose）を上部中央くらいへ */
+/* ✅ 交戦開始BATTLEバナー：プレイヤーと敵の間（見切れ防止）
+   squareBg: top=64px height=320px → 中央は約224px付近
+*/
+#mobbrTournamentOverlay.isBattle .centerStamp{
+  top: 54px;          /* banner(12px)の下、squareBg(64px)の直前 */
+  top: 228px;
+  height: 44px;
+  z-index: 7;         /* bannerより上に見えるように */
+  z-index: 7;
+}
+#mobbrTournamentOverlay.isBattle .centerStamp img{
+  height: 40px;
+}
+
+/* ✅ 交戦結果スタンプ（WIN/LOSE）だけ中央巨大 */
+#mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp{
+  top: 170px;         /* キャラに被ってOK：中央寄せ */
+  height: 140px;
+  z-index: 12;
+}
+#mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp img{
+  height: 128px;
+  filter: drop-shadow(0 14px 26px rgba(0,0,0,.75));
+}
+
+#mobbrTournamentOverlay .centerStamp img{
+  height: 36px;
+  image-rendering: pixelated;
+  display:none;
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,.65));
+}
+#mobbrTournamentOverlay .centerStamp img.isOn{ display:block; }
+
+/* Log box（大きく／文字も大きく） */
 #mobbrTournamentOverlay .logBox{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 86px;
-  padding: 12px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,0.28);
-  border: 1px solid rgba(255,255,255,0.12);
-  color:#fff;
+  position:absolute; left: 12px; right: 12px;
+  bottom: 74px;
+  height: 210px;
+  border-radius: 16px;
+  background: rgba(0,0,0,.62);
+  border: 2px solid rgba(255,255,255,.18);
+  padding: 12px 14px;
+  z-index: 2;
+  box-shadow: 0 10px 22px rgba(0,0,0,.45);
 }
 #mobbrTournamentOverlay .logBox .line{
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.35;
-  min-height: 18px;
+  font-size: 18px;
+  font-weight: 1000;
+  color: rgba(255,255,255,.98);
+  text-shadow: 0 4px 14px rgba(0,0,0,.65);
+  letter-spacing:.04em;
+  min-height: 26px;
 }
 
-/* panel */
+/* ✅ 交戦中ログをさらに大きく */
+#mobbrTournamentOverlay.isBattle .logBox .line{
+  font-size: 22px;
+  min-height: 32px;
+}
+#mobbrTournamentOverlay.isBattle .logBox #mobbrTourLine1{
+  font-size: 24px;
+}
+#mobbrTournamentOverlay.isBattle .logBox #mobbrTourLine2{
+  font-size: 22px;
+}
+
+/* ✅ チャンピオン表示だけ特大（overlayに isChampion を付与） */
+#mobbrTournamentOverlay.isChampion .logBox .line{
+  font-size: 20px;
+  min-height: 28px;
+}
+#mobbrTournamentOverlay.isChampion .logBox #mobbrTourLine2{
+  font-size: 30px;
+  font-weight: 1100;
+  letter-spacing:.06em;
+}
+#mobbrTournamentOverlay.isChampion .logBox #mobbrTourLine1,
+#mobbrTournamentOverlay.isChampion .logBox #mobbrTourLine3{
+  font-size: 20px;
+}
+
+/* Panel */
 #mobbrTournamentOverlay .panel{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  top: 104px;
-  bottom: 180px;
-  border-radius: 14px;
-  background: rgba(0,0,0,0.30);
-  border: 1px solid rgba(255,255,255,0.12);
-  overflow:auto;
+  position:absolute; left: 12px; right: 12px;
+  top: 64px;
+  height: 320px;
+  border-radius: 16px;
+  background: rgba(0,0,0,.72);
+  border: 2px solid rgba(255,255,255,.18);
+  z-index: 4;
   display:none;
+  overflow:hidden;
+  box-shadow: 0 10px 22px rgba(0,0,0,.45);
 }
 #mobbrTournamentOverlay .panel.isOn{ display:block; }
 #mobbrTournamentOverlay .panelHead{
   padding: 10px 12px;
-  font-weight: 900;
-  color:#fff;
-  border-bottom: 1px solid rgba(255,255,255,0.10);
+  font-size: 13px;
+  font-weight: 1000;
+  letter-spacing:.06em;
+  border-bottom: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.98);
 }
 #mobbrTournamentOverlay .panelBody{
-  padding: 10px 12px;
-  color:#fff;
+  height: calc(100% - 44px);
+  overflow:auto;
+  padding: 8px 10px;
 }
 
-/* splash */
-#mobbrTournamentOverlay .splash{
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  top: 140px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(255,255,255,0.12);
-  display:none;
-}
-#mobbrTournamentOverlay .splash.isOn{ display:block; }
-#mobbrTournamentOverlay .splash .t1{
-  font-weight: 900;
-  color:#fff;
-  font-size: 18px;
-}
-#mobbrTournamentOverlay .splash .t2{
-  font-weight: 800;
-  color: rgba(255,255,255,0.92);
-  font-size: 14px;
-  margin-top: 4px;
-}
-
-/* buttons */
-#mobbrTournamentOverlay .nextBtn{
-  position:absolute;
-  right: 14px;
-  bottom: 14px;
-  width: 120px;
-  height: 48px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.10);
-  color:#fff;
-  font-weight: 900;
-  letter-spacing: 1px;
-}
-#mobbrTournamentOverlay .nextBtn.isDisabled{
-  opacity: .55;
-}
-#mobbrTournamentOverlay .closeBtn{
-  position:absolute;
-  left: 14px;
-  bottom: 14px;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.06);
-  color:#fff;
-  font-weight: 900;
-}
-
-/* tables (result/team list) */
-#mobbrTournamentOverlay table{
-  width:100%;
+#mobbrTournamentOverlay .teamTable,
+#mobbrTournamentOverlay .resultTable,
+#mobbrTournamentOverlay .tourneyTable{
+  width: 100%;
   border-collapse: collapse;
+  font-size: 12px;
+  color: rgba(255,255,255,.95);
 }
-#mobbrTournamentOverlay th,
-#mobbrTournamentOverlay td{
-  border-bottom: 1px solid rgba(255,255,255,0.10);
-  padding: 8px 6px;
-  font-size: 13px;
+#mobbrTournamentOverlay th, #mobbrTournamentOverlay td{
+  padding: 8px 8px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  text-align: left;
+  white-space: nowrap;
 }
 #mobbrTournamentOverlay th{
-  text-align:left;
+  position: sticky;
+  top: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1;
   font-weight: 900;
 }
-#mobbrTournamentOverlay td.num,
-#mobbrTournamentOverlay th.num{
-  text-align:right;
-  width: 54px;
-}
+#mobbrTournamentOverlay td.num{ text-align:right; }
 #mobbrTournamentOverlay tr.isPlayer td{
+  background: rgba(0,128,255,.18);
+}
+
+/* Coach */
+#mobbrTournamentOverlay .coachHint{
+  font-size: 12px;
+  color: rgba(255,255,255,.88);
+  margin: 2px 0 10px;
+}
+#mobbrTournamentOverlay .coachList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+#mobbrTournamentOverlay .coachBtn{
+  width: 100%;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.98);
   font-weight: 900;
-  background: rgba(255,255,255,0.06);
+  letter-spacing:.04em;
+}
+#mobbrTournamentOverlay .coachBtn:active{ transform: translateY(1px); }
+
+/* Buttons */
+#mobbrTournamentOverlay .nextBtn{
+  position:absolute; left: 12px; right: 12px; bottom: 14px;
+  height: 52px;
+  border-radius: 16px;
+  border: 2px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.98);
+  font-weight: 1000;
+  letter-spacing:.10em;
+  font-size: 15px;
+  z-index: 5;
+}
+#mobbrTournamentOverlay .nextBtn.isDisabled{ opacity: .5; }
+
+#mobbrTournamentOverlay .closeBtn{
+  position:absolute; right: 10px; top: 10px;
+  width: 36px; height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.35);
+  color: rgba(255,255,255,.95);
+  font-weight: 1000;
+  z-index: 6;
+}
+
+/* Splash */
+#mobbrTournamentOverlay .splash{
+  position:absolute; inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  gap:10px;
+  background: rgba(0,0,0,.35);
+  pointer-events:none;
+  z-index: 20;
+}
+#mobbrTournamentOverlay .splash.isOn{ display:flex; }
+#mobbrTournamentOverlay .splash .t1{
+  font-size: 28px;
+  font-weight: 1000;
+  letter-spacing:.08em;
+  color: rgba(255,255,255,.98);
+  text-shadow: 0 6px 18px rgba(0,0,0,.65);
+}
+#mobbrTournamentOverlay .splash .t2{
+  font-size: 16px;
+  font-weight: 1000;
+  letter-spacing:.06em;
+  color: rgba(255,255,255,.98);
+  text-shadow: 0 6px 18px rgba(0,0,0,.65);
+}
+
+#mobbrTournamentOverlay .splash::after{
+  content:"";
+  width: 34px; height: 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(255,255,255,.25);
+  border-top-color: rgba(255,255,255,.95);
+  animation: mobbrSpin .9s linear infinite;
+  box-shadow: 0 8px 18px rgba(0,0,0,.45);
+}
+@keyframes mobbrSpin{
+  from{ transform: rotate(0deg); }
+  to{ transform: rotate(360deg); }
+}
+
+/* ✅ ふわふわ */
+@keyframes mobbrFloat{
+  0%   { transform: translateY(0px) rotate(-1deg); }
+  50%  { transform: translateY(-8px) rotate(1deg); }
+  100% { transform: translateY(0px) rotate(-1deg); }
 }
