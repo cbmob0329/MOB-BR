@@ -1,16 +1,18 @@
+/* =========================================================
+   app.js（FULL） v18.1
+   - ローカル大会 1本 / 3分割対応 + post対応
+   - 重要：全モジュールを APP_VER で統一してキャッシュ差分を確実に潰す
+   - 重要：読み込み確認ログを追加（どれが読めてない/古いか即判定）
+
+   v18.1 修正（最重要）：
+   ✅ 週進行/ゴールド加算/nextTour更新の「実処理」は app.js に一本化
+   ✅ mobbr:advanceWeek は使用しない（受信もしない）
+   ✅ 大会終了は mobbr:goMain(detail.advanceWeeks) で統一
+   ✅ ui_main.js 側は表示のみ（ストレージ更新なし）
+========================================================= */
 'use strict';
 
-/*
-  MOB BR - app.js v18.0（フル：ローカル大会 1本 / 3分割対応 + post対応）
-  - 重要：全モジュールを APP_VER で統一してキャッシュ差分を確実に潰す
-  - 重要：読み込み確認ログを追加（どれが読めてない/古いか即判定）
-
-  v18.0 追加：
-  - sim_tournament_core_post.js をロード（ローカル大会終了後：週進行→メイン復帰）
-  - mobbr:advanceWeek / mobbr:goMain を app.js 側で受けて実処理する
-*/
-
-const APP_VER = 18; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.1; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -139,7 +141,7 @@ async function loadModules(){
     `sim_tournament_result.js${v}`,
     `sim_tournament_core.js${v}`,
 
-    // ★ローカル大会終了後処理（週進行→メイン復帰 / TOP10でナショナル権）
+    // ★ローカル/ナショナル大会終了後処理（状態更新 + 次大会算出API）
     `sim_tournament_core_post.js${v}`,
 
     // UI
@@ -207,7 +209,7 @@ async function bootAfterNext(){
 }
 
 // ==========================================
-// 大会post用：週進行＆メイン復帰イベント受け
+// 大会post用：週進行＆メイン復帰（責務一本化）
 // ==========================================
 
 // storage keys（ui_main.js と同じ）
@@ -235,8 +237,11 @@ function getNumLS(key, def){
 function setNumLS(key, val){ localStorage.setItem(key, String(Number(val))); }
 function setStrLS(key, val){ localStorage.setItem(key, String(val)); }
 
+// ✅ 週進行の実処理（ストレージ更新）は app.js のみ
+// - setRecent は goMain 側で統一するので、ここでは基本触らない
 function advanceWeekBy(weeks){
-  const add = Math.max(1, Number(weeks || 1));
+  const add = Math.max(1, Number(weeks || 1) | 0);
+
   let y = getNumLS(KLS.year, 1989);
   let m = getNumLS(KLS.month, 1);
   let w = getNumLS(KLS.week, 1);
@@ -254,14 +259,16 @@ function advanceWeekBy(weeks){
   }
 
   const rank = getNumLS(KLS.rank, 10);
-  const gain = weeklyGoldByRank(rank);
+  const gainPer = weeklyGoldByRank(rank);
+  const totalGain = gainPer * add;
   const gold = getNumLS(KLS.gold, 0);
 
   setNumLS(KLS.year, y);
   setNumLS(KLS.month, m);
   setNumLS(KLS.week, w);
-  setNumLS(KLS.gold, gold + gain);
-  setStrLS(KLS.recent, `週が進んだ（+${gain}G）`);
+  setNumLS(KLS.gold, gold + totalGain);
+
+  return { y, m, w, gainPer, totalGain, weeks: add };
 }
 
 function closeTournamentOverlayHard(){
@@ -281,29 +288,77 @@ function closeTournamentOverlayHard(){
   }
 }
 
+function buildTournamentRecent(detail, weekInfo){
+  const d = detail || {};
+  const w = weekInfo || null;
+
+  let base = '';
+  if (d.localFinished){
+    const r = Number(d.rank || 0);
+    const q = !!d.qualified;
+    base = `ローカル大会終了：${r ? r+'位' : ''}${q ? ' / ナショナル出場権獲得' : ''}`;
+  }else if (d.nationalFinished){
+    base = 'ナショナル大会終了';
+  }else if (d.worldFinished){
+    base = 'ワールドファイナル終了';
+  }else if (d.tournamentFinished){
+    base = '大会終了';
+  }
+
+  if (!base) base = d.recent || '';
+
+  if (w && w.totalGain){
+    const gainText = `週が進んだ（+${w.totalGain}G）`;
+    if (base && base.trim()) return `${base} / ${gainText}`;
+    return gainText;
+  }
+
+  return base || getNumLS(KLS.week, 1) ? '' : '';
+}
+
 function bindGlobalEvents(){
   window.addEventListener('mobbr:goTitle', () => {
     showTitle();
   });
 
-  // ★大会post：週進行
-  window.addEventListener('mobbr:advanceWeek', (e) => {
-    try{
-      const weeks = e?.detail?.weeks || 1;
-      advanceWeekBy(weeks);
-    }catch(err){
-      console.error(err);
-    }
-  });
-
-  // ★大会post：メイン復帰
+  // ✅ 大会post：メイン復帰（週進行もここでのみ実処理）
   window.addEventListener('mobbr:goMain', (e) => {
     try{
+      const detail = e?.detail || {};
+      const weeks = Math.max(0, Number(detail.advanceWeeks || 0) | 0);
+
+      // 1) 大会オーバーレイ閉じる（見た目の確実化）
       showMain();
       hardResetOverlays();
       closeTournamentOverlayHard();
 
-      // メインUI再描画（initMainUIは二重bind防止が入ってる前提）
+      // 2) 週進行（必要な時だけ）＋ gold 加算
+      let weekInfo = null;
+      if (weeks > 0){
+        weekInfo = advanceWeekBy(weeks);
+
+        // ✅ 次大会更新（週進行後に必ず計算）
+        try{
+          if (window.MOBBR?.sim?.tournamentCorePost?.setNextTourFromState){
+            window.MOBBR.sim.tournamentCorePost.setNextTourFromState();
+          }
+        }catch(_){}
+
+        // ✅ UIに「週進行ポップ」を出したい（表示のみ）
+        try{
+          if (window.MOBBR?.ui?.main?.showWeekAdvancePop){
+            window.MOBBR.ui.main.showWeekAdvancePop(weekInfo);
+          }
+        }catch(_){}
+      }
+
+      // 3) recent を1回だけ決める（ここが最終責務）
+      const recent = buildTournamentRecent(detail, weekInfo);
+      if (recent && recent.trim()){
+        setStrLS(KLS.recent, recent);
+      }
+
+      // 4) メインUI再描画（initMainUIは二重bind防止が入ってる前提）
       if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
     }catch(err){
       console.error(err);
