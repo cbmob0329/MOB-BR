@@ -2,6 +2,9 @@
    sim_tournament_core_step.js（FULL）
    - step() 本体だけを移植
    - shared の関数/状態を参照して “台本(step)” を固定
+
+   v追加（最小）:
+   ✅ LastChance: 総合RESULT表示後 → 次NEXTで post → endTournament
    ========================================================= */
 'use strict';
 
@@ -49,7 +52,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _autoRunNationalSession(){ return T._autoRunNationalSession(); }
 
   // =========================================================
-  // ===== main step machine (FROM ORIGINAL, NO DELETION) =====
+  // ===== main step machine (FROM ORIGINAL, MINIMAL ADD) =====
   // =========================================================
   function step(){
     const state = T.getState();
@@ -99,8 +102,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
-    // ✅ LastChance: 総合RESULT後 → 次のNEXTで “上位2だけWorld権利” をpostで確定 → UI閉じる
-    //   - 20チーム固定 / セッション分割なし / 5試合 / 賞金なし / 企業ランク変動なし
+    // ✅ LastChance: 最終総合RESULT後 → 次のNEXTで post → endTournament（賞金/ランク変動なし）
     if (state.phase === 'lastchance_total_result_wait_post'){
       try{
         if (P?.onLastChanceTournamentFinished){
@@ -112,7 +114,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
       }
       state.phase = 'done';
-      // 週進行なし・報酬なし → endTournament だけ
       setRequest('endTournament', {});
       return;
     }
@@ -180,7 +181,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       const nextKey = String(nat.sessions?.[si+1]?.key || `S${si+2}`);
 
-      // このタイミングで完了マーク（UIで赤）
+      // このタイミングで完了マーク（UIで赤表示）
       _markSessionDone(curKey);
 
       setRequest('showNationalNotice', {
@@ -277,8 +278,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.phase = 'national_auto_session_wait_run';
           return;
         }
-      }else if (state.mode === 'lastchance'){
-        setCenter3('ラストチャンス開始！', '上位2チームがワールド出場！', '');
       }else{
         setCenter3('本日のチームをご紹介！', '', '');
       }
@@ -315,6 +314,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (state.mode === 'national'){
         _setNationalBanners();
+        state.bannerRight = '降下';
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
         state.bannerRight = '降下';
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -692,7 +694,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
-      // LASTCHANCE（20チーム固定 / 5試合 / 上位2のみWorld権利 / 報酬なし・企業ランク変動なし）
+      // LAST CHANCE（20チーム・5試合・上位2のみWorld権利・賞金/ランク変動なし）
       if (state.mode === 'lastchance'){
         if (state.matchIndex >= state.matchCount){
           setRequest('showTournamentResult', { total: state.tournamentTotal });
@@ -715,6 +717,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // その他（未定）
       setRequest('showTournamentResult', { total: state.tournamentTotal });
       state.phase = 'done';
       return;
