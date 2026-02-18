@@ -1,11 +1,13 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL / core連携対応版）
-  - v3.3.0
-  ✅ core.js の finishMatchAndBuildResult() 呼び出しに対応
-  ✅ eliminatedRound / H2H / power符号修正維持
-  ✅ matchResultRows / tournamentTotal を state に書き戻す
+  sim_tournament_result.js（FULL 修正版）
+
+  変更点：
+  ✅ チーム名を必ず name 表示（ID表示バグ修正）
+  ✅ Treasure=3 / Flag=5
+  ✅ 1試合終了ごとに「現在の総合順位（その20チーム）」生成
+  ✅ キル上限問題はここでは触らない（flow側で調整）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -13,163 +15,160 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
 (function(){
 
-  const PLACEMENT_P = (placement)=>{
-    if (placement === 1) return 12;
-    if (placement === 2) return 8;
-    if (placement === 3) return 5;
-    if (placement === 4) return 3;
-    if (placement === 5) return 2;
-    if (placement >= 6 && placement <= 10) return 1;
-    return 0;
-  };
+  // =========================
+  // 表示名解決（ID対策）
+  // =========================
+  function resolveTeamName(state, id){
+    if (!state || !state.teams) return id;
 
-  function h2hWins(state, aId, bId){
-    try{
-      const h2h = state?.h2h;
-      if (!h2h || typeof h2h !== 'object') return 0;
-      const k = `${String(aId)}|${String(bId)}`;
-      return Number(h2h[k]) || 0;
-    }catch{
-      return 0;
-    }
+    const t =
+      state.teams.find(x => String(x.id) === String(id)) ||
+      (state.tournamentTotal && Object.values(state.tournamentTotal).find(x => String(x.id) === String(id)));
+
+    if (t && t.name) return String(t.name);
+    return String(id);
   }
 
-  function safeElimRound(t){
-    const r = Number(t?.eliminatedRound || 0);
-    if (r > 0) return r;
-    return 1;
-  }
-
-  function computePlacements(state){
-    const teams = (state?.teams || []).slice();
-
-    teams.sort((a,b)=>{
-
-      const ae = a.eliminated ? 1 : 0;
-      const be = b.eliminated ? 1 : 0;
-      if (ae !== be) return ae - be;
-
-      const ar = ae ? safeElimRound(a) : 99;
-      const br = be ? safeElimRound(b) : 99;
-      if (ar !== br) return br - ar;
-
-      const aBeatB = h2hWins(state, a.id, b.id);
-      const bBeatA = h2hWins(state, b.id, a.id);
-      if (aBeatB > 0 && bBeatA === 0) return -1;
-      if (bBeatA > 0 && aBeatB === 0) return 1;
-
-      const ak = Number(a.kills_total||0);
-      const bk = Number(b.kills_total||0);
-      if (bk !== ak) return bk - ak;
-
-      const ad = Number(a.downs_total||0);
-      const bd = Number(b.downs_total||0);
-      if (ad !== bd) return ad - bd;
-
-      const ap = Number(a.power||0);
-      const bp = Number(b.power||0);
-      if (bp !== ap) return bp - ap;
-
-      return String(a.name||'').localeCompare(String(b.name||''), 'ja');
-    });
-
-    return teams.map((t, idx)=>({
-      id:t.id,
-      name:t.name,
-      placement: idx+1
-    }));
-  }
-
-  function getChampionName(state){
-    const placements = computePlacements(state);
-    const top = placements && placements[0];
-    return top ? String(top.name || top.id || '') : '';
-  }
-
+  // =========================
+  // Match Result Table
+  // =========================
   function computeMatchResultTable(state){
-    const placements = computePlacements(state);
-    const byId = new Map((state?.teams || []).map(t=>[t.id,t]));
 
-    return placements.map(p=>{
-      const t = byId.get(p.id) || {};
-      const KP = Number(t.kills_total||0);
-      const AP = Number(t.assists_total||0);
-      const Treasure = Number(t.treasure||0);
-      const Flag = Number(t.flag||0);
-      const PlacementP = PLACEMENT_P(p.placement);
-      const Total = PlacementP + KP + AP + Treasure + (Flag*2);
+    const teams = state.teams.slice();
 
-      return {
-        placement:p.placement,
-        id:p.id,
-        squad:p.name,
-        KP,
-        AP,
-        Treasure,
-        Flag,
-        PlacementP,
-        Total
-      };
+    // 生存→eliminatedRound→kills→downs少→power高→name
+    teams.sort((a,b)=>{
+      if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+      if (a.eliminatedRound !== b.eliminatedRound) return b.eliminatedRound - a.eliminatedRound;
+      if (a.kills_total !== b.kills_total) return b.kills_total - a.kills_total;
+      if (a.downs_total !== b.downs_total) return a.downs_total - b.downs_total;
+      if (a.power !== b.power) return b.power - a.power;
+      return String(a.name||a.id).localeCompare(String(b.name||b.id));
     });
+
+    const rows = [];
+
+    teams.forEach((t, index)=>{
+
+      const placement = index + 1;
+
+      const placementP = calcPlacementPoint(placement);
+      const kp = Number(t.kills_total || 0);
+      const ap = Number(t.assists_total || 0);
+
+      const treasureP = Number(t.treasure || 0) * 3; // ✅ 3
+      const flagP     = Number(t.flag || 0) * 5;     // ✅ 5
+
+      const total = placementP + kp + ap + treasureP + flagP;
+
+      rows.push({
+        id: t.id,
+        name: resolveTeamName(state, t.id),
+        placement,
+        placementP,
+        kp,
+        ap,
+        treasure: t.treasure || 0,
+        flag: t.flag || 0,
+        total
+      });
+
+    });
+
+    return rows;
   }
 
-  function addToTournamentTotal(state, matchRows){
-    const total = state.tournamentTotal || {};
-    for(const r of matchRows){
-      if (!total[r.id]){
-        total[r.id] = {
-          id:r.id,
-          squad:r.squad,
+  // =========================
+  // Placement Point（Apex風）
+  // =========================
+  function calcPlacementPoint(rank){
+    if (rank === 1) return 12;
+    if (rank === 2) return 9;
+    if (rank === 3) return 7;
+    if (rank === 4) return 5;
+    if (rank === 5) return 4;
+    if (rank <= 10) return 2;
+    return 0;
+  }
+
+  // =========================
+  // Add to Tournament Total
+  // =========================
+  function addToTournamentTotal(state, rows){
+
+    if (!state.tournamentTotal) state.tournamentTotal = {};
+
+    rows.forEach(r=>{
+
+      if (!state.tournamentTotal[r.id]){
+        state.tournamentTotal[r.id] = {
+          id: r.id,
+          name: r.name,
+          sumTotal:0,
           sumPlacementP:0,
-          KP:0,
-          AP:0,
-          Treasure:0,
-          Flag:0,
-          sumTotal:0
+          sumKP:0,
+          sumAP:0,
+          sumTreasure:0,
+          sumFlag:0,
+          sumKills:0,
+          sumAssists:0,
+          sumDowns:0
         };
       }
-      total[r.id].sumPlacementP += r.PlacementP;
-      total[r.id].KP += r.KP;
-      total[r.id].AP += r.AP;
-      total[r.id].Treasure += r.Treasure;
-      total[r.id].Flag += r.Flag;
-      total[r.id].sumTotal += r.Total;
-    }
+
+      const t = state.tournamentTotal[r.id];
+
+      t.sumTotal += r.total;
+      t.sumPlacementP += r.placementP;
+      t.sumKP += r.kp;
+      t.sumAP += r.ap;
+      t.sumTreasure += r.treasure;
+      t.sumFlag += r.flag;
+      t.name = r.name;
+    });
+
+    // ✅ 現在戦っている20チームのみで並び替え生成
+    buildCurrentOverall(state);
+
   }
 
-  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★
-  // ✅ core 連携用（今回の超重要追加部分）
-  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★
-  function finishMatchAndBuildResult(state){
+  // =========================
+  // 現在の20チーム総合順位
+  // =========================
+  function buildCurrentOverall(state){
 
-    if (!state) return { rows:[], total:{} };
+    const ids = state.teams.map(t=>String(t.id));
 
-    const rows = computeMatchResultTable(state);
+    const arr = ids.map(id=>{
+      const t = state.tournamentTotal[id];
+      if (!t) return null;
+      return {
+        id,
+        name: t.name,
+        total: t.sumTotal,
+        placementP: t.sumPlacementP,
+        kp: t.sumKP,
+        ap: t.sumAP,
+        treasure: t.sumTreasure,
+        flag: t.sumFlag
+      };
+    }).filter(Boolean);
 
-    state.lastMatchResultRows = rows;
+    arr.sort((a,b)=>{
+      if (a.total !== b.total) return b.total - a.total;
+      if (a.kp !== b.kp) return b.kp - a.kp;
+      return a.name.localeCompare(b.name);
+    });
 
-    if (!state.tournamentTotal){
-      state.tournamentTotal = {};
-    }
-
-    addToTournamentTotal(state, rows);
-
-    // H2Hは試合単位なのでクリア
-    state.h2h = {};
-
-    return {
-      rows,
-      total: state.tournamentTotal
-    };
+    state.currentOverallRows = arr;
   }
 
+  // =========================
+  // 公開
+  // =========================
   window.MOBBR.sim.tournamentResult = {
-    PLACEMENT_P,
-    computePlacements,
-    getChampionName,
     computeMatchResultTable,
-    addToTournamentTotal,
-    finishMatchAndBuildResult   // ← これが無かった
+    addToTournamentTotal
   };
 
 })();
