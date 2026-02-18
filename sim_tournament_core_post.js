@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core_post.js（FULL） v4.2
+   sim_tournament_core_post.js（FULL） v4.3
    - ローカル/ナショナル/ラストチャンス/ワールド終了処理：
      権利付与 + tourState更新 + 次大会算出API
    - ✅ 週進行（year/month/week/gold/recent）は一切しない（app.jsに一本化）
@@ -7,13 +7,10 @@
    - ✅ 大会終了は mobbr:goMain(detail.advanceWeeks=1) で統一
    - ✅ nextTour更新は app.js が週進行後に呼ぶ（setNextTourFromState を公開）
 
-   v4.1 追加点
-   - ✅ ラストチャンス終了処理（TOP8→World、9位以下→敗退）
-
-   v4.2 追加点
-   - ✅ ワールドファイナル 予選リーグ 終了処理（world.phase='wl'へ）
-   - ✅ ワールドファイナル WL 終了処理（world.phase='final'へ）
-   - ✅ ワールドファイナル 決勝戦 終了処理（world.phase='done'、split終了へ）
+   v4.3 変更点（重要）
+   - ✅ LastChance は TOP2（固定）に修正
+   - ✅ National 終了時に lastNationalSortedIds(40) を保存（LastChance roster用）
+   - ✅ World権利10（National TOP8 + LastChance TOP2）を worldQualifiedIds に保存
 ========================================================= */
 'use strict';
 
@@ -247,9 +244,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function inferSplitFromMonth(){
     const nowM = getNum(K.month, 1);
-    // SP2: 7-10月帯、SP1: 2-5月帯、それ以外はSP1に倒す
     if (nowM >= 7 && nowM <= 10) return 2;
     return 1;
+  }
+
+  function ensureWorldObj(tourState){
+    if (!tourState.world || typeof tourState.world !== 'object'){
+      tourState.world = { phase: 'qual' };
+    }
+    if (!tourState.world.phase) tourState.world.phase = 'qual';
   }
 
   // ============================================
@@ -281,8 +284,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     tourState.clearedNational = false;
     tourState.lastChanceUnlocked = false;
 
-    // Split単位で考える：ローカル開始時にWorld権利はリセット
+    // Split単位：ローカル開始でWorld権利はリセット
     tourState.qualifiedWorld = false;
+    tourState.worldQualifiedIds = []; // 権利10をここで空に
+    tourState.lastNationalSortedIds = []; // ロスター元も空に
     tourState.world = { phase: 'qual' };
 
     tourState.lastLocalRank = rank;
@@ -310,16 +315,26 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ============================================
-  // ナショナル終了処理（TOP8/W権利、9-28/LC、29↓/敗退）
+  // ✅ ナショナル終了処理
+  // - TOP8：World権利（8）
+  // - 9〜28：LastChance解放
+  // - 29↓：敗退
+  // - ✅ lastNationalSortedIds(40) 保存（LastChance roster用）
+  // - ✅ worldQualifiedIds に TOP8 を保存（後でLC TOP2を足して10へ）
   // ============================================
   function onNationalTournamentFinished(state, total){
-    const { rank } = getRankFromTotal(total);
+    const { rank, list } = getRankFromTotal(total);
 
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
 
     tourState.nationalPlayed = true;
 
+    // ✅ 40並び保存（PLAYER含む想定）
+    const sortedIds40 = list.map(x => String(x?.id||'')).filter(Boolean);
+    tourState.lastNationalSortedIds = sortedIds40;
+
+    // 判定
     const qualifiedWorld = (rank > 0 && rank <= 8);
     const lastChanceUnlocked = (rank >= 9 && rank <= 28);
 
@@ -331,21 +346,27 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       tourState.lastChanceUnlocked = false;
       tourState.stage = 'world';
 
-      if (!tourState.world || typeof tourState.world !== 'object'){
-        tourState.world = { phase: 'qual' };
-      }else{
-        tourState.world.phase = 'qual';
-      }
+      ensureWorldObj(tourState);
+      tourState.world.phase = 'qual';
+
+      // ✅ 権利8保存
+      const top8 = sortedIds40.slice(0,8);
+      tourState.worldQualifiedIds = top8.slice();
     }else if (lastChanceUnlocked){
-      tourState.qualifiedWorld = false;
+      tourState.qualifiedWorld = false; // まだ権利無し（LCで取る）
       tourState.clearedNational = false;
       tourState.lastChanceUnlocked = true;
       tourState.stage = 'lastchance';
+
+      // ✅ 権利8はまだ無いので空
+      tourState.worldQualifiedIds = [];
     }else{
       tourState.qualifiedWorld = false;
       tourState.clearedNational = false;
       tourState.lastChanceUnlocked = false;
       tourState.stage = 'done';
+
+      tourState.worldQualifiedIds = [];
     }
 
     setJSON(K.tourState, tourState);
@@ -370,35 +391,57 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ============================================
-  // ✅ ラストチャンス終了処理（TOP8→World、9位以下→敗退）
-  // - 賞金無し（あなたの仕様）なのでここでは gold 加算等はしない
-  // - World へ行く場合：qualifiedWorld=true / world.phase='qual'
+  // ✅ ラストチャンス終了処理（TOP2 → World権利）
+  // - 参加：National 9〜28位の20チーム（core側で生成）
+  // - 賞金無し / 企業ランク変動無し（ここでは触らない）
+  // - ✅ TOP2 を worldQualifiedIds に追加して合計10を確定
   // ============================================
   function onLastChanceTournamentFinished(state, total){
-    const { rank } = getRankFromTotal(total);
+    const { rank, list } = getRankFromTotal(total);
 
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
 
-    // ラストチャンスは「ナショで落ちた後」想定なので、ここでロック解除を消す
-    const qualifiedWorld = (rank > 0 && rank <= 8);
-
     tourState.lastLastChanceRank = rank;
+
+    const qualifiedWorld = (rank > 0 && rank <= 2); // ✅ TOP2固定
 
     if (qualifiedWorld){
       tourState.qualifiedWorld = true;
       tourState.stage = 'world';
       tourState.lastChanceUnlocked = false;
 
-      if (!tourState.world || typeof tourState.world !== 'object'){
-        tourState.world = { phase: 'qual' };
-      }else{
-        tourState.world.phase = 'qual';
-      }
+      ensureWorldObj(tourState);
+      tourState.world.phase = 'qual';
+
+      // ✅ LCのTOP2 ids を取得（PLAYER含む可能性あり）
+      const top2 = list.slice(0,2).map(x => String(x?.id||'')).filter(Boolean);
+
+      // ✅ 既にNationalのTOP8が入っている場合は維持し、無い場合でも「LC TOP2だけ」は入る
+      const base = Array.isArray(tourState.worldQualifiedIds) ? tourState.worldQualifiedIds.slice() : [];
+
+      const merged = [];
+      const pushU = (id)=>{
+        const s = String(id||'');
+        if (!s) return;
+        if (merged.includes(s)) return;
+        merged.push(s);
+      };
+
+      for (const id of base) pushU(id);
+      for (const id of top2) pushU(id);
+
+      // World権利は「合計10（National8 + LC2）」が理想。
+      // National8が無いケースは本来起きないが、安全弁でそのまま保存。
+      tourState.worldQualifiedIds = merged.slice(0,10);
+
     }else{
       tourState.qualifiedWorld = false;
       tourState.stage = 'done';
       tourState.lastChanceUnlocked = false;
+
+      // 権利なし
+      tourState.worldQualifiedIds = [];
     }
 
     setJSON(K.tourState, tourState);
@@ -421,25 +464,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
-  // ✅ v4.2：ワールド三段階の終了処理
+  // ✅ ワールド三段階の終了処理
   //   world.phase : 'qual' → 'wl' → 'final' → 'done'
-  //   ※ 週進行/賞金は app.js 側（ここでは触らない）
   // =========================================================
-  function ensureWorldObj(tourState){
-    if (!tourState.world || typeof tourState.world !== 'object'){
-      tourState.world = { phase: 'qual' };
-    }
-    if (!tourState.world.phase) tourState.world.phase = 'qual';
-  }
-
-  // 予選リーグ終了：次週 WL へ
   function onWorldQualFinished(state, total){
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
 
     ensureWorldObj(tourState);
 
-    // 出場権が無いのに呼ばれた時の安全弁：誤更新しない
     if (!tourState.qualifiedWorld){
       setJSON(K.lastResult, { type:'world_qual_blocked', split:tourState.split||0, at:Date.now() });
       dispatch('mobbr:goMain', { worldQualFinished:false, blocked:true, advanceWeeks:1 });
@@ -465,7 +498,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // WL終了：次週 決勝へ
   function onWorldWLFinished(state, total){
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
@@ -497,7 +529,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // 決勝終了：世界大会完了（split終了へ）
   function onWorldFinalFinished(state, total){
     const { rank } = getRankFromTotal(total);
 
@@ -519,6 +550,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // split終了なので world権利は消す（次splitへ）
     tourState.qualifiedWorld = false;
+    tourState.worldQualifiedIds = [];
 
     setJSON(K.tourState, tourState);
 
@@ -542,12 +574,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     onNationalTournamentFinished,
     onLastChanceTournamentFinished,
 
-    // ✅ v4.2
     onWorldQualFinished,
     onWorldWLFinished,
     onWorldFinalFinished,
 
-    // ✅ app.js が週進行後に呼ぶ
     setNextTourFromState
   };
 
