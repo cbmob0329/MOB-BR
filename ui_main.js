@@ -1,21 +1,25 @@
 /* =========================================================
-   ui_main.js（FULL） v19.3
+   ui_main.js（FULL） v19.4
    - メイン画面の表示/タップ処理
    - BATTLEボタン：次大会に応じて Local / National / LastChance / World / Championship に分岐
      ✅「大会週（nextTourW一致）」のときだけ大会を開始
      ✅ nextTour の文言で分岐（スケジュール表示名に追従）
 
-   v19.2の前提は維持：
+   v19.3の前提は維持：
    ✅ mobbr:advanceWeek / mobbr:endNationalWeek でストレージを進めない（受信しない）
    ✅ 大会終了の mobbr:goMain は「表示だけ」（recentの表示反映、ポップ閉じ等）
    ✅ 週進行ポップは app.js から呼ぶ表示専用API showWeekAdvancePop を提供
+
+   変更（v19.4）：
+   ✅ World 開始：sim_tournament_core.js 側は startWorldTournament()（引数なし）で
+      localStorage.mobbr_tour_state.world.phase を読むため、ここで phase を保存してから起動する
 ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.3';
+  const VERSION = 'v19.4';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -35,7 +39,10 @@ window.MOBBR = window.MOBBR || {};
     nextTourW: 'mobbr_nextTourW',
     recent: 'mobbr_recent',
 
-    playerTeam: 'mobbr_playerTeam'
+    playerTeam: 'mobbr_playerTeam',
+
+    // ★ world phase 保存先（sim_tournament_core.js と合わせる）
+    tourState: 'mobbr_tour_state'
   };
 
   const $ = (id)=>document.getElementById(id);
@@ -371,6 +378,37 @@ window.MOBBR = window.MOBBR || {};
     return { type:'local' };
   }
 
+  // =========================================================
+  // ★ world phase を tour_state に保存（必要最小限マージ）
+  // =========================================================
+  function saveWorldPhaseToTourState(phase){
+    const ph = String(phase || '').trim();
+    const ok = (ph === 'qual' || ph === 'wl' || ph === 'final');
+    if (!ok) return false;
+
+    try{
+      let obj = {};
+      const raw = localStorage.getItem(K.tourState);
+      if (raw){
+        const j = JSON.parse(raw);
+        if (j && typeof j === 'object') obj = j;
+      }
+      if (!obj.world || typeof obj.world !== 'object') obj.world = {};
+      obj.world.phase = ph;
+
+      localStorage.setItem(K.tourState, JSON.stringify(obj));
+      return true;
+    }catch(e){
+      try{
+        const obj = { world:{ phase: ph } };
+        localStorage.setItem(K.tourState, JSON.stringify(obj));
+        return true;
+      }catch(_){
+        return false;
+      }
+    }
+  }
+
   // ===== 大会起動（Local / National / LastChance / World / Championship）=====
   function startTournamentByNextTour(){
     const lock = isTournamentWeekNow();
@@ -406,53 +444,37 @@ window.MOBBR = window.MOBBR || {};
 
       // ===== World =====
       if (det.type === 'world'){
-        // 1) phase別の関数がある場合はそれを優先
-        if (det.phase === 'qual'){
-          if (typeof Flow.startWorldQualTournament === 'function'){
-            setRecent('大会：ワールドファイナル予選リーグを開始！');
-            Flow.startWorldQualTournament();
-            return;
-          }
-          if (typeof Flow.startWorldTournament === 'function'){
-            setRecent('大会：ワールドファイナル（予選）を開始！');
-            Flow.startWorldTournament({ phase:'qual' });
-            return;
-          }
-          setRecent('大会：ワールド（予選）開始関数が見つかりません（startWorldQualTournament / startWorldTournament）');
+        // sim_tournament_core.js 側は startWorldTournament() が tour_state.world.phase を読む
+        const ph = (det.phase === 'wl' || det.phase === 'final') ? det.phase : 'qual';
+        saveWorldPhaseToTourState(ph);
+
+        if (typeof Flow.startWorldTournament === 'function'){
+          if (ph === 'qual') setRecent('大会：ワールドファイナル予選リーグを開始！');
+          else if (ph === 'wl') setRecent('大会：ワールドファイナルWLを開始！');
+          else setRecent('大会：ワールドファイナル決勝戦を開始！');
+
+          Flow.startWorldTournament();
           return;
         }
 
-        if (det.phase === 'wl'){
-          if (typeof Flow.startWorldWLTournament === 'function'){
-            setRecent('大会：ワールドファイナルWLを開始！');
-            Flow.startWorldWLTournament();
-            return;
-          }
-          if (typeof Flow.startWorldTournament === 'function'){
-            setRecent('大会：ワールドファイナル（WL）を開始！');
-            Flow.startWorldTournament({ phase:'wl' });
-            return;
-          }
-          setRecent('大会：ワールド（WL）開始関数が見つかりません（startWorldWLTournament / startWorldTournament）');
+        // 互換：古い名前が残っている場合
+        if (ph === 'qual' && typeof Flow.startWorldQualTournament === 'function'){
+          setRecent('大会：ワールドファイナル予選リーグを開始！');
+          Flow.startWorldQualTournament();
+          return;
+        }
+        if (ph === 'wl' && typeof Flow.startWorldWLTournament === 'function'){
+          setRecent('大会：ワールドファイナルWLを開始！');
+          Flow.startWorldWLTournament();
+          return;
+        }
+        if (ph === 'final' && typeof Flow.startWorldFinalTournament === 'function'){
+          setRecent('大会：ワールドファイナル決勝戦を開始！');
+          Flow.startWorldFinalTournament();
           return;
         }
 
-        if (det.phase === 'final'){
-          if (typeof Flow.startWorldFinalTournament === 'function'){
-            setRecent('大会：ワールドファイナル決勝戦を開始！');
-            Flow.startWorldFinalTournament();
-            return;
-          }
-          if (typeof Flow.startWorldTournament === 'function'){
-            setRecent('大会：ワールドファイナル（決勝）を開始！');
-            Flow.startWorldTournament({ phase:'final' });
-            return;
-          }
-          setRecent('大会：ワールド（決勝）開始関数が見つかりません（startWorldFinalTournament / startWorldTournament）');
-          return;
-        }
-
-        setRecent('大会：ワールド開始判定に失敗（phase不明）');
+        setRecent('大会：ワールド開始関数が見つかりません（Flow.startWorldTournament）');
         return;
       }
 
