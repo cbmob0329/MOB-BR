@@ -10,7 +10,14 @@
        - 権利10（National上位8 + LastChance上位2）
        - world01〜world40 の「戦闘力トップ10」は毎回固定出場
        - 残り20は重み抽選（強いほど出やすい）で決定
-   ========================================================= */
+
+   ✅FIX（重要）:
+   - setRequest を shared と同じ互換仕様に統一：
+       state.request = { type, payload } に加えて payload を直置きコピー
+     （UIが request.xxx を参照しても動く）
+   - setCenter3 も shared と同じ互換仕様に統一：
+       state.center = {a,b,c} + state.ui.center3 = [a,b,c]
+  ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
@@ -130,16 +137,38 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
   _tcore.computeCtx = computeCtx;
 
+  // =========================================================
   // UI request pipe (ui_tournament.js が読む)
+  // ✅FIX: shared と同じ互換仕様に統一
+  //  - _state.request = { type, payload }
+  //  - 互換のため payload のキーも直置き（UIが request.icon 等を見ても動く）
+  // =========================================================
   function setRequest(type, payload){
     if (!_state) return;
-    _state.request = { type: String(type||'noop'), payload: payload || {} };
+    const t = String(type || 'noop');
+    const p = (payload && typeof payload === 'object') ? payload : {};
+    _state.request = { type: t, payload: p };
+    try{
+      for (const k of Object.keys(p)){
+        _state.request[k] = p[k];
+      }
+    }catch(_){}
   }
   _tcore.setRequest = setRequest;
 
+  // =========================================================
+  // ✅FIX: shared と同じ center 互換仕様に統一
+  //  - _state.center = {a,b,c}
+  //  - 互換のため _state.ui.center3 = [a,b,c]
+  // =========================================================
   function setCenter3(a,b,c){
     if (!_state) return;
-    _state.center = { a:String(a||''), b:String(b||''), c:String(c||'') };
+    const A = String(a||'');
+    const B = String(b||'');
+    const C = String(c||'');
+    _state.center = { a:A, b:B, c:C };
+    if (!_state.ui || typeof _state.ui !== 'object') _state.ui = {};
+    _state.ui.center3 = [A,B,C];
   }
   _tcore.setCenter3 = setCenter3;
 
@@ -521,7 +550,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         leftImg: getPlayerSkin(),
         rightImg: '',
         topLeftName: '',
-        topRightName: ''
+        topRightName: '',
+        center3: ['', '', ''] // 互換（UIが見ていてもOK）
       },
 
       request: { type:'noop', payload:{} }
@@ -608,7 +638,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         leftImg: getPlayerSkin(),
         rightImg: '',
         topLeftName: '',
-        topRightName: ''
+        topRightName: '',
+        center3: ['', '', ''] // 互換
       },
 
       request: { type:'noop', payload:{} },
@@ -718,7 +749,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         leftImg: getPlayerSkin(),
         rightImg: '',
         topLeftName: '',
-        topRightName: ''
+        topRightName: '',
+        center3: ['', '', ''] // 互換
       },
 
       request: { type:'noop', payload:{} }
@@ -852,7 +884,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         leftImg: getPlayerSkin(),
         rightImg: '',
         topLeftName: '',
-        topRightName: ''
+        topRightName: '',
+        center3: ['', '', ''] // 互換
       },
 
       request: { type:'noop', payload:{} },
