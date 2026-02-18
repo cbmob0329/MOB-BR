@@ -5,6 +5,11 @@
    - ✅ 追加：UI→app の疎結合イベント
         mobbr:startTournament（detailで type/phase 指定も可）
    - ✅ 追加：tourState(stage/world.phase) から自動で大会種別を判定して開始
+
+   ★ v18.3 hotfix（今回の修正点）
+   - ✅ UIだけ開いて「シムが開始していない」問題を潰す
+     => 必ず先に tournamentFlow（= tournamentCore）の startXXX を呼び、
+        その後 ui_tournament.open() → ui_tournament.render() を呼ぶ
 ========================================================= */
 'use strict';
 
@@ -207,49 +212,83 @@ function normalizeWorldPhase(phase){
   return 'qual';
 }
 
+// ★UI open/render を安全に叩く（ui_tournament.js は open() に引数を要求しない）
+function openTournamentUI(){
+  try{
+    if (window.MOBBR?.ui?.tournament?.open) window.MOBBR.ui.tournament.open();
+  }catch(e){
+    console.error('[TOUR] ui.tournament.open error:', e);
+  }
+}
+function renderTournamentUI(){
+  try{
+    if (window.MOBBR?.ui?.tournament?.render) window.MOBBR.ui.tournament.render();
+  }catch(e){
+    console.error('[TOUR] ui.tournament.render error:', e);
+  }
+}
+
+// ★今回の核心：必ず「core start -> UI open -> UI render」
 function startLocalTournament(){
   ensureModulesOrThrow();
-  if (window.MOBBR?.ui?.tournament?.open){
-    window.MOBBR.ui.tournament.open({ mode: 'local' });
-    return;
-  }
-  if (window.MOBBR?.sim?.tournamentFlow?.start){
+
+  // 1) core start（state + request を作る）
+  if (typeof window.MOBBR?.sim?.tournamentFlow?.startLocalTournament === 'function'){
+    window.MOBBR.sim.tournamentFlow.startLocalTournament();
+  }else if (typeof window.MOBBR?.sim?.tournamentCore?.startLocalTournament === 'function'){
+    window.MOBBR.sim.tournamentCore.startLocalTournament();
+  }else if (typeof window.MOBBR?.sim?.tournamentFlow?.start === 'function'){
+    // legacy fallback
     window.MOBBR.sim.tournamentFlow.start({ mode: 'local' });
+  }else{
+    console.error('[TOUR] startLocalTournament: no core start entry found');
     return;
   }
-  console.error('[TOUR] startLocalTournament: no start entry found');
+
+  // 2) UI open
+  openTournamentUI();
+
+  // 3) 初回描画
+  renderTournamentUI();
 }
 
 function startNationalTournament(){
   ensureModulesOrThrow();
-  if (window.MOBBR?.ui?.tournament?.open){
-    window.MOBBR.ui.tournament.open({ mode: 'national' });
-    return;
-  }
-  if (window.MOBBR?.sim?.tournamentFlow?.start){
+
+  if (typeof window.MOBBR?.sim?.tournamentFlow?.startNationalTournament === 'function'){
+    window.MOBBR.sim.tournamentFlow.startNationalTournament();
+  }else if (typeof window.MOBBR?.sim?.tournamentCore?.startNationalTournament === 'function'){
+    window.MOBBR.sim.tournamentCore.startNationalTournament();
+  }else if (typeof window.MOBBR?.sim?.tournamentFlow?.start === 'function'){
+    // legacy fallback
     window.MOBBR.sim.tournamentFlow.start({ mode: 'national' });
+  }else{
+    console.error('[TOUR] startNationalTournament: no core start entry found');
     return;
   }
-  console.error('[TOUR] startNationalTournament: no start entry found');
+
+  openTournamentUI();
+  renderTournamentUI();
 }
 
 function startLastChanceTournament(){
   ensureModulesOrThrow();
+
   // core(entry) 側が startLastChanceTournament() を持つ想定（あなたの設計）
   if (typeof window.MOBBR?.sim?.tournamentFlow?.startLastChanceTournament === 'function'){
     window.MOBBR.sim.tournamentFlow.startLastChanceTournament();
-    return;
-  }
-  // fallback：open/start に type を渡す（将来互換）
-  if (window.MOBBR?.ui?.tournament?.open){
-    window.MOBBR.ui.tournament.open({ mode: 'lastchance' });
-    return;
-  }
-  if (window.MOBBR?.sim?.tournamentFlow?.start){
+  }else if (typeof window.MOBBR?.sim?.tournamentCore?.startLastChanceTournament === 'function'){
+    window.MOBBR.sim.tournamentCore.startLastChanceTournament();
+  }else if (typeof window.MOBBR?.sim?.tournamentFlow?.start === 'function'){
+    // legacy fallback
     window.MOBBR.sim.tournamentFlow.start({ mode: 'lastchance' });
+  }else{
+    console.error('[TOUR] startLastChanceTournament: no core start entry found');
     return;
   }
-  console.error('[TOUR] startLastChanceTournament: no start entry found');
+
+  openTournamentUI();
+  renderTournamentUI();
 }
 
 function startWorldTournament(phase){
@@ -259,19 +298,18 @@ function startWorldTournament(phase){
   // core(entry) 側が startWorldTournament(phase) を持つ想定（あなたの設計）
   if (typeof window.MOBBR?.sim?.tournamentFlow?.startWorldTournament === 'function'){
     window.MOBBR.sim.tournamentFlow.startWorldTournament(p);
+  }else if (typeof window.MOBBR?.sim?.tournamentCore?.startWorldTournament === 'function'){
+    window.MOBBR.sim.tournamentCore.startWorldTournament(p);
+  }else if (typeof window.MOBBR?.sim?.tournamentFlow?.start === 'function'){
+    // legacy fallback
+    window.MOBBR.sim.tournamentFlow.start({ mode: 'world', phase: p });
+  }else{
+    console.error('[TOUR] startWorldTournament: no core start entry found');
     return;
   }
 
-  // fallback：open/start に mode + phase を渡す（将来互換）
-  if (window.MOBBR?.ui?.tournament?.open){
-    window.MOBBR.ui.tournament.open({ mode: 'world', phase: p });
-    return;
-  }
-  if (window.MOBBR?.sim?.tournamentFlow?.start){
-    window.MOBBR.sim.tournamentFlow.start({ mode: 'world', phase: p });
-    return;
-  }
-  console.error('[TOUR] startWorldTournament: no start entry found');
+  openTournamentUI();
+  renderTournamentUI();
 }
 
 function startTournamentByState(detail){
