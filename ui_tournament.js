@@ -1,10 +1,14 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js v3.6.7（FULL）
-   ✅ v3.6.6 の全機能維持
-   追加：
-   - ✅ showAutoSession / showAutoSessionDone を表示（プレイヤー不在セッション用）
+   ui_tournament.js v3.6.8（FULL）
+   ✅ v3.6.7 の全機能維持
+   追加/修正：
+   - ✅ 総合RESULTのチーム名がIDになる問題を修正（name優先）
+   - ✅ TOURNAMENT RESULT の集計キー（sumKP等）に対応（表示/ソート崩れ修正）
+   - ✅ 1試合終了ごとに「現在の総合順位（その20チーム）」も表示（Match Result内に追加）
+   - ✅ 交戦中にメンバー名も表示（左右の名前欄にチーム名＋メンバー表示）
+   - ✅ ログを豪華に（到着/開幕/次試合/結果の文言を強化）
    ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -438,12 +442,67 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.bannerR.textContent = String(r || '');
     syncSessionBar();
   }
+
+  function escapeHtml(s){
+    return String(s || '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#39;");
+  }
+
+  // ===== メンバー表示 =====
+  function normalizeRole(role){
+    const r = String(role||'').toUpperCase();
+    if (r === 'IGL') return 'IGL';
+    if (r === 'ATTACKER') return 'ATK';
+    if (r === 'SUPPORT') return 'SUP';
+    return r ? r.slice(0,3) : 'MEM';
+  }
+
+  function formatMembers(members){
+    const mem = Array.isArray(members) ? members.slice(0,3) : [];
+    if (!mem.length) return '';
+    const parts = mem.map((m,i)=>{
+      const role = normalizeRole(m?.role || (i===0?'IGL':(i===1?'ATTACKER':'SUPPORT')));
+      const name = String(m?.name || '').trim();
+      return name ? `${role}:${name}` : '';
+    }).filter(Boolean);
+    return parts.join(' / ');
+  }
+
+  // 既存互換：チーム名だけ
   function setNames(l, r){
     ensureDom();
     dom.nameL.textContent = String(l || '');
     dom.nameR.textContent = String(r || '');
     syncEnemyVisibility();
   }
+
+  // ✅ チーム名＋メンバー名（交戦中だけ使う）
+  function setNamesRich(leftTeamName, leftMembers, rightTeamName, rightMembers){
+    ensureDom();
+    const lTeam = String(leftTeamName||'');
+    const rTeam = String(rightTeamName||'');
+    const lMem = formatMembers(leftMembers);
+    const rMem = formatMembers(rightMembers);
+
+    if (lMem){
+      dom.nameL.innerHTML = `<div class="team">${escapeHtml(lTeam)}</div><div class="members">${escapeHtml(lMem)}</div>`;
+    }else{
+      dom.nameL.textContent = lTeam;
+    }
+
+    if (rMem){
+      dom.nameR.innerHTML = `<div class="team">${escapeHtml(rTeam)}</div><div class="members">${escapeHtml(rMem)}</div>`;
+    }else{
+      dom.nameR.textContent = rTeam;
+    }
+
+    syncEnemyVisibility();
+  }
+
   function setLines(a, b, c){
     ensureDom();
     dom.line1.textContent = String(a || '');
@@ -621,15 +680,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return '';
   }
 
-  function escapeHtml(s){
-    return String(s || '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
-
   function clampNum(n, lo, hi){
     const v = Number(n);
     if (!Number.isFinite(v)) return lo;
@@ -697,8 +747,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
       hideSplash();
 
-      showSplash(payload?.line1 || '大会会場へ到着！', '');
-      setLines(payload?.line1 || '大会会場へ到着！', '', 'NEXTで進行');
+      showSplash(payload?.line1 || '大会会場へ到着！', payload?.line2 || '観客の熱気が一気に押し寄せる…！');
+      setLines(
+        payload?.line1 || '🏟️ 大会会場へ到着！',
+        payload?.line2 || '🔥 観客が沸いている…！',
+        payload?.line3 || 'NEXTで開幕演出へ'
+      );
       syncSessionBar();
     }finally{
       unlockUI();
@@ -727,7 +781,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
 
       setBanners(st.bannerLeft, st.bannerRight);
-      setLines(st.ui?.center3?.[0] || 'ローカル大会開幕！', st.ui?.center3?.[1] || '', st.ui?.center3?.[2] || '');
+
+      const l1 = st.ui?.center3?.[0] || 'ローカル大会開幕！';
+      const l2 = st.ui?.center3?.[1] || '本日の戦場へ——';
+      const l3 = st.ui?.center3?.[2] || 'NEXTでチーム紹介';
+      setLines(l1, l2, l3);
 
       preloadEventIcons();
       syncSessionBar();
@@ -859,7 +917,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const teams = Array.isArray(payload?.teams) ? payload.teams : (Array.isArray(st.teams) ? st.teams : []);
       showPanel('参加チーム', buildTeamListTable(teams));
 
-      setLines('本日のチームをご紹介！', '（NEXTで進行）', '');
+      setLines('✨ 本日のチームをご紹介！', '（NEXTで進行）', '');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -913,7 +971,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         btn.addEventListener('click', ()=>{
           const flow = getFlow();
           if (flow?.setCoachSkill) flow.setCoachSkill(String(id));
-          setLines('コーチスキル決定！', m?.quote || '', 'NEXTで進行');
+          setLines('✅ コーチスキル決定！', m?.quote || '', 'NEXTで進行');
         });
 
         list.appendChild(btn);
@@ -951,7 +1009,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
       setChars(leftResolved, '');
 
-      setLines(st.ui?.center3?.[0] || 'バトルスタート！', st.ui?.center3?.[1] || '降下開始…！', st.ui?.center3?.[2] || '');
+      setLines(st.ui?.center3?.[0] || '🚀 バトルスタート！', st.ui?.center3?.[1] || '降下開始…！', st.ui?.center3?.[2] || 'NEXTで着地');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1008,7 +1066,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
 
       setBanners(st.bannerLeft, st.bannerRight);
-      setLines(`Round ${payload?.round || st.round} 開始！`, '', '');
+      setLines(`⚔️ Round ${payload?.round || st.round} 開始！`, '油断するな。ここからが勝負だ。', '');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1101,8 +1159,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', '');
       setChars(leftResolved, '');
 
-      showSplash('接敵‼︎', `${foeName}チームと接敵！`);
-      setLines('接敵‼︎', `${foeName}チームと接敵！`, 'NEXTで敵を表示');
+      showSplash('⚠️ 接敵‼︎', `${foeName}チームを発見！`);
+      setLines('⚠️ 接敵‼︎', `${foeName}チームを発見！`, 'NEXTで敵を表示');
 
       localNextAction = ()=>{
         lockUI();
@@ -1113,9 +1171,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           hideSplash();
 
           setBattleMode(true);
-          setNames(meName, foeName);
+
+          // ✅ メンバー表示（交戦中）
+          setNamesRich(
+            meName, payload?.meMembers,
+            foeName, payload?.foeMembers
+          );
+
           setChars(leftResolved, rightResolved);
-          setLines('接敵‼︎', `${meName} vs ${foeName}‼︎`, 'NEXTで交戦開始');
+          setLines('⚠️ 接敵‼︎', `${meName} vs ${foeName}‼︎`, 'NEXTで交戦開始');
 
           localNextAction = ()=>{
             lockUI();
@@ -1185,8 +1249,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const meName = payload?.meName || '';
       const foeName = payload?.foeName || '';
-      setNames(meName, foeName);
+
+      // ✅ メンバー表示（交戦中）
+      setNamesRich(
+        meName, payload?.meMembers,
+        foeName, payload?.foeMembers
+      );
+
       setChars(leftResolved, rightResolved);
+
+      // 開始の一瞬だけはメンバーが見えるように軽く間を取る
+      setLines('交戦開始‼︎', '一瞬で決めるぞ！', '');
+      await sleep(420);
 
       const chats = pickChats(10);
       for (let i=0;i<chats.length;i++){
@@ -1203,10 +1277,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const winLines = (payload?.final)
           ? ['チャンピオンだ―！！','みんなよくやった！！','獲ったぞー！！']
           : ['よし！次に備えるぞ！','やったー！勝ったぞ！','ナイスー！'];
-        setLines('勝利！', winLines[(Math.random()*winLines.length)|0], '');
+        setLines('✅ 勝利！', winLines[(Math.random()*winLines.length)|0], '');
       }else{
         const loseLines = ['やられた..','次だ次！','負けちまった..'];
-        setLines('敗北…', loseLines[(Math.random()*loseLines.length)|0], '');
+        setLines('❌ 敗北…', loseLines[(Math.random()*loseLines.length)|0], '');
       }
 
       await sleep(Number(payload?.holdMs || 2000));
@@ -1254,8 +1328,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (toResolved) setSquareBg(toResolved);
 
       setLines(
-        payload?.arrive1 || (payload?.toAreaName ? `${String(payload.toAreaName)}に到着！` : '到着！'),
-        payload?.arrive2 || '',
+        payload?.arrive1 || (payload?.toAreaName ? `📍 ${String(payload.toAreaName)}に到着！` : '📍 到着！'),
+        payload?.arrive2 || '周囲を警戒しろ。',
         payload?.arrive3 || ''
       );
 
@@ -1323,7 +1397,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setNames('', champName || '');
 
       setLines(
-        payload?.line1 || 'この試合のチャンピオンは…',
+        payload?.line1 || '🏆 この試合のチャンピオンは…',
         champName || '',
         payload?.line3 || '‼︎'
       );
@@ -1332,6 +1406,52 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }finally{
       unlockUI();
     }
+  }
+
+  // ===== 現在の総合順位（20チーム）テーブル =====
+  function buildCurrentOverallTable(rows){
+    const wrap = document.createElement('div');
+    wrap.className = 'overallWrap';
+
+    const table = document.createElement('table');
+    table.className = 'tourneyTable';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>RANK</th>
+          <th>TEAM</th>
+          <th class="num">PT</th>
+          <th class="num">PP</th>
+          <th class="num">K</th>
+          <th class="num">A</th>
+          <th class="num">TRE</th>
+          <th class="num">FLG</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tb = table.querySelector('tbody');
+
+    (rows||[]).forEach((r,i)=>{
+      const tr = document.createElement('tr');
+      const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
+      if (isPlayer) tr.classList.add('isPlayer');
+
+      tr.innerHTML = `
+        <td>${escapeHtml(String(i+1))}</td>
+        <td>${escapeHtml(String(r.name || r.squad || r.id || ''))}</td>
+        <td class="num">${escapeHtml(String(r.total ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.placementP ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.kp ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.ap ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.treasure ?? 0))}</td>
+        <td class="num">${escapeHtml(String(r.flag ?? 0))}</td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    wrap.appendChild(table);
+    return wrap;
   }
 
   async function handleShowMatchResult(payload){
@@ -1348,9 +1468,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setSquareBg(ASSET.tent);
 
       const srcRows = Array.isArray(payload?.rows) ? payload.rows : [];
+      const currentOverall = Array.isArray(payload?.currentOverall) ? payload.currentOverall : [];
+
       const wrap = document.createElement('div');
       wrap.className = 'resultWrap';
 
+      // ===== MATCH RESULT =====
       const table = document.createElement('table');
       table.className = 'resultTable';
       table.innerHTML = `
@@ -1374,25 +1497,49 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
         if (isPlayer) tr.classList.add('isPlayer');
 
-        const place = Number(r.placement ?? 0);
-        const teamLabel = `${place ? `#${place} ` : ''}${String(r.squad ?? r.id ?? '')}`;
+        const place = Number(r.placement ?? r.Placement ?? 0);
+        const name = String(r.name ?? r.squad ?? r.id ?? '');
+
+        const PlacementP = Number(r.PlacementP ?? r.placementP ?? 0);
+        const KP = Number(r.KP ?? r.kp ?? 0);
+        const AP = Number(r.AP ?? r.ap ?? 0);
+        const Treasure = Number(r.Treasure ?? r.treasure ?? 0);
+        const Flag = Number(r.Flag ?? r.flag ?? 0);
+        const Total = Number(r.Total ?? r.total ?? 0);
+
+        const teamLabel = `${place ? `#${place} ` : ''}${name}`;
 
         tr.innerHTML = `
           <td>${escapeHtml(teamLabel)}</td>
-          <td class="num">${escapeHtml(String(r.PlacementP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.Total ?? 0))}</td>
+          <td class="num">${escapeHtml(String(PlacementP))}</td>
+          <td class="num">${escapeHtml(String(KP))}</td>
+          <td class="num">${escapeHtml(String(AP))}</td>
+          <td class="num">${escapeHtml(String(Treasure))}</td>
+          <td class="num">${escapeHtml(String(Flag))}</td>
+          <td class="num">${escapeHtml(String(Total))}</td>
         `;
         tb.appendChild(tr);
       });
 
       wrap.appendChild(table);
+
+      // ===== CURRENT OVERALL (20 teams) =====
+      if (currentOverall.length){
+        const sep = document.createElement('div');
+        sep.style.height = '10px';
+        wrap.appendChild(sep);
+
+        const title = document.createElement('div');
+        title.className = 'coachHint';
+        title.textContent = '現在の総合順位（この20チーム）';
+        wrap.appendChild(title);
+
+        wrap.appendChild(buildCurrentOverallTable(currentOverall));
+      }
+
       showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
-      setLines('試合結果', '（NEXTで進行）', '');
+      setLines('📊 試合結果', currentOverall.length ? '＋現在の総合順位を表示' : '（NEXTで進行）', '');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1415,12 +1562,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const total = payload?.total || {};
       const arr = Object.values(total);
 
+      // ✅ sumTotal / sumKP 等に対応（旧キーが来ても壊れないよう両対応）
       arr.sort((a,b)=>{
-        const pa = Number(a.sumTotal ?? 0);
-        const pb = Number(b.sumTotal ?? 0);
+        const pa = Number(a.sumTotal ?? a.total ?? 0);
+        const pb = Number(b.sumTotal ?? b.total ?? 0);
         if (pb !== pa) return pb - pa;
-        const ka = Number(a.KP ?? 0), kb = Number(b.KP ?? 0);
-        return kb - ka;
+
+        const ka = Number(a.sumKP ?? a.KP ?? a.kp ?? 0);
+        const kb = Number(b.sumKP ?? b.KP ?? b.kp ?? 0);
+        if (kb !== ka) return kb - ka;
+
+        const ppa = Number(a.sumPlacementP ?? a.PP ?? a.placementP ?? 0);
+        const ppb = Number(b.sumPlacementP ?? b.PP ?? b.placementP ?? 0);
+        if (ppb !== ppa) return ppb - ppa;
+
+        return String(a.name || a.squad || a.id || '').localeCompare(String(b.name || b.squad || b.id || ''));
       });
 
       const wrap = document.createElement('div');
@@ -1449,16 +1605,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
         if (isPlayer) tr.classList.add('isPlayer');
 
-        const teamLabel = `#${i+1} ${String(r.squad ?? r.id ?? '')}`;
+        const teamName = String(r.name ?? r.squad ?? r.id ?? '');
+        const teamLabel = `#${i+1} ${teamName}`;
+
+        const PT = Number(r.sumTotal ?? r.total ?? 0);
+        const PP = Number(r.sumPlacementP ?? r.PP ?? r.placementP ?? 0);
+        const K  = Number(r.sumKP ?? r.KP ?? r.kp ?? 0);
+        const A  = Number(r.sumAP ?? r.AP ?? r.ap ?? 0);
+        const TRE = Number(r.sumTreasure ?? r.Treasure ?? r.treasure ?? 0);
+        const FLG = Number(r.sumFlag ?? r.Flag ?? r.flag ?? 0);
 
         tr.innerHTML = `
           <td>${escapeHtml(teamLabel)}</td>
-          <td class="num">${escapeHtml(String(r.sumTotal ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.sumPlacementP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.KP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.AP ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.Treasure ?? 0))}</td>
-          <td class="num">${escapeHtml(String(r.Flag ?? 0))}</td>
+          <td class="num">${escapeHtml(String(PT))}</td>
+          <td class="num">${escapeHtml(String(PP))}</td>
+          <td class="num">${escapeHtml(String(K))}</td>
+          <td class="num">${escapeHtml(String(A))}</td>
+          <td class="num">${escapeHtml(String(TRE))}</td>
+          <td class="num">${escapeHtml(String(FLG))}</td>
         `;
         tb.appendChild(tr);
       });
@@ -1466,7 +1630,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       wrap.appendChild(table);
       showPanel('TOURNAMENT RESULT', wrap);
 
-      setLines('大会結果', '（NEXTで進行）', '');
+      setLines('🏁 大会結果', '（NEXTで進行）', '');
       syncSessionBar();
     }finally{
       unlockUI();
@@ -1546,7 +1710,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
-      setLines('次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, 'NEXTで進行');
+      setLines('➡️ 次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, 'NEXTで進行');
       syncSessionBar();
     }finally{
       unlockUI();
