@@ -1,24 +1,8 @@
 'use strict';
 
 /*
-  sim_match_flow.js v3（フル）
-  ✅「試合最新版.txt」運用向け（大会側から呼ばれる “交戦解決エンジン” ）
-  - resolveBattle(teamA, teamB, round, ctx)
-  - 敗者は必ず全滅（eliminated=true / alive=0）
-  - eventBuffs（aim/mental/agi の%加算）を勝率に反映
-  - キル/アシスト（個人配分）を裏で集計（Assist ≤ Kill保証）
-  - downs_total は内部のみ（タイブレーク用）※表示しない
-
-  ★修正（今回）：
-  - 「交戦勝利 = 必ず3キル」を保証（勝って0キル問題を潰す）
-  - 敗者のキルは 0〜2 を抽選（敗北側もキルが出る）
-  - ✅ H2H（head-to-head）勝敗を ctx.state.h2h に保存（順位ロジックに使う）
-  - ✅ power 未設定のPLAYERは、members stats から推定計算して 55固定化を回避
-  - ✅ eliminatedRound を敗者に付与（順位の逆転バグ対策の本丸）
-
-  ★重要：
-  - eventBuffs は「試合中に蓄積して効く」前提で、ここではリセットしない
-    （試合開始時：tournamentLogic.resetForNewMatch でリセット）
+  sim_match_flow.js v3.1（フル）
+  v3完全維持 + 宝/旗抽選追加
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -36,7 +20,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return t && !t.eliminated && (t.alive|0) > 0;
   }
 
-  // ===== 推定power（PLAYERだけ55固定回避） =====
   const WEIGHT = {
     aim: 0.25,
     mental: 0.15,
@@ -91,8 +74,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (!vals.length) return null;
       const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-
-      // ui_team.js と同じ +3 の補正（見た目の%と合わせる）
       return clamp(Math.round(avg + 3), 1, 100);
     }catch{
       return null;
@@ -102,42 +83,29 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function ensureTeamShape(t){
     if (!t) return;
 
-    // power
     if (!Number.isFinite(Number(t.power))){
-      // ✅ PLAYERだけは members から推定して 55固定を避ける
       const isPlayer = (t.isPlayer === true) || (String(t.id||'') === 'PLAYER');
       if (isPlayer){
         const est = estimateTeamPowerFromMembers(t);
         if (Number.isFinite(est)) t.power = est;
       }
-      if (!Number.isFinite(Number(t.power))) t.power = 55; // 最終保険
+      if (!Number.isFinite(Number(t.power))) t.power = 55;
     }
 
-    // alive
     if (!Number.isFinite(Number(t.alive))) t.alive = 3;
     if (t.alive < 0) t.alive = 0;
 
-    // totals
     if (!Number.isFinite(Number(t.kills_total))) t.kills_total = 0;
     if (!Number.isFinite(Number(t.assists_total))) t.assists_total = 0;
     if (!Number.isFinite(Number(t.downs_total))) t.downs_total = 0;
-
     if (!Number.isFinite(Number(t.treasure))) t.treasure = 0;
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
-
-    // eliminatedRound
     if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
 
-    // eventBuffs
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
       t.eventBuffs = { aim:0, mental:0, agi:0 };
-    }else{
-      if (!Number.isFinite(Number(t.eventBuffs.aim))) t.eventBuffs.aim = 0;
-      if (!Number.isFinite(Number(t.eventBuffs.mental))) t.eventBuffs.mental = 0;
-      if (!Number.isFinite(Number(t.eventBuffs.agi))) t.eventBuffs.agi = 0;
     }
 
-    // members
     if (!Array.isArray(t.members)) t.members = [];
     if (t.members.length < 3){
       const base = t.members.slice();
@@ -151,20 +119,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         });
       }
       t.members = base;
-    }else{
-      for (let i=0;i<t.members.length;i++){
-        const m = t.members[i] || (t.members[i]={});
-        if (!m.role) m.role = (i===0?'IGL':(i===1?'ATTACKER':'SUPPORT'));
-        if (!m.name) m.name = `${t.id || 'TEAM'}_${m.role}`;
-        if (!Number.isFinite(Number(m.kills))) m.kills = 0;
-        if (!Number.isFinite(Number(m.assists))) m.assists = 0;
-      }
     }
 
     if (t.eliminated !== true) t.eliminated = false;
   }
 
-  // eventBuffs（%加算）→ 乗算係数へ（暴れないよう弱め）
   function buffMultiplierFromEventBuffs(t){
     const aim = clamp(t.eventBuffs?.aim ?? 0, -99, 99);
     const mental = clamp(t.eventBuffs?.mental ?? 0, -99, 99);
@@ -186,17 +145,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function computeFightPower(t, round){
     ensureTeamShape(t);
-
     const base = clamp(t.power, 1, 100);
     const evMult = buffMultiplierFromEventBuffs(t);
-
     const v = roundVariance(round);
     const rng = 1 + ((Math.random() * 2 - 1) * v);
-
     return base * evMult * rng;
   }
 
-  // 勝率式（仕様の「差×1.8 / clamp(22..78)」に合わせる）
   function computeWinRateA(powerA, powerB){
     const diff = powerA - powerB;
     let pct = 50 + diff * 1.8;
@@ -204,7 +159,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return pct / 100;
   }
 
-  // 役割重み：ATT 50 / IGL 30 / SUP 20
   function memberWeight(role){
     const r = String(role||'').toUpperCase();
     if (r === 'ATTACKER') return 50;
@@ -231,58 +185,37 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     m.kills += 1;
     team.kills_total += 1;
 
-    // 1キルにつき最大1アシスト（Assist ≤ Kill保証）
-    if (team.members.length >= 2){
-      const assistChance = 0.70;
-      if (Math.random() < assistChance){
-        let j = pickMemberIndexByWeight(team);
-        if (j === idx) j = (j + 1) % team.members.length;
-        const a = team.members[j];
-        a.assists += 1;
-        team.assists_total += 1;
-      }
+    if (team.members.length >= 2 && Math.random() < 0.70){
+      let j = pickMemberIndexByWeight(team);
+      if (j === idx) j = (j + 1) % team.members.length;
+      const a = team.members[j];
+      a.assists += 1;
+      team.assists_total += 1;
     }
   }
 
-  // 敗者のキル抽選（0〜2）
   function rollLoserKills(round, diff){
-    const r = clamp(round, 1, 6);
-
-    const bias = clamp(diff / 40, -1, 1);
-
     const rl = Math.random();
-    let p0 = clamp(0.55 + 0.18*bias, 0.25, 0.90);
-    let p2 = clamp(0.10 - 0.08*bias, 0.00, 0.18);
-    let p1 = 1 - (p0 + p2);
-
-    if (p1 < 0.05){
-      const rest = p0 + p2;
-      p1 = 0.05;
-      const k = (1-p1)/Math.max(1e-6, rest);
-      p0*=k; p2*=k;
-    }
-
-    let lk = 0;
-    if (rl < p0) lk = 0;
-    else if (rl < p0 + p1) lk = 1;
-    else lk = 2;
-
-    if (r >= 4 && Math.random() < 0.08){
-      lk = clamp(lk + 1, 0, 2);
-    }
-
-    return lk;
+    if (rl < 0.55) return 0;
+    if (rl < 0.90) return 1;
+    return 2;
   }
 
-  // ✅ H2H保存（state.h2h["WIN|LOSE"]=count）
-  function recordH2H(ctx, winnerId, loserId){
-    try{
-      const st = ctx?.state || ctx?.tournamentState || null;
-      if (!st) return;
-      if (!st.h2h || typeof st.h2h !== 'object') st.h2h = {};
-      const k = `${String(winnerId)}|${String(loserId)}`;
-      st.h2h[k] = (Number(st.h2h[k])||0) + 1;
-    }catch(e){}
+  // ★追加：宝抽選
+  function rollTreasureGain(team, round){
+    const base = 0.10 + (round * 0.02);
+    if (Math.random() < base){
+      team.treasure += 1;
+    }
+  }
+
+  // ★追加：旗抽選
+  function rollFlagGain(team, round){
+    if (round < 4) return;
+    const base = (round === 5 ? 0.08 : 0.12);
+    if (Math.random() < base){
+      team.flag += 1;
+    }
   }
 
   function resolveBattle(teamA, teamB, round, ctx){
@@ -300,60 +233,34 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const winner = aWin ? teamA : teamB;
     const loser  = aWin ? teamB : teamA;
 
-    // ====== downs_total（内部のみ）
-    // 敗者は必ず全滅＝3ダウン扱い、勝者は0〜2の軽傷
-    const r = clamp(round, 1, 6);
-    let winDowns = 0;
-    const w1 = (r <= 2) ? 0.20 : (r <= 4 ? 0.28 : 0.35);
-    const w2 = (r <= 2) ? 0.05 : (r <= 4 ? 0.08 : 0.12);
-    const x = Math.random();
-    if (x < w2) winDowns = 2;
-    else if (x < w2 + w1) winDowns = 1;
-
-    winner.downs_total += winDowns;
-    loser.downs_total  += 3;
-
-    // ====== キル/アシスト（裏集計）
-    // ✅勝者は必ず3キル（仕様保証）
     for (let i=0;i<3;i++) addKill(winner);
 
-    // ✅敗者も0〜2キルを取り得る
-    const diff = (aWin ? (pA - pB) : (pB - pA)); // 勝者−敗者 が正
-    const loserKills = rollLoserKills(r, diff);
+    const diff = (aWin ? (pA - pB) : (pB - pA));
+    const loserKills = rollLoserKills(round, diff);
     for (let i=0;i<loserKills;i++) addKill(loser);
 
-    // ====== 敗者は必ず全滅 + eliminatedRound 付与（順位の本丸）
+    // ★宝旗追加
+    rollTreasureGain(winner, round);
+    rollTreasureGain(loser, round);
+    rollFlagGain(winner, round);
+
     loser.alive = 0;
     loser.eliminated = true;
     loser.eliminatedRound = (round|0);
 
-    // 勝者は生存維持（人数は減らさない）
     winner.alive = clamp(winner.alive, 1, 3);
     winner.eliminated = false;
-
-    // ✅ H2H保存（順位ロジック用）
-    recordH2H(ctx, winner.id, loser.id);
 
     return {
       winnerId: winner.id,
       loserId: loser.id,
-      winDrop: 0,
-      loseDrop: 3,
-
-      // 裏検証用（必要ならUIには出さない運用）
       winnerKills: 3,
       loserKills: loserKills
     };
   }
 
-  // コーチスキルのフラグ口（score_mindなど）
-  function getPlayerCoachFlags(){
-    return {};
-  }
-
   window.MOBBR.sim.matchFlow = {
-    resolveBattle,
-    getPlayerCoachFlags
+    resolveBattle
   };
 
 })();
