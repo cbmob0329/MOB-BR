@@ -99,6 +99,24 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ LastChance: 総合RESULT後 → 次のNEXTで “上位2だけWorld権利” をpostで確定 → UI閉じる
+    //   - 20チーム固定 / セッション分割なし / 5試合 / 賞金なし / 企業ランク変動なし
+    if (state.phase === 'lastchance_total_result_wait_post'){
+      try{
+        if (P?.onLastChanceTournamentFinished){
+          P.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLastChanceTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
+      }
+      state.phase = 'done';
+      // 週進行なし・報酬なし → endTournament だけ
+      setRequest('endTournament', {});
+      return;
+    }
+
     // ✅ National: AUTOセッション開始表示（○&○ 試合進行中..）
     if (state.phase === 'national_auto_session_wait_run'){
       const nat = state.national || {};
@@ -217,6 +235,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'intro'){
       if (state.mode === 'national'){
         _setNationalBanners();
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = 'ラストチャンス';
+        state.bannerRight = '20チーム';
       }else{
         state.bannerLeft = 'ローカル大会';
         state.bannerRight = '20チーム';
@@ -256,6 +277,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.phase = 'national_auto_session_wait_run';
           return;
         }
+      }else if (state.mode === 'lastchance'){
+        setCenter3('ラストチャンス開始！', '上位2チームがワールド出場！', '');
       }else{
         setCenter3('本日のチームをご紹介！', '', '');
       }
@@ -666,6 +689,29 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         // 非最終：次のNEXTで Notice → 次セッションへ
         state.phase = 'national_session_total_result_wait_notice';
+        return;
+      }
+
+      // LASTCHANCE（20チーム固定 / 5試合 / 上位2のみWorld権利 / 報酬なし・企業ランク変動なし）
+      if (state.mode === 'lastchance'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'lastchance_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
         return;
       }
 
