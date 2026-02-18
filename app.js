@@ -1,20 +1,57 @@
 /* =========================================================
-   app.js（FULL） v18.4
-   - v18.3 の 3分割読み込み順を維持
-   - ✅ 修正：大会開始ブリッジで「UIだけopenしてsimを開始しない」バグを解消
-        → 必ず sim 側で state を生成 →（必要なら step で初期request生成）→ UI open → UI render
-   - ✅ 追加：UI→app の疎結合イベント
-        mobbr:startTournament（detailで type/phase 指定も可）
-   - ✅ 追加：tourState(stage/world.phase) から自動で大会種別を判定して開始
+   app.js（FULL） v18.5
+   - v18.4 の 3分割読み込み順を維持
+   - ✅ 追加：MOBBR namespace hard-guard（window.MOBBR.sim / ui の上書き事故を永久防止）
+   - ✅ 維持：大会開始ブリッジ（必ず sim開始→step→UI open→render）
+   - ✅ 維持：UI→app の疎結合イベント（mobbr:startTournament / mobbr:goMain）
 ========================================================= */
 'use strict';
 
-const APP_VER = 18.4; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.5; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ver = APP_VER;
+
+// =========================================================
+// ✅ MOBBR namespace hard-guard（最重要）
+// - どこかのファイルが window.MOBBR.sim = {} / window.MOBBR.ui = {} しても壊れない
+// - 破壊的上書きは拒否し「マージ」に矯正
+// =========================================================
+(function mobbrNamespaceHardGuard(){
+  const root = window.MOBBR;
+
+  // --- sim guard ---
+  const keepSim = root.sim || {};
+  Object.defineProperty(root, 'sim', {
+    configurable: false,
+    enumerable: true,
+    get(){ return keepSim; },
+    set(v){
+      if (v && typeof v === 'object'){
+        for (const k of Object.keys(v)){
+          keepSim[k] = v[k];
+        }
+      }
+    }
+  });
+
+  // --- ui guard ---
+  const keepUi = root.ui || {};
+  Object.defineProperty(root, 'ui', {
+    configurable: false,
+    enumerable: true,
+    get(){ return keepUi; },
+    set(v){
+      if (v && typeof v === 'object'){
+        for (const k of Object.keys(v)){
+          keepUi[k] = v[k];
+        }
+      }
+    }
+  });
+})();
 
 (function preventDoubleTapZoom(){
   let lastTouchEnd = 0;
@@ -155,7 +192,7 @@ async function loadModules(){
 let modulesLoaded = false;
 
 // ==========================================
-// 大会開始ブリッジ（v18.4）
+// 大会開始ブリッジ（v18.5）
 // - UIはこれだけ呼べばOK（または mobbr:startTournament を投げる）
 // ==========================================
 
@@ -208,7 +245,7 @@ function normalizeWorldPhase(phase){
   return 'qual';
 }
 
-// ✅ v18.4：必ず「sim開始→（初期request生成）→UI open→UI render」
+// ✅ v18.5：必ず「sim開始→（初期request生成）→UI open→UI render」
 function startTournamentPipeline(simStartFn, uiOpenArg){
   ensureModulesOrThrow();
 
