@@ -1,8 +1,10 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.3
-   - step() 本体だけを移植
-   - shared の関数/状態を参照して “台本(step)” を固定
-   - ✅ v4.3: LastChance（20 teams/5 matches/TOP2）を local同型で追加
+   sim_tournament_core_step.js（FULL） v4.4
+   - v4.3 の全機能維持
+   追加/修正：
+   - ✅ showMatchResult の payload に currentOverallRows を同梱（1試合ごとの現在総合順位表示）
+   - ✅ showEncounter / showBattle に meMembers / foeMembers を同梱（交戦中メンバー名表示）
+   - ✅ CPUもたまに Treasure/Flag を獲得（軽い確率の裏ロール、過剰にならないよう制御）
    ========================================================= */
 'use strict';
 
@@ -48,6 +50,40 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _markSessionDone(key){ return T._markSessionDone(key); }
   function _sessionHasPlayer(sessionIndex){ return T._sessionHasPlayer(sessionIndex); }
   function _autoRunNationalSession(){ return T._autoRunNationalSession(); }
+
+  // =========================
+  // ✅ CPU Loot Roll（Treasure/Flag）
+  // - round_events の最初に1回だけ実行（同round多重実行防止）
+  // - 過剰に増えないように低確率
+  // =========================
+  function cpuLootRollOncePerRound(state, round){
+    try{
+      const r = Number(round||0);
+      if (!Number.isFinite(r) || r <= 0) return;
+
+      if (!state._cpuLootRolled) state._cpuLootRolled = {};
+      if (state._cpuLootRolled[String(r)] === true) return;
+
+      state._cpuLootRolled[String(r)] = true;
+
+      const teams = Array.isArray(state.teams) ? state.teams : [];
+      for (const t of teams){
+        if (!t) continue;
+        ensureTeamRuntimeShape(t);
+        if (t.eliminated) continue;
+        if (t.isPlayer) continue;
+
+        // Treasure: 少し出やすい
+        if (Math.random() < 0.08){
+          t.treasure = (Number(t.treasure||0) + 1);
+        }
+        // Flag: さらにレア
+        if (Math.random() < 0.04){
+          t.flag = (Number(t.flag||0) + 1);
+        }
+      }
+    }catch(e){}
+  }
 
   // =========================================================
   // ===== main step machine (FROM ORIGINAL, MIN ADD ONLY) ====
@@ -452,6 +488,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'round_events'){
       const r = state.round;
 
+      // ✅ CPU loot roll（このroundで1回だけ）
+      cpuLootRollOncePerRound(state, r);
+
       if (L.eventCount(r) === 0){
         state.phase = 'round_battles';
         return step();
@@ -533,7 +572,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
             foeTeamId: foe.id,
             foePower: Number(foe.power||0),
             round: r,
-            matchIndex: state.matchIndex
+            matchIndex: state.matchIndex,
+
+            // ✅ 交戦中のメンバー表示
+            meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
+            foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
           });
 
           state.phase = 'battle_resolve';
@@ -597,7 +640,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         foePower: Number(foe.power||0),
         win: iWon,
         final: (r===6),
-        holdMs: 2000
+        holdMs: 2000,
+
+        // ✅ 交戦中のメンバー表示
+        meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
+        foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
       });
 
       if (!iWon && me.eliminated){
@@ -687,11 +734,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.ui.topLeftName = '';
       state.ui.topRightName = '';
 
+      // ✅ currentOverallRows を payload に同梱（1試合ごとの「現在総合順位」）
       setRequest('showMatchResult', {
         matchIndex: state.matchIndex,
         matchCount: state.matchCount,
-        rows: state.lastMatchResultRows
+        rows: state.lastMatchResultRows,
+        currentOverall: Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []
       });
+
       state.phase = 'match_result_done';
       return;
     }
