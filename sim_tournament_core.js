@@ -930,6 +930,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     getState
   };
 
+  // backward compatibility: old UI expects tournamentFlow
+  window.MOBBR.sim.tournamentFlow = window.MOBBR.sim.tournamentCore;
+
   // expose for step.js to call
   _tcore.ensureTeamRuntimeShape = ensureTeamRuntimeShape;
   _tcore.getCpuById = getCpuById;
