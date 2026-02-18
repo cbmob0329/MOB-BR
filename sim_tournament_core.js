@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core.js（FULL）
+   sim_tournament_core.js（FULL） v4.2.0
    - 進行（state/step/公開API）を担当
    - National：
      ✅ セッション順 AB→CD→AC→AD→BC→BD
@@ -12,11 +12,14 @@
    - “大会終了後処理” は tournamentCorePost が存在すれば呼ぶ
      ✅ Local: 「総合RESULT表示 → 次のNEXTで post実行 → UI閉じる」
      ✅ National: 「最終総合RESULT表示 → 次のNEXTで post実行（あれば） → 無ければ endNationalWeek 通知」
+     ✅ LastChance: 「総合RESULT表示 → 次のNEXTで post実行 → UI閉じる」
+     ✅ World: 「総合RESULT表示 → 次のNEXTで phase別post実行 → UI閉じる」
    - 追加（今回）：
      ✅ プレイヤー不在セッションは中央に
         「○&○ 試合進行中..」→（NEXT）→高速処理→
         「全試合終了！現在の総合ポイントはこちら！NEXTでRESULT」→（NEXT）→総合RESULT
      ✅ 最終セッション（BD）がAUTOでも「セッション7へ進まない」永久ループ完全停止
+     ✅ 新：LastChance / World（qual/wl/final）をコアに追加（既存ロジックは削除しない）
    ========================================================= */
 'use strict';
 
@@ -33,6 +36,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ---- Local TOP10 key（post側と合わせる）----
   const K_LOCAL_TOP10 = 'mobbr_split1_local_top10';
+  const K_LOCAL_TOP10_S2 = 'mobbr_split2_local_top10';
+
+  // ---- tourState（world phase判定に使用）----
+  const K_TOUR_STATE = 'mobbr_tour_state';
 
   // ===== State =====
   let state = null;
@@ -257,6 +264,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return !!(lastSession && lastMatchDone);
     }
 
+    // lastchance / world は「matchCount完了」で終わる
     return state.matchIndex > state.matchCount;
   }
 
@@ -524,6 +532,56 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // LastChance / World 用（チーム作成）
+  // =========================================================
+  function _makeTeamsPlayerPlus19ByPrefix(prefixPrimary, prefixFallback){
+    const player = _makePlayerRuntime();
+    const out = [player];
+
+    let pool = _getCpuTeamsByPrefix(prefixPrimary);
+    if (!pool || pool.length < 19){
+      const fb = _getCpuTeamsByPrefix(prefixFallback);
+      if (Array.isArray(fb) && fb.length) pool = (pool||[]).concat(fb);
+    }
+    pool = Array.isArray(pool) ? pool.slice() : [];
+    pool = L.shuffle(pool);
+
+    const cpu19 = pool.slice(0, 19);
+    for (let i=0;i<cpu19.length;i++){
+      out.push(_mkRuntimeTeamFromCpuDef(cpu19[i]));
+    }
+
+    // 不足時は localOnly を補充（最終安全弁）
+    if (out.length < 20 && L?.getCpuTeamsLocalOnly){
+      const add = L.shuffle(L.getCpuTeamsLocalOnly()).slice(0, 20 - out.length);
+      for (const c of add) out.push(_mkRuntimeTeamFromCpuDef(c));
+    }
+
+    if (out.length > 20) out.length = 20;
+    return out;
+  }
+
+  function _readTourStateSafe(){
+    try{
+      const raw = localStorage.getItem(K_TOUR_STATE);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return null;
+      return obj;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function _getWorldPhaseFromTourState(){
+    const ts = _readTourStateSafe() || {};
+    const ph = String(ts?.world?.phase || '').trim();
+    if (ph === 'qual' || ph === 'wl' || ph === 'final') return ph;
+    // 未保存なら予選扱い（誤ロック防止）
+    return 'qual';
+  }
+
+  // =========================================================
   // ===== main step machine =====
   // =========================================================
   function step(){
@@ -570,6 +628,52 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }else{
         setRequest('endNationalWeek', { weeks: 1 });
       }
+      return;
+    }
+
+    // ✅ LastChance: 総合RESULT後 → 次のNEXTで post → UI閉じる
+    if (state.phase === 'lastchance_total_result_wait_post'){
+      try{
+        if (P?.onLastChanceTournamentFinished){
+          P.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLastChanceTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
+      }
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
+    }
+
+    // ✅ World: 総合RESULT後 → 次のNEXTで phase別post → UI閉じる
+    if (state.phase === 'world_total_result_wait_post'){
+      const ph = String(state?.world?.phase || state?.worldPhase || '').trim();
+
+      try{
+        // phase別post（無ければ onWorldQualFinished に倒す）
+        if (ph === 'wl'){
+          if (P?.onWorldWLFinished) P.onWorldWLFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldWLFinished) window.MOBBR.sim.tournamentCorePost.onWorldWLFinished(state, state.tournamentTotal);
+          else if (P?.onWorldQualFinished) P.onWorldQualFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
+        }else if (ph === 'final'){
+          if (P?.onWorldFinalFinished) P.onWorldFinalFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldFinalFinished) window.MOBBR.sim.tournamentCorePost.onWorldFinalFinished(state, state.tournamentTotal);
+          else if (P?.onWorldQualFinished) P.onWorldQualFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
+        }else{
+          // qual（デフォ）
+          if (P?.onWorldQualFinished) P.onWorldQualFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onWorld*Finished error:', e);
+      }
+
+      state.phase = 'done';
+      setRequest('endTournament', {});
       return;
     }
 
@@ -691,6 +795,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'intro'){
       if (state.mode === 'national'){
         _setNationalBanners();
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = 'ラストチャンス';
+        state.bannerRight = '20チーム';
+      }else if (state.mode === 'world'){
+        const ph = String(state?.world?.phase || '').trim();
+        const label = (ph === 'wl') ? 'WL' : (ph === 'final') ? '決勝戦' : '予選リーグ';
+        state.bannerLeft = `ワールドファイナル ${label}`;
+        state.bannerRight = '20チーム';
       }else{
         state.bannerLeft = 'ローカル大会';
         state.bannerRight = '20チーム';
@@ -730,6 +842,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.phase = 'national_auto_session_wait_run';
           return;
         }
+      }else if (state.mode === 'lastchance'){
+        setCenter3('ラストチャンス開幕！', '', '');
+      }else if (state.mode === 'world'){
+        const ph = String(state?.world?.phase || '').trim();
+        const label = (ph === 'wl') ? 'winners/losersリーグ' : (ph === 'final') ? '決勝戦' : '予選リーグ';
+        setCenter3(`ワールドファイナル ${label} 開幕！`, '', '');
       }else{
         setCenter3('本日のチームをご紹介！', '', '');
       }
@@ -766,6 +884,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (state.mode === 'national'){
         _setNationalBanners();
+        state.bannerRight = '降下';
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = `MATCH ${state.matchIndex} / ${state.matchCount}`;
+        state.bannerRight = '降下';
+      }else if (state.mode === 'world'){
+        const ph = String(state?.world?.phase || '').trim();
+        const label = (ph === 'wl') ? 'WL' : (ph === 'final') ? '決勝戦' : '予選';
+        state.bannerLeft = `WORLD ${label}`;
         state.bannerRight = '降下';
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -811,6 +937,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (state.mode === 'national'){
         _setNationalBanners();
+        state.bannerRight = `ROUND ${r}`;
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = `MATCH ${state.matchIndex} / ${state.matchCount}`;
+        state.bannerRight = `ROUND ${r}`;
+      }else if (state.mode === 'world'){
+        const ph = String(state?.world?.phase || '').trim();
+        const label = (ph === 'wl') ? 'WL' : (ph === 'final') ? '決勝戦' : '予選';
+        state.bannerLeft = `WORLD ${label}`;
         state.bannerRight = `ROUND ${r}`;
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -1143,6 +1277,54 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // LASTCHANCE
+      if (state.mode === 'lastchance'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'lastchance_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      // WORLD
+      if (state.mode === 'world'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'world_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        const ph = String(state?.world?.phase || '').trim();
+        const label = (ph === 'wl') ? 'WL' : (ph === 'final') ? '決勝戦' : '予選';
+        setCenter3(`次の試合へ`, `WORLD ${label} MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
       setRequest('showTournamentResult', { total: state.tournamentTotal });
       state.phase = 'done';
       return;
@@ -1406,11 +1588,127 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // start: LAST CHANCE
+  // =========================================================
+  function startLastChanceTournament(){
+    // lastchance prefix があるならそれ優先、無ければ national を使う
+    const teams = _makeTeamsPlayerPlus19ByPrefix('lastchance', 'national');
+
+    state = {
+      mode: 'lastchance',
+      matchIndex: 1,
+      matchCount: 5,
+      round: 1,
+
+      phase: 'intro',
+
+      teams,
+      tournamentTotal: {},
+
+      h2h: {},
+
+      playerContestedAtDrop: false,
+      _dropAssigned: null,
+
+      selectedCoachSkill: null,
+      selectedCoachQuote: '',
+
+      bannerLeft: 'ラストチャンス',
+      bannerRight: '20チーム',
+
+      ui: {
+        bg: 'maps/neonmain.png',
+        squareBg: 'tent.png',
+        leftImg: L.getEquippedSkin(),
+        rightImg: '',
+        center3: ['','',''],
+        topLeftName: '',
+        topRightName: ''
+      },
+
+      request: null
+    };
+
+    if (window.MOBBR?.ui?.tournament?.open){
+      window.MOBBR.ui.tournament.open();
+    }
+    if (window.MOBBR?.ui?.tournament?.render){
+      window.MOBBR.ui.tournament.render();
+    }
+
+    step();
+    if (window.MOBBR?.ui?.tournament?.render){
+      window.MOBBR.ui.tournament.render();
+    }
+  }
+
+  // =========================================================
+  // start: WORLD（qual / wl / final）
+  // =========================================================
+  function startWorldTournament(){
+    const ph = _getWorldPhaseFromTourState(); // 'qual'|'wl'|'final'
+    const teams = _makeTeamsPlayerPlus19ByPrefix('world', 'national');
+
+    state = {
+      mode: 'world',
+      matchIndex: 1,
+      matchCount: 5,
+      round: 1,
+
+      phase: 'intro',
+
+      teams,
+      tournamentTotal: {},
+
+      h2h: {},
+
+      playerContestedAtDrop: false,
+      _dropAssigned: null,
+
+      selectedCoachSkill: null,
+      selectedCoachQuote: '',
+
+      bannerLeft: 'ワールドファイナル',
+      bannerRight: '20チーム',
+
+      world: {
+        phase: ph
+      },
+
+      ui: {
+        bg: 'maps/neonmain.png',
+        squareBg: 'tent.png',
+        leftImg: L.getEquippedSkin(),
+        rightImg: '',
+        center3: ['','',''],
+        topLeftName: '',
+        topRightName: ''
+      },
+
+      request: null
+    };
+
+    if (window.MOBBR?.ui?.tournament?.open){
+      window.MOBBR.ui.tournament.open();
+    }
+    if (window.MOBBR?.ui?.tournament?.render){
+      window.MOBBR.ui.tournament.render();
+    }
+
+    step();
+    if (window.MOBBR?.ui?.tournament?.render){
+      window.MOBBR.ui.tournament.render();
+    }
+  }
+
+  // =========================================================
   // Export API
   // =========================================================
   window.MOBBR.sim.tournamentFlow = {
     startLocalTournament,
     startNationalTournament,
+    startLastChanceTournament,
+    startWorldTournament,
 
     step,
     getState,
