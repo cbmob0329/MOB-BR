@@ -1,18 +1,16 @@
 /* =========================================================
-   app.js（FULL） v18.1
-   - ローカル大会 1本 / 3分割対応 + post対応
+   app.js（FULL） v18.2
+   - ローカル大会 1本 / 3分割コア（shared/step/entry）対応 + post対応
    - 重要：全モジュールを APP_VER で統一してキャッシュ差分を確実に潰す
    - 重要：読み込み確認ログを追加（どれが読めてない/古いか即判定）
 
-   v18.1 修正（最重要）：
-   ✅ 週進行/ゴールド加算/nextTour更新の「実処理」は app.js に一本化
-   ✅ mobbr:advanceWeek は使用しない（受信もしない）
-   ✅ 大会終了は mobbr:goMain(detail.advanceWeeks) で統一
-   ✅ ui_main.js 側は表示のみ（ストレージ更新なし）
+   v18.2 修正：
+   ✅ sim_tournament_core を 3分割読み込み順に変更
+      logic -> result -> core_shared -> core_step -> core(entry)
 ========================================================= */
 'use strict';
 
-const APP_VER = 18.1; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.2; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -136,10 +134,12 @@ async function loadModules(){
     `sim_match_events.js${v}`,
     `sim_match_flow.js${v}`,
 
-    // tournament 3分割（依存順：logic -> result -> core）
+    // tournament 3分割（依存順：logic -> result -> core_shared -> core_step -> core(entry)）
     `sim_tournament_logic.js${v}`,
     `sim_tournament_result.js${v}`,
-    `sim_tournament_core.js${v}`,
+    `sim_tournament_core_shared.js${v}`,
+    `sim_tournament_core_step.js${v}`,
+    `sim_tournament_core.js${v}`, // entry
 
     // ★ローカル/ナショナル大会終了後処理（状態更新 + 次大会算出API）
     `sim_tournament_core_post.js${v}`,
@@ -188,6 +188,12 @@ async function bootAfterNext(){
         matchFlow: !!window.MOBBR?.sim?.matchFlow,
         matchEvents: !!window.MOBBR?.sim?.matchEvents,
         tournamentCorePost: !!window.MOBBR?.sim?.tournamentCorePost
+      });
+
+      // ★3分割が揃ってるか（任意チェック）
+      console.log('[CHECK] tcore split =', {
+        core_shared: !!window.MOBBR?.sim?._tcore,
+        core_step: !!window.MOBBR?.sim?._tcore?.step
       });
     }catch(e){}
   }
