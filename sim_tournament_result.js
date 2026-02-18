@@ -1,13 +1,13 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版）
+  sim_tournament_result.js（FULL 安定版）
 
-  変更点：
-  ✅ チーム名を必ず name 表示（ID表示バグ修正）
+  修正内容：
+  ✅ チーム名解決を完全保証（ID表示根絶）
   ✅ Treasure=3 / Flag=5
-  ✅ 1試合終了ごとに「現在の総合順位（その20チーム）」生成
-  ✅ キル上限問題はここでは触らない（flow側で調整）
+  ✅ 1試合終了ごと currentOverallRows 更新
+  ✅ ソート安定化
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -15,28 +15,40 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
 (function(){
 
-  // =========================
-  // 表示名解決（ID対策）
-  // =========================
+  // ==========================================
+  // 名前解決（完全版）
+  // ==========================================
   function resolveTeamName(state, id){
-    if (!state || !state.teams) return id;
 
-    const t =
-      state.teams.find(x => String(x.id) === String(id)) ||
-      (state.tournamentTotal && Object.values(state.tournamentTotal).find(x => String(x.id) === String(id)));
+    const sid = String(id);
 
-    if (t && t.name) return String(t.name);
-    return String(id);
+    // ① 現在の20チーム
+    if (state?.teams){
+      const t = state.teams.find(x => String(x.id) === sid);
+      if (t?.name) return String(t.name);
+    }
+
+    // ② tournamentTotal
+    if (state?.tournamentTotal){
+      const t = state.tournamentTotal[sid];
+      if (t?.name) return String(t.name);
+    }
+
+    // ③ national / world allTeamDefs（安全弁）
+    const allDefs = state?.national?.allTeamDefs || [];
+    const def = allDefs.find(x => String(x.id || x.teamId) === sid);
+    if (def?.name) return String(def.name);
+
+    return sid;
   }
 
-  // =========================
+  // ==========================================
   // Match Result Table
-  // =========================
+  // ==========================================
   function computeMatchResultTable(state){
 
     const teams = state.teams.slice();
 
-    // 生存→eliminatedRound→kills→downs少→power高→name
     teams.sort((a,b)=>{
       if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
       if (a.eliminatedRound !== b.eliminatedRound) return b.eliminatedRound - a.eliminatedRound;
@@ -51,13 +63,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     teams.forEach((t, index)=>{
 
       const placement = index + 1;
-
       const placementP = calcPlacementPoint(placement);
+
       const kp = Number(t.kills_total || 0);
       const ap = Number(t.assists_total || 0);
 
-      const treasureP = Number(t.treasure || 0) * 3; // ✅ 3
-      const flagP     = Number(t.flag || 0) * 5;     // ✅ 5
+      const treasureCount = Number(t.treasure || 0);
+      const flagCount     = Number(t.flag || 0);
+
+      const treasureP = treasureCount * 3;
+      const flagP     = flagCount * 5;
 
       const total = placementP + kp + ap + treasureP + flagP;
 
@@ -68,8 +83,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         placementP,
         kp,
         ap,
-        treasure: t.treasure || 0,
-        flag: t.flag || 0,
+        treasure: treasureCount,
+        flag: flagCount,
         total
       });
 
@@ -78,9 +93,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return rows;
   }
 
-  // =========================
-  // Placement Point（Apex風）
-  // =========================
+  // ==========================================
+  // Apex Placement
+  // ==========================================
   function calcPlacementPoint(rank){
     if (rank === 1) return 12;
     if (rank === 2) return 9;
@@ -91,9 +106,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 0;
   }
 
-  // =========================
-  // Add to Tournament Total
-  // =========================
+  // ==========================================
+  // Tournament Total
+  // ==========================================
   function addToTournamentTotal(state, rows){
 
     if (!state.tournamentTotal) state.tournamentTotal = {};
@@ -127,14 +142,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.name = r.name;
     });
 
-    // ✅ 現在戦っている20チームのみで並び替え生成
     buildCurrentOverall(state);
-
   }
 
-  // =========================
+  // ==========================================
   // 現在の20チーム総合順位
-  // =========================
+  // ==========================================
   function buildCurrentOverall(state){
 
     const ids = state.teams.map(t=>String(t.id));
@@ -142,9 +155,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const arr = ids.map(id=>{
       const t = state.tournamentTotal[id];
       if (!t) return null;
+
       return {
         id,
-        name: t.name,
+        name: resolveTeamName(state, id),
         total: t.sumTotal,
         placementP: t.sumPlacementP,
         kp: t.sumKP,
@@ -163,9 +177,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.currentOverallRows = arr;
   }
 
-  // =========================
-  // 公開
-  // =========================
   window.MOBBR.sim.tournamentResult = {
     computeMatchResultTable,
     addToTournamentTotal
