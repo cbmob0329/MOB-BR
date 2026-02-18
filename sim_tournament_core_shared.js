@@ -4,6 +4,12 @@
    - state/共通関数/内部ユーティリティを集約（削除ゼロで移植）
    - step本体は sim_tournament_core_step.js に置く
    - start/export は sim_tournament_core.js（entry）に置く
+
+   ✅FIX（重要）:
+   - setRequest を「{ type, payload }」に統一（entry/ui と整合）
+     かつ互換のため payload の直置きも同時保持
+   - setCenter3 を「state.center {a,b,c}」に統一（entry/ui と整合）
+     かつ互換のため state.ui.center3 も同時保持
    ========================================================= */
 'use strict';
 
@@ -97,12 +103,32 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ===== UI helper =====
+  // ✅FIX: requestの形を core(entry)/ui と揃える
+  //  - state.request = { type, payload }
+  //  - 互換のため payload のキーも直置き（UIが request.icon を見ても動く）
   function setRequest(type, payload){
-    state.request = { type, ...(payload||{}) };
+    if (!state) return;
+    const t = String(type || 'noop');
+    const p = (payload && typeof payload === 'object') ? payload : {};
+    state.request = { type: t, payload: p };
+    try{
+      for (const k of Object.keys(p)){
+        state.request[k] = p[k];
+      }
+    }catch(_){}
   }
 
+  // ✅FIX: centerの形を core(entry) と揃える
+  //  - state.center = {a,b,c}
+  //  - 互換のため state.ui.center3 = [a,b,c] も同時保持
   function setCenter3(a,b,c){
-    state.ui.center3 = [String(a||''), String(b||''), String(c||'')];
+    if (!state) return;
+    const A = String(a||'');
+    const B = String(b||'');
+    const C = String(c||'');
+    state.center = { a:A, b:B, c:C };
+    if (!state.ui || typeof state.ui !== 'object') state.ui = {};
+    state.ui.center3 = [A,B,C];
   }
 
   // ===== public methods for UI to call =====
@@ -134,6 +160,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const p = getPlayer();
     if (p){
       const info = getAreaInfo(p.areaId);
+      if (!state.ui || typeof state.ui !== 'object') state.ui = {};
       state.ui.bg = info.img || state.ui.bg;
     }
   }
