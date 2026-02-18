@@ -1,10 +1,8 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL）
+   sim_tournament_core_step.js（FULL） v4.3
    - step() 本体だけを移植
    - shared の関数/状態を参照して “台本(step)” を固定
-
-   v追加（最小）:
-   ✅ LastChance: 総合RESULT表示後 → 次NEXTで post → endTournament
+   - ✅ v4.3: LastChance（20 teams/5 matches/TOP2）を local同型で追加
    ========================================================= */
 'use strict';
 
@@ -52,7 +50,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _autoRunNationalSession(){ return T._autoRunNationalSession(); }
 
   // =========================================================
-  // ===== main step machine (FROM ORIGINAL, MINIMAL ADD) =====
+  // ===== main step machine (FROM ORIGINAL, MIN ADD ONLY) ====
   // =========================================================
   function step(){
     const state = T.getState();
@@ -70,6 +68,44 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }
       }catch(e){
         console.error('[tournament_core] onLocalTournamentFinished error:', e);
+      }
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
+    }
+
+    // ✅ LastChance: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
+    if (state.phase === 'lastchance_total_result_wait_post'){
+      try{
+        if (P?.onLastChanceTournamentFinished){
+          P.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLastChanceTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
+      }
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
+    }
+
+    // ✅ World: 予選/ WL / 決勝 の総合RESULT後 → 次のNEXTで post へ
+    if (state.phase === 'world_total_result_wait_post'){
+      const wp = String(state.worldPhase||'qual');
+      try{
+        if (wp === 'qual'){
+          if (P?.onWorldQualFinished) P.onWorldQualFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
+        }else if (wp === 'wl'){
+          if (P?.onWorldWLFinished) P.onWorldWLFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldWLFinished) window.MOBBR.sim.tournamentCorePost.onWorldWLFinished(state, state.tournamentTotal);
+        }else{
+          if (P?.onWorldFinalFinished) P.onWorldFinalFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldFinalFinished) window.MOBBR.sim.tournamentCorePost.onWorldFinalFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] world post error:', e);
       }
       state.phase = 'done';
       setRequest('endTournament', {});
@@ -99,22 +135,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }else{
         setRequest('endNationalWeek', { weeks: 1 });
       }
-      return;
-    }
-
-    // ✅ LastChance: 最終総合RESULT後 → 次のNEXTで post → endTournament（賞金/ランク変動なし）
-    if (state.phase === 'lastchance_total_result_wait_post'){
-      try{
-        if (P?.onLastChanceTournamentFinished){
-          P.onLastChanceTournamentFinished(state, state.tournamentTotal);
-        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLastChanceTournamentFinished){
-          window.MOBBR.sim.tournamentCorePost.onLastChanceTournamentFinished(state, state.tournamentTotal);
-        }
-      }catch(e){
-        console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
-      }
-      state.phase = 'done';
-      setRequest('endTournament', {});
       return;
     }
 
@@ -181,7 +201,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       const nextKey = String(nat.sessions?.[si+1]?.key || `S${si+2}`);
 
-      // このタイミングで完了マーク（UIで赤表示）
+      // このタイミングで完了マーク（UIで赤）
       _markSessionDone(curKey);
 
       setRequest('showNationalNotice', {
@@ -239,6 +259,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }else if (state.mode === 'lastchance'){
         state.bannerLeft = 'ラストチャンス';
         state.bannerRight = '20チーム';
+      }else if (state.mode === 'world'){
+        // Worldも national-like sessions を使う（bannerは session key 表示）
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
+        state.bannerRight = `${si+1}/${sc}`;
       }else{
         state.bannerLeft = 'ローカル大会';
         state.bannerRight = '20チーム';
@@ -278,6 +306,32 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.phase = 'national_auto_session_wait_run';
           return;
         }
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+
+        setCenter3('ワールドファイナル開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
+
+        if (!_sessionHasPlayer(si)){
+          state.bannerRight = `AUTO SESSION ${key}`;
+          const groups = s.sessions?.[si]?.groups || [];
+          const label = groups.length === 2 ? `${groups[0]} & ${groups[1]}` : key;
+
+          setRequest('showAutoSession', {
+            sessionKey: key,
+            line1: `${label} 試合進行中..`,
+            line2: '',
+            line3: 'NEXTで進行',
+            title: `${label} 試合進行中..`,
+            sub: ''
+          });
+          state.phase = 'national_auto_session_wait_run'; // 既存のAUTO処理を流用
+          return;
+        }
+      }else if (state.mode === 'lastchance'){
+        setCenter3('ラストチャンス開幕！', '上位2チームがワールド出場！', '');
       }else{
         setCenter3('本日のチームをご紹介！', '', '');
       }
@@ -290,7 +344,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ===== team list =====
     if (state.phase === 'teamList'){
       setCenter3('', '', '');
-      setRequest('showTeamList', { teams: state.teams.map(t=>({
+      setRequest('showTeamList', { teams: state.teams.map(t=>( {
         id:t.id, name:t.name, power:t.power, alive:t.alive, eliminated:t.eliminated, treasure:t.treasure, flag:t.flag, isPlayer:!!t.isPlayer
       }))});
       state.phase = 'teamList_done';
@@ -314,6 +368,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (state.mode === 'national'){
         _setNationalBanners();
+        state.bannerRight = '降下';
+      }else if (state.mode === 'world'){
+        // world session banner
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
         state.bannerRight = '降下';
       }else if (state.mode === 'lastchance'){
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -362,6 +424,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (state.mode === 'national'){
         _setNationalBanners();
+        state.bannerRight = `ROUND ${r}`;
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
         state.bannerRight = `ROUND ${r}`;
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
@@ -654,6 +722,29 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // ✅ LAST CHANCE（20固定 / 5試合 / TOP2判定はpost）
+      if (state.mode === 'lastchance'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'lastchance_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
       // NATIONAL（6セッション）
       if (state.mode === 'national'){
         const nat = state.national || {};
@@ -694,30 +785,43 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
-      // LAST CHANCE（20チーム・5試合・上位2のみWorld権利・賞金/ランク変動なし）
-      if (state.mode === 'lastchance'){
-        if (state.matchIndex >= state.matchCount){
-          setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'lastchance_total_result_wait_post';
+      // WORLD（national構造を流用：6セッション）
+      if (state.mode === 'world'){
+        const nat = state.national || {};
+        const si = Number(nat.sessionIndex||0);
+        const sc = Number(nat.sessionCount||6);
+
+        if (state.matchIndex < state.matchCount){
+          startNextMatch();
+
+          state.ui.bg = 'tent.png';
+          state.ui.squareBg = 'tent.png';
+          state.ui.leftImg = getPlayerSkin();
+          state.ui.rightImg = '';
+          state.ui.topLeftName = '';
+          state.ui.topRightName = '';
+
+          const key = String(nat.sessions?.[si]?.key || `S${si+1}`);
+          setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+          setRequest('nextMatch', { matchIndex: state.matchIndex });
+          state.phase = 'coach_done';
           return;
         }
 
-        startNextMatch();
+        const isLastSession = (si >= sc - 1);
 
-        state.ui.bg = 'tent.png';
-        state.ui.squareBg = 'tent.png';
-        state.ui.leftImg = getPlayerSkin();
-        state.ui.rightImg = '';
-        state.ui.topLeftName = '';
-        state.ui.topRightName = '';
+        setRequest('showTournamentResult', { total: state.tournamentTotal });
 
-        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
-        setRequest('nextMatch', { matchIndex: state.matchIndex });
-        state.phase = 'coach_done';
+        if (isLastSession){
+          state.phase = 'world_total_result_wait_post';
+          return;
+        }
+
+        // 次セッションへ（nationalと同じ）
+        state.phase = 'national_session_total_result_wait_notice';
         return;
       }
 
-      // その他（未定）
       setRequest('showTournamentResult', { total: state.tournamentTotal });
       state.phase = 'done';
       return;
