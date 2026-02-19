@@ -4,6 +4,12 @@
   sim_tournament_logic.js（フル）
   - ロジック/定数/データ取得/マップ/抽選/移動/イベント/バトル解決
   - state は保持しない（core から渡される state / getPlayer / aliveTeams / computeCtx を使用）
+
+  ✅ FIX（今回）:
+  - buildMatchesForRound を「固定戦闘数」に完全準拠させる
+    R1 4 / R2 4 / R3 4 / R4 4 / R5 2 / R6 1
+  - drop被り(_dropAssigned)依存・プレイヤー確率(playerBattleProb)依存を撤去して
+    “必ず戦う” 安定版にする（キル0/戦闘なしを根絶）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -195,6 +201,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== round settings =====
   function battleSlots(round){
+    // ★固定（あなたの確定仕様）
     if (round <= 4) return 4;
     if (round === 5) return 2;
     return 1;
@@ -205,6 +212,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 0;
   }
   function playerBattleProb(round, playerContestedAtDrop){
+    // ★互換のため残す（使わないが残しておく）
     if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
     if (round === 2) return 0.70;
     if (round === 3) return 0.75;
@@ -230,6 +238,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }
     state.playerContestedAtDrop = false;
+
+    // ★互換フィールドは残すが、buildMatchesでは使わない
+    // （分割後のズレ/欠落で不安定になりがちなので依存を切る）
+    state._dropAssigned = null;
   }
 
   function initDropPositions(state, getPlayer){
@@ -260,7 +272,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.areaId = areaId;
     }
 
-    // R1の「被りエリアの4戦」を確定させるため保持
+    // ★互換のため保持（ただし buildMatches は使わない）
     state._dropAssigned = {};
     for (const [a, list] of assigned.entries()){
       state._dropAssigned[a] = list.slice();
@@ -288,78 +300,71 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== matches =====
   function buildMatchesForRound(state, round, getPlayer, aliveTeams){
-    const alive = aliveTeams();
+    // ✅ FIX: 固定戦闘数を「必ず」作る（可能な限り）
+    // - drop被り依存しない
+    // - player確率に依存しない
+    // - 生成優先度：同エリア → 隣接 → その他
+    const alive = aliveTeams().filter(t => t && !t.eliminated);
     const slots = battleSlots(round);
     const used = new Set();
     const matches = [];
 
-    const player = getPlayer();
+    // ローカル関数：未使用のチームから、条件付きで相手を選ぶ
+    function pickOpponent(a, pool){
+      if (!a) return null;
 
-    // ✅ R1は「降下の被り4箇所＝4戦」を優先して確定
-    if (round === 1 && state && state._dropAssigned){
-      const areas = Object.keys(state._dropAssigned).map(n=>Number(n)).filter(Number.isFinite);
-      const dupAreas = areas.filter(a => (state._dropAssigned[a]||[]).length >= 2);
+      // 1) 同エリア
+      const same = pool.filter(t =>
+        t && !t.eliminated && t.id !== a.id && !used.has(t.id) && t.areaId === a.areaId
+      );
+      if (same.length) return same[(Math.random()*same.length)|0];
 
-      // dupAreasは4つ想定。順序はシャッフルで良い
-      const pickedAreas = shuffle(dupAreas).slice(0, 4);
+      // 2) 隣接（そのラウンドのエリアプール内で）
+      const near = pool.filter(t =>
+        t && !t.eliminated && t.id !== a.id && !used.has(t.id) && isAdjacentArea(t.areaId, a.areaId, round)
+      );
+      if (near.length) return near[(Math.random()*near.length)|0];
 
-      for (const a of pickedAreas){
-        const ids = (state._dropAssigned[a] || []).slice().filter(Boolean);
-        if (ids.length < 2) continue;
-        const A = state.teams.find(t=>t.id===ids[0]);
-        const B = state.teams.find(t=>t.id===ids[1]);
-        if (!A || !B) continue;
-        if (A.eliminated || B.eliminated) continue;
+      // 3) どこでも
+      const any = pool.filter(t =>
+        t && !t.eliminated && t.id !== a.id && !used.has(t.id)
+      );
+      if (any.length) return any[(Math.random()*any.length)|0];
 
-        // プレイヤー戦は「確率」だが、R1は被りなら100%（仕様）
-        // つまりプレイヤーが被りなら必ずこのペアに含まれる
-        matches.push([A,B]);
-        used.add(A.id);
-        used.add(B.id);
-      }
-
-      // 念のため不足時：残りを埋める（通常ロジック）
-      // （本来は不足しない）
+      return null;
     }
 
-    // player確率戦（R1は被り時は上の固定で入ってる想定）
-    if (player && !player.eliminated && round !== 1){
-      const prob = playerBattleProb(round, !!state.playerContestedAtDrop);
-      if (Math.random() < prob){
-        used.add(player.id);
+    // まずはシャッフルした順にペアを作る
+    const pool0 = shuffle(alive);
 
-        const same = alive.filter(t=>!t.eliminated && t.id!==player.id && t.areaId===player.areaId && !used.has(t.id));
-        const near = alive.filter(t=>!t.eliminated && t.id!==player.id && isAdjacentArea(t.areaId, player.areaId, round) && !used.has(t.id));
-        let pool = same.length ? same : (near.length ? near : alive.filter(t=>!t.eliminated && t.id!==player.id && !used.has(t.id)));
+    for (let i=0; i<pool0.length && matches.length < slots; i++){
+      const a = pool0[i];
+      if (!a || a.eliminated) continue;
+      if (used.has(a.id)) continue;
 
-        const opp = pool.length ? pool[(Math.random()*pool.length)|0] : null;
-        if (opp){
-          used.add(opp.id);
-          matches.push([player, opp]);
-        }else{
-          used.delete(player.id);
-        }
-      }
-    }
-
-    while(matches.length < slots){
-      const pool = alive.filter(t=>!t.eliminated && !used.has(t.id));
-      if (pool.length < 2) break;
-
-      const a = pool[(Math.random()*pool.length)|0];
       used.add(a.id);
 
-      const same = pool.filter(t=>t.id!==a.id && !used.has(t.id) && t.areaId===a.areaId);
-      const near = pool.filter(t=>t.id!==a.id && !used.has(t.id) && isAdjacentArea(t.areaId, a.areaId, round));
-      let pickPool = same.length ? same : (near.length ? near : pool.filter(t=>t.id!==a.id && !used.has(t.id)));
-
-      const b = pickPool.length ? pickPool[(Math.random()*pickPool.length)|0] : null;
-      if (!b){
+      const opp = pickOpponent(a, pool0);
+      if (!opp){
         used.delete(a.id);
-        break;
+        continue;
       }
-      used.add(b.id);
-      matches.push([a,b]);
+
+      used.add(opp.id);
+      matches.push([a, opp]);
+    }
+
+    // 念のため、まだ足りない場合は残りから強制的に詰める（生存が多いラウンドでの事故防止）
+    if (matches.length < slots){
+      const rest = alive.filter(t => t && !t.eliminated && !used.has(t.id));
+      const restSh = shuffle(rest);
+      for (let i=0; i+1<restSh.length && matches.length < slots; i+=2){
+        const a = restSh[i];
+        const b = restSh[i+1];
+        if (!a || !b) continue;
+        used.add(a.id); used.add(b.id);
+        matches.push([a,b]);
+      }
     }
 
     return matches.slice(0, slots);
