@@ -1,8 +1,9 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.4.1
+   sim_tournament_core_step.js（FULL） v4.5
    - v4.4 の全機能維持
    修正：
-   ✅ R.getChampionName が無い環境でも落ちない安全弁（最終fallback）
+   ✅ R.getChampionName が無い/差し替わっても落ちない（NEXT死防止）
+   ✅ championName 取得をフェイルセーフ化
    ========================================================= */
 'use strict';
 
@@ -79,35 +80,60 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(e){}
   }
 
-  // ✅ champion name safe wrapper（R.getChampionName が無いとき落とさない）
-  function safeGetChampionName(state){
+  // =========================
+  // ✅ Champion Name Safe（NEXT死防止の核）
+  // =========================
+  function getChampionNameSafe(state){
     try{
       if (R && typeof R.getChampionName === 'function'){
-        return String(R.getChampionName(state) || '???');
+        const name = R.getChampionName(state);
+        if (name) return String(name);
       }
-    }catch(e){}
-    // fallback: lastMatchResultRows → computeMatchResultTable → ??? の順（最小）
+    }catch(e){
+      console.warn('[tournament_core_step] getChampionName error:', e);
+    }
+
+    // fallback1: lastMatchResultRows
     try{
-      const rows = Array.isArray(state?.lastMatchResultRows) ? state.lastMatchResultRows : null;
-      if (rows && rows.length){
-        const top = rows.find(r => Number(r.placement)===1) || rows[0];
-        return String(top?.name || top?.id || '???');
-      }
-    }catch(e){}
-    try{
-      if (R && typeof R.computeMatchResultTable === 'function'){
-        const rows2 = R.computeMatchResultTable(state);
-        if (rows2 && rows2.length){
-          const top2 = rows2.find(r => Number(r.placement)===1) || rows2[0];
-          return String(top2?.name || top2?.id || '???');
+      const rows = state?.lastMatchResultRows;
+      if (Array.isArray(rows) && rows.length){
+        const top = rows[0];
+        if (top?.name) return String(top.name);
+        if (top?.id && typeof R?.resolveTeamName === 'function'){
+          return String(R.resolveTeamName(state, top.id));
         }
+        if (top?.id) return String(top.id);
       }
-    }catch(e){}
+    }catch(_){}
+
+    // fallback2: teams
+    try{
+      const teams = (state?.teams ? state.teams.slice() : []);
+      if (teams.length){
+        teams.sort((a,b)=>{
+          if (!!a.eliminated !== !!b.eliminated) return a.eliminated ? 1 : -1;
+          const ar = Number(a.eliminatedRound || 0);
+          const br = Number(b.eliminatedRound || 0);
+          if (ar !== br) return br - ar;
+          const ak = Number(a.kills_total || 0);
+          const bk = Number(b.kills_total || 0);
+          if (ak !== bk) return bk - ak;
+          return String(a.name||a.id).localeCompare(String(b.name||b.id));
+        });
+        const best = teams[0];
+        if (best?.name) return String(best.name);
+        if (best?.id && typeof R?.resolveTeamName === 'function'){
+          return String(R.resolveTeamName(state, best.id));
+        }
+        if (best?.id) return String(best.id);
+      }
+    }catch(_){}
+
     return '???';
   }
 
   // =========================================================
-  // ===== main step machine (FROM ORIGINAL, MIN ADD ONLY) ====
+  // ===== main step machine ====
   // =========================================================
   function step(){
     const state = T.getState();
@@ -115,6 +141,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const p = getPlayer();
 
+    // ✅ Local: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
     if (state.phase === 'local_total_result_wait_post'){
       try{
         if (P?.onLocalTournamentFinished){
@@ -130,6 +157,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ LastChance: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
     if (state.phase === 'lastchance_total_result_wait_post'){
       try{
         if (P?.onLastChanceTournamentFinished){
@@ -145,6 +173,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ World: 予選/ WL / 決勝 の総合RESULT後 → 次のNEXTで post へ
     if (state.phase === 'world_total_result_wait_post'){
       const wp = String(state.worldPhase||'qual');
       try{
@@ -166,6 +195,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: 最終総合RESULT後 → 次のNEXTで post（あれば）→ 無ければ endNationalWeek
     if (state.phase === 'national_total_result_wait_post'){
       let handled = false;
 
@@ -191,6 +221,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: AUTOセッション開始表示
     if (state.phase === 'national_auto_session_wait_run'){
       const nat = state.national || {};
       const si = Number(nat.sessionIndex||0);
@@ -213,6 +244,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: AUTOセッション完了表示の次 → 総合RESULT表示
     if (state.phase === 'national_auto_session_done_wait_result'){
       const nat = state.national || {};
       const si = Number(nat.sessionIndex||0);
@@ -229,6 +261,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: セッションごとの総合RESULT表示後
     if (state.phase === 'national_session_total_result_wait_notice'){
       const nat = state.national || {};
       const si = Number(nat.sessionIndex||0);
@@ -257,6 +290,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ National: Notice後 → 次セッションへ組み替え
     if (state.phase === 'national_notice_wait_next_session'){
       const nat = state.national || {};
       const si = Number(nat.sessionIndex||0);
@@ -415,9 +449,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const key = String(s.sessions?.[si]?.key || `S${si+1}`);
         state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
         state.bannerRight = '降下';
-      }else if (state.mode === 'lastchance'){
-        state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
-        state.bannerRight = '降下';
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
         state.bannerRight = '降下';
@@ -574,6 +605,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
             foePower: Number(foe.power||0),
             round: r,
             matchIndex: state.matchIndex,
+
             meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
             foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
           });
@@ -640,13 +672,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         win: iWon,
         final: (r===6),
         holdMs: 2000,
+
         meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
         foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
       });
 
       if (!iWon && me.eliminated){
         fastForwardToMatchEnd();
-        const championName = safeGetChampionName(state);
+
+        // ✅ ここで落ちると NEXT が死ぬので絶対に落とさない
+        const championName = getChampionNameSafe(state);
+
         state._afterBattleGo = { type:'champion', championName };
         state.phase = 'battle_after';
         return;
@@ -745,6 +781,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ===== match result done =====
     if (state.phase === 'match_result_done'){
 
+      // LOCAL
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
           setRequest('showTournamentResult', { total: state.tournamentTotal });
@@ -767,6 +804,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // LAST CHANCE
       if (state.mode === 'lastchance'){
         if (state.matchIndex >= state.matchCount){
           setRequest('showTournamentResult', { total: state.tournamentTotal });
@@ -789,6 +827,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // NATIONAL
       if (state.mode === 'national'){
         const nat = state.national || {};
         const si = Number(nat.sessionIndex||0);
@@ -824,6 +863,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return;
       }
 
+      // WORLD
       if (state.mode === 'world'){
         const nat = state.national || {};
         const si = Number(nat.sessionIndex||0);
