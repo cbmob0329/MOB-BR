@@ -1,10 +1,8 @@
 /* =========================================================
    app.js（FULL） v18.6
-   - v18.5 維持
-   - ✅ 追加：ui_tournament 3分割読み込み（core -> handlers -> entry）
-   - ✅ 維持：MOBBR namespace hard-guard
-   - ✅ 維持：大会開始ブリッジ（sim開始→step→UI open→render）
-   - ✅ 維持：UI→app の疎結合イベント（mobbr:startTournament / mobbr:goMain）
+   - v18.5 の全機能維持
+   - ✅ 修正：ui_tournament 3分割読み込みに対応
+        読み込み順：ui_tournament.core.js → ui_tournament.handlers.js → ui_tournament.js（entry）
 ========================================================= */
 'use strict';
 
@@ -181,10 +179,13 @@ async function loadModules(){
     // ★ローカル/ナショナル大会終了後処理（状態更新 + 次大会算出API）
     `sim_tournament_core_post.js${v}`,
 
-    // ✅ UI tournament（3分割：core -> handlers -> entry）
+    // =====================================================
+    // ✅ UI tournament 3分割（依存順：core -> handlers -> entry）
+    // - ここが v18.6 の修正点
+    // =====================================================
     `ui_tournament.core.js${v}`,
     `ui_tournament.handlers.js${v}`,
-    `ui_tournament.js${v}`, // entry（最後）
+    `ui_tournament.js${v}`, // entry
   ];
 
   for (const f of files){
@@ -442,12 +443,11 @@ async function bootAfterNext(){
         core_step: !!window.MOBBR?.sim?._tcore?.step
       });
 
-      // ✅ ui_tournament 3分割チェック（原因切り分け用）
+      // ✅ UI tournament split check（分割確認）
       console.log('[CHECK] ui_tournament split =', {
-        ui_ns: !!window.MOBBR?.ui,
-        ui_tournament_api: !!window.MOBBR?.ui?.tournament,
-        initTournamentUI: !!window.MOBBR?.initTournamentUI,
-        modKey: !!window.MOBBR?.ui?._tournamentMod
+        core: !!window.MOBBR?.ui?._tournamentCore,
+        handlers: !!window.MOBBR?.ui?._tournamentHandlers,
+        entry: !!window.MOBBR?.ui?.tournament
       });
     }catch(e){}
 
