@@ -1,9 +1,9 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.5
-   - v4.4 の全機能維持
+   sim_tournament_core_step.js（FULL） v4.6
+   - v4.5 の全機能維持
    修正：
-   ✅ R.getChampionName が無い/差し替わっても落ちない（NEXT死防止）
-   ✅ championName 取得をフェイルセーフ化
+   ✅ MatchResult rows が空の時、必ずその場で再計算して20行を確定（result 0行バグ潰し）
+   ✅ ChampionName 取得も T.getR() 優先で差し替え耐性を強化（NEXT死防止をさらに堅く）
    ========================================================= */
 'use strict';
 
@@ -19,7 +19,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   const L = T.L;
-  const R = T.R;
   const P = T.P;
 
   // step内で元の関数名を保つためのショートカット
@@ -84,9 +83,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // ✅ Champion Name Safe（NEXT死防止の核）
   // =========================
   function getChampionNameSafe(state){
+    // ✅ v4.6: R は固定参照しない（差し替え耐性）
+    const R2 = (T.getR && typeof T.getR === 'function') ? T.getR() : (window.MOBBR?.sim?.tournamentResult || null);
+
     try{
-      if (R && typeof R.getChampionName === 'function'){
-        const name = R.getChampionName(state);
+      if (R2 && typeof R2.getChampionName === 'function'){
+        const name = R2.getChampionName(state);
         if (name) return String(name);
       }
     }catch(e){
@@ -99,14 +101,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (Array.isArray(rows) && rows.length){
         const top = rows[0];
         if (top?.name) return String(top.name);
-        if (top?.id && typeof R?.resolveTeamName === 'function'){
-          return String(R.resolveTeamName(state, top.id));
+        if (top?.id && typeof R2?.resolveTeamName === 'function'){
+          return String(R2.resolveTeamName(state, top.id));
         }
         if (top?.id) return String(top.id);
       }
     }catch(_){}
 
-    // fallback2: teams
+    // fallback2: teams（簡易推定）
     try{
       const teams = (state?.teams ? state.teams.slice() : []);
       if (teams.length){
@@ -122,14 +124,46 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         });
         const best = teams[0];
         if (best?.name) return String(best.name);
-        if (best?.id && typeof R?.resolveTeamName === 'function'){
-          return String(R.resolveTeamName(state, best.id));
+        if (best?.id && typeof R2?.resolveTeamName === 'function'){
+          return String(R2.resolveTeamName(state, best.id));
         }
         if (best?.id) return String(best.id);
       }
     }catch(_){}
 
     return '???';
+  }
+
+  // =========================
+  // ✅ MatchResult rows Safe（result 0行バグ潰し）
+  // =========================
+  function ensureMatchResultRows(state){
+    try{
+      const rows = state?.lastMatchResultRows;
+      if (Array.isArray(rows) && rows.length > 0) return true;
+
+      const R2 = (T.getR && typeof T.getR === 'function') ? T.getR() : (window.MOBBR?.sim?.tournamentResult || null);
+      if (!R2 || typeof R2.computeMatchResultTable !== 'function' || typeof R2.addToTournamentTotal !== 'function'){
+        console.error('[tournament_core_step] ensureMatchResultRows: tournamentResult missing methods', {
+          hasR: !!R2,
+          computeMatchResultTable: !!R2?.computeMatchResultTable,
+          addToTournamentTotal: !!R2?.addToTournamentTotal
+        });
+        state.lastMatchResultRows = [];
+        return false;
+      }
+
+      const rows2 = R2.computeMatchResultTable(state) || [];
+      // ✅ ここで総合にも必ず加算（finishMatchAndBuildResult と同等の責務を再保証）
+      R2.addToTournamentTotal(state, rows2);
+      state.lastMatchResultRows = rows2;
+
+      return Array.isArray(rows2) && rows2.length > 0;
+    }catch(e){
+      console.error('[tournament_core_step] ensureMatchResultRows error:', e);
+      try{ state.lastMatchResultRows = []; }catch(_){}
+      return false;
+    }
   }
 
   // =========================================================
@@ -761,7 +795,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ===== match result =====
     if (state.phase === 'match_result'){
+      // 1) 通常の集計（既存）
       finishMatchAndBuildResult();
+
+      // ✅ 2) v4.6: rows が空なら、その場で必ず再計算して確定（result 0行バグ潰し）
+      ensureMatchResultRows(state);
 
       state.ui.rightImg = '';
       state.ui.topLeftName = '';
