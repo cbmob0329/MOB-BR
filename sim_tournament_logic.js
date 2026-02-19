@@ -1,14 +1,15 @@
 'use strict';
 
 /*
-  sim_tournament_logic.js（フル） v2.1
+  sim_tournament_logic.js（フル / v1.1）
   - ロジック/定数/データ取得/マップ/抽選/移動/イベント/バトル解決
   - state は保持しない（core から渡される state / getPlayer / aliveTeams / computeCtx を使用）
 
-  ✅ v2.1 追加（重要）
-  - R5/R6 は「残存チームを必ず全員交戦させる」強制ペア方式
-    → R5: 生存4なら必ず2戦 / R6: 生存2なら必ず1戦
-    → “チャンピオン3キル” を根絶（勝者3キル固定の前提と整合）
+  v1.1 修正（重要）
+  ✅ buildMatchesForRound を「必ず slots(4/4/4/4/2/1) 本作る」アルゴリズムに刷新
+     - 近接優先（同エリア→隣接→何でも）だが、最後は必ず埋める
+     - 同ラウンドで同チーム2回戦なし
+     - ラウンド合計 19戦を必ず成立させ、R6開始時に原則2チームになる状態を作る
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -153,8 +154,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return clamp(bp, 1, 100);
     }
 
-    const stable = clamp((bp - 50) / 50, 0, 1); // 0..1
-    const compress = 1 - (stable * 0.55);       // 1.00 → 0.45
+    const stable = clamp((bp - 50) / 50, 0, 1);
+    const compress = 1 - (stable * 0.55);
 
     const vals = mem.slice(0,3).map(m=>{
       const lo0 = Number(m?.min ?? m?.powerMin);
@@ -199,10 +200,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ===== round settings =====
+  // ✅ ここはあなたの確定値に完全固定
   function battleSlots(round){
-    if (round <= 4) return 4;
-    if (round === 5) return 2;
-    return 1;
+    if (round <= 4) return 4; // R1-4: 4戦
+    if (round === 5) return 2; // R5: 2戦
+    return 1; // R6: 1戦
   }
   function eventCount(round){
     if (round === 1) return 1;
@@ -213,7 +215,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
     if (round === 2) return 0.70;
     if (round === 3) return 0.75;
-    return 1.0;
+    return 1.0; // R4-6は100%
   }
 
   // ===== drop =====
@@ -264,6 +266,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.areaId = areaId;
     }
 
+    // R1の「被りエリアの4戦」を確定させるため保持
     state._dropAssigned = {};
     for (const [a, list] of assigned.entries()){
       state._dropAssigned[a] = list.slice();
@@ -289,115 +292,119 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // ===== matches =====
-
-  // ✅ 強制ペア：残ってるチームを必ず slots 分だけ 2組にする（不足なら可能な範囲）
-  function forcePairFromAlive(aliveList, slots){
-    const list = shuffle(aliveList);
-    const out = [];
-    const need = Math.max(0, Number(slots||0));
-    for (let i=0; i<need; i++){
-      const a = list[i*2];
-      const b = list[i*2 + 1];
-      if (!a || !b) break;
-      out.push([a,b]);
-    }
-    return out;
-  }
-
+  // ===== matches（埋め切り保証）=====
   function buildMatchesForRound(state, round, getPlayer, aliveTeams){
-    const alive = aliveTeams();
+    const alive = aliveTeams(); // core側定義（生存のみ）
     const slots = battleSlots(round);
-    const used = new Set();
+
+    // 生存が足りないなら作れるだけ（ただし基本は足りる設計）
+    if (alive.length < 2) return [];
+    const maxSlots = Math.min(slots, (alive.length / 2) | 0);
+    if (maxSlots <= 0) return [];
+
     const matches = [];
+    const used = new Set();
 
     const player = getPlayer();
 
-    // ✅ R5/R6 は “残存全員を必ず交戦させる” を最優先
-    //   - R5開始は生存4想定 → 2戦
-    //   - R6開始は生存2想定 → 1戦
-    // これでチャンピオンが R5/R6 を戦わずに済むパターンを消す
-    if (round >= 5){
-      const must = forcePairFromAlive(alive.filter(t=>t && !t.eliminated), slots);
-      return must.slice(0, slots);
+    function isUsable(t){
+      return t && !t.eliminated && !used.has(t.id);
     }
 
-    // ✅ R1は「降下の被り4箇所＝4戦」を優先して確定
-    if (round === 1 && state && state._dropAssigned){
-      const areas = Object.keys(state._dropAssigned).map(n=>Number(n)).filter(Number.isFinite);
-      const dupAreas = areas.filter(a => (state._dropAssigned[a]||[]).length >= 2);
+    function pickOpponentFor(A, pool, round){
+      // 1) 同エリア
+      const same = pool.filter(t => t.id !== A.id && isUsable(t) && t.areaId === A.areaId);
+      if (same.length) return same[(Math.random()*same.length)|0];
 
+      // 2) 隣接
+      const near = pool.filter(t => t.id !== A.id && isUsable(t) && isAdjacentArea(t.areaId, A.areaId, round));
+      if (near.length) return near[(Math.random()*near.length)|0];
+
+      // 3) 何でも
+      const any = pool.filter(t => t.id !== A.id && isUsable(t));
+      if (any.length) return any[(Math.random()*any.length)|0];
+
+      return null;
+    }
+
+    // ✅ R1：被り4箇所＝4戦を最優先で確定
+    if (round === 1 && state && state._dropAssigned){
+      const keys = Object.keys(state._dropAssigned).map(n=>Number(n)).filter(Number.isFinite);
+      const dupAreas = keys.filter(a => (state._dropAssigned[a]||[]).length >= 2);
       const pickedAreas = shuffle(dupAreas).slice(0, 4);
 
       for (const a of pickedAreas){
+        if (matches.length >= maxSlots) break;
+
         const ids = (state._dropAssigned[a] || []).slice().filter(Boolean);
         if (ids.length < 2) continue;
+
         const A = state.teams.find(t=>t.id===ids[0]);
         const B = state.teams.find(t=>t.id===ids[1]);
         if (!A || !B) continue;
-        if (A.eliminated || B.eliminated) continue;
+        if (!isUsable(A) || !isUsable(B)) continue;
 
         matches.push([A,B]);
-        used.add(A.id);
-        used.add(B.id);
+        used.add(A.id); used.add(B.id);
       }
     }
 
-    // player確率戦（R1は被り時は上の固定で入ってる想定）
-    if (player && !player.eliminated && round !== 1){
+    // ✅ プレイヤー戦：R2以降は確率、R4-6は100%（仕様）
+    if (player && !player.eliminated && round !== 1 && matches.length < maxSlots){
       const prob = playerBattleProb(round, !!state.playerContestedAtDrop);
       if (Math.random() < prob){
-        used.add(player.id);
-
-        const same = alive.filter(t=>!t.eliminated && t.id!==player.id && t.areaId===player.areaId && !used.has(t.id));
-        const near = alive.filter(t=>!t.eliminated && t.id!==player.id && isAdjacentArea(t.areaId, player.areaId, round) && !used.has(t.id));
-        let pool = same.length ? same : (near.length ? near : alive.filter(t=>!t.eliminated && t.id!==player.id && !used.has(t.id)));
-
-        const opp = pool.length ? pool[(Math.random()*pool.length)|0] : null;
-        if (opp){
-          used.add(opp.id);
-          matches.push([player, opp]);
-        }else{
-          used.delete(player.id);
+        if (isUsable(player)){
+          // 相手候補は alive から探す（近接優先→埋め）
+          const opp = pickOpponentFor(player, alive, round);
+          if (opp){
+            matches.push([player, opp]);
+            used.add(player.id); used.add(opp.id);
+          }
         }
       }
     }
 
-    while(matches.length < slots){
-      const pool = alive.filter(t=>!t.eliminated && !used.has(t.id));
+    // ✅ 残り枠：必ず maxSlots まで埋める
+    // 近接優先しつつ、最後は「何でも」から必ずペアにする
+    let guard = 0;
+    while (matches.length < maxSlots && guard++ < 2000){
+      const pool = alive.filter(isUsable);
       if (pool.length < 2) break;
 
-      const a = pool[(Math.random()*pool.length)|0];
-      used.add(a.id);
+      // Aをランダムに選ぶ
+      const A = pool[(Math.random()*pool.length)|0];
+      if (!A) break;
 
-      const same = pool.filter(t=>t.id!==a.id && !used.has(t.id) && t.areaId===a.areaId);
-      const near = pool.filter(t=>t.id!==a.id && !used.has(t.id) && isAdjacentArea(t.areaId, a.areaId, round));
-      let pickPool = same.length ? same : (near.length ? near : pool.filter(t=>t.id!==a.id && !used.has(t.id)));
+      // Bを近接優先で選ぶ
+      const B = pickOpponentFor(A, pool, round);
 
-      const b = pickPool.length ? pickPool[(Math.random()*pickPool.length)|0] : null;
-      if (!b){
-        used.delete(a.id);
-        break;
+      if (!B){
+        // ここに来るのはレアだが、保険でAを戻してやり直す
+        // ただし無限ループ防止
+        continue;
       }
-      used.add(b.id);
-      matches.push([a,b]);
+
+      matches.push([A,B]);
+      used.add(A.id); used.add(B.id);
     }
 
-    // ✅ 最後の保険：slotsに足りない場合、エリア無視で強制ペアで埋める（R2-4だけ）
-    //   → “交戦数が4/4/4/4にならない”事故を潰す
-    if (matches.length < slots){
-      const remain = alive.filter(t=>t && !t.eliminated && !used.has(t.id));
-      const need = slots - matches.length;
-      const fill = forcePairFromAlive(remain, need);
-      for (const [A,B] of fill){
+    // 最終防衛：どうしても足りない時は強制ペア（それでも同チーム2回戦は禁止）
+    if (matches.length < maxSlots){
+      const pool = alive.filter(t=>t && !t.eliminated).slice();
+      const remain = pool.filter(t=>!used.has(t.id));
+      const shuffled = shuffle(remain);
+
+      for (let i=0; matches.length < maxSlots && i+1 < shuffled.length; i+=2){
+        const A = shuffled[i];
+        const B = shuffled[i+1];
         if (!A || !B) continue;
-        used.add(A.id); used.add(B.id);
+        if (used.has(A.id) || used.has(B.id)) continue;
         matches.push([A,B]);
-        if (matches.length >= slots) break;
+        used.add(A.id); used.add(B.id);
       }
     }
 
-    return matches.slice(0, slots);
+    return matches.slice(0, maxSlots);
   }
 
   // ===== coach mult =====
