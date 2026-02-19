@@ -1,9 +1,12 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.6
-   - v4.5 の全機能維持
-   修正：
-   ✅ MatchResult rows が空の時、必ずその場で再計算して20行を確定（result 0行バグ潰し）
-   ✅ ChampionName 取得も T.getR() 優先で差し替え耐性を強化（NEXT死防止をさらに堅く）
+   sim_tournament_core_step.js（FULL） v4.7
+   - v4.6 の全機能維持（削除なし）
+
+   ✅ v4.7 追加修正（キル数＆チャンピオン整合）
+   1) プレイヤー敗北時、残りCPU戦 + 残りラウンド(R〜6)を必ず全解決
+      → KP不足（戦闘未解決でキルが付かない）を根絶
+   2) チャンピオン名取得時、lastMatchResultRows を必ず無効化して誤参照を防止
+      → 「チャンピオン表示」と「result 1位」の不一致を根絶
    ========================================================= */
 'use strict';
 
@@ -163,6 +166,88 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       console.error('[tournament_core_step] ensureMatchResultRows error:', e);
       try{ state.lastMatchResultRows = []; }catch(_){}
       return false;
+    }
+  }
+
+  // =========================================================
+  // ✅ v4.7: プレイヤー敗北後も “残りCPU戦 + 残りラウンド” を必ず全解決
+  // =========================================================
+  function resolveAllRemainingCpuBattlesFromCursor(state, round, fromCursor){
+    try{
+      const list = Array.isArray(state._roundMatches) ? state._roundMatches : [];
+      let cur = Number(fromCursor||0);
+
+      while (cur < list.length){
+        const pair = list[cur];
+        const A = state.teams.find(t=>t.id===pair.aId);
+        const B = state.teams.find(t=>t.id===pair.bId);
+        if (!A || !B){
+          cur++;
+          continue;
+        }
+        // プレイヤー戦は既に終わってる前提（ここではCPU戦のみ消化する）
+        if (A.isPlayer || B.isPlayer){
+          cur++;
+          continue;
+        }
+        resolveOneBattle(A, B, round);
+        cur++;
+      }
+    }catch(e){}
+  }
+
+  function resolveFullMatchToEndAfterPlayerEliminated(state){
+    try{
+      // この関数は「プレイヤーが eliminated 確定した直後」に呼ばれる想定
+      // 目的：KP/順位/チャンピオンの整合が必ず取れる状態まで CPU戦を完全に回す
+
+      // ① まず現在ラウンドの残りCPU戦を全部解決
+      const r0 = Number(state.round||1);
+      const cur0 = Number(state._matchCursor||0);
+      resolveAllRemainingCpuBattlesFromCursor(state, r0, cur0 + 1);
+
+      // ② 残りラウンド（r0〜6）を最後まで回す
+      //    - move → 次round → buildMatches → 全戦 resolve
+      //    - イベントはプレイヤーのみなので回さない（仕様通り）
+      //    - CPU Loot は従来通り入れる
+      let r = r0;
+
+      // r0 の後半処理：以後の round は「round_move → round_start → round_battles」の流れを内部で再現
+      while (r <= 6){
+        // r の CPU Loot（既存仕様）
+        cpuLootRollOncePerRound(state, r);
+
+        // r の battles を全消化（player除外）
+        // もし _roundMatches が無い/古いなら再生成して確定させる
+        let matches = null;
+        try{
+          matches = L.buildMatchesForRound(state, r, getPlayer, aliveTeams) || [];
+        }catch(_){
+          matches = [];
+        }
+
+        // state._roundMatches を更新しておく（整合のため）
+        state._roundMatches = matches.map(([A,B])=>({ aId:A.id, bId:B.id }));
+
+        // 全戦解決（プレイヤーはもう居ないので全てCPU）
+        for (const [A,B] of matches){
+          if (!A || !B) continue;
+          if (A.isPlayer || B.isPlayer) continue;
+          resolveOneBattle(A, B, r);
+        }
+
+        if (r >= 6) break;
+
+        // move（既存ロジックに合わせて）
+        try{
+          L.moveAllTeamsToNextRound(state, r);
+        }catch(_){}
+
+        r++;
+        state.round = r;
+      }
+    }catch(e){
+      console.error('[tournament_core_step] resolveFullMatchToEndAfterPlayerEliminated error:', e);
     }
   }
 
@@ -712,7 +797,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       });
 
       if (!iWon && me.eliminated){
-        fastForwardToMatchEnd();
+
+        // ✅ v4.7:
+        // lastMatchResultRows が前試合のまま残ると「チャンピオン名誤参照」するので必ず無効化
+        try{ state.lastMatchResultRows = []; }catch(_){}
+        try{ state.currentOverallRows = Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []; }catch(_){}
+
+        // ✅ v4.7:
+        // ここで fastForward に丸投げせず、残りCPU戦 + 残りラウンドを確実に全解決して KP 不足を根絶
+        resolveFullMatchToEndAfterPlayerEliminated(state);
+
+        // ✅ 念のため既存fastForwardも呼ぶ（内部が他のフラグを整理している場合に備える）
+        try{ fastForwardToMatchEnd(); }catch(_){}
 
         // ✅ ここで落ちると NEXT が死ぬので絶対に落とさない
         const championName = getChampionNameSafe(state);
