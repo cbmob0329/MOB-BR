@@ -10,6 +10,9 @@
      かつ互換のため payload の直置きも同時保持
    - setCenter3 を「state.center {a,b,c}」に統一（entry/ui と整合）
      かつ互換のため state.ui.center3 も同時保持
+
+   ✅追加FIX（今回）:
+   - tournamentResult(R) を “固定参照” しない（ロード順/差し替えで総合0になるのを防止）
    ========================================================= */
 'use strict';
 
@@ -20,7 +23,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== dependency refs (keep same as original core) =====
   const L = window.MOBBR.sim.tournamentLogic;
-  const R = window.MOBBR.sim.tournamentResult;
+
+  // ✅ IMPORTANT: R はロード順/差し替えで変わりうるので固定参照しない
+  function getR(){
+    return window.MOBBR?.sim?.tournamentResult
+        || window.MOBBR?.sim?._tcore?.R
+        || null;
+  }
 
   const N = window.MOBBR?.sim?.tournamentCoreNational || null;
   const P = window.MOBBR?.sim?.tournamentCorePost || null;
@@ -246,8 +255,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function finishMatchAndBuildResult(){
-    const rows = R.computeMatchResultTable(state);
-    R.addToTournamentTotal(state, rows);
+    // ✅ R を都度取得（固定参照禁止）
+    const R2 = getR();
+    if (!R2 || typeof R2.computeMatchResultTable !== 'function' || typeof R2.addToTournamentTotal !== 'function'){
+      console.error('[tournament_core_shared] tournamentResult not ready / missing methods', {
+        hasR: !!R2,
+        computeMatchResultTable: !!R2?.computeMatchResultTable,
+        addToTournamentTotal: !!R2?.addToTournamentTotal
+      });
+      state.lastMatchResultRows = [];
+      return;
+    }
+
+    const rows = R2.computeMatchResultTable(state);
+    R2.addToTournamentTotal(state, rows);
     state.lastMatchResultRows = rows;
   }
 
@@ -556,7 +577,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // deps
   T.L = L;
-  T.R = R;
+  T.R = getR();          // 初期値（※固定参照ではない。実利用は getR() を推奨）
+  T.getR = getR;         // ✅ 外からも最新Rを取れるように
   T.N = N;
   T.P = P;
 
