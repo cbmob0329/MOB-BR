@@ -1,13 +1,14 @@
 /* =========================================================
-   app.js（FULL） v18.5
-   - v18.4 の 3分割読み込み順を維持
-   - ✅ 追加：MOBBR namespace hard-guard（window.MOBBR.sim / ui の上書き事故を永久防止）
-   - ✅ 維持：大会開始ブリッジ（必ず sim開始→step→UI open→render）
+   app.js（FULL） v18.6
+   - v18.5 維持
+   - ✅ 追加：ui_tournament 3分割読み込み（core -> handlers -> entry）
+   - ✅ 維持：MOBBR namespace hard-guard
+   - ✅ 維持：大会開始ブリッジ（sim開始→step→UI open→render）
    - ✅ 維持：UI→app の疎結合イベント（mobbr:startTournament / mobbr:goMain）
 ========================================================= */
 'use strict';
 
-const APP_VER = 18.5; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.6; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -180,8 +181,10 @@ async function loadModules(){
     // ★ローカル/ナショナル大会終了後処理（状態更新 + 次大会算出API）
     `sim_tournament_core_post.js${v}`,
 
-    // UI
-    `ui_tournament.js${v}`,
+    // ✅ UI tournament（3分割：core -> handlers -> entry）
+    `ui_tournament.core.js${v}`,
+    `ui_tournament.handlers.js${v}`,
+    `ui_tournament.js${v}`, // entry（最後）
   ];
 
   for (const f of files){
@@ -192,7 +195,7 @@ async function loadModules(){
 let modulesLoaded = false;
 
 // ==========================================
-// 大会開始ブリッジ（v18.5）
+// 大会開始ブリッジ（v18.6）
 // - UIはこれだけ呼べばOK（または mobbr:startTournament を投げる）
 // ==========================================
 
@@ -245,7 +248,7 @@ function normalizeWorldPhase(phase){
   return 'qual';
 }
 
-// ✅ v18.5：必ず「sim開始→（初期request生成）→UI open→UI render」
+// ✅ v18.6：必ず「sim開始→（初期request生成）→UI open→UI render」
 function startTournamentPipeline(simStartFn, uiOpenArg){
   ensureModulesOrThrow();
 
@@ -437,6 +440,14 @@ async function bootAfterNext(){
       console.log('[CHECK] tcore split =', {
         core_shared: !!window.MOBBR?.sim?._tcore,
         core_step: !!window.MOBBR?.sim?._tcore?.step
+      });
+
+      // ✅ ui_tournament 3分割チェック（原因切り分け用）
+      console.log('[CHECK] ui_tournament split =', {
+        ui_ns: !!window.MOBBR?.ui,
+        ui_tournament_api: !!window.MOBBR?.ui?.tournament,
+        initTournamentUI: !!window.MOBBR?.initTournamentUI,
+        modKey: !!window.MOBBR?.ui?._tournamentMod
       });
     }catch(e){}
 
