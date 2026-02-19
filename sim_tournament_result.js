@@ -1,7 +1,7 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.3）
+  sim_tournament_result.js（FULL 修正版 v2.4）
 
   ✅ 修正/保証
   - ✅ R.getChampionName を必ず提供（core_step / core_shared 互換）
@@ -10,6 +10,7 @@
   - ✅ Treasure=3 / Flag=5
   - ✅ 1試合終了ごと currentOverallRows 更新
   - ✅ ソート安定化（同点時のブレ抑制）
+  - ✅ 重要：window.MOBBR.sim._tcore.R にも必ず注入（分割/ロード順ズレで total=0 を根絶）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -77,9 +78,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const bd = Number(b.downs_total || 0);
       if (ad !== bd) return ad - bd;
 
-      const ap = Number(a.power || 0);
-      const bp = Number(b.power || 0);
-      if (ap !== bp) return bp - ap;
+      const apow = Number(a.power || 0);
+      const bpow = Number(b.power || 0);
+      if (apow !== bpow) return bpow - apow;
 
       return String(a.name||a.id).localeCompare(String(b.name||b.id));
     });
@@ -216,7 +217,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ==========================================
-  // 総合RESULT用：全体テーブル化（UIがtotalをそのまま回す場合も想定）
+  // 総合RESULT用：全体テーブル化
   // ==========================================
   function computeTournamentResultTable(state){
     if (!state) return [];
@@ -253,7 +254,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ==========================================
   // ✅ Champion Name（必須互換）
-  // - core_step がこれを呼ぶので「必ず存在」させる
   // ==========================================
   function getChampionName(state){
     try{
@@ -265,7 +265,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         if (top?.id) return resolveTeamName(state, top.id);
       }
 
-      // 2) teamsから「生存優先/最終round優先」っぽく推定
+      // 2) teamsから推定
       const teams = (state?.teams ? state.teams.slice() : []);
       if (!teams.length) return '???';
 
@@ -290,18 +290,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // ==========================================
   // Export（＋互換alias）
   // ==========================================
-  window.MOBBR.sim.tournamentResult = {
+  const api = {
     resolveTeamName,
-
     calcPlacementPoint,
 
-    // main
     computeMatchResultTable,
     addToTournamentTotal,
     computeTournamentResultTable,
     getChampionName,
 
-    // alias（過去版/別実装吸収：これが無いと total=0 になりがち）
+    // alias（過去版/別実装吸収）
     buildMatchResultTable: computeMatchResultTable,
     buildMatchResultRows: computeMatchResultTable,
     addMatchToTotal: addToTournamentTotal,
@@ -309,5 +307,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     buildTournamentResultTable: computeTournamentResultTable,
     buildCurrentOverall
   };
+
+  // ① 通常の公開先
+  window.MOBBR.sim.tournamentResult = api;
+
+  // ✅ ② 重要：core_shared が掴む参照（T.R）も確実に更新
+  //   - 分割/ロード順が前後しても total=0 を起こさない
+  try{
+    if (window.MOBBR?.sim?._tcore){
+      window.MOBBR.sim._tcore.R = api;
+    }
+  }catch(_){}
 
 })();
