@@ -1,481 +1,949 @@
 'use strict';
 
-/*
-  sim_tournament_logic.js（フル / v1.1）
-  - ロジック/定数/データ取得/マップ/抽選/移動/イベント/バトル解決
-  - state は保持しない（core から渡される state / getPlayer / aliveTeams / computeCtx を使用）
+/* =========================================================
+   sim_tournament_core_step.js（FULL） v4.6
+   - v4.5 の全機能維持
 
-  v1.1 修正（重要）
-  ✅ buildMatchesForRound を「必ず slots(4/4/4/4/2/1) 本作る」アルゴリズムに刷新
-     - 近接優先（同エリア→隣接→何でも）だが、最後は必ず埋める
-     - 同ラウンドで同チーム2回戦なし
-     - ラウンド合計 19戦を必ず成立させ、R6開始時に原則2チームになる状態を作る
-*/
+   ✅修正（重要）
+   1) Champion表示と Result（rows）の不一致を根絶
+      - チャンピオン名は「finishMatchAndBuildResult() 後に rows[0]」から必ず取得
+      - これで「ハンマーズ！と出たのに result は別」問題が消える
+
+   2) 既存の NEXT死防止（getChampionNameSafe）も残す
+      - rows が取れない非常時のみ fallback で使う
+   ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.sim = window.MOBBR.sim || {};
 
 (function(){
 
-  const K = {
-    teamName: 'mobbr_team',
-    playerTeam: 'mobbr_playerTeam',
-    equippedSkin: 'mobbr_equippedSkin',
-    equippedCoachSkills: 'mobbr_equippedCoachSkills'
-  };
-
-  // ===== Map Master（固定）=====
-  const AREA = {
-    1:{ name:'ネオン噴水西',  img:'maps/neonhun.png' },
-    2:{ name:'ネオン噴水東',  img:'maps/neonhun.png' },
-    3:{ name:'ネオン噴水南',  img:'maps/neonhun.png' },
-    4:{ name:'ネオン噴水北',  img:'maps/neonhun.png' },
-    5:{ name:'ネオン中心街',  img:'maps/neonmain.png' },
-    6:{ name:'ネオンジム',    img:'maps/neongym.png' },
-    7:{ name:'ネオンペイント街西', img:'maps/neonstreet.png' },
-    8:{ name:'ネオンペイント街東', img:'maps/neonstreet.png' },
-    9:{ name:'ネオンパプリカ広場西', img:'maps/neonpap.png' },
-    10:{ name:'ネオンパプリカ広場東', img:'maps/neonpap.png' },
-    11:{ name:'ネオンパルクール広場西', img:'maps/neonpal.png' },
-    12:{ name:'ネオンパルクール広場東', img:'maps/neonpal.png' },
-    13:{ name:'ネオン裏路地西', img:'maps/neonura.png' },
-    14:{ name:'ネオン裏路地東', img:'maps/neonura.png' },
-    15:{ name:'ネオン裏路地南', img:'maps/neonura.png' },
-    16:{ name:'ネオン裏路地北', img:'maps/neonura.png' },
-
-    17:{ name:'ネオン大橋', img:'maps/neonbrige.png' },
-    18:{ name:'ネオン工場', img:'maps/neonfact.png' },
-    19:{ name:'ネオンどんぐり広場西', img:'maps/neondon.png' },
-    20:{ name:'ネオンどんぐり広場東', img:'maps/neondon.png' },
-
-    21:{ name:'ネオンスケボー広場', img:'maps/neonske.png' },
-    22:{ name:'ネオン秘密基地', img:'maps/neonhimi.png' },
-
-    23:{ name:'ネオンライブハウス', img:'maps/neonlivehouse.png' },
-    24:{ name:'ネオンライブステージ', img:'maps/neonlivestage.png' },
-
-    25:{ name:'ネオン街最終エリア', img:'maps/neonfinal.png' }
-  };
-
-  function range(a,b){
-    const out = [];
-    for(let i=a;i<=b;i++) out.push(i);
-    return out;
+  const T = window.MOBBR?.sim?._tcore;
+  if (!T){
+    console.error('[tournament_core_step] shared not loaded: window.MOBBR.sim._tcore missing');
+    return;
   }
 
-  function areasForRound(r){
-    if (r <= 2) return range(1,16);
-    if (r === 3) return range(17,20);
-    if (r === 4) return range(21,22);
-    if (r === 5) return range(23,24);
-    return [25];
-  }
+  const L = T.L;
+  const R = T.R;
+  const P = T.P;
 
-  function clamp(n, lo, hi){
-    const v = Number(n);
-    if (!Number.isFinite(v)) return lo;
-    return Math.max(lo, Math.min(hi, v));
-  }
+  // step内で元の関数名を保つためのショートカット
+  function getPlayer(){ return T.getPlayer(); }
+  function aliveTeams(){ return T.aliveTeams(); }
 
-  function shuffle(arr){
-    const a = (arr || []).slice();
-    for (let i=a.length-1;i>0;i--){
-      const j = (Math.random()*(i+1))|0;
-      [a[i],a[j]]=[a[j],a[i]];
-    }
-    return a;
-  }
+  function ensureTeamRuntimeShape(t){ return T.ensureTeamRuntimeShape(t); }
+  function computeCtx(){ return T.computeCtx(); }
 
-  function getAreaInfo(areaId){
-    const a = AREA[areaId];
-    return a ? { id:areaId, name:a.name, img:a.img } : { id:areaId, name:`Area${areaId}`, img:'' };
-  }
+  function setRequest(type, payload){ return T.setRequest(type, payload); }
+  function setCenter3(a,b,c){ return T.setCenter3(a,b,c); }
 
-  function isAdjacentArea(a,b, round){
-    const list = areasForRound(round);
-    if (!list.includes(a) || !list.includes(b)) return false;
-    return Math.abs(a-b) === 1;
-  }
+  function getEquippedCoachList(){ return T.getEquippedCoachList(); }
+  function getPlayerSkin(){ return T.getPlayerSkin(); }
+  function getAreaInfo(areaId){ return T.getAreaInfo(areaId); }
 
-  // ===== DataCPU：ローカルのみ =====
-  function getCpuTeamsLocalOnly(){
-    const d = window.DataCPU;
-    if (!d) return [];
+  function applyEventForTeam(team){ return T.applyEventForTeam(team); }
+  function initMatchDrop(){ return T.initMatchDrop(); }
 
-    let all = [];
-    if (typeof d.getAllTeams === 'function') all = d.getAllTeams() || [];
-    else if (typeof d.getALLTeams === 'function') all = d.getALLTeams() || [];
-    else if (Array.isArray(d.TEAMS)) all = d.TEAMS;
+  function fastForwardToMatchEnd(){ return T.fastForwardToMatchEnd(); }
+  function finishMatchAndBuildResult(){ return T.finishMatchAndBuildResult(); }
+  function startNextMatch(){ return T.startNextMatch(); }
+  function resolveOneBattle(A,B,round){ return T.resolveOneBattle(A,B,round); }
 
-    if (!Array.isArray(all)) all = [];
+  function _setNationalBanners(){ return T._setNationalBanners(); }
+  function _getSessionKey(idx){ return T._getSessionKey(idx); }
+  function _markSessionDone(key){ return T._markSessionDone(key); }
+  function _sessionHasPlayer(sessionIndex){ return T._sessionHasPlayer(sessionIndex); }
+  function _autoRunNationalSession(){ return T._autoRunNationalSession(); }
 
-    return all.filter(t=>{
-      const id = String(t.teamId || t.id || '');
-      return id.startsWith('local');
-    });
-  }
-
-  // ===== プレイヤー戦闘力 =====
-  function calcPlayerTeamPower(){
+  // =========================
+  // ✅ CPU Loot Roll（Treasure/Flag）
+  // =========================
+  function cpuLootRollOncePerRound(state, round){
     try{
-      const fn = window.MOBBR?.ui?.team?.calcTeamPower;
-      if (typeof fn === 'function'){
-        const v = fn();
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
-      }
-    }catch(e){}
+      const r = Number(round||0);
+      if (!Number.isFinite(r) || r <= 0) return;
 
-    try{
-      const raw = localStorage.getItem(K.playerTeam);
-      if (raw){
-        const t = JSON.parse(raw);
-        const v = Number(t?.teamPower);
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
-      }
-    }catch(e){}
+      if (!state._cpuLootRolled) state._cpuLootRolled = {};
+      if (state._cpuLootRolled[String(r)] === true) return;
 
-    return 55;
-  }
+      state._cpuLootRolled[String(r)] = true;
 
-  function getEquippedSkin(){
-    const v = (localStorage.getItem(K.equippedSkin) || 'P1').trim();
-    const m = v.match(/^P([1-5])$/);
-    const n = m ? `P${m[1]}` : 'P1';
-    return `${n}.png`;
-  }
+      const teams = Array.isArray(state.teams) ? state.teams : [];
+      for (const t of teams){
+        if (!t) continue;
+        ensureTeamRuntimeShape(t);
+        if (t.eliminated) continue;
+        if (t.isPlayer) continue;
 
-  // ===== CPU 実戦戦闘力抽選 =====
-  function rollCpuTeamPowerFromMembers(cpuTeam){
-    const mem = Array.isArray(cpuTeam?.members) ? cpuTeam.members : [];
-    const overall = Number(cpuTeam?.overall ?? cpuTeam?.basePower ?? cpuTeam?.teamPower ?? 70);
-    const bp = Number.isFinite(overall) ? clamp(overall, 1, 100) : 70;
-
-    if (mem.length === 0){
-      return clamp(bp, 1, 100);
-    }
-
-    const stable = clamp((bp - 50) / 50, 0, 1);
-    const compress = 1 - (stable * 0.55);
-
-    const vals = mem.slice(0,3).map(m=>{
-      const lo0 = Number(m?.min ?? m?.powerMin);
-      const hi0 = Number(m?.max ?? m?.powerMax);
-      const lo = Number.isFinite(lo0) ? clamp(lo0, 1, 100) : 50;
-      const hi = Number.isFinite(hi0) ? clamp(hi0, 1, 100) : 80;
-
-      const mid = (lo + hi) / 2;
-      const half = Math.max(0, (hi - lo) / 2);
-
-      const half2 = half * compress;
-      const lo2 = mid - half2;
-      const hi2 = mid + half2;
-
-      const r = lo2 + Math.random() * (hi2 - lo2);
-      return r;
-    });
-
-    const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-    return Math.round(clamp(avg, 1, 100));
-  }
-
-  // ===== コーチスキル（効果確定5種）=====
-  const COACH_MASTER = {
-    tactics_note:   { mult:1.01, endgame:false, quote:'戦術を大事にして戦おう！' },
-    endgame_power:  { mult:1.03, endgame:true,  quote:'終盤一気に攻めるぞ！' },
-    score_mind:     { mult:1.00, endgame:false, quote:'お宝狙いだ！全力で探せ！' },
-    igl_call:       { mult:1.05, endgame:false, quote:'IGLを信じるんだ！' },
-    protagonist:    { mult:1.10, endgame:false, quote:'この試合の主人公はお前たちだ！' }
-  };
-
-  function getEquippedCoachSkills(){
-    try{
-      const raw = localStorage.getItem(K.equippedCoachSkills);
-      if (!raw) return [];
-      const a = JSON.parse(raw);
-      if (!Array.isArray(a)) return [];
-      return a.map(x=>String(x||'')).filter(Boolean).slice(0,3);
-    }catch{
-      return [];
-    }
-  }
-
-  // ===== round settings =====
-  // ✅ ここはあなたの確定値に完全固定
-  function battleSlots(round){
-    if (round <= 4) return 4; // R1-4: 4戦
-    if (round === 5) return 2; // R5: 2戦
-    return 1; // R6: 1戦
-  }
-  function eventCount(round){
-    if (round === 1) return 1;
-    if (round >= 2 && round <= 5) return 2;
-    return 0;
-  }
-  function playerBattleProb(round, playerContestedAtDrop){
-    if (round === 1) return playerContestedAtDrop ? 1.0 : 0.0;
-    if (round === 2) return 0.70;
-    if (round === 3) return 0.75;
-    return 1.0; // R4-6は100%
-  }
-
-  // ===== drop =====
-  function resetForNewMatch(state){
-    for(const t of state.teams){
-      t.eliminated = false;
-      t.alive = 3;
-      t.eventBuffs = { aim:0, mental:0, agi:0 };
-      t.treasure = 0;
-      t.flag = 0;
-      t.kills_total = 0;
-      t.assists_total = 0;
-      t.downs_total = 0;
-      if (Array.isArray(t.members)){
-        for (const m of t.members){
-          if (m){ m.kills = 0; m.assists = 0; }
+        if (Math.random() < 0.08){
+          t.treasure = (Number(t.treasure||0) + 1);
+        }
+        if (Math.random() < 0.04){
+          t.flag = (Number(t.flag||0) + 1);
         }
       }
-    }
-    state.playerContestedAtDrop = false;
+    }catch(e){}
   }
 
-  function initDropPositions(state, getPlayer){
-    const teams = state.teams.slice();
-    const ids = shuffle(teams.map(t=>t.id));
-
-    const areas = range(1,16);
-    const assigned = new Map();
-    for(const a of areas) assigned.set(a, []);
-
-    for(let i=0;i<16;i++){
-      const teamId = ids[i];
-      const areaId = i+1;
-      assigned.get(areaId).push(teamId);
-    }
-
-    const rest = ids.slice(16,20);
-    const dupAreas = shuffle(areas).slice(0,4);
-    for(let i=0;i<4;i++){
-      assigned.get(dupAreas[i]).push(rest[i]);
-    }
-
-    for(const t of state.teams){
-      let areaId = 1;
-      for(const [a, list] of assigned.entries()){
-        if (list.includes(t.id)){ areaId = a; break; }
+  // =========================
+  // ✅ Champion Name Safe（最後の保険）
+  // =========================
+  function getChampionNameSafe(state){
+    try{
+      if (R && typeof R.getChampionName === 'function'){
+        const name = R.getChampionName(state);
+        if (name) return String(name);
       }
-      t.areaId = areaId;
+    }catch(e){
+      console.warn('[tournament_core_step] getChampionName error:', e);
     }
 
-    // R1の「被りエリアの4戦」を確定させるため保持
-    state._dropAssigned = {};
-    for (const [a, list] of assigned.entries()){
-      state._dropAssigned[a] = list.slice();
-    }
+    // fallback1: lastMatchResultRows
+    try{
+      const rows = state?.lastMatchResultRows;
+      if (Array.isArray(rows) && rows.length){
+        const top = rows[0];
+        if (top?.name) return String(top.name);
+        if (top?.id && typeof R?.resolveTeamName === 'function'){
+          return String(R.resolveTeamName(state, top.id));
+        }
+        if (top?.id) return String(top.id);
+      }
+    }catch(_){}
+
+    // fallback2: teams
+    try{
+      const teams = (state?.teams ? state.teams.slice() : []);
+      if (teams.length){
+        teams.sort((a,b)=>{
+          if (!!a.eliminated !== !!b.eliminated) return a.eliminated ? 1 : -1;
+          const ar = Number(a.eliminatedRound || 0);
+          const br = Number(b.eliminatedRound || 0);
+          if (ar !== br) return br - ar;
+          const ak = Number(a.kills_total || 0);
+          const bk = Number(b.kills_total || 0);
+          if (ak !== bk) return bk - ak;
+          return String(a.name||a.id).localeCompare(String(b.name||b.id));
+        });
+        const best = teams[0];
+        if (best?.name) return String(best.name);
+        if (best?.id && typeof R?.resolveTeamName === 'function'){
+          return String(R.resolveTeamName(state, best.id));
+        }
+        if (best?.id) return String(best.id);
+      }
+    }catch(_){}
+
+    return '???';
+  }
+
+  // =========================
+  // ✅ rowsからChampion名を必ず取る（今回の本命修正）
+  // =========================
+  function getChampionNameFromRowsOrSafe(state){
+    try{
+      const rows = state?.lastMatchResultRows;
+      if (Array.isArray(rows) && rows.length){
+        const top = rows[0];
+        if (top?.name) return String(top.name);
+        if (top?.id && typeof R?.resolveTeamName === 'function'){
+          return String(R.resolveTeamName(state, top.id));
+        }
+        if (top?.id) return String(top.id);
+      }
+    }catch(_){}
+    return getChampionNameSafe(state);
+  }
+
+  // =========================================================
+  // ===== main step machine ====
+  // =========================================================
+  function step(){
+    const state = T.getState();
+    if (!state) return;
 
     const p = getPlayer();
-    state.playerContestedAtDrop = !!(p && (assigned.get(p.areaId)?.length >= 2));
-  }
 
-  function moveAllTeamsToNextRound(state, roundJustFinished){
-    const nextRound = roundJustFinished + 1;
-    const pool = areasForRound(nextRound);
-
-    for(const t of state.teams){
-      if (t.eliminated) continue;
-
-      const cur = t.areaId;
-      let candidates = pool.slice();
-      candidates.sort((a,b)=>Math.abs(a-cur)-Math.abs(b-cur));
-      const top = candidates.slice(0, Math.min(3, candidates.length));
-      const pick = top[(Math.random()*top.length)|0];
-      t.areaId = pick;
-    }
-  }
-
-  // ===== matches（埋め切り保証）=====
-  function buildMatchesForRound(state, round, getPlayer, aliveTeams){
-    const alive = aliveTeams(); // core側定義（生存のみ）
-    const slots = battleSlots(round);
-
-    // 生存が足りないなら作れるだけ（ただし基本は足りる設計）
-    if (alive.length < 2) return [];
-    const maxSlots = Math.min(slots, (alive.length / 2) | 0);
-    if (maxSlots <= 0) return [];
-
-    const matches = [];
-    const used = new Set();
-
-    const player = getPlayer();
-
-    function isUsable(t){
-      return t && !t.eliminated && !used.has(t.id);
-    }
-
-    function pickOpponentFor(A, pool, round){
-      // 1) 同エリア
-      const same = pool.filter(t => t.id !== A.id && isUsable(t) && t.areaId === A.areaId);
-      if (same.length) return same[(Math.random()*same.length)|0];
-
-      // 2) 隣接
-      const near = pool.filter(t => t.id !== A.id && isUsable(t) && isAdjacentArea(t.areaId, A.areaId, round));
-      if (near.length) return near[(Math.random()*near.length)|0];
-
-      // 3) 何でも
-      const any = pool.filter(t => t.id !== A.id && isUsable(t));
-      if (any.length) return any[(Math.random()*any.length)|0];
-
-      return null;
-    }
-
-    // ✅ R1：被り4箇所＝4戦を最優先で確定
-    if (round === 1 && state && state._dropAssigned){
-      const keys = Object.keys(state._dropAssigned).map(n=>Number(n)).filter(Number.isFinite);
-      const dupAreas = keys.filter(a => (state._dropAssigned[a]||[]).length >= 2);
-      const pickedAreas = shuffle(dupAreas).slice(0, 4);
-
-      for (const a of pickedAreas){
-        if (matches.length >= maxSlots) break;
-
-        const ids = (state._dropAssigned[a] || []).slice().filter(Boolean);
-        if (ids.length < 2) continue;
-
-        const A = state.teams.find(t=>t.id===ids[0]);
-        const B = state.teams.find(t=>t.id===ids[1]);
-        if (!A || !B) continue;
-        if (!isUsable(A) || !isUsable(B)) continue;
-
-        matches.push([A,B]);
-        used.add(A.id); used.add(B.id);
-      }
-    }
-
-    // ✅ プレイヤー戦：R2以降は確率、R4-6は100%（仕様）
-    if (player && !player.eliminated && round !== 1 && matches.length < maxSlots){
-      const prob = playerBattleProb(round, !!state.playerContestedAtDrop);
-      if (Math.random() < prob){
-        if (isUsable(player)){
-          // 相手候補は alive から探す（近接優先→埋め）
-          const opp = pickOpponentFor(player, alive, round);
-          if (opp){
-            matches.push([player, opp]);
-            used.add(player.id); used.add(opp.id);
-          }
+    // ✅ Local: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
+    if (state.phase === 'local_total_result_wait_post'){
+      try{
+        if (P?.onLocalTournamentFinished){
+          P.onLocalTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLocalTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLocalTournamentFinished(state, state.tournamentTotal);
         }
+      }catch(e){
+        console.error('[tournament_core] onLocalTournamentFinished error:', e);
       }
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
     }
 
-    // ✅ 残り枠：必ず maxSlots まで埋める
-    // 近接優先しつつ、最後は「何でも」から必ずペアにする
-    let guard = 0;
-    while (matches.length < maxSlots && guard++ < 2000){
-      const pool = alive.filter(isUsable);
-      if (pool.length < 2) break;
-
-      // Aをランダムに選ぶ
-      const A = pool[(Math.random()*pool.length)|0];
-      if (!A) break;
-
-      // Bを近接優先で選ぶ
-      const B = pickOpponentFor(A, pool, round);
-
-      if (!B){
-        // ここに来るのはレアだが、保険でAを戻してやり直す
-        // ただし無限ループ防止
-        continue;
+    // ✅ LastChance: 総合RESULTを見せたあと、次のNEXTで終了後処理 → UI閉じる
+    if (state.phase === 'lastchance_total_result_wait_post'){
+      try{
+        if (P?.onLastChanceTournamentFinished){
+          P.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onLastChanceTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onLastChanceTournamentFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] onLastChanceTournamentFinished error:', e);
       }
-
-      matches.push([A,B]);
-      used.add(A.id); used.add(B.id);
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
     }
 
-    // 最終防衛：どうしても足りない時は強制ペア（それでも同チーム2回戦は禁止）
-    if (matches.length < maxSlots){
-      const pool = alive.filter(t=>t && !t.eliminated).slice();
-      const remain = pool.filter(t=>!used.has(t.id));
-      const shuffled = shuffle(remain);
-
-      for (let i=0; matches.length < maxSlots && i+1 < shuffled.length; i+=2){
-        const A = shuffled[i];
-        const B = shuffled[i+1];
-        if (!A || !B) continue;
-        if (used.has(A.id) || used.has(B.id)) continue;
-        matches.push([A,B]);
-        used.add(A.id); used.add(B.id);
+    // ✅ World: 予選/ WL / 決勝 の総合RESULT後 → 次のNEXTで post へ
+    if (state.phase === 'world_total_result_wait_post'){
+      const wp = String(state.worldPhase||'qual');
+      try{
+        if (wp === 'qual'){
+          if (P?.onWorldQualFinished) P.onWorldQualFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
+        }else if (wp === 'wl'){
+          if (P?.onWorldWLFinished) P.onWorldWLFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldWLFinished) window.MOBBR.sim.tournamentCorePost.onWorldWLFinished(state, state.tournamentTotal);
+        }else{
+          if (P?.onWorldFinalFinished) P.onWorldFinalFinished(state, state.tournamentTotal);
+          else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldFinalFinished) window.MOBBR.sim.tournamentCorePost.onWorldFinalFinished(state, state.tournamentTotal);
+        }
+      }catch(e){
+        console.error('[tournament_core] world post error:', e);
       }
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
     }
 
-    return matches.slice(0, maxSlots);
+    // ✅ National: 最終総合RESULT後 → 次のNEXTで post（あれば）→ 無ければ endNationalWeek
+    if (state.phase === 'national_total_result_wait_post'){
+      let handled = false;
+
+      try{
+        if (P?.onNationalTournamentFinished){
+          P.onNationalTournamentFinished(state, state.tournamentTotal);
+          handled = true;
+        }else if (window.MOBBR?.sim?.tournamentCorePost?.onNationalTournamentFinished){
+          window.MOBBR.sim.tournamentCorePost.onNationalTournamentFinished(state, state.tournamentTotal);
+          handled = true;
+        }
+      }catch(e){
+        console.error('[tournament_core] onNationalTournamentFinished error:', e);
+      }
+
+      state.phase = 'done';
+
+      if (handled){
+        setRequest('endTournament', {});
+      }else{
+        setRequest('endNationalWeek', { weeks: 1 });
+      }
+      return;
+    }
+
+    // ✅ National: AUTOセッション開始表示
+    if (state.phase === 'national_auto_session_wait_run'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const key = _getSessionKey(si) || `S${si+1}`;
+
+      _autoRunNationalSession();
+      _markSessionDone(key);
+
+      const label = String((nat.sessions?.[si]?.groups || []).join(' & ') || key);
+      setRequest('showAutoSessionDone', {
+        sessionKey: key,
+        line1: '全試合終了！',
+        line2: '現在の総合ポイントはこちら！',
+        line3: 'NEXTでRESULT表示',
+        title: '全試合終了！',
+        sub: '現在の総合ポイントはこちら！',
+        sessionLabel: label
+      });
+      state.phase = 'national_auto_session_done_wait_result';
+      return;
+    }
+
+    // ✅ National: AUTOセッション完了表示の次 → 総合RESULT表示
+    if (state.phase === 'national_auto_session_done_wait_result'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+      const isLastSession = (si >= sc - 1);
+
+      setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+      }else{
+        state.phase = 'national_session_total_result_wait_notice';
+      }
+      return;
+    }
+
+    // ✅ National: セッションごとの総合RESULT表示後
+    if (state.phase === 'national_session_total_result_wait_notice'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+
+      const curKey  = String(nat.sessions?.[si]?.key || `S${si+1}`);
+      const isLastSession = (si >= sc - 1);
+
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      const nextKey = String(nat.sessions?.[si+1]?.key || `S${si+2}`);
+
+      _markSessionDone(curKey);
+
+      setRequest('showNationalNotice', {
+        qualified: false,
+        line1: `SESSION ${curKey} 終了！`,
+        line2: `次：SESSION ${nextKey} へ`,
+        line3: 'NEXTで進行'
+      });
+      state.phase = 'national_notice_wait_next_session';
+      return;
+    }
+
+    // ✅ National: Notice後 → 次セッションへ組み替え
+    if (state.phase === 'national_notice_wait_next_session'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+
+      if (si >= sc - 1){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      const nextIndex = si + 1;
+      nat.sessionIndex = nextIndex;
+      state.national = nat;
+
+      const plan = nat.plan;
+      const defs = nat.allTeamDefs;
+
+      state.teams = T._buildTeamsForNationalSession(defs, plan, nextIndex);
+
+      state.matchIndex = 1;
+      state.round = 1;
+
+      state.selectedCoachSkill = null;
+      state.selectedCoachQuote = '';
+
+      state.phase = 'intro';
+      setRequest('noop', {});
+      return;
+    }
+
+    if (state.phase === 'done'){
+      setRequest('noop', {});
+      return;
+    }
+
+    // ===== intro =====
+    if (state.phase === 'intro'){
+      if (state.mode === 'national'){
+        _setNationalBanners();
+      }else if (state.mode === 'lastchance'){
+        state.bannerLeft = 'ラストチャンス';
+        state.bannerRight = '20チーム';
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
+        state.bannerRight = `${si+1}/${sc}`;
+      }else{
+        state.bannerLeft = 'ローカル大会';
+        state.bannerRight = '20チーム';
+      }
+
+      state.ui.bg = 'maps/neonmain.png';
+      state.ui.squareBg = 'tent.png';
+
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      if (state.mode === 'national'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        setCenter3('ナショナルリーグ開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
+
+        if (!_sessionHasPlayer(si)){
+          _setNationalBanners();
+          state.bannerRight = `AUTO SESSION ${key}`;
+
+          const groups = s.sessions?.[si]?.groups || [];
+          const label = groups.length === 2 ? `${groups[0]} & ${groups[1]}` : key;
+
+          setRequest('showAutoSession', {
+            sessionKey: key,
+            line1: `${label} 試合進行中..`,
+            line2: '',
+            line3: 'NEXTで進行',
+            title: `${label} 試合進行中..`,
+            sub: ''
+          });
+          state.phase = 'national_auto_session_wait_run';
+          return;
+        }
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+
+        setCenter3('ワールドファイナル開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
+
+        if (!_sessionHasPlayer(si)){
+          state.bannerRight = `AUTO SESSION ${key}`;
+          const groups = s.sessions?.[si]?.groups || [];
+          const label = groups.length === 2 ? `${groups[0]} & ${groups[1]}` : key;
+
+          setRequest('showAutoSession', {
+            sessionKey: key,
+            line1: `${label} 試合進行中..`,
+            line2: '',
+            line3: 'NEXTで進行',
+            title: `${label} 試合進行中..`,
+            sub: ''
+          });
+          state.phase = 'national_auto_session_wait_run';
+          return;
+        }
+      }else if (state.mode === 'lastchance'){
+        setCenter3('ラストチャンス開幕！', '上位2チームがワールド出場！', '');
+      }else{
+        setCenter3('本日のチームをご紹介！', '', '');
+      }
+
+      setRequest('showIntroText', {});
+      state.phase = 'teamList';
+      return;
+    }
+
+    // ===== team list =====
+    if (state.phase === 'teamList'){
+      setCenter3('', '', '');
+      setRequest('showTeamList', { teams: state.teams.map(t=>( {
+        id:t.id, name:t.name, power:t.power, alive:t.alive, eliminated:t.eliminated, treasure:t.treasure, flag:t.flag, isPlayer:!!t.isPlayer
+      }))});
+      state.phase = 'teamList_done';
+      return;
+    }
+
+    // ===== coach select =====
+    if (state.phase === 'teamList_done'){
+      setCenter3('それでは試合を開始します！', '使用するコーチスキルを選択してください！', '');
+      setRequest('showCoachSelect', {
+        equipped: getEquippedCoachList(),
+        master: L.COACH_MASTER
+      });
+      state.phase = 'coach_done';
+      return;
+    }
+
+    // ===== match start =====
+    if (state.phase === 'coach_done'){
+      initMatchDrop();
+
+      if (state.mode === 'national'){
+        _setNationalBanners();
+        state.bannerRight = '降下';
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const sc = Number(s.sessionCount||6);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
+        state.bannerRight = '降下';
+      }else{
+        state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
+        state.bannerRight = '降下';
+      }
+
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      state.ui.bg = 'tent.png';
+      state.ui.squareBg = 'tent.png';
+
+      setCenter3('バトルスタート！', '降下開始…！', '');
+      setRequest('showDropStart', {});
+      state.phase = 'drop_land';
+      return;
+    }
+
+    // ===== landed =====
+    if (state.phase === 'drop_land'){
+      const p2 = getPlayer();
+      const info = getAreaInfo(p2?.areaId || 1);
+      state.ui.bg = info.img;
+
+      const contested = !!state.playerContestedAtDrop;
+      setCenter3(`${info.name}に降下完了。周囲を確認…`, contested ? '被った…敵影がいる！' : '周囲は静かだ…', 'IGLがコール！戦闘準備！');
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setRequest('showDropLanded', { areaId: info.id, areaName: info.name, bg: info.img, contested });
+      state.phase = 'round_start';
+      state.round = 1;
+      return;
+    }
+
+    // ===== round start =====
+    if (state.phase === 'round_start'){
+      const r = state.round;
+
+      if (state.mode === 'national'){
+        _setNationalBanners();
+        state.bannerRight = `ROUND ${r}`;
+      }else if (state.mode === 'world'){
+        const s = state.national || {};
+        const si = Number(s.sessionIndex||0);
+        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
+        state.bannerRight = `ROUND ${r}`;
+      }else{
+        state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
+        state.bannerRight = `ROUND ${r}`;
+      }
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3(`Round ${r} 開始！`, '', '');
+      setRequest('showRoundStart', { round: r });
+
+      state.phase = 'round_events';
+      state._eventsToShow = L.eventCount(r);
+      return;
+    }
+
+    // ===== events =====
+    if (state.phase === 'round_events'){
+      const r = state.round;
+
+      cpuLootRollOncePerRound(state, r);
+
+      if (L.eventCount(r) === 0){
+        state.phase = 'round_battles';
+        return step();
+      }
+
+      if (!p || p.eliminated){
+        state.phase = 'round_battles';
+        return step();
+      }
+
+      const remain = Number(state._eventsToShow||0);
+      if (remain <= 0){
+        state.phase = 'round_battles';
+        return step();
+      }
+
+      const ev = applyEventForTeam(p);
+      state._eventsToShow = remain - 1;
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      if (ev){
+        setCenter3(ev.log1, ev.log2, ev.log3);
+        setRequest('showEvent', { icon: ev.icon, log1: ev.log1, log2: ev.log2, log3: ev.log3 });
+      }else{
+        setCenter3('イベント発生！', '……', '');
+        setRequest('showEvent', { icon: '', log1:'イベント発生！', log2:'……', log3:'' });
+      }
+      return;
+    }
+
+    // ===== prepare battles =====
+    if (state.phase === 'round_battles'){
+      const r = state.round;
+
+      const matches = L.buildMatchesForRound(state, r, getPlayer, aliveTeams);
+      state._roundMatches = matches.map(([A,B])=>({ aId:A.id, bId:B.id }));
+      state._matchCursor = 0;
+
+      setRequest('prepareBattles', { round: r, slots: L.battleSlots(r), matches: state._roundMatches });
+      state.phase = 'battle_one';
+      return;
+    }
+
+    // ===== battle loop =====
+    if (state.phase === 'battle_one'){
+      const r = state.round;
+      const list = Array.isArray(state._roundMatches) ? state._roundMatches : [];
+      let cur = Number(state._matchCursor||0);
+
+      while (cur < list.length){
+        const pair = list[cur];
+        const A = state.teams.find(t=>t.id===pair.aId);
+        const B = state.teams.find(t=>t.id===pair.bId);
+
+        if (!A || !B){
+          cur++;
+          continue;
+        }
+
+        const playerIn = (A.isPlayer || B.isPlayer);
+        if (playerIn){
+          state._matchCursor = cur;
+
+          const me = A.isPlayer ? A : B;
+          const foe = A.isPlayer ? B : A;
+
+          state.ui.leftImg = getPlayerSkin();
+          state.ui.rightImg = `${foe.id}.png`;
+          state.ui.topLeftName = me.name;
+          state.ui.topRightName = foe.name;
+
+          setCenter3('接敵‼︎', `${me.name} vs ${foe.name}‼︎`, '交戦スタート‼︎');
+          setRequest('showEncounter', {
+            meId: me.id, foeId: foe.id,
+            meName: me.name, foeName: foe.name,
+            foeTeamId: foe.id,
+            foePower: Number(foe.power||0),
+            round: r,
+            matchIndex: state.matchIndex,
+
+            meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
+            foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
+          });
+
+          state.phase = 'battle_resolve';
+          return;
+        }
+
+        resolveOneBattle(A, B, r);
+        cur++;
+      }
+
+      state._matchCursor = cur;
+      state.phase = (r <= 5) ? 'round_move' : 'match_result';
+      return step();
+    }
+
+    // ===== resolve player battle =====
+    if (state.phase === 'battle_resolve'){
+      const r = state.round;
+      const list = Array.isArray(state._roundMatches) ? state._roundMatches : [];
+      const cur = Number(state._matchCursor||0);
+      const pair = list[cur];
+
+      if (!pair){
+        state.phase = (r <= 5) ? 'round_move' : 'match_result';
+        return step();
+      }
+
+      const A = state.teams.find(t=>t.id===pair.aId);
+      const B = state.teams.find(t=>t.id===pair.bId);
+
+      if (!A || !B){
+        state._matchCursor = cur + 1;
+        state.phase = 'battle_one';
+        return step();
+      }
+
+      const playerIn = (A.isPlayer || B.isPlayer);
+      if (!playerIn){
+        resolveOneBattle(A, B, r);
+        state._matchCursor = cur + 1;
+        state.phase = 'battle_one';
+        return step();
+      }
+
+      const me = A.isPlayer ? A : B;
+      const foe = A.isPlayer ? B : A;
+
+      const res = resolveOneBattle(A, B, r);
+      const iWon = res ? (res.winnerId === me.id) : false;
+
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = `${foe.id}.png`;
+      state.ui.topLeftName = me.name;
+      state.ui.topRightName = foe.name;
+
+      setRequest('showBattle', {
+        round: r,
+        meId: me.id, foeId: foe.id,
+        meName: me.name, foeName: foe.name,
+        foeTeamId: foe.id,
+        foePower: Number(foe.power||0),
+        win: iWon,
+        final: (r===6),
+        holdMs: 2000,
+
+        meMembers: Array.isArray(me.members) ? me.members.slice(0,3) : [],
+        foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
+      });
+
+      // ✅ 負けて全滅 → 以降は高速処理、そして
+      //    「Champion名は result rows が出来た後に確定」する（ここがv4.6の核）
+      if (!iWon && me.eliminated){
+        fastForwardToMatchEnd();
+
+        // ★ここでは名前を決めない（不一致の原因）
+        state._pendingChampionAfterResult = true;
+        state.phase = 'match_result';
+        return;
+      }
+
+      state._afterBattleGo = { type:'nextBattle' };
+      state.phase = 'battle_after';
+      return;
+    }
+
+    // ===== after battle =====
+    if (state.phase === 'battle_after'){
+      const cur = Number(state._matchCursor||0);
+      const go = state._afterBattleGo || { type:'nextBattle' };
+      state._afterBattleGo = null;
+
+      state._matchCursor = cur + 1;
+      state.phase = 'battle_one';
+      setRequest('noop', {});
+      return;
+    }
+
+    // ===== move =====
+    if (state.phase === 'round_move'){
+      const r = state.round;
+
+      const p3 = getPlayer();
+      const before = p3 ? getAreaInfo(p3.areaId) : null;
+
+      L.moveAllTeamsToNextRound(state, r);
+
+      const p4 = getPlayer();
+      const after = p4 ? getAreaInfo(p4.areaId) : null;
+
+      state.ui.bg = 'ido.png';
+      state.ui.leftImg = getPlayerSkin();
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3('', '', '');
+      setRequest('showMove', {
+        fromAreaId: before?.id || 0,
+        toAreaId: after?.id || 0,
+        toAreaName: after?.name || '',
+        toBg: after?.img || '',
+        holdMs: 0
+      });
+
+      state.phase = 'round_move_done';
+      return;
+    }
+
+    if (state.phase === 'round_move_done'){
+      state.round += 1;
+      state.phase = (state.round <= 6) ? 'round_start' : 'match_result';
+      setRequest('noop', {});
+      return;
+    }
+
+    // ===== match result =====
+    if (state.phase === 'match_result'){
+      finishMatchAndBuildResult();
+
+      // ✅ pending時：まずChampion表示（rows[0]から）
+      if (state._pendingChampionAfterResult){
+        state._pendingChampionAfterResult = false;
+
+        const championName = getChampionNameFromRowsOrSafe(state);
+
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3('この試合のチャンピオンは', String(championName || '???'), '‼︎');
+        setRequest('showChampion', {
+          matchIndex: state.matchIndex,
+          championName: String(championName || '')
+        });
+
+        // 次のNEXTで result 表へ
+        state.phase = 'match_result_show';
+        return;
+      }
+
+      // 通常：そのまま result 表へ
+      state.phase = 'match_result_show';
+      setRequest('noop', {});
+      return;
+    }
+
+    if (state.phase === 'match_result_show'){
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setRequest('showMatchResult', {
+        matchIndex: state.matchIndex,
+        matchCount: state.matchCount,
+        rows: state.lastMatchResultRows,
+        currentOverall: Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []
+      });
+
+      state.phase = 'match_result_done';
+      return;
+    }
+
+    // ===== match result done =====
+    if (state.phase === 'match_result_done'){
+
+      // LOCAL
+      if (state.mode === 'local'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'local_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      // LAST CHANCE
+      if (state.mode === 'lastchance'){
+        if (state.matchIndex >= state.matchCount){
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'lastchance_total_result_wait_post';
+          return;
+        }
+
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / 5`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      // NATIONAL
+      if (state.mode === 'national'){
+        const nat = state.national || {};
+        const si = Number(nat.sessionIndex||0);
+        const sc = Number(nat.sessionCount||6);
+
+        if (state.matchIndex < state.matchCount){
+          startNextMatch();
+
+          state.ui.bg = 'tent.png';
+          state.ui.squareBg = 'tent.png';
+          state.ui.leftImg = getPlayerSkin();
+          state.ui.rightImg = '';
+          state.ui.topLeftName = '';
+          state.ui.topRightName = '';
+
+          _setNationalBanners();
+          setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+          setRequest('nextMatch', { matchIndex: state.matchIndex });
+          state.phase = 'coach_done';
+          return;
+        }
+
+        const isLastSession = (si >= sc - 1);
+
+        setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+        if (isLastSession){
+          state.phase = 'national_total_result_wait_post';
+          return;
+        }
+
+        state.phase = 'national_session_total_result_wait_notice';
+        return;
+      }
+
+      // WORLD
+      if (state.mode === 'world'){
+        const nat = state.national || {};
+        const si = Number(nat.sessionIndex||0);
+        const sc = Number(nat.sessionCount||6);
+
+        if (state.matchIndex < state.matchCount){
+          startNextMatch();
+
+          state.ui.bg = 'tent.png';
+          state.ui.squareBg = 'tent.png';
+          state.ui.leftImg = getPlayerSkin();
+          state.ui.rightImg = '';
+          state.ui.topLeftName = '';
+          state.ui.topRightName = '';
+
+          setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+          setRequest('nextMatch', { matchIndex: state.matchIndex });
+          state.phase = 'coach_done';
+          return;
+        }
+
+        const isLastSession = (si >= sc - 1);
+
+        setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+        if (isLastSession){
+          state.phase = 'world_total_result_wait_post';
+          return;
+        }
+
+        state.phase = 'national_session_total_result_wait_notice';
+        return;
+      }
+
+      setRequest('showTournamentResult', { total: state.tournamentTotal });
+      state.phase = 'done';
+      return;
+    }
+
+    setRequest('noop', {});
   }
 
-  // ===== coach mult =====
-  function coachMultForRound(state, round){
-    const sk = state.selectedCoachSkill;
-    if (!sk) return 1.0;
-    const m = COACH_MASTER[sk];
-    if (!m) return 1.0;
-    if (m.endgame) return (round >= 5) ? m.mult : 1.0;
-    return m.mult;
-  }
-
-  // ===== event =====
-  function applyEventForTeam(state, team, computeCtx){
-    const ctx = computeCtx();
-    if (!window.MOBBR?.sim?.matchEvents?.rollForTeam) return null;
-    return window.MOBBR.sim.matchEvents.rollForTeam(team, state.round, ctx);
-  }
-
-  // ===== internal: resolve one battle =====
-  function resolveOneBattle(state, A, B, round, ensureTeamRuntimeShape, computeCtx){
-    ensureTeamRuntimeShape(A);
-    ensureTeamRuntimeShape(B);
-
-    const ctx = computeCtx();
-
-    const mult = coachMultForRound(state, round);
-    let aBackup=null, bBackup=null;
-    if (A.isPlayer){ aBackup=A.power; A.power=clamp(A.power*mult,1,100); }
-    if (B.isPlayer){ bBackup=B.power; B.power=clamp(B.power*mult,1,100); }
-
-    const res = window.MOBBR?.sim?.matchFlow?.resolveBattle
-      ? window.MOBBR.sim.matchFlow.resolveBattle(A, B, round, ctx)
-      : null;
-
-    if (A.isPlayer && aBackup!==null) A.power=aBackup;
-    if (B.isPlayer && bBackup!==null) B.power=bBackup;
-
-    return res;
-  }
-
-  window.MOBBR.sim.tournamentLogic = {
-    K,
-
-    AREA,
-    range,
-    areasForRound,
-    clamp,
-    shuffle,
-    getAreaInfo,
-    isAdjacentArea,
-
-    getCpuTeamsLocalOnly,
-    calcPlayerTeamPower,
-    getEquippedSkin,
-    rollCpuTeamPowerFromMembers,
-
-    COACH_MASTER,
-    getEquippedCoachSkills,
-
-    battleSlots,
-    eventCount,
-    playerBattleProb,
-
-    resetForNewMatch,
-    initDropPositions,
-    moveAllTeamsToNextRound,
-    buildMatchesForRound,
-    coachMultForRound,
-    applyEventForTeam,
-    resolveOneBattle
-  };
+  // register
+  T.step = step;
 
 })();
