@@ -1,17 +1,11 @@
-'use strict';
-
 /* =========================================================
    sim_tournament_core_step.js（FULL） v4.6
    - v4.5 の全機能維持
-
-   ✅修正（重要）
-   1) Champion表示と Result（rows）の不一致を根絶
-      - チャンピオン名は「finishMatchAndBuildResult() 後に rows[0]」から必ず取得
-      - これで「ハンマーズ！と出たのに result は別」問題が消える
-
-   2) 既存の NEXT死防止（getChampionNameSafe）も残す
-      - rows が取れない非常時のみ fallback で使う
+   修正：
+   ✅ MatchResult rows が空の時、必ずその場で再計算して20行を確定（result 0行バグ潰し）
+   ✅ ChampionName 取得も T.getR() 優先で差し替え耐性を強化（NEXT死防止をさらに堅く）
    ========================================================= */
+'use strict';
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.sim = window.MOBBR.sim || {};
@@ -25,7 +19,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   const L = T.L;
-  const R = T.R;
   const P = T.P;
 
   // step内で元の関数名を保つためのショートカット
@@ -87,12 +80,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================
-  // ✅ Champion Name Safe（最後の保険）
+  // ✅ Champion Name Safe（NEXT死防止の核）
   // =========================
   function getChampionNameSafe(state){
+    // ✅ v4.6: R は固定参照しない（差し替え耐性）
+    const R2 = (T.getR && typeof T.getR === 'function') ? T.getR() : (window.MOBBR?.sim?.tournamentResult || null);
+
     try{
-      if (R && typeof R.getChampionName === 'function'){
-        const name = R.getChampionName(state);
+      if (R2 && typeof R2.getChampionName === 'function'){
+        const name = R2.getChampionName(state);
         if (name) return String(name);
       }
     }catch(e){
@@ -105,14 +101,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (Array.isArray(rows) && rows.length){
         const top = rows[0];
         if (top?.name) return String(top.name);
-        if (top?.id && typeof R?.resolveTeamName === 'function'){
-          return String(R.resolveTeamName(state, top.id));
+        if (top?.id && typeof R2?.resolveTeamName === 'function'){
+          return String(R2.resolveTeamName(state, top.id));
         }
         if (top?.id) return String(top.id);
       }
     }catch(_){}
 
-    // fallback2: teams
+    // fallback2: teams（簡易推定）
     try{
       const teams = (state?.teams ? state.teams.slice() : []);
       if (teams.length){
@@ -128,8 +124,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         });
         const best = teams[0];
         if (best?.name) return String(best.name);
-        if (best?.id && typeof R?.resolveTeamName === 'function'){
-          return String(R.resolveTeamName(state, best.id));
+        if (best?.id && typeof R2?.resolveTeamName === 'function'){
+          return String(R2.resolveTeamName(state, best.id));
         }
         if (best?.id) return String(best.id);
       }
@@ -139,21 +135,35 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================
-  // ✅ rowsからChampion名を必ず取る（今回の本命修正）
+  // ✅ MatchResult rows Safe（result 0行バグ潰し）
   // =========================
-  function getChampionNameFromRowsOrSafe(state){
+  function ensureMatchResultRows(state){
     try{
       const rows = state?.lastMatchResultRows;
-      if (Array.isArray(rows) && rows.length){
-        const top = rows[0];
-        if (top?.name) return String(top.name);
-        if (top?.id && typeof R?.resolveTeamName === 'function'){
-          return String(R.resolveTeamName(state, top.id));
-        }
-        if (top?.id) return String(top.id);
+      if (Array.isArray(rows) && rows.length > 0) return true;
+
+      const R2 = (T.getR && typeof T.getR === 'function') ? T.getR() : (window.MOBBR?.sim?.tournamentResult || null);
+      if (!R2 || typeof R2.computeMatchResultTable !== 'function' || typeof R2.addToTournamentTotal !== 'function'){
+        console.error('[tournament_core_step] ensureMatchResultRows: tournamentResult missing methods', {
+          hasR: !!R2,
+          computeMatchResultTable: !!R2?.computeMatchResultTable,
+          addToTournamentTotal: !!R2?.addToTournamentTotal
+        });
+        state.lastMatchResultRows = [];
+        return false;
       }
-    }catch(_){}
-    return getChampionNameSafe(state);
+
+      const rows2 = R2.computeMatchResultTable(state) || [];
+      // ✅ ここで総合にも必ず加算（finishMatchAndBuildResult と同等の責務を再保証）
+      R2.addToTournamentTotal(state, rows2);
+      state.lastMatchResultRows = rows2;
+
+      return Array.isArray(rows2) && rows2.length > 0;
+    }catch(e){
+      console.error('[tournament_core_step] ensureMatchResultRows error:', e);
+      try{ state.lastMatchResultRows = []; }catch(_){}
+      return false;
+    }
   }
 
   // =========================================================
@@ -701,14 +711,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         foeMembers: Array.isArray(foe.members) ? foe.members.slice(0,3) : []
       });
 
-      // ✅ 負けて全滅 → 以降は高速処理、そして
-      //    「Champion名は result rows が出来た後に確定」する（ここがv4.6の核）
       if (!iWon && me.eliminated){
         fastForwardToMatchEnd();
 
-        // ★ここでは名前を決めない（不一致の原因）
-        state._pendingChampionAfterResult = true;
-        state.phase = 'match_result';
+        // ✅ ここで落ちると NEXT が死ぬので絶対に落とさない
+        const championName = getChampionNameSafe(state);
+
+        state._afterBattleGo = { type:'champion', championName };
+        state.phase = 'battle_after';
         return;
       }
 
@@ -722,6 +732,21 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const cur = Number(state._matchCursor||0);
       const go = state._afterBattleGo || { type:'nextBattle' };
       state._afterBattleGo = null;
+
+      if (go.type === 'champion'){
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3(`この試合のチャンピオンは`, String(go.championName || '???'), '‼︎');
+        setRequest('showChampion', {
+          matchIndex: state.matchIndex,
+          championName: String(go.championName || '')
+        });
+
+        state.phase = 'match_result';
+        return;
+      }
 
       state._matchCursor = cur + 1;
       state.phase = 'battle_one';
@@ -770,36 +795,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ===== match result =====
     if (state.phase === 'match_result'){
+      // 1) 通常の集計（既存）
       finishMatchAndBuildResult();
 
-      // ✅ pending時：まずChampion表示（rows[0]から）
-      if (state._pendingChampionAfterResult){
-        state._pendingChampionAfterResult = false;
+      // ✅ 2) v4.6: rows が空なら、その場で必ず再計算して確定（result 0行バグ潰し）
+      ensureMatchResultRows(state);
 
-        const championName = getChampionNameFromRowsOrSafe(state);
-
-        state.ui.rightImg = '';
-        state.ui.topLeftName = '';
-        state.ui.topRightName = '';
-
-        setCenter3('この試合のチャンピオンは', String(championName || '???'), '‼︎');
-        setRequest('showChampion', {
-          matchIndex: state.matchIndex,
-          championName: String(championName || '')
-        });
-
-        // 次のNEXTで result 表へ
-        state.phase = 'match_result_show';
-        return;
-      }
-
-      // 通常：そのまま result 表へ
-      state.phase = 'match_result_show';
-      setRequest('noop', {});
-      return;
-    }
-
-    if (state.phase === 'match_result_show'){
       state.ui.rightImg = '';
       state.ui.topLeftName = '';
       state.ui.topRightName = '';
