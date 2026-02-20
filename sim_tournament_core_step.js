@@ -7,6 +7,11 @@
       → KP不足（戦闘未解決でキルが付かない）を根絶
    2) チャンピオン名取得時、lastMatchResultRows を必ず無効化して誤参照を防止
       → 「チャンピオン表示」と「result 1位」の不一致を根絶
+
+   ✅追加（今回の要望）
+   - NATIONAL / WORLD の左上表示で「MATCH」を必ず表記
+     → NATIONAL は shared._setNationalBanners() が bannerLeft に MATCH 常時含める
+     → WORLD は step 内の bannerLeft 生成を統一して MATCH を必ず含める
    ========================================================= */
 'use strict';
 
@@ -212,13 +217,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       //    - CPU Loot は従来通り入れる
       let r = r0;
 
-      // r0 の後半処理：以後の round は「round_move → round_start → round_battles」の流れを内部で再現
       while (r <= 6){
         // r の CPU Loot（既存仕様）
         cpuLootRollOncePerRound(state, r);
 
         // r の battles を全消化（player除外）
-        // もし _roundMatches が無い/古いなら再生成して確定させる
         let matches = null;
         try{
           matches = L.buildMatchesForRound(state, r, getPlayer, aliveTeams) || [];
@@ -249,6 +252,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(e){
       console.error('[tournament_core_step] resolveFullMatchToEndAfterPlayerEliminated error:', e);
     }
+  }
+
+  // =========================
+  // ✅ WORLD banner helper（MATCH常時）
+  // =========================
+  function setWorldBanners(state, rightText){
+    const s = state.national || {};
+    const si = Number(s.sessionIndex||0);
+    const sc = Number(s.sessionCount||6);
+    const key = String(s.sessions?.[si]?.key || `S${si+1}`);
+    const ph = String(state.worldPhase||'qual').toUpperCase();
+
+    state.bannerLeft = `WORLD ${ph} ${key} (${si+1}/${sc})  MATCH ${state.matchIndex} / ${state.matchCount}`;
+    state.bannerRight = String(rightText||'');
   }
 
   // =========================================================
@@ -449,17 +466,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ===== intro =====
     if (state.phase === 'intro'){
       if (state.mode === 'national'){
-        _setNationalBanners();
+        _setNationalBanners(); // ✅ MATCHは左上に常駐
       }else if (state.mode === 'lastchance'){
         state.bannerLeft = 'ラストチャンス';
         state.bannerRight = '20チーム';
       }else if (state.mode === 'world'){
-        const s = state.national || {};
-        const si = Number(s.sessionIndex||0);
-        const sc = Number(s.sessionCount||6);
-        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
-        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
-        state.bannerRight = `${si+1}/${sc}`;
+        // ✅ MATCHは左上に常駐（WORLDも統一）
+        setWorldBanners(state, '');
       }else{
         state.bannerLeft = 'ローカル大会';
         state.bannerRight = '20チーム';
@@ -507,7 +520,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         setCenter3('ワールドファイナル開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
 
         if (!_sessionHasPlayer(si)){
-          state.bannerRight = `AUTO SESSION ${key}`;
+          setWorldBanners(state, `AUTO SESSION ${key}`);
+
           const groups = s.sessions?.[si]?.groups || [];
           const label = groups.length === 2 ? `${groups[0]} & ${groups[1]}` : key;
 
@@ -562,12 +576,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         _setNationalBanners();
         state.bannerRight = '降下';
       }else if (state.mode === 'world'){
-        const s = state.national || {};
-        const si = Number(s.sessionIndex||0);
-        const sc = Number(s.sessionCount||6);
-        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
-        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
-        state.bannerRight = '降下';
+        setWorldBanners(state, '降下');
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
         state.bannerRight = '降下';
@@ -614,11 +623,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         _setNationalBanners();
         state.bannerRight = `ROUND ${r}`;
       }else if (state.mode === 'world'){
-        const s = state.national || {};
-        const si = Number(s.sessionIndex||0);
-        const key = String(s.sessions?.[si]?.key || `S${si+1}`);
-        state.bannerLeft = `WORLD ${String(state.worldPhase||'qual').toUpperCase()} ${key}`;
-        state.bannerRight = `ROUND ${r}`;
+        setWorldBanners(state, `ROUND ${r}`);
       }else{
         state.bannerLeft = `MATCH ${state.matchIndex} / 5`;
         state.bannerRight = `ROUND ${r}`;
@@ -1012,6 +1017,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           state.ui.rightImg = '';
           state.ui.topLeftName = '';
           state.ui.topRightName = '';
+
+          // ✅ 次試合へ進むタイミングで bannerLeft を必ず更新（MATCH表記の正確性保証）
+          setWorldBanners(state, '');
 
           setCenter3(`次の試合へ`, `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
           setRequest('nextMatch', { matchIndex: state.matchIndex });
