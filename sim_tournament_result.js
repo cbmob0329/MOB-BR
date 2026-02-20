@@ -1,12 +1,13 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.4）
+  sim_tournament_result.js（FULL 修正版 v2.4.1）
 
   ✅ 修正/保証
   - ✅ R.getChampionName を必ず提供（core_step / core_shared 互換）
   - ✅ 互換aliasを追加（実装差で total が 0 になるのを防ぐ）
   - ✅ チーム名解決を完全保証（ID表示根絶）
+      - ✅ national.allTeamDefs が「配列」でも「MAP(object)」でも対応（←今回の本丸）
   - ✅ Treasure=3 / Flag=5
   - ✅ 1試合終了ごと currentOverallRows 更新
   - ✅ ソート安定化（同点時のブレ抑制）
@@ -25,21 +26,47 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const sid = String(id);
 
     // ① 現在の20チーム
-    if (state?.teams){
-      const t = state.teams.find(x => String(x.id) === sid);
-      if (t?.name) return String(t.name);
-    }
+    try{
+      if (state?.teams){
+        const t = state.teams.find(x => String(x?.id) === sid);
+        if (t?.name) return String(t.name);
+      }
+    }catch(_){}
 
-    // ② tournamentTotal
-    if (state?.tournamentTotal){
-      const t = state.tournamentTotal[sid];
-      if (t?.name) return String(t.name);
-    }
+    // ② tournamentTotal（全体）
+    try{
+      if (state?.tournamentTotal){
+        const t = state.tournamentTotal[sid];
+        if (t?.name) return String(t.name);
+      }
+    }catch(_){}
 
     // ③ national / world allTeamDefs（安全弁）
-    const allDefs = state?.national?.allTeamDefs || [];
-    const def = allDefs.find(x => String(x.id || x.teamId) === sid);
-    if (def?.name) return String(def.name);
+    //    - entry/core 実装差で allTeamDefs が「配列」or「MAP(object)」になり得るので両対応
+    try{
+      const allDefs = state?.national?.allTeamDefs;
+
+      if (allDefs){
+        // ▼ MAP(object) 形式: { TEAMID: {id/name/...}, ... }
+        if (!Array.isArray(allDefs) && typeof allDefs === 'object'){
+          const def = allDefs[sid];
+          if (def?.name) return String(def.name);
+          // defがCPU素体で name が無いケースもあるので、id/teamIdも拾う
+          if (def && (def.id || def.teamId)){
+            const nid = String(def.id || def.teamId);
+            if (nid && nid !== sid){
+              const def2 = allDefs[nid];
+              if (def2?.name) return String(def2.name);
+            }
+          }
+        }
+        // ▼ 配列形式: [{id/teamId,name,...}, ...]
+        else if (Array.isArray(allDefs)){
+          const def = allDefs.find(x => String(x?.id || x?.teamId) === sid);
+          if (def?.name) return String(def.name);
+        }
+      }
+    }catch(_){}
 
     return sid;
   }
@@ -64,25 +91,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const teams = (state?.teams ? state.teams.slice() : []);
 
     teams.sort((a,b)=>{
-      if (!!a.eliminated !== !!b.eliminated) return a.eliminated ? 1 : -1;
+      if (!!a?.eliminated !== !!b?.eliminated) return a.eliminated ? 1 : -1;
 
-      const ar = Number(a.eliminatedRound || 0);
-      const br = Number(b.eliminatedRound || 0);
+      const ar = Number(a?.eliminatedRound || 0);
+      const br = Number(b?.eliminatedRound || 0);
       if (ar !== br) return br - ar;
 
-      const ak = Number(a.kills_total || 0);
-      const bk = Number(b.kills_total || 0);
+      const ak = Number(a?.kills_total || 0);
+      const bk = Number(b?.kills_total || 0);
       if (ak !== bk) return bk - ak;
 
-      const ad = Number(a.downs_total || 0);
-      const bd = Number(b.downs_total || 0);
+      const ad = Number(a?.downs_total || 0);
+      const bd = Number(b?.downs_total || 0);
       if (ad !== bd) return ad - bd;
 
-      const apow = Number(a.power || 0);
-      const bpow = Number(b.power || 0);
+      const apow = Number(a?.power || 0);
+      const bpow = Number(b?.power || 0);
       if (apow !== bpow) return bpow - apow;
 
-      return String(a.name||a.id).localeCompare(String(b.name||b.id));
+      return String(a?.name||a?.id).localeCompare(String(b?.name||b?.id));
     });
 
     const rows = [];
@@ -91,11 +118,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const placement = index + 1;
       const placementP = calcPlacementPoint(placement);
 
-      const kp = Number(t.kills_total || 0);
-      const ap = Number(t.assists_total || 0);
+      const kp = Number(t?.kills_total || 0);
+      const ap = Number(t?.assists_total || 0);
 
-      const treasureCount = Number(t.treasure || 0);
-      const flagCount     = Number(t.flag || 0);
+      const treasureCount = Number(t?.treasure || 0);
+      const flagCount     = Number(t?.flag || 0);
 
       const treasureP = treasureCount * 3;
       const flagP     = flagCount * 5;
@@ -103,8 +130,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const total = placementP + kp + ap + treasureP + flagP;
 
       rows.push({
-        id: t.id,
-        name: resolveTeamName(state, t.id),
+        id: t?.id,
+        name: resolveTeamName(state, t?.id),
         placement,
         placementP,
         kp,
@@ -128,12 +155,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const arr = Array.isArray(rows) ? rows : [];
 
     arr.forEach(r=>{
-      const id = String(r.id);
+      const id = String(r?.id);
+
+      if (!id) return;
 
       if (!state.tournamentTotal[id]){
         state.tournamentTotal[id] = {
           id,
-          name: String(r.name || id),
+          name: String(r?.name || id),
 
           // 表示用（累積）
           sumTotal:0,
@@ -143,7 +172,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           sumTreasure:0,
           sumFlag:0,
 
-          // 内部用（将来/互換）
+          // internal（将来/互換）
           sumKills:0,
           sumAssists:0,
           sumDowns:0
@@ -152,12 +181,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       const t = state.tournamentTotal[id];
 
-      t.sumTotal       += Number(r.total || 0);
-      t.sumPlacementP  += Number(r.placementP || 0);
-      t.sumKP          += Number(r.kp || 0);
-      t.sumAP          += Number(r.ap || 0);
-      t.sumTreasure    += Number(r.treasure || 0);
-      t.sumFlag        += Number(r.flag || 0);
+      t.sumTotal       += Number(r?.total || 0);
+      t.sumPlacementP  += Number(r?.placementP || 0);
+      t.sumKP          += Number(r?.kp || 0);
+      t.sumAP          += Number(r?.ap || 0);
+      t.sumTreasure    += Number(r?.treasure || 0);
+      t.sumFlag        += Number(r?.flag || 0);
 
       // 互換：別名参照されても破綻しないように同期
       t.sumKills        = t.sumKP;
@@ -165,13 +194,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       // downs_total は rows からは来ないこともあるので、state.teams から拾えるときだけ拾う
       try{
-        const team = state?.teams?.find(x => String(x.id) === id);
+        const team = state?.teams?.find(x => String(x?.id) === id);
         if (team){
-          t.sumDowns += Number(team.downs_total || 0);
+          t.sumDowns += Number(team?.downs_total || 0);
         }
       }catch(_){}
 
-      t.name = String(r.name || t.name || id);
+      t.name = String(r?.name || t.name || id);
     });
 
     buildCurrentOverall(state);
@@ -183,7 +212,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function buildCurrentOverall(state){
     if (!state) return;
 
-    const ids = Array.isArray(state.teams) ? state.teams.map(t=>String(t.id)) : [];
+    const ids = Array.isArray(state.teams) ? state.teams.map(t=>String(t?.id)) : [];
 
     const arr = ids.map(id=>{
       const t = state.tournamentTotal ? state.tournamentTotal[id] : null;
@@ -270,14 +299,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (!teams.length) return '???';
 
       teams.sort((a,b)=>{
-        if (!!a.eliminated !== !!b.eliminated) return a.eliminated ? 1 : -1;
-        const ar = Number(a.eliminatedRound || 0);
-        const br = Number(b.eliminatedRound || 0);
+        if (!!a?.eliminated !== !!b?.eliminated) return a.eliminated ? 1 : -1;
+        const ar = Number(a?.eliminatedRound || 0);
+        const br = Number(b?.eliminatedRound || 0);
         if (ar !== br) return br - ar;
-        const ak = Number(a.kills_total || 0);
-        const bk = Number(b.kills_total || 0);
+        const ak = Number(a?.kills_total || 0);
+        const bk = Number(b?.kills_total || 0);
         if (ak !== bk) return bk - ak;
-        return String(a.name||a.id).localeCompare(String(b.name||b.id));
+        return String(a?.name||a?.id).localeCompare(String(b?.name||b?.id));
       });
 
       const best = teams[0];
