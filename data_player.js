@@ -36,9 +36,9 @@ window.MOBBR = window.MOBBR || {};
   };
 
   const DEFAULT_BASE_STATS = {
-    A: { hp: 65, mental: 70, aim: 55, agi: 50, tech: 60, support: 55, scan: 60 },
-    B: { hp: 60, mental: 55, aim: 70, agi: 65, tech: 55, support: 45, scan: 50 },
-    C: { hp: 70, mental: 60, aim: 50, agi: 45, tech: 55, support: 70, scan: 65 }
+    A: { hp: 165, mental: 70, aim: 55, agi: 50, tech: 60, support: 55, scan: 60 },
+    B: { hp: 160, mental: 55, aim: 70, agi: 65, tech: 55, support: 45, scan: 50 },
+    C: { hp: 170, mental: 60, aim: 50, agi: 45, tech: 55, support: 70, scan: 65 }
   };
 
   function buildEmptyExp(){
