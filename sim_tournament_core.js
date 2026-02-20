@@ -212,9 +212,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       { key:'AB', groups:['A','B'] },
       { key:'CD', groups:['C','D'] },
       { key:'AC', groups:['A','C'] },
-      { key:'AD', groups:['A','D'] },
       { key:'BC', groups:['B','C'] },
       { key:'BD', groups:['B','D'] },
+      { key:'AD', groups:['A','D'] },
     ];
 
     return { groups:{A,B,C,D}, sessions };
@@ -482,9 +482,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       { key:'AB', groups:['A','B'] },
       { key:'CD', groups:['C','D'] },
       { key:'AC', groups:['A','C'] },
-      { key:'AD', groups:['A','D'] },
       { key:'BC', groups:['B','C'] },
-      { key:'BD', groups:['B','D'] }
+      { key:'BD', groups:['B','D'] },
+      { key:'AD', groups:['A','D'] }// ← 最後
     ]};
 
     const allTeamDefs = { PLAYER: player };
