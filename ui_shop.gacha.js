@@ -32,7 +32,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ===== 価格 =====
   const COST_1  = 100;   // 1回
-  const COST_10 = 900;   // 10連
+  const COST_10 = 10;   // 10連
   const COST_SR_G = 0;   // SR以上確定：Gは取らない（CDP100のみ）
 
   // ===== CDP =====
