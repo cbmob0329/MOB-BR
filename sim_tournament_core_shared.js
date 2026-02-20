@@ -1,20 +1,25 @@
-/* =========================================================
-   sim_tournament_core_shared.js（FULL）
-   - sim_tournament_core.js を 3分割するための「共通土台」
-   - state/共通関数/内部ユーティリティを集約（削除ゼロで移植）
-   - step本体は sim_tournament_core_step.js に置く
-   - start/export は sim_tournament_core.js（entry）に置く
-
-   ✅FIX（重要）:
-   - setRequest を「{ type, payload }」に統一（entry/ui と整合）
-     かつ互換のため payload の直置きも同時保持
-   - setCenter3 を「state.center {a,b,c}」に統一（entry/ui と整合）
-     かつ互換のため state.ui.center3 も同時保持
-
-   ✅追加FIX（今回）:
-   - tournamentResult(R) を “固定参照” しない（ロード順/差し替えで総合0になるのを防止）
-   ========================================================= */
 'use strict';
+
+/*
+  sim_tournament_core_shared.js（FULL）
+  - sim_tournament_core.js を 3分割するための「共通土台」
+  - state/共通関数/内部ユーティリティを集約（削除ゼロで移植）
+  - step本体は sim_tournament_core_step.js に置く
+  - start/export は sim_tournament_core.js（entry）に置く
+
+  ✅FIX（重要）:
+  - setRequest を「{ type, payload }」に統一（entry/ui と整合）
+    かつ互換のため payload の直置きも同時保持
+  - setCenter3 を「state.center {a,b,c}」に統一（entry/ui と整合）
+    かつ互換のため state.ui.center3 も同時保持
+
+  ✅追加FIX（今回）:
+  - tournamentResult(R) を “固定参照” しない（ロード順/差し替えで総合0になるのを防止）
+
+  ✅追加（今回の要望）:
+  - NATIONAL / WORLD の左上表示で「MATCH」を必ず表記できるように、
+    _setNationalBanners() で bannerLeft に MATCH を常時含める（bannerRight は ROUND/降下 等の上書き用）
+*/
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.sim = window.MOBBR.sim || {};
@@ -519,8 +524,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const sc = Number(s.sessionCount||6);
     const key = String(s.sessions?.[si]?.key || `S${si+1}`);
 
-    state.bannerLeft  = `NATIONAL ${key} (${si+1}/${sc})`;
-    state.bannerRight = `MATCH ${state.matchIndex} / ${state.matchCount}`;
+    // ✅ MATCHを必ず常時表示（bannerRightはROUND/降下など上書き用）
+    state.bannerLeft  = `NATIONAL ${key} (${si+1}/${sc})  MATCH ${state.matchIndex} / ${state.matchCount}`;
+    state.bannerRight = ''; // ROUND/降下/AUTO 等で上書きされる前提
   }
 
   function _getSessionKey(idx){
