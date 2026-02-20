@@ -1,3 +1,13 @@
+'use strict';
+
+/*
+  tournament.css（フル） v3.2.4
+  - ✅ v3.2.3 の見た目を崩さず維持
+  - ✅ 修正：左上バナー/右上ラウンド/メンバー名が「見切れない」
+     -> 1行固定(ellipsis) をやめ、2行クランプ（2行まで表示、超過は…）
+  - ✅ sessionBar は v3.2.3 のまま（位置だけ微調整：バナー2行化に対応）
+*/
+
 /* tournament.css（フル） v3.2.3
   - ✅ v3.2.2 の見た目を一切崩さず維持
   - ✅ 追加：sessionBar（AB CD AC AD BC BD）用スタイルだけを“末尾に追記”
@@ -72,6 +82,9 @@
   justify-content:space-between;
   gap:10px;
   z-index: 2;
+
+  /* ✅ 2行表示時のズレを抑える */
+  align-items:flex-start;
 }
 
 /* ✅ 交戦中は上部のまとまりを中央寄せ */
@@ -97,9 +110,24 @@
   letter-spacing:.06em;
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
 
-  white-space: nowrap;
+  /* ✅ ここが本命：1行固定をやめて2行まで表示（超過は…） */
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+
+  line-height: 1.08;
+  min-height: 34px; /* 2段目が切れない高さを確保 */
+}
+
+/* 交戦中は詰まるので少しだけ締める（でも2行は維持） */
+#mobbrTournamentOverlay.isBattle .banner .left,
+#mobbrTournamentOverlay.isBattle .banner .right{
+  line-height: 1.06;
+  min-height: 32px;
 }
 
 /* ✅ event icon（右側・大きく） */
@@ -160,12 +188,25 @@
   border: 1px solid rgba(255,255,255,.14);
   color: rgba(255,255,255,.95);
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
-  min-height: 16px;
 
-  /* ✅ 1行固定 */
-  white-space: nowrap;
+  /* ✅ 2行まで表示（IGL行が切れない） */
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+
+  line-height: 1.08;
+  min-height: 34px; /* 2行ぶん確保 */
+}
+
+/* 交戦中は上部情報が詰まるので少しだけ締める */
+#mobbrTournamentOverlay.isBattle .char .name{
+  font-size: 12px;
+  min-height: 32px;
+  line-height: 1.06;
 }
 
 #mobbrTournamentOverlay .char img{
@@ -434,7 +475,10 @@
   position:absolute;
   left: 12px;
   right: 12px;
-  top: 56px;              /* banner(top:12px)の下 */
+
+  /* ✅ バナーが2行になっても干渉しないように少し下げる */
+  top: 62px;
+
   display:none;           /* JSで必要時に表示 */
   gap: 6px;
   justify-content: space-between;
