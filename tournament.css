@@ -1,25 +1,8 @@
-'use strict';
-
-/*
-  tournament.css（フル） v3.2.4
-  - ✅ v3.2.3 の見た目を崩さず維持
-  - ✅ 修正：左上バナー/右上ラウンド/メンバー名が「見切れない」
-     -> 1行固定(ellipsis) をやめ、2行クランプ（2行まで表示、超過は…）
-  - ✅ sessionBar は v3.2.3 のまま（位置だけ微調整：バナー2行化に対応）
-*/
-
-/* tournament.css（フル） v3.2.3
-  - ✅ v3.2.2 の見た目を一切崩さず維持
-  - ✅ 追加：sessionBar（AB CD AC AD BC BD）用スタイルだけを“末尾に追記”
-     ※DOM追加＆更新は ui_tournament.js 側で行う前提
-*/
-
-/* tournament.css（フル） v3.2.2
-  - ✅ 交戦開始BATTLEバナーを「プレイヤーと敵の間」へ（見切れ解消）
-  - ✅ 交戦後WIN/LOSEを中央巨大（.isResultStamp）
-  - ✅ イベント演出：eventIconふわふわ
-  - ✅ チーム名は1行（nowrap + ellipsis）
-  - ✅ チャンピオン表示で右チーム（画像）を表示（isChampion時）
+/* tournament.css（フル） v3.2.4
+  - ✅ v3.2.3 の見た目を維持しつつ、以下を修正
+    1) 上部バナー（左: NATIONAL.. + MATCH / 右: ROUND）を2行表示OKにして見切れ根絶
+    2) ネームプレートを 4行（TEAM + IGL + AT + SUP）まで表示OKに（IGL/AT/SUP 3段許可）
+    3) BATTLEバナーを「キャラのちょい上」に上げて被り軽減
 */
 
 :root{
@@ -82,9 +65,6 @@
   justify-content:space-between;
   gap:10px;
   z-index: 2;
-
-  /* ✅ 2行表示時のズレを抑える */
-  align-items:flex-start;
 }
 
 /* ✅ 交戦中は上部のまとまりを中央寄せ */
@@ -95,9 +75,10 @@
 #mobbrTournamentOverlay.isBattle .banner .left,
 #mobbrTournamentOverlay.isBattle .banner .right{
   padding: 8px 12px;
-  font-size: 15px;
+  font-size: 14px;
 }
 
+/* ✅ バナー：2行表示OK（見切れ根絶） */
 #mobbrTournamentOverlay .banner .left,
 #mobbrTournamentOverlay .banner .right{
   background: rgba(0,0,0,.60);
@@ -110,24 +91,17 @@
   letter-spacing:.06em;
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
 
-  /* ✅ ここが本命：1行固定をやめて2行まで表示（超過は…） */
+  /* ここが重要：nowrap/ellipsis をやめて “2行まで” 表示 */
   white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 2;   /* 2行まで */
+  line-height: 1.10;
 
-  line-height: 1.08;
-  min-height: 34px; /* 2段目が切れない高さを確保 */
-}
-
-/* 交戦中は詰まるので少しだけ締める（でも2行は維持） */
-#mobbrTournamentOverlay.isBattle .banner .left,
-#mobbrTournamentOverlay.isBattle .banner .right{
-  line-height: 1.06;
-  min-height: 32px;
+  min-width: 0;            /* flex内の省略バグ対策 */
 }
 
 /* ✅ event icon（右側・大きく） */
@@ -176,37 +150,40 @@
   display:flex !important;
 }
 
+/* ✅ ネームプレート：TEAM + IGL + AT + SUP の “4行” までOK（見切れ防止） */
 #mobbrTournamentOverlay .char .name{
   width: 100%;
-  text-align:center;
+  text-align:left;                 /* 2行以上になるので左寄せの方が読みやすい */
   font-weight: 1000;
-  font-size: 13px;
-  letter-spacing:.05em;
-  padding: 7px 8px;
+  font-size: 12px;
+  letter-spacing:.04em;
+  padding: 7px 10px;
   border-radius: 12px;
   background: rgba(0,0,0,.55);
   border: 1px solid rgba(255,255,255,.14);
   color: rgba(255,255,255,.95);
   text-shadow: 0 3px 10px rgba(0,0,0,.55);
 
-  /* ✅ 2行まで表示（IGL行が切れない） */
+  /* ここが重要：1行固定をやめて 4行まで表示 */
   white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;           /* TEAM + IGL + AT + SUP */
+  line-height: 1.12;
 
-  line-height: 1.08;
-  min-height: 34px; /* 2行ぶん確保 */
+  /* 高さも確保（4行入る最低高さ） */
+  min-height: 54px;
 }
 
-/* 交戦中は上部情報が詰まるので少しだけ締める */
+/* ✅ 交戦中はさらに詰まるので、少しだけ小さくして4行を維持 */
 #mobbrTournamentOverlay.isBattle .char .name{
-  font-size: 12px;
-  min-height: 32px;
-  line-height: 1.06;
+  font-size: 11px;
+  padding: 6px 9px;
+  min-height: 52px;
+  -webkit-line-clamp: 4;
 }
 
 #mobbrTournamentOverlay .char img{
@@ -235,11 +212,12 @@
   z-index: 3;
 }
 
-/* ✅ 交戦開始BATTLEバナー：プレイヤーと敵の間（見切れ防止）
-   squareBg: top=64px height=320px → 中央は約224px付近
+/* ✅ 交戦開始BATTLEバナー：キャラの“ちょい上”へ（被り軽減）
+   squareBg: top=64px height=320px
+   chars画像は下に寄るので、ここを上げる
 */
 #mobbrTournamentOverlay.isBattle .centerStamp{
-  top: 228px;
+  top: 200px;     /* ← v3.2.3(228px)より上へ */
   height: 44px;
   z-index: 7;
 }
@@ -249,7 +227,7 @@
 
 /* ✅ 交戦結果スタンプ（WIN/LOSE）だけ中央巨大 */
 #mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp{
-  top: 170px;         /* キャラに被ってOK：中央寄せ */
+  top: 170px;
   height: 140px;
   z-index: 12;
 }
@@ -475,10 +453,7 @@
   position:absolute;
   left: 12px;
   right: 12px;
-
-  /* ✅ バナーが2行になっても干渉しないように少し下げる */
-  top: 62px;
-
+  top: 56px;              /* banner(top:12px)の下 */
   display:none;           /* JSで必要時に表示 */
   gap: 6px;
   justify-content: space-between;
@@ -534,5 +509,12 @@
   #mobbrTournamentOverlay .sessionBar .seg{
     font-size: 12px;
     letter-spacing: .06em;
+  }
+
+  /* 小画面はバナー文字も少し詰める */
+  #mobbrTournamentOverlay .banner .left,
+  #mobbrTournamentOverlay .banner .right{
+    font-size: 14px;
+    -webkit-line-clamp: 2;
   }
 }
