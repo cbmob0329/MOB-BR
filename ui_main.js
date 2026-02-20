@@ -62,7 +62,7 @@ window.MOBBR = window.MOBBR || {};
 
   function weeklyGoldByRank(rank){
     if (rank >= 1 && rank <= 5) return 500;
-    if (rank >= 6 && rank <= 10) return 800;
+    if (rank >= 6 && rank <= 10) return 8000000;
     if (rank >= 11 && rank <= 20) return 1000;
     if (rank >= 21 && rank <= 30) return 2000;
     return 3000;
