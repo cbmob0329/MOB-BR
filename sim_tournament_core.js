@@ -1,17 +1,14 @@
 /* =========================================================
-   sim_tournament_core.js（FULL） v4.6
+   sim_tournament_core.js（FULL） v4.7
    - tournament core (entry)
    - ✅ 重要：shared(_tcore) を「上書きしない」
      → shared/step と構造がズレると National で teamDef/name/image が壊れる
-   - ✅ 修正（今回の要件）:
-     1) Nationalで AB以外のキャラクター/チーム名が読めない問題を解消
-        → entry側の旧仕様 _tcore 上書きを廃止し、shared仕様の
-           nat.plan(groups/sessions) + nat.allTeamDefs(map) を使う
-     2) ローカル勝ち上がりTOP10を National roster に反映
-        - Playerが勝ち上がり：PLAYER + 9チーム（＝ localIdsは9）
-        - Playerが勝ち上がってない：10チーム（＝ localIdsは10）
-        ※ plan builder は 9/10 両対応（ここで実装）
-  ========================================================= */
+   - ✅ v4.7 追加（World編成を“確定ルール”で実装）
+     - worldQualifiedIds(10) = nationalTop8 + lastchanceTop2 を “nationalTop10” として扱う
+     - world30 = world basePower上位10確定 + 残りからランダム20
+     - 合計40を A〜D (10ずつ) に分配（PLAYERは必ずAグループ）
+     - tour_state.worldRosterIds / worldGroups を保存し、phase間で再利用
+========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
@@ -139,6 +136,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
+  function shuffleSafe(arr){
+    if (L && typeof L.shuffle === 'function') return L.shuffle(arr);
+    // fallback Fisher-Yates
+    const a = (arr||[]).slice();
+    for (let i=a.length-1;i>0;i--){
+      const j = (Math.random()*(i+1))|0;
+      const tmp = a[i]; a[i]=a[j]; a[j]=tmp;
+    }
+    return a;
+  }
+
   // =========================================================
   // ✅ National plan builder (9/10 local reps supported)
   //   - groups(A,B,C,D) are arrays of teamIds (PLAYER除く)
@@ -146,8 +154,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   //   - target sizes: A=9, B=10, C=10, D=10（合計39）
   // =========================================================
   function buildNationalPlan(localIds, nationalPoolIds){
-    const local = L.shuffle(uniq(localIds));
-    const nat = L.shuffle(uniq(nationalPoolIds));
+    const local = shuffleSafe(uniq(localIds));
+    const nat = shuffleSafe(uniq(nationalPoolIds));
 
     const A = [];
     const B = [];
@@ -221,6 +229,117 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // ✅ World roster builder (確定ルール)
+  //   - nationalTop10: tourState.worldQualifiedIds（10想定）
+  //   - world30: basePower top10確定 + 残りからランダム20
+  //   - 40をA〜Dに分配（PLAYERは必ずA）
+  //   - tourState.worldRosterIds / worldGroups 保存（phase間で固定）
+  // =========================================================
+  function ensureWorldStateObj(ts){
+    const t = ts || {};
+    if (!t.world || typeof t.world !== 'object') t.world = { phase:'qual' };
+    if (!t.world.phase) t.world.phase = 'qual';
+    return t;
+  }
+
+  function getPlayerRuntime(){
+    return (T._makePlayerRuntime && typeof T._makePlayerRuntime === 'function')
+      ? T._makePlayerRuntime()
+      : {
+          id:'PLAYER',
+          name:'PLAYER TEAM',
+          isPlayer:true,
+          power: (L.calcPlayerTeamPower ? Number(L.calcPlayerTeamPower()||55) : 55)
+        };
+  }
+
+  function pickWorld30IdsExcluding(excludeSet){
+    const allWorldDefs = getCpuByPrefix('world').slice(); // world01..world40想定
+    // basePowerで降順
+    allWorldDefs.sort((a,b)=> Number(b?.basePower||0) - Number(a?.basePower||0));
+
+    const top10 = [];
+    const rest = [];
+
+    for (const def of allWorldDefs){
+      const id = String(def?.teamId || def?.id || '');
+      if (!id) continue;
+      if (excludeSet && excludeSet.has(id)) continue;
+      if (top10.length < 10) top10.push(id);
+      else rest.push(id);
+    }
+
+    const pick20 = shuffleSafe(rest).slice(0,20);
+    return uniq(top10.concat(pick20)).slice(0,30);
+  }
+
+  function buildWorldGroups40(roster40Ids){
+    // roster40Ids: PLAYER含む（または後で入れる）
+    let ids = uniq(roster40Ids || []);
+    if (!ids.includes('PLAYER')) ids.unshift('PLAYER');
+
+    // 40に満たない場合の安全弁（worldから補完）
+    if (ids.length < 40){
+      const need = 40 - ids.length;
+      const ex = new Set(ids);
+      const add = pickWorld30IdsExcluding(ex); // 30しか返らないが、まず足りる想定
+      for (const id of add){
+        if (ids.length >= 40) break;
+        if (ex.has(id)) continue;
+        ex.add(id);
+        ids.push(id);
+      }
+    }
+
+    ids = ids.slice(0,40);
+
+    // PLAYERをAグループ固定：Aは「PLAYER + 9」
+    const rest = ids.filter(x=>x!=='PLAYER');
+    const sh = shuffleSafe(rest);
+
+    const A = sh.slice(0,9);
+    const B = sh.slice(9,19);
+    const C = sh.slice(19,29);
+    const D = sh.slice(29,39);
+
+    return { ids, groups:{ A, B, C, D } };
+  }
+
+  function buildWorldPlanFromGroups(groups){
+    const A = (groups?.A||[]).slice(0,9);
+    const B = (groups?.B||[]).slice(0,10);
+    const C = (groups?.C||[]).slice(0,10);
+    const D = (groups?.D||[]).slice(0,10);
+
+    const sessions = [
+      { key:'AB', groups:['A','B'] },
+      { key:'CD', groups:['C','D'] },
+      { key:'AC', groups:['A','C'] },
+      { key:'BC', groups:['B','C'] },
+      { key:'BD', groups:['B','D'] },
+      { key:'AD', groups:['A','D'] }
+    ];
+
+    return { groups:{A,B,C,D}, sessions };
+  }
+
+  function buildAllTeamDefsFromIds(idsNoPlayer, playerRuntime){
+    const allTeamDefs = {};
+    allTeamDefs.PLAYER = playerRuntime;
+
+    for (const id of (idsNoPlayer||[])){
+      const def = getCpuById(id);
+      if (!def) continue;
+      const rt = (T._mkRuntimeTeamFromCpuDef && typeof T._mkRuntimeTeamFromCpuDef === 'function')
+        ? T._mkRuntimeTeamFromCpuDef(def)
+        : null;
+      if (rt) allTeamDefs[id] = rt;
+    }
+
+    return allTeamDefs;
+  }
+
+  // =========================================================
   // State creator (shared/step互換)
   // =========================================================
   function makeBaseState(mode){
@@ -263,11 +382,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // START APIs
   // =========================================================
   function startLocalTournament(){
-    const player = (T._makePlayerRuntime && typeof T._makePlayerRuntime === 'function')
-      ? T._makePlayerRuntime()
-      : {
-          id:'PLAYER', name:'PLAYER TEAM', isPlayer:true, power: (L.calcPlayerTeamPower ? Number(L.calcPlayerTeamPower()||55) : 55)
-        };
+    const player = getPlayerRuntime();
 
     const locals = getCpuByPrefix('local').slice(0,19);
     const cpu19 = locals.map(def => (T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null)).filter(Boolean);
@@ -338,11 +453,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const plan = buildNationalPlan(localIds, nationalIds);
 
     // --- build allTeamDefs MAP (runtime teams) ---
-    const playerRuntime = (T._makePlayerRuntime && typeof T._makePlayerRuntime === 'function')
-      ? T._makePlayerRuntime()
-      : {
-          id:'PLAYER', name:'PLAYER TEAM', isPlayer:true, power: (L.calcPlayerTeamPower ? Number(L.calcPlayerTeamPower()||55) : 55)
-        };
+    const playerRuntime = getPlayerRuntime();
 
     const allIdsNoPlayer = uniq([]
       .concat(plan.groups.A||[])
@@ -407,7 +518,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
-  // LastChance / World start (keep API; roster keys handled by post/other modules)
+  // LastChance / World start
   // =========================================================
   function startLastChanceTournament(){
     // 既存のpost/logic側で必要なkeyを作っている前提。
@@ -419,7 +530,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const teams = [];
     for (const id of slice){
       if (id === 'PLAYER'){
-        teams.push(T._makePlayerRuntime ? T._makePlayerRuntime() : { id:'PLAYER', isPlayer:true, name:'PLAYER', power:55 });
+        teams.push(getPlayerRuntime());
       }else{
         const def = getCpuById(id);
         const rt = def && T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null;
@@ -453,49 +564,117 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function startWorldTournament(phase){
-    // Worldの厳密な編成は既存モジュール/キーに依存。
-    // ここは shared/step が動くための最低限のstateを用意（壊さない）。
-    const ph = String(phase||'qual');
-    const st = makeBaseState('world');
-    st.worldPhase = ph;
+    const ph = String(phase || 'qual').trim().toLowerCase();
 
-    // roster key があればそれを使う
-    const tourState = getJSON(K.tourState, {}) || {};
-    const ids = Array.isArray(tourState.worldRosterIds) ? uniq(tourState.worldRosterIds) : [];
+    // -----------------------------
+    // tour_state から World前提を取得
+    // -----------------------------
+    let tourState = getJSON(K.tourState, {}) || {};
+    tourState = ensureWorldStateObj(tourState);
 
-    const player = T._makePlayerRuntime ? T._makePlayerRuntime() : { id:'PLAYER', isPlayer:true, name:'PLAYER', power:55 };
-    const outIds = ids.length ? ids.slice(0,40) : [];
-
-    if (!outIds.includes('PLAYER')) outIds.unshift('PLAYER');
-    outIds.length = Math.min(40, outIds.length);
-
-    // build plan with random split but keep PLAYER in A via shared builder behavior in step
-    const rest = outIds.filter(x=>x!=='PLAYER');
-    const sh = L.shuffle ? L.shuffle(rest) : rest.slice();
-
-    const A = sh.slice(0,9);
-    const B = sh.slice(9,19);
-    const C = sh.slice(19,29);
-    const D = sh.slice(29,39);
-
-    const plan = { groups:{A,B,C,D}, sessions:[
-      { key:'AB', groups:['A','B'] },
-      { key:'CD', groups:['C','D'] },
-      { key:'AC', groups:['A','C'] },
-      { key:'BC', groups:['B','C'] },
-      { key:'BD', groups:['B','D'] },
-      { key:'AD', groups:['A','D'] }// ← 最後
-    ]};
-
-    const allTeamDefs = { PLAYER: player };
-    const allNoPlayer = uniq([].concat(A,B,C,D));
-    for (const id of allNoPlayer){
-      const def = getCpuById(id);
-      const rt = def && T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null;
-      if (rt) allTeamDefs[id] = rt;
+    // phaseは detail/app.js 側が主、ここでは保険で同期
+    if (ph === 'qual' || ph === 'wl' || ph === 'final'){
+      tourState.world.phase = ph;
+    }else{
+      tourState.world.phase = 'qual';
     }
 
+    // -----------------------------
+    // 1) roster40 / groups を “固定” できるなら再利用
+    // -----------------------------
+    const savedRoster = Array.isArray(tourState.worldRosterIds) ? uniq(tourState.worldRosterIds) : [];
+    const savedGroups = tourState.worldGroups && typeof tourState.worldGroups === 'object' ? tourState.worldGroups : null;
+
+    let roster40Ids = [];
+    let groups = null;
+
+    if (savedRoster.length >= 39 && savedGroups && savedGroups.A && savedGroups.B && savedGroups.C && savedGroups.D){
+      // 既に構築済み（phase間は同じ40＆同じグループを使う）
+      roster40Ids = savedRoster.slice(0,40);
+      groups = {
+        A: uniq(savedGroups.A).slice(0,9),
+        B: uniq(savedGroups.B).slice(0,10),
+        C: uniq(savedGroups.C).slice(0,10),
+        D: uniq(savedGroups.D).slice(0,10)
+      };
+    }else{
+      // -----------------------------
+      // 2) ルール通りに World40 を生成
+      //    nationalTop10 + world30（top10確定 + random20）
+      // -----------------------------
+      const nationalTop10 = uniq(Array.isArray(tourState.worldQualifiedIds) ? tourState.worldQualifiedIds : []).slice(0,10);
+
+      // safety: worldQualifiedIdsが空でも壊さない
+      const exclude = new Set(nationalTop10);
+      exclude.add('PLAYER');
+
+      const world30 = pickWorld30IdsExcluding(exclude); // 30
+      // 参加40（PLAYERは含めない。後で必ず入る）
+      roster40Ids = uniq(nationalTop10.concat(world30));
+      // 39までならOK（PLAYERを後で足す）
+      // ただし、万一重複や不足があれば補完
+      groups = buildWorldGroups40(['PLAYER'].concat(roster40Ids)).groups;
+      roster40Ids = ['PLAYER'].concat(uniq(roster40Ids)).slice(0,40);
+
+      // 保存（phase間固定）
+      tourState.worldRosterIds = roster40Ids.slice(0,40);
+      tourState.worldGroups = {
+        A: groups.A.slice(0,9),
+        B: groups.B.slice(0,10),
+        C: groups.C.slice(0,10),
+        D: groups.D.slice(0,10)
+      };
+    }
+
+    // 保存（phaseも含めて）
+    setJSON(K.tourState, tourState);
+
+    // -----------------------------
+    // 3) shared/step互換の state を作る
+    //    ※今のstep資産を最大限活かすため、
+    //      “national構造(plan/allTeamDefs/sessions)”を worldでも使う
+    // -----------------------------
+    const playerRuntime = getPlayerRuntime();
+    const plan = buildWorldPlanFromGroups(groups);
+
+    const allNoPlayer = uniq([].concat(plan.groups.A||[], plan.groups.B||[], plan.groups.C||[], plan.groups.D||[])).filter(Boolean);
+
+    const allTeamDefs = buildAllTeamDefsFromIds(allNoPlayer, playerRuntime);
+
+    // 欠け補完（壊さない）
+    if (Object.keys(allTeamDefs).length < (1 + allNoPlayer.length)){
+      const fallback = uniq(
+        getCpuByPrefix('world').map(t=>String(t?.teamId||t?.id||'')).filter(Boolean)
+          .concat(getCpuByPrefix('national').map(t=>String(t?.teamId||t?.id||'')).filter(Boolean))
+          .concat(getCpuByPrefix('local').map(t=>String(t?.teamId||t?.id||'')).filter(Boolean))
+      );
+
+      for (const id of allNoPlayer){
+        if (allTeamDefs[id]) continue;
+        if (!fallback.includes(id)) continue;
+        const def = getCpuById(id);
+        const rt = def && T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null;
+        if (rt) allTeamDefs[id] = rt;
+      }
+    }
+
+    const st = makeBaseState('world');
+
+    // world専用メタ（postやUI側が使えるように）
+    st.world = {
+      phase: tourState?.world?.phase || ph || 'qual',
+      roster40Ids: ['PLAYER'].concat(allNoPlayer).slice(0,40),
+      groups: {
+        A: (plan.groups.A||[]).slice(0,9),
+        B: (plan.groups.B||[]).slice(0,10),
+        C: (plan.groups.C||[]).slice(0,10),
+        D: (plan.groups.D||[]).slice(0,10)
+      }
+    };
+
+    // step互換（現行資産の再利用）
     st.national = {
+      split: Number(tourState.split||0) || 1,
       plan,
       allTeamDefs,
       sessions: plan.sessions,
@@ -504,13 +683,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       doneSessions: []
     };
 
-    st.teams = (T._buildTeamsForNationalSession ? T._buildTeamsForNationalSession(allTeamDefs, plan, 0) : []);
+    // 初期20（AB）
+    st.teams = (T._buildTeamsForNationalSession && typeof T._buildTeamsForNationalSession === 'function')
+      ? T._buildTeamsForNationalSession(allTeamDefs, plan, 0)
+      : [];
+
     for (const t of st.teams) T.ensureTeamRuntimeShape(t);
 
+    // total for 40
     st.tournamentTotal = initTotalForIds(['PLAYER'].concat(allNoPlayer));
 
     T.setState(st);
-    T.setRequest('openTournament', { mode:'world', phase: ph });
+    T.setRequest('openTournament', { mode:'world', phase: st.world.phase });
     return st;
   }
 
