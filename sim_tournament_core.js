@@ -672,6 +672,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     };
 
+    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+    // ✅ 追加（破壊ゼロ）：step.js(v4.7) は state.worldPhase を見て段階判定する
+    //   ここを同期しないと WL/FINAL でも常に QUAL 扱いになってしまう
+    st.worldPhase = st.world.phase;
+    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
     // step互換（現行資産の再利用）
     st.national = {
       split: Number(tourState.split||0) || 1,
