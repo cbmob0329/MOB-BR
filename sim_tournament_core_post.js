@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core_post.js（FULL） v4.3
+   sim_tournament_core_post.js（FULL） v4.4
    - ローカル/ナショナル/ラストチャンス/ワールド終了処理：
      権利付与 + tourState更新 + 次大会算出API
    - ✅ 週進行（year/month/week/gold/recent）は一切しない（app.jsに一本化）
@@ -7,10 +7,10 @@
    - ✅ 大会終了は mobbr:goMain(detail.advanceWeeks=1) で統一
    - ✅ nextTour更新は app.js が週進行後に呼ぶ（setNextTourFromState を公開）
 
-   v4.3 変更点（重要）
-   - ✅ LastChance は TOP2（固定）に修正
-   - ✅ National 終了時に lastNationalSortedIds(40) を保存（LastChance roster用）
-   - ✅ World権利10（National TOP8 + LastChance TOP2）を worldQualifiedIds に保存
+   v4.4 変更点（重要）
+   - ✅ LastChance 終了時に lastChanceSortedIds(20) を保存（World権利/デバッグ/再現用）
+   - ✅ World開始に備え、worldRosterIds/worldGroups は core側が作るが、
+      post側は “壊さない” ため触らない（存在しても保持）
 ========================================================= */
 'use strict';
 
@@ -288,6 +288,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     tourState.qualifiedWorld = false;
     tourState.worldQualifiedIds = []; // 権利10をここで空に
     tourState.lastNationalSortedIds = []; // ロスター元も空に
+    tourState.lastChanceSortedIds = [];   // ✅ v4.4: 追加（安全）
+    tourState.worldRosterIds = [];        // ✅ v4.4: 追加（coreが作るがここで空に）
+    tourState.worldGroups = null;         // ✅ v4.4: 追加
     tourState.world = { phase: 'qual' };
 
     tourState.lastLocalRank = rank;
@@ -352,6 +355,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // ✅ 権利8保存
       const top8 = sortedIds40.slice(0,8);
       tourState.worldQualifiedIds = top8.slice();
+
+      // ✅ 既存のworldRoster/groupsがあっても “この時点では” 作り直しを強制しない
+      // （core側が startWorldTournament 時に必要なら作る）
     }else if (lastChanceUnlocked){
       tourState.qualifiedWorld = false; // まだ権利無し（LCで取る）
       tourState.clearedNational = false;
@@ -395,6 +401,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // - 参加：National 9〜28位の20チーム（core側で生成）
   // - 賞金無し / 企業ランク変動無し（ここでは触らない）
   // - ✅ TOP2 を worldQualifiedIds に追加して合計10を確定
+  // - ✅ v4.4: lastChanceSortedIds(20) を保存
   // ============================================
   function onLastChanceTournamentFinished(state, total){
     const { rank, list } = getRankFromTotal(total);
@@ -403,6 +410,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
 
     tourState.lastLastChanceRank = rank;
+
+    // ✅ v4.4: 20並び保存（PLAYER含む可能性あり）
+    const sortedIds20 = list.map(x => String(x?.id||'')).filter(Boolean);
+    tourState.lastChanceSortedIds = sortedIds20;
 
     const qualifiedWorld = (rank > 0 && rank <= 2); // ✅ TOP2固定
 
@@ -435,6 +446,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // National8が無いケースは本来起きないが、安全弁でそのまま保存。
       tourState.worldQualifiedIds = merged.slice(0,10);
 
+      // ✅ roster/groups が既に存在しても “壊さない” ためここでは触らない
+      // （core側 startWorldTournament で必要なら作り直し/保存する）
     }else{
       tourState.qualifiedWorld = false;
       tourState.stage = 'done';
@@ -551,6 +564,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // split終了なので world権利は消す（次splitへ）
     tourState.qualifiedWorld = false;
     tourState.worldQualifiedIds = [];
+
+    // ✅ roster/groups は残しても害はないが、次splitで混乱しやすいのでここで掃除（壊さない範囲）
+    //   - ただし「再現したい」場合は lastResult で追えるのでOK
+    tourState.worldRosterIds = [];
+    tourState.worldGroups = null;
 
     setJSON(K.tourState, tourState);
 
