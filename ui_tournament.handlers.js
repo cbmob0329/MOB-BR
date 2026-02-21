@@ -1,8 +1,10 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.8 split-2）
+   ui_tournament.handlers.js（v3.6.8 split-2） + SkipMatch button
    - 各 handleShow*** / buildTable 系
+   - ✅追加: コーチ選択画面に「この試合をスキップ」ボタン
+     * 2段階確認（1回目=警告表示 / 2回目=実行）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -41,6 +43,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     imgExists
   } = MOD;
+
+  // ✅ スキップ確認フラグ（このファイル内で保持）
+  //  - 1回目クリックで警告
+  //  - 2回目クリックで実行
+  MOD._skipMatchArmed = false;
 
   function pickChats(n){
     const a = shuffle(BATTLE_CHAT);
@@ -200,6 +207,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = getState();
       if (!st) return;
 
+      // ✅ コーチ画面に入る前なので解除
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
@@ -234,6 +244,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      // ✅ AUTO中はスキップ不可なので解除
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
       setChars('', '');
@@ -263,6 +276,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
       setChars('', '');
@@ -289,6 +304,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      MOD._skipMatchArmed = false;
 
       const st = getState();
       if (!st) return;
@@ -326,6 +343,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = getState();
       if (!st) return;
 
+      // ✅ コーチ選択に来たら毎回解除（2段階確認）
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
@@ -361,15 +381,80 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           const flow = getFlow();
           if (flow?.setCoachSkill) flow.setCoachSkill(String(id));
           setLines('✅ コーチスキル決定！', m?.quote || '', 'NEXTで進行');
+          // スキップ確認は解除
+          MOD._skipMatchArmed = false;
         });
 
         list.appendChild(btn);
       });
 
       wrap.appendChild(list);
+
+      // =========================================================
+      // ✅ 追加: この試合をスキップ（2段階確認）
+      // =========================================================
+      const skipBox = document.createElement('div');
+      skipBox.style.marginTop = '10px';
+
+      const skipHint = document.createElement('div');
+      skipHint.className = 'coachHint';
+      skipHint.textContent = 'テスト用：この試合を高速処理でRESULTまで進める（デメリットあり）';
+      skipBox.appendChild(skipHint);
+
+      const skipBtn = document.createElement('button');
+      skipBtn.type = 'button';
+      skipBtn.className = 'coachBtn';
+      skipBtn.textContent = 'この試合をスキップ';
+      skipBtn.style.width = '100%';
+
+      skipBtn.addEventListener('click', ()=>{
+        const flow = getFlow();
+        const st2 = getState();
+        if (!flow || !st2) return;
+
+        // AUTOや総合結果中は押しても無効（壊さない）
+        const ph = String(st2.phase||'');
+        if (ph.startsWith('national_auto_') || ph.includes('total_result_wait') || ph === 'done'){
+          setLines('⛔ スキップ不可', '今の画面ではスキップできません', '');
+          MOD._skipMatchArmed = false;
+          skipBtn.textContent = 'この試合をスキップ';
+          return;
+        }
+
+        if (!MOD._skipMatchArmed){
+          MOD._skipMatchArmed = true;
+          skipBtn.textContent = '本当にスキップ（デメリットあり）';
+          setLines(
+            '⚠️ スキップ確認',
+            'イベント/バフ無し・TRE/FLG無し・少し勝ちにくい',
+            'もう一度押すと実行'
+          );
+          return;
+        }
+
+        // 実行
+        MOD._skipMatchArmed = false;
+        skipBtn.textContent = 'この試合をスキップ';
+
+        try{
+          st2._skipMatchRequested = true;
+        }catch(_){}
+
+        // 即進める
+        flow.step();
+        MOD.render();
+      });
+
+      skipBox.appendChild(skipBtn);
+      wrap.appendChild(skipBox);
+
       showPanel('コーチスキル', wrap);
 
-      setLines(st.ui?.center3?.[0] || 'それでは試合を開始します！', st.ui?.center3?.[1] || '使用するコーチスキルを選択してください！', st.ui?.center3?.[2] || '');
+      setLines(
+        st.ui?.center3?.[0] || 'それでは試合を開始します！',
+        st.ui?.center3?.[1] || '使用するコーチスキルを選択してください！',
+        st.ui?.center3?.[2] || ''
+      );
       syncSessionBar();
     }finally{
       unlockUI();
@@ -385,6 +470,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
+
+      // ✅ 降下開始に入ったら、スキップ確認は解除
+      MOD._skipMatchArmed = false;
 
       const st = getState();
       if (!st) return;
@@ -584,7 +672,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
               if (!flow) return;
               MOD._setEncounterGatePhase(0);
               flow.step();
-              MOD.render(); // entry側で差し替えられる
+              MOD.render();
             }finally{
               unlockUI();
             }
@@ -951,6 +1039,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
 
@@ -969,7 +1059,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function handleEndTournament(){
     lockUI();
     try{
-      MOD.close(); // entry側で差し替えられる
+      MOD.close();
     }finally{
       unlockUI();
     }
@@ -1011,6 +1101,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      MOD._skipMatchArmed = false;
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
@@ -1021,7 +1113,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ===== expose handlers =====
   Object.assign(MOD, {
     handleShowArrival,
     handleShowIntroText,
