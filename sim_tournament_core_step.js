@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.9
+   sim_tournament_core_step.js（FULL） v4.9 + SkipMatch
    - v4.8 の全機能維持（Local / LastChance / National は壊さない）
    - ✅ v4.9: WORLD仕様を最新版へ刷新（WL完全削除）
      ① 予選リーグ（40チーム）: ナショナル同型 / 6セッション / 総合順位で確定
@@ -14,6 +14,9 @@
         - 80点で点灯
         - 点灯後にチャンピオン獲得で優勝
         - 上限12試合（上限到達時の救済あり：総合上位を優勝扱い）
+   - ✅追加: 「この試合をスキップ」(高速処理→result)
+     * デメリット: イベント/バフ無し、Treasure/Flag増分無し
+     * さらに少し勝ちにくい: Player power を一時的に 0.90倍
    ========================================================= */
 'use strict';
 
@@ -434,11 +437,156 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // ✅ SkipMatch（高速処理→result, デメリット付き）
+  // =========================================================
+  function _snapshotNoLootNoBuff(state){
+    const snap = {};
+    const teams = Array.isArray(state?.teams) ? state.teams : [];
+    for (const t of teams){
+      if (!t) continue;
+      ensureTeamRuntimeShape(t);
+      const id = String(t.id||'');
+      snap[id] = {
+        treasure: Number(t.treasure||0),
+        flag: Number(t.flag||0),
+        eventBuffs: {
+          aim: Number(t.eventBuffs?.aim||0),
+          mental: Number(t.eventBuffs?.mental||0),
+          agi: Number(t.eventBuffs?.agi||0),
+        }
+      };
+    }
+    return snap;
+  }
+
+  function _restoreNoLootNoBuff(state, snap){
+    try{
+      const teams = Array.isArray(state?.teams) ? state.teams : [];
+      for (const t of teams){
+        if (!t) continue;
+        const id = String(t.id||'');
+        const s = snap?.[id];
+        if (!s) continue;
+
+        t.treasure = Number(s.treasure||0);
+        t.flag = Number(s.flag||0);
+
+        if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
+          t.eventBuffs = { aim:0, mental:0, agi:0 };
+        }
+        t.eventBuffs.aim = Number(s.eventBuffs?.aim||0);
+        t.eventBuffs.mental = Number(s.eventBuffs?.mental||0);
+        t.eventBuffs.agi = Number(s.eventBuffs?.agi||0);
+      }
+    }catch(e){}
+  }
+
+  function canSkipNow(state){
+    // 試合が始まって「この試合を進めてる」状態なら許可
+    // （Localテスト用途。National/WORLDでも動くが、AUTOセッションや総合結果待ちは弾く）
+    const ph = String(state?.phase||'');
+    if (!ph) return false;
+
+    if (ph.startsWith('national_auto_')) return false;
+    if (ph.includes('total_result_wait')) return false;
+    if (ph === 'done') return false;
+
+    // intro〜match_result_done の間は全部OKにして安全側
+    return true;
+  }
+
+  function doSkipMatchToResult(state){
+    // 1) まだmatch開始前なら降下初期化
+    if (!state) return false;
+
+    // AUTOセッションはスキップ不可
+    if (!canSkipNow(state)) return false;
+
+    // coach選択画面などで「まだ降下前」でも、ここで開始させる
+    try{
+      if (String(state.phase||'') === 'coach_done' || String(state.phase||'') === 'teamList_done'){
+        try{ initMatchDrop(); }catch(_){}
+      }
+    }catch(_){}
+
+    // 2) デメリット適用：イベント/バフ/loot無し、Treasure/Flag増分無し
+    const snap = _snapshotNoLootNoBuff(state);
+
+    // 3) さらに勝ちにくい：Player power を一時 0.90倍
+    const p = getPlayer();
+    let pBackupPow = null;
+    try{
+      if (p){
+        ensureTeamRuntimeShape(p);
+        pBackupPow = Number(p.power||0);
+        const penalized = Math.max(1, Math.min(100, pBackupPow * 0.90));
+        p.power = penalized;
+      }
+    }catch(_){}
+
+    // 4) 高速処理（全ラウンド・全対戦を解決）
+    try{
+      // ※ round_events を経由しないので eventBuff/Loot は増えない
+      // ※ cpuLootRollOncePerRound は呼ばない（増分は復旧で潰す）
+      fastForwardToMatchEnd();
+    }catch(e){
+      console.error('[tournament_core_step] skipMatch fastForward error:', e);
+    }
+
+    // 5) Treasure/Flag/Buffs は増分を無効化（CPU含めて復旧）
+    _restoreNoLootNoBuff(state, snap);
+
+    // 6) Player power 復旧
+    try{
+      if (p && pBackupPow !== null){
+        p.power = pBackupPow;
+      }
+    }catch(_){}
+
+    // 7) resultへ
+    try{
+      state.phase = 'match_result';
+      // ここで即 result を出す（NEXT不要）
+      finishMatchAndBuildResult();
+      ensureMatchResultRows(state);
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setRequest('showMatchResult', {
+        matchIndex: state.matchIndex,
+        matchCount: state.matchCount,
+        rows: state.lastMatchResultRows,
+        currentOverall: Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []
+      });
+
+      state.phase = 'match_result_done';
+      return true;
+    }catch(e){
+      console.error('[tournament_core_step] skipMatch finish error:', e);
+      return false;
+    }
+  }
+
+  // =========================================================
   // ===== main step machine ====
   // =========================================================
   function step(){
     const state = T.getState();
     if (!state) return;
+
+    // ✅ ここで「スキップ要求」を最優先で処理
+    if (state._skipMatchRequested === true){
+      state._skipMatchRequested = false;
+
+      const ok = doSkipMatchToResult(state);
+      if (ok) return;
+
+      // 失敗時は何もしない（壊さない）
+      setRequest('noop', {});
+      return;
+    }
 
     const p = getPlayer();
 
@@ -476,7 +624,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ✅ World: FINAL後の総合RESULT → 次のNEXTで post へ（ここだけ終了）
     if (state.phase === 'world_total_result_wait_post'){
-      const wp = String(state.worldPhase||'qual');
       try{
         // 仕様的にここに来るのは FINAL 完了後のみが正
         if (P?.onWorldFinalFinished) P.onWorldFinalFinished(state, state.tournamentTotal);
