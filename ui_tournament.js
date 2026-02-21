@@ -1,15 +1,10 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.9 split-3 entry）
+   ui_tournament.js（v3.6.9 split-3 entry） + SkipMatch UI hook
    - public API（open/close/render）
    - onNext / bind events
-
-   ✅ v3.6.9 修正（表示崩れ対策）
-   1) 左上バナー：MATCH を必ず2段目に（見切れ/ellipsis 根絶）
-   2) 右上バナー：ROUND の数字を必ず2段目に
-   3) メンバー名：IGL / AT / SUP を3段で表示できるよう
-      .char .name の white-space を pre-line に強制（改行が潰れない）
+   - ✅ 追加: handlers側のスキップボタンから flow.step() を安全に回す
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -48,43 +43,30 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     closeCore
   } = MOD;
 
-  // ==========================================
-  // ✅ banner / name 表示を “確実に” 直す後処理
-  // ==========================================
   function getOverlayEl(){
     return document.getElementById('mobbrTournamentOverlay');
   }
 
   function normalizeBannerTextTo2Lines(raw, mode){
-    // mode: 'left' | 'right'
     const s0 = String(raw || '').trim();
     if (!s0) return '';
-
-    // 既に <br> が入っているならそのまま
     if (s0.includes('<br>')) return s0;
 
     if (mode === 'left'){
-      // 例: "NATIONAL AB (1/6) MATCH 1/5"
-      // MATCH を2行目へ
       const idx = s0.indexOf('MATCH');
       if (idx > 0){
         const a = s0.slice(0, idx).trim();
         const b = s0.slice(idx).trim();
         return `${escapeHtml(a)}<br>${escapeHtml(b)}`;
       }
-      // WORLD/LOCAL 等で "MATCH" がない場合は折り返しなし
       return escapeHtml(s0);
     }
 
     if (mode === 'right'){
-      // 例: "ROUND 1" → "ROUND<br>1"
-      // 例: "ROUND 10" → "ROUND<br>10"
       const m = s0.match(/^(ROUND)\s*(\d+.*)$/i);
       if (m){
         return `${escapeHtml(m[1].toUpperCase())}<br>${escapeHtml(m[2])}`;
       }
-
-      // "降下" 等のときはそのまま（1行でOK）
       return escapeHtml(s0);
     }
 
@@ -112,7 +94,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const leftHtml  = normalizeBannerTextTo2Lines(st.bannerLeft,  'left');
     const rightHtml = normalizeBannerTextTo2Lines(st.bannerRight, 'right');
 
-    // innerHTML を使って <br> を効かせる
     try{ leftEl.innerHTML  = leftHtml; }catch(_){ leftEl.textContent = String(st.bannerLeft||''); }
     try{ rightEl.innerHTML = rightHtml; }catch(_){ rightEl.textContent = String(st.bannerRight||''); }
   }
@@ -121,24 +102,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const overlay = getOverlayEl();
     if (!overlay) return;
 
-    // .char .name に改行が入っている前提で、改行が潰れないようにする
-    // CSSを触れなくても “表示だけ” はここで保証できる
     const names = overlay.querySelectorAll('.chars .char .name');
     for (const el of names){
       try{
-        el.style.whiteSpace = 'pre-line';  // \n を行として扱う
+        el.style.whiteSpace = 'pre-line';
         el.style.wordBreak  = 'keep-all';
       }catch(_){}
     }
   }
 
   function postRenderFixups(){
-    // 毎回呼んでOK（軽い）
     applyBannerFix();
     applyNameBoxFix();
   }
 
-  // ===== bind buttons once =====
   function bindOnce(){
     const dom = ensureDom();
 
@@ -153,7 +130,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function open(){
     bindOnce();
     openCore();
-    // open直後にも一応当てる
     postRenderFixups();
   }
 
@@ -183,7 +159,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
       }
 
-      // showBattle は encounterGate 中は握る
       if (req?.type === 'showBattle' && MOD._getEncounterGatePhase() > 0){
         MOD._setPendingBattleReq(req);
         showCenterStamp('');
@@ -207,7 +182,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         setChampionMode(false);
         setResultStampMode(false);
         syncSessionBar();
-        // ✅ ここでもバナー/名前補正
         postRenderFixups();
         return;
       }
@@ -226,7 +200,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (req.type !== 'showBattle') setResultStampMode(false);
       }
 
-      // ===== dispatch to handlers =====
       switch(req.type){
         case 'showArrival': await MOD.handleShowArrival(req); break;
 
@@ -267,8 +240,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
 
       syncSessionBar();
-
-      // ✅ handlers が描画した “後” に、確実に補正を当てる
       postRenderFixups();
 
     }catch(e){
@@ -278,7 +249,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setResultStampMode(false);
       if (MOD._getEncounterGatePhase() === 0) setBattleMode(false);
       syncSessionBar();
-      // ✅ 失敗時でもバナー/名前補正だけは当てる
       postRenderFixups();
     }finally{
       MOD._setRendering(false);
@@ -294,11 +264,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // handlers側から呼ばれる可能性があるので、entryで上書き
   MOD.render = render;
   MOD.close = close;
 
-  // public API
   window.MOBBR.ui.tournament = { open, close, render };
   window.MOBBR.initTournamentUI = function(){ bindOnce(); };
 
