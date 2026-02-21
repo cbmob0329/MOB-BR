@@ -1,17 +1,14 @@
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v4.7
-   - v4.6 の全機能維持（削除なし）
-
-   ✅ v4.7 追加修正（キル数＆チャンピオン整合）
-   1) プレイヤー敗北時、残りCPU戦 + 残りラウンド(R〜6)を必ず全解決
-      → KP不足（戦闘未解決でキルが付かない）を根絶
-   2) チャンピオン名取得時、lastMatchResultRows を必ず無効化して誤参照を防止
-      → 「チャンピオン表示」と「result 1位」の不一致を根絶
-
-   ✅追加（今回の要望）
-   - NATIONAL / WORLD の左上表示で「MATCH」を必ず表記
-     → NATIONAL は shared._setNationalBanners() が bannerLeft に MATCH 常時含める
-     → WORLD は step 内の bannerLeft 生成を統一して MATCH を必ず含める
+   sim_tournament_core_step.js（FULL） v4.8
+   - v4.7 の全機能維持（削除なし）
+   - ✅ v4.8 追加（WORLD WL/Losers2/Final）
+     1) worldPhase='wl' で Winners/Losers/Losers2 を順番に実行（各5試合）
+        - Winners：上位10→Final / 下位10→Losers2
+        - Losers ：上位10→Losers2 / 下位10→敗退
+        - Losers2：上位10→Final / 下位10→敗退
+        - 3リーグ完了後：state.phase='world_total_result_wait_post' で onWorldWLFinished へ
+     2) worldPhase='final' で MatchPoint制（80pt到達で点灯）
+        - 点灯状態でチャンピオン獲得 → 即優勝 → world_total_result_wait_post へ
    ========================================================= */
 'use strict';
 
@@ -56,6 +53,44 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _markSessionDone(key){ return T._markSessionDone(key); }
   function _sessionHasPlayer(sessionIndex){ return T._sessionHasPlayer(sessionIndex); }
   function _autoRunNationalSession(){ return T._autoRunNationalSession(); }
+
+  // =========================================================
+  // ✅ v4.8: localStorage helper（壊さない・参照のみ）
+  // =========================================================
+  const K_TS = 'mobbr_tour_state';
+  function getJSON(key, def){
+    try{
+      const raw = localStorage.getItem(key);
+      if (!raw) return def;
+      return JSON.parse(raw);
+    }catch(e){ return def; }
+  }
+
+  // =========================================================
+  // ✅ v4.8: total init（WL/Finalでリーグごとに20チーム合算を持つ）
+  // - 既存仕様の total shape に合わせる（sumTotal等）
+  // =========================================================
+  function initTotalForIds(ids){
+    const total = {};
+    for (const id0 of (ids||[])){
+      const id = String(id0||'');
+      if (!id) continue;
+      total[id] = total[id] || {
+        id,
+        sumTotal: 0,
+        sumPlacementP: 0,
+        sumKP: 0,
+        sumAP: 0,
+        sumTreasure: 0,
+        sumFlag: 0,
+        // internal
+        sumKills: 0,
+        sumAssists: 0,
+        sumDowns: 0
+      };
+    }
+    return total;
+  }
 
   // =========================
   // ✅ CPU Loot Roll（Treasure/Flag）
@@ -269,6 +304,208 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // ✅ v4.8: WORLD WL / FINAL helpers
+  // =========================================================
+  function getWorldWLLeagueLabel(state){
+    const wl = state.worldWL;
+    if (!wl || !wl.leagues) return '';
+    const idx = Number(wl.leagueIndex||0);
+    const nm = String(wl.leagues?.[idx]?.name || '');
+    return nm ? `${nm}リーグ` : '';
+  }
+
+  function initWorldWLStateIfNeeded(state){
+    try{
+      if (state.worldWL && state.worldWL._inited) return;
+
+      // tourState から取得できるなら優先（将来拡張用）
+      const ts = getJSON(K_TS, {}) || {};
+      const w = ts.world || {};
+      const preset = w && typeof w === 'object' ? (w.wlPreset || null) : null;
+
+      // 予選（qual）の総合40順位がどこかに保存されていればそれを使う想定だが、
+      // ここでは「壊さない」ために、無ければ現stateの allTeamDefs から basePower で暫定分割。
+      let ranked40 = [];
+
+      if (preset && Array.isArray(preset.ranked40) && preset.ranked40.length >= 40){
+        ranked40 = preset.ranked40.map(x=>String(x||'')).filter(Boolean).slice(0,40);
+      }else{
+        // fallback: 現在の allTeamDefs から power でソート
+        const defs = state?.national?.allTeamDefs || {};
+        const ids = Object.keys(defs).filter(id=>id && id !== '__proto__');
+        ids.sort((a,b)=>{
+          const A = defs[a], B = defs[b];
+          const ap = Number(A?.power || 0);
+          const bp = Number(B?.power || 0);
+          if (bp !== ap) return bp - ap;
+          return String(a).localeCompare(String(b));
+        });
+        // PLAYER を含めて40に揃える（不足時はそのまま）
+        ranked40 = ids.slice(0,40);
+      }
+
+      // Winners/Losers 20/20
+      const winnersIds = ranked40.slice(0,20);
+      const losersIds  = ranked40.slice(20,40);
+
+      state.worldWL = {
+        _inited: true,
+        leagueIndex: 0, // 0:winners 1:losers 2:losers2
+        leagues: [
+          { key:'winners', name:'Winners', ids: winnersIds.slice(0,20) },
+          { key:'losers',  name:'Losers',  ids: losersIds.slice(0,20)  },
+          { key:'losers2', name:'Losers2', ids: [] } // 後で詰める
+        ],
+        winnersTop10: [],
+        winnersBottom10: [],
+        losersTop10: [],
+        losersBottom10: [],
+        losers2Top10: [],
+        losers2Bottom10: [],
+        finalIds: []
+      };
+    }catch(e){}
+  }
+
+  function swapTeamsToLeague20(state, ids20){
+    try{
+      const defs = state?.national?.allTeamDefs || {};
+      const ids = (ids20||[]).map(x=>String(x||'')).filter(Boolean).slice(0,20);
+
+      const teams = [];
+      for (const id of ids){
+        const t = defs[id];
+        if (t) teams.push(t);
+      }
+      state.teams = teams.slice(0,20);
+      for (const t of state.teams) ensureTeamRuntimeShape(t);
+
+      // WLはリーグ毎に合算をリセットする（仕様：各リーグ5試合）
+      state.tournamentTotal = initTotalForIds(state.teams.map(t=>t.id));
+
+      state.matchIndex = 1;
+      state.matchCount = 5;
+      state.round = 1;
+
+      state.selectedCoachSkill = null;
+      state.selectedCoachQuote = '';
+
+      // ラウンド内ロール等も安全にリセット
+      state._cpuLootRolled = {};
+      state._roundMatches = null;
+      state._matchCursor = 0;
+      state.lastMatchResultRows = [];
+      state.currentOverallRows = [];
+    }catch(e){}
+  }
+
+  function computeRankedIdsFromTotal(total){
+    const list = Object.values(total||{}).filter(Boolean);
+    list.sort((a,b)=>{
+      const at = Number(a.sumTotal||0), bt = Number(b.sumTotal||0);
+      if (bt !== at) return bt - at;
+
+      const ap = Number(a.sumPlacementP||0), bp = Number(b.sumPlacementP||0);
+      if (bp !== ap) return bp - ap;
+
+      const ak = Number(a.sumKP||0), bk = Number(b.sumKP||0);
+      if (bk !== ak) return bk - ak;
+
+      const aa = Number(a.sumAP||0), ba = Number(b.sumAP||0);
+      if (ba !== aa) return ba - aa;
+
+      const an = String(a.id||''), bn = String(b.id||'');
+      return an.localeCompare(bn);
+    });
+    return list.map(x=>String(x.id||'')).filter(Boolean);
+  }
+
+  function initWorldFinalStateIfNeeded(state){
+    try{
+      if (state.worldFinal && state.worldFinal._inited) return;
+
+      const ts = getJSON(K_TS, {}) || {};
+      const w = ts.world || {};
+
+      let finalIds = [];
+      if (w && Array.isArray(w.finalIds) && w.finalIds.length){
+        finalIds = w.finalIds.map(x=>String(x||'')).filter(Boolean).slice(0,20);
+      }else if (state.worldWL && Array.isArray(state.worldWL.finalIds) && state.worldWL.finalIds.length){
+        finalIds = state.worldWL.finalIds.slice(0,20);
+      }else{
+        // fallback: 現 roster の上位20（壊さない）
+        const defs = state?.national?.allTeamDefs || {};
+        const ids = Object.keys(defs).filter(Boolean);
+        ids.sort((a,b)=>{
+          const ap = Number(defs[a]?.power||0);
+          const bp = Number(defs[b]?.power||0);
+          if (bp !== ap) return bp - ap;
+          return String(a).localeCompare(String(b));
+        });
+        finalIds = ids.slice(0,20);
+      }
+
+      state.worldFinal = {
+        _inited: true,
+        threshold: 80,
+        lit: {}, // id=>true
+        finalIds: finalIds.slice(0,20),
+        championId: ''
+      };
+
+      // Final は roster 20 に切り替え、合算をリセット
+      swapTeamsToLeague20(state, state.worldFinal.finalIds);
+
+      // Finalは「試合数固定ではない」ので matchCount を大きめにしておき、
+      // 実際の終了は matchPoint優勝で判定する
+      state.matchCount = 99;
+    }catch(e){}
+  }
+
+  function updateMatchPointLit(state){
+    try{
+      const wf = state.worldFinal;
+      if (!wf) return;
+
+      const total = state.tournamentTotal || {};
+      for (const id in total){
+        const v = total[id];
+        if (!v) continue;
+        const sum = Number(v.sumTotal||0);
+        if (sum >= Number(wf.threshold||80)){
+          wf.lit[String(id)] = true;
+        }
+      }
+    }catch(e){}
+  }
+
+  function isFinalChampionDetermined(state){
+    try{
+      const wf = state.worldFinal;
+      if (!wf) return false;
+
+      // 点灯更新
+      updateMatchPointLit(state);
+
+      // 今試合の1位（match result の先頭）が点灯していれば優勝
+      const rows = state.lastMatchResultRows;
+      if (!Array.isArray(rows) || !rows.length) return false;
+
+      const top = rows[0];
+      const topId = String(top?.id || '');
+      if (!topId) return false;
+
+      if (wf.lit[topId]){
+        wf.championId = topId;
+        return true;
+      }
+      return false;
+    }catch(e){
+      return false;
+    }
+  }
+
+  // =========================================================
   // ===== main step machine ====
   // =========================================================
   function step(){
@@ -406,6 +643,92 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const curKey  = String(nat.sessions?.[si]?.key || `S${si+1}`);
       const isLastSession = (si >= sc - 1);
 
+      // =========================================================
+      // ✅ v4.8: WORLD WL のリーグ間遷移（Winners→Losers→Losers2）
+      // ここは「worldもnationalと同じ phase を流用している」ため、分岐で吸収する
+      // =========================================================
+      if (state.mode === 'world' && String(state.worldPhase||'') === 'wl'){
+
+        // ここに入るのは「リーグ5試合終了 → showTournamentResult → このphaseへ」ルート
+        initWorldWLStateIfNeeded(state);
+
+        const wl = state.worldWL || null;
+        const idx = Number(wl?.leagueIndex||0);
+
+        if (!wl || !wl.leagues){
+          // safety: 何も無ければWL終了扱い
+          state.phase = 'world_total_result_wait_post';
+          setRequest('noop', {});
+          return;
+        }
+
+        // 直前リーグの順位を確定
+        const ranked = computeRankedIdsFromTotal(state.tournamentTotal);
+
+        if (idx === 0){
+          wl.winnersTop10 = ranked.slice(0,10);
+          wl.winnersBottom10 = ranked.slice(10,20);
+          // Winners下位10 → Losers2 seed
+          wl.leagues[2].ids = wl.winnersBottom10.slice(0,10);
+        }else if (idx === 1){
+          wl.losersTop10 = ranked.slice(0,10);
+          wl.losersBottom10 = ranked.slice(10,20);
+          // Losers上位10 → Losers2へ追加（合計20）
+          const cur = Array.isArray(wl.leagues[2].ids) ? wl.leagues[2].ids.slice() : [];
+          const add = wl.losersTop10.slice(0,10);
+          const merged = [];
+          const pushU = (id)=>{
+            const s = String(id||'');
+            if (!s) return;
+            if (merged.includes(s)) return;
+            merged.push(s);
+          };
+          for (const id of cur) pushU(id);
+          for (const id of add) pushU(id);
+          wl.leagues[2].ids = merged.slice(0,20);
+        }else if (idx === 2){
+          wl.losers2Top10 = ranked.slice(0,10);
+          wl.losers2Bottom10 = ranked.slice(10,20);
+
+          // Final 20 = Winners上位10 + Losers2上位10
+          const finalIds = [];
+          const pushU = (id)=>{
+            const s = String(id||'');
+            if (!s) return;
+            if (finalIds.includes(s)) return;
+            finalIds.push(s);
+          };
+          for (const id of (wl.winnersTop10||[])) pushU(id);
+          for (const id of (wl.losers2Top10||[])) pushU(id);
+          wl.finalIds = finalIds.slice(0,20);
+
+          // WL全体が終わったので、ここでWL大会終了（postへ）
+          state.worldWL = wl;
+          state.phase = 'world_total_result_wait_post';
+          setRequest('noop', {});
+          return;
+        }
+
+        // 次リーグへ
+        const nextIdx = idx + 1;
+        wl.leagueIndex = nextIdx;
+        state.worldWL = wl;
+
+        const next = wl.leagues[nextIdx];
+        const label = next ? `${next.name}` : '';
+
+        // 次リーグの20へ切り替え
+        swapTeamsToLeague20(state, next?.ids || []);
+
+        // introへ戻して豪華演出
+        state.phase = 'intro';
+        setRequest('noop', {});
+        return;
+      }
+
+      // =========================================================
+      // 既存：National / World(qualなど)のセッション進行
+      // =========================================================
       if (isLastSession){
         state.phase = 'national_total_result_wait_post';
         setRequest('noop', {});
@@ -512,12 +835,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           return;
         }
       }else if (state.mode === 'world'){
+        const wp = String(state.worldPhase||'qual');
+
         const s = state.national || {};
         const si = Number(s.sessionIndex||0);
         const sc = Number(s.sessionCount||6);
         const key = String(s.sessions?.[si]?.key || `S${si+1}`);
 
-        setCenter3('ワールドファイナル開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
+        // ✅ v4.8: WL / FINAL の intro 演出
+        if (wp === 'wl'){
+          initWorldWLStateIfNeeded(state);
+          const lbl = getWorldWLLeagueLabel(state);
+          const phaseTitle = lbl ? `${lbl}開始！` : 'Winnersリーグ開始！';
+          setCenter3(phaseTitle, `SESSION ${key} (${si+1}/${sc})`, '上位を掴め！');
+        }else if (wp === 'final'){
+          initWorldFinalStateIfNeeded(state);
+          setCenter3('FINAL ROUND 開始！', '80ptで点灯（マッチポイント）', '点灯→チャンピオンで優勝‼︎');
+        }else{
+          setCenter3('ワールドファイナル開幕！', `SESSION ${key} (${si+1}/${sc})`, '');
+        }
 
         if (!_sessionHasPlayer(si)){
           setWorldBanners(state, `AUTO SESSION ${key}`);
@@ -920,6 +1256,67 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ===== match result done =====
     if (state.phase === 'match_result_done'){
 
+      // =========================================================
+      // ✅ v4.8: WORLD FINAL（match point）
+      // - matchCount固定ではなく、優勝条件で終了
+      // - showMatchResult を見た次のNEXTがここなので、ここで判定して
+      //   優勝なら showChampion → showTournamentResult → postへ
+      // =========================================================
+      if (state.mode === 'world' && String(state.worldPhase||'') === 'final'){
+        initWorldFinalStateIfNeeded(state);
+
+        const wf = state.worldFinal || null;
+        if (wf){
+          const decided = isFinalChampionDetermined(state);
+
+          if (decided){
+            // champion表示（この大会の優勝）
+            const champId = String(wf.championId || '');
+            const defs = state?.national?.allTeamDefs || {};
+            const champName = defs[champId]?.name || champId || '???';
+
+            // 次のNEXT死防止：lastMatchResultRows 誤参照を避ける
+            try{ state.lastMatchResultRows = []; }catch(_){}
+            try{ state.currentOverallRows = Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []; }catch(_){}
+
+            state.ui.rightImg = '';
+            state.ui.topLeftName = '';
+            state.ui.topRightName = '';
+
+            setCenter3('WORLD FINAL 優勝‼︎', String(champName), '‼︎');
+            setRequest('showChampion', {
+              matchIndex: state.matchIndex,
+              championName: String(champName || '')
+            });
+
+            // FINAL はここで大会終了へ
+            setRequest('showTournamentResult', { total: state.tournamentTotal });
+            state.phase = 'world_total_result_wait_post';
+            return;
+          }
+
+          // まだ優勝者無し → 次の試合へ（matchIndex増）
+          startNextMatch();
+
+          state.ui.bg = 'tent.png';
+          state.ui.squareBg = 'tent.png';
+          state.ui.leftImg = getPlayerSkin();
+          state.ui.rightImg = '';
+          state.ui.topLeftName = '';
+          state.ui.topRightName = '';
+
+          // MATCH表示更新
+          setWorldBanners(state, '');
+
+          // 点灯状況ログ（軽い表示：UI側が未対応でも壊さない）
+          const litCount = Object.keys(wf.lit||{}).length;
+          setCenter3(`次の試合へ`, `MATCH ${state.matchIndex}`, litCount ? `点灯：${litCount}チーム` : 'まだ点灯なし');
+          setRequest('nextMatch', { matchIndex: state.matchIndex });
+          state.phase = 'coach_done';
+          return;
+        }
+      }
+
       // LOCAL
       if (state.mode === 'local'){
         if (state.matchIndex >= state.matchCount){
@@ -1004,10 +1401,47 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       // WORLD
       if (state.mode === 'world'){
+        const wp = String(state.worldPhase||'qual');
         const nat = state.national || {};
         const si = Number(nat.sessionIndex||0);
         const sc = Number(nat.sessionCount||6);
 
+        // =========================================================
+        // ✅ v4.8: WORLD WL（各リーグ5試合固定）
+        // - matchIndex=5終了 → showTournamentResult → league遷移（上のphaseで処理）
+        // =========================================================
+        if (wp === 'wl'){
+          initWorldWLStateIfNeeded(state);
+
+          if (state.matchIndex < state.matchCount){
+            startNextMatch();
+
+            state.ui.bg = 'tent.png';
+            state.ui.squareBg = 'tent.png';
+            state.ui.leftImg = getPlayerSkin();
+            state.ui.rightImg = '';
+            state.ui.topLeftName = '';
+            state.ui.topRightName = '';
+
+            // ✅ 次試合へ進むタイミングで bannerLeft を必ず更新（MATCH表記の正確性保証）
+            setWorldBanners(state, '');
+
+            const lbl = getWorldWLLeagueLabel(state);
+            setCenter3(`次の試合へ`, lbl ? `${lbl}  MATCH ${state.matchIndex} / ${state.matchCount}` : `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+            setRequest('nextMatch', { matchIndex: state.matchIndex });
+            state.phase = 'coach_done';
+            return;
+          }
+
+          // リーグ5試合終了 → RESULTへ
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'national_session_total_result_wait_notice';
+          return;
+        }
+
+        // =========================================================
+        // 既存：WORLD qual（ナショナル同様のセッション進行）
+        // =========================================================
         if (state.matchIndex < state.matchCount){
           startNextMatch();
 
