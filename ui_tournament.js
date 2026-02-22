@@ -1,11 +1,12 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.10 split-3 entry） + SkipMatch UI hook（FULL）
+   ui_tournament.js（v3.6.11 split-3 entry）FULL（SKIP廃止版）
    - public API（open/close/render）
    - onNext / bind events
-   - ✅ SKIPボタン: confirm→ flow.step() → render() を確実に回す
-   - ✅ UI lock / rendering / busy を尊重しつつ、止まらない実装
+   - ✅変更:
+     - SKIPボタン/confirm/step/render の仕組みを完全廃止
+     - それ以外（hold/gate/busy/renderingガード・banner/name fix・request分岐）は維持
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -117,39 +118,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     applyNameBoxFix();
   }
 
-  // ===== SKIP visibility =====
-  // 「イベントはnextを押したらすぐスキップしたい」用途を想定：
-  // - showEvent / showEncounter / showMove / showBattle / showRoundStart / prepareBattles など、
-  //   テンポを上げたい場面で常時出してもOK
-  function shouldShowSkip(req){
-    const t = String(req?.type || '');
-    if (!t) return false;
-
-    // 結果画面はスキップ不要（誤操作防止）
-    if (t === 'showMatchResult' || t === 'showTournamentResult' || t === 'endTournament') return false;
-    if (t === 'endNationalWeek') return false;
-
-    // それ以外は基本表示
-    return true;
-  }
-
-  function updateSkipButtonState(){
-    const dom = MOD._getDom ? MOD._getDom() : null;
-    if (!dom || !dom.skipBtn) return;
-
-    const st = getState();
-    const req = st?.request || null;
-
-    const on = shouldShowSkip(req);
-    dom.skipBtn.style.display = on ? '' : 'none';
-
-    // NEXTが押せない状態でも、SKIPは「今の演出を飛ばす」目的なので
-    // lock/busy/rendering の時だけ無効化（事故防止）
-    const disabled = !!(MOD._getBusy && MOD._getBusy()) || !!(MOD._getRendering && MOD._getRendering()) || !!(MOD.isLocked && MOD.isLocked());
-    dom.skipBtn.disabled = disabled;
-    dom.skipBtn.classList.toggle('isDisabled', disabled);
-  }
-
   function bindOnce(){
     const dom = ensureDom();
 
@@ -159,10 +127,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.nextBtn.addEventListener('click', onNext);
       dom.closeBtn.addEventListener('click', close);
 
-      // ✅ 追加: SKIPボタン bind
-      if (dom.skipBtn){
-        dom.skipBtn.addEventListener('click', onSkip);
-      }
+      // ✅ SKIPは廃止：何もbindしない
     }
   }
 
@@ -170,7 +135,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bindOnce();
     openCore();
     postRenderFixups();
-    updateSkipButtonState();
   }
 
   function close(){
@@ -223,7 +187,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         setResultStampMode(false);
         syncSessionBar();
         postRenderFixups();
-        updateSkipButtonState();
         return;
       }
 
@@ -282,7 +245,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       syncSessionBar();
       postRenderFixups();
-      updateSkipButtonState();
 
     }catch(e){
       console.error('[ui_tournament] request handler error:', e);
@@ -292,12 +254,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (MOD._getEncounterGatePhase() === 0) setBattleMode(false);
       syncSessionBar();
       postRenderFixups();
-      updateSkipButtonState();
     }finally{
       MOD._setRendering(false);
       unlockUI();
       setNextEnabled(true);
-      updateSkipButtonState();
     }
   }
 
@@ -307,53 +267,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       render();
     }
   }
-
-  // ✅ 追加: SKIP（confirm→step→render）
-  function onSkip(){
-    const dom = MOD._getDom ? MOD._getDom() : null;
-    if (dom?.skipBtn && dom.skipBtn.disabled) return;
-
-    // iOS Safari でも確実に出る同期 confirm
-    const ok = window.confirm('本当にスキップしますか？');
-    if (!ok) return;
-
-    // 安全ガード（render中/ロック中/ビジー中は事故るので何もしない）
-    if (MOD.isLocked && MOD.isLocked()) return;
-    if (MOD._getRendering && MOD._getRendering()) return;
-    if (MOD._getBusy && MOD._getBusy()) return;
-
-    const flow = MOD.getFlow ? MOD.getFlow() : (window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow || null);
-    if (!flow || typeof flow.step !== 'function') return;
-
-    try{
-      // ここが重要：hold / gate で詰まるパターンを潰す
-      // - HOLD中なら解除して次reqを取り直す
-      if (MOD._getHoldScreenType && MOD._getHoldScreenType()){
-        MOD._setHoldScreenType(null);
-        MOD._setPendingReqAfterHold(null);
-        MOD._setLastReqKey('');
-      }
-
-      // - 接敵ゲート中で showBattle 保留してるならゲート解除して強制進行
-      if (MOD._getEncounterGatePhase && MOD._getEncounterGatePhase() > 0){
-        // 「敵表示で止めたい」仕様があっても、SKIPはそれを飛ばすために解除
-        resetEncounterGate();
-        MOD._setLastReqKey('');
-      }
-
-      // step→render
-      flow.step();
-      render();
-
-    }catch(e){
-      console.error('[ui_tournament] skip error:', e);
-    }
-  }
-
-  // handlers側からも呼べるように公開（任意）
-  MOD.requestSkip = function(){
-    onSkip();
-  };
 
   MOD.render = render;
   MOD.close = close;
