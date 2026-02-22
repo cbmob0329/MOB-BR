@@ -1,12 +1,14 @@
 /* =========================================================
-   app.js（FULL） v18.6
-   - v18.5 の全機能維持
-   - ✅ 修正：ui_tournament 3分割読み込みに対応
+   app.js（FULL） v18.7
+   - v18.6 の全機能維持
+   - ✅ WORLD phase を最新版へ整合（qual / losers / final）
+     * 互換：wl / winners / losers 相当は losers に吸収
+   - ✅ ui_tournament 3分割読み込み対応は維持
         読み込み順：ui_tournament.core.js → ui_tournament.handlers.js → ui_tournament.js（entry）
 ========================================================= */
 'use strict';
 
-const APP_VER = 18.6; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.7; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -181,7 +183,6 @@ async function loadModules(){
 
     // =====================================================
     // ✅ UI tournament 3分割（依存順：core -> handlers -> entry）
-    // - ここが v18.6 の修正点
     // =====================================================
     `ui_tournament.core.js${v}`,
     `ui_tournament.handlers.js${v}`,
@@ -196,7 +197,7 @@ async function loadModules(){
 let modulesLoaded = false;
 
 // ==========================================
-// 大会開始ブリッジ（v18.6）
+// 大会開始ブリッジ（v18.7）
 // - UIはこれだけ呼べばOK（または mobbr:startTournament を投げる）
 // ==========================================
 
@@ -243,9 +244,27 @@ function getTourState(){
   return getJSONSafe(KTS.tourState, null);
 }
 
+// =========================================================
+// ✅ WORLD phase 正規化（v18.7）
+// - 最新：qual / losers / final
+// - 互換：wl / winners / (old) losers などは losers に吸収
+// =========================================================
 function normalizeWorldPhase(phase){
   const p = String(phase || '').trim().toLowerCase();
-  if (p === 'qual' || p === 'wl' || p === 'final') return p;
+
+  // 最新
+  if (p === 'qual' || p === 'losers' || p === 'final') return p;
+
+  // 互換：旧UI/旧スケジュール/旧保存値
+  if (p === 'wl' || p === 'winners' || p === 'winner' || p === 'w/l' || p === 'winnerslosers'){
+    return 'losers';
+  }
+
+  // 文字列に losers/wl が含まれる場合も吸収（安全側）
+  if (p.includes('loser') || p.includes('wl') || p.includes('winner')){
+    return 'losers';
+  }
+
   return 'qual';
 }
 
@@ -340,6 +359,7 @@ function startWorldTournament(phase){
   const flow = window.MOBBR?.sim?.tournamentFlow;
   const p = normalizeWorldPhase(phase);
 
+  // ✅ v18.7：UIへ渡す openArg.phase も最新へ統一（qual/losers/final）
   if (flow && typeof flow.startWorldTournament === 'function'){
     startTournamentPipeline(() => flow.startWorldTournament(p), { mode:'world', phase:p });
     return;
@@ -366,7 +386,8 @@ function startTournamentByState(detail){
 
   const ts = getTourState();
   const stage = String(ts?.stage || '').trim().toLowerCase(); // 'local'|'national'|'lastchance'|'world'|'done'
-  const wphase = String(ts?.world?.phase || '').trim().toLowerCase(); // 'qual'|'wl'|'final'|'done'
+  const wphaseRaw = String(ts?.world?.phase || '').trim().toLowerCase(); // 保存値（旧: wl / 新: losers など）
+  const wphase = normalizeWorldPhase(wphaseRaw);
 
   if (stage === 'local' || !stage){
     return startLocalTournament();
@@ -378,8 +399,9 @@ function startTournamentByState(detail){
     return startLastChanceTournament();
   }
   if (stage === 'world'){
-    if (wphase === 'wl') return startWorldTournament('wl');
+    // ✅ v18.7：qual/losers/final で確実に開始
     if (wphase === 'final') return startWorldTournament('final');
+    if (wphase === 'losers') return startWorldTournament('losers');
     return startWorldTournament('qual');
   }
 
@@ -586,7 +608,7 @@ function bindGlobalEvents(){
 
   // ✅ 大会開始（UI→appの疎結合）
   // - detail.type/mode: 'local'|'national'|'lastchance'|'world'
-  // - detail.phase: 'qual'|'wl'|'final'（worldのみ）
+  // - detail.phase: 'qual'|'losers'|'final'（worldのみ・旧 wl も互換で吸収）
   window.addEventListener('mobbr:startTournament', (e) => {
     try{
       const detail = e?.detail || {};
