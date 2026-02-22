@@ -1,16 +1,18 @@
 'use strict';
 
 /*
-  MOB BR - ui_schedule.js v3（フル）
+  MOB BR - ui_schedule.js v3.1（フル）
   - 年間スケジュール画面
   - 「次の大会」を nextTour / nextTourW に保存（storageキー）
   - “出場権がない大会” は nextTour に採用しない（誤ロック防止）
 
-  更新点（あなたの新スケジュールに合わせて完全置換）
+  更新点（新スケジュールに合わせて完全置換）
   - ✅ 旧「ナショナル大会後半」を撤去（1週開催に統一）
-  - ✅ World を 3段階（予選 / WL / 決勝）に分割
+  - ✅ World を 3段階（予選 / LOSERS / 決勝）に分割
   - ✅ SP1 / SP2 / チャンピオンシップ の固定日程に変更
   - ✅ 誤ロック防止：tourState が無い/不足なら local 以外は候補にしない
+  - ✅ v3.1：WORLD phase 最新へ整合（qual / losers / final）
+      * 互換：wl / winners / winner などは losers に吸収
 
   出場判定のための状態（任意・あれば使う）：
   - localStorage 'mobbr_tour_state' (JSON)
@@ -24,9 +26,9 @@
       "lastChanceUnlocked": false,   // ラストチャンス出場権（ナショナル9-28など）
       "qualifiedWorld": false,       // ワールド出場権（ナショナルTOP8 or LC成功でtrue）
 
-      "world": { "phase":"qual"|"wl"|"final" },   // 週跨ぎワールドの現在地（任意）
-      "qualifiedChampionship": false,             // チャンピオンシップ出場権（SP1+SP2決勝の条件満たし）
-      "playerCompanyRank": 0                      // プレイヤー企業ランク（任意：100以上条件用）
+      "world": { "phase":"qual"|"losers"|"final" },  // 週跨ぎワールドの現在地（任意）
+      "qualifiedChampionship": false,                 // チャンピオンシップ出場権（SP1+SP2決勝の条件満たし）
+      "playerCompanyRank": 0                          // プレイヤー企業ランク（任意：100以上条件用）
     }
 
   ※このキーが無い/足りない場合は「最低限の安全運用」：
@@ -55,28 +57,50 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     list: $('scheduleList')
   };
 
+  // =========================================================
+  // ✅ WORLD phase 正規化（v3.1）
+  // - 最新：qual / losers / final
+  // - 互換：wl / winners / winner / old losers などは losers に吸収
+  // =========================================================
+  function normalizeWorldPhase(phase){
+    const p = String(phase || '').trim().toLowerCase();
+
+    if (p === 'qual' || p === 'losers' || p === 'final') return p;
+
+    // 互換：旧表記
+    if (p === 'wl' || p === 'winners' || p === 'winner' || p === 'w/l' || p === 'winnerslosers'){
+      return 'losers';
+    }
+
+    if (p.includes('loser') || p.includes('wl') || p.includes('winner')){
+      return 'losers';
+    }
+
+    return 'qual';
+  }
+
   // ===== スケジュール定義 =====
   // month/week は “カレンダー上の開催週”
   // splitLabel は表示用
   // phase はロジック用（出場判定）
   const SCHEDULE = [
     // ===== SP1 =====
-    { splitLabel:'SP1', m:2,  w:1, name:'SP1 ローカル大会', phase:'local',     meta:{ split:1 } },
-    { splitLabel:'SP1', m:3,  w:1, name:'SP1 ナショナル大会', phase:'national', meta:{ split:1 } },
+    { splitLabel:'SP1', m:2,  w:1, name:'SP1 ローカル大会', phase:'local',       meta:{ split:1 } },
+    { splitLabel:'SP1', m:3,  w:1, name:'SP1 ナショナル大会', phase:'national',   meta:{ split:1 } },
     { splitLabel:'SP1', m:3,  w:2, name:'SP1 ラストチャンス', phase:'lastchance', meta:{ split:1 } },
 
-    { splitLabel:'SP1', m:4,  w:4, name:'SP1 ワールドファイナル 予選リーグ', phase:'world_qual', meta:{ split:1 } },
-    { splitLabel:'SP1', m:5,  w:1, name:'SP1 ワールドファイナル WL',         phase:'world_wl',   meta:{ split:1 } },
-    { splitLabel:'SP1', m:5,  w:2, name:'SP1 ワールドファイナル 決勝戦',      phase:'world_final', meta:{ split:1 } },
+    { splitLabel:'SP1', m:4,  w:4, name:'SP1 ワールドファイナル 予選リーグ', phase:'world_qual',   meta:{ split:1 } },
+    { splitLabel:'SP1', m:5,  w:1, name:'SP1 ワールドファイナル LOSERS',     phase:'world_losers', meta:{ split:1 } },
+    { splitLabel:'SP1', m:5,  w:2, name:'SP1 ワールドファイナル 決勝戦',      phase:'world_final',  meta:{ split:1 } },
 
     // ===== SP2 =====
-    { splitLabel:'SP2', m:7,  w:1, name:'SP2 ローカル大会', phase:'local',     meta:{ split:2 } },
-    { splitLabel:'SP2', m:8,  w:1, name:'SP2 ナショナル大会', phase:'national', meta:{ split:2 } },
+    { splitLabel:'SP2', m:7,  w:1, name:'SP2 ローカル大会', phase:'local',       meta:{ split:2 } },
+    { splitLabel:'SP2', m:8,  w:1, name:'SP2 ナショナル大会', phase:'national',   meta:{ split:2 } },
     { splitLabel:'SP2', m:8,  w:2, name:'SP2 ラストチャンス', phase:'lastchance', meta:{ split:2 } },
 
-    { splitLabel:'SP2', m:9,  w:4, name:'SP2 ワールドファイナル 予選リーグ', phase:'world_qual', meta:{ split:2 } },
-    { splitLabel:'SP2', m:10, w:1, name:'SP2 ワールドファイナル WL',         phase:'world_wl',   meta:{ split:2 } },
-    { splitLabel:'SP2', m:10, w:2, name:'SP2 ワールドファイナル 決勝戦',      phase:'world_final', meta:{ split:2 } },
+    { splitLabel:'SP2', m:9,  w:4, name:'SP2 ワールドファイナル 予選リーグ', phase:'world_qual',   meta:{ split:2 } },
+    { splitLabel:'SP2', m:10, w:1, name:'SP2 ワールドファイナル LOSERS',     phase:'world_losers', meta:{ split:2 } },
+    { splitLabel:'SP2', m:10, w:2, name:'SP2 ワールドファイナル 決勝戦',      phase:'world_final',  meta:{ split:2 } },
 
     // ===== Championship =====
     { splitLabel:'CHAMP', m:12, w:4, name:'チャンピオンシップ', phase:'championship', meta:{ split:0 } }
@@ -121,7 +145,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const lastChanceUnlocked = !!tourState.lastChanceUnlocked;
     const qW = !!tourState.qualifiedWorld;
 
-    const worldPhase = String(tourState?.world?.phase || '').trim(); // 'qual'|'wl'|'final' or ''
+    // ✅ v3.1：world.phase は normalize して最新（qual/losers/final）へ統一
+    const worldPhaseRaw = String(tourState?.world?.phase || '').trim();
+    const worldPhase = worldPhaseRaw ? normalizeWorldPhase(worldPhaseRaw) : '';
+
     const qChamp = !!tourState.qualifiedChampionship;
 
     // 企業ランク条件（チャンピオンシップ：プレイヤーのみ 100以上）
@@ -138,16 +165,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return !!lastChanceUnlocked && !qW && !clearedN;
     }
 
-    if (phase === 'world_qual' || phase === 'world_wl' || phase === 'world_final'){
+    if (phase === 'world_qual' || phase === 'world_losers' || phase === 'world_final'){
       // ワールド出場権がある時だけ
       if (!qW) return false;
 
       // 週跨ぎワールドをやる場合：tourState.world.phase があるなら一致した段階だけを候補にする
       // 無い場合：最初（予選）だけ候補にして安全側へ
       if (worldPhase){
-        if (phase === 'world_qual')  return worldPhase === 'qual';
-        if (phase === 'world_wl')    return worldPhase === 'wl';
-        if (phase === 'world_final') return worldPhase === 'final';
+        if (phase === 'world_qual')    return worldPhase === 'qual';
+        if (phase === 'world_losers')  return worldPhase === 'losers';
+        if (phase === 'world_final')   return worldPhase === 'final';
         return false;
       }
 
