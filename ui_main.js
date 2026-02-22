@@ -1,27 +1,21 @@
 /* =========================================================
-   ui_main.js（FULL） v19.5
+   ui_main.js（FULL） v19.6
    - メイン画面の表示/タップ処理
    - ✅ BATTLEボタン：v18.3 の「大会開始ブリッジ」に統一
         → mobbr:startTournament（detail.type/phase）を投げるだけ
-        → app.js が startTournamentByState を通して開始する（疎結合）
    - ✅「大会週（nextTourW一致）」のときだけ大会を開始（従来どおり）
    - ✅ nextTour の文言で type/phase を判定（スケジュール表示名に追従）
 
-   v19.4の前提は維持：
-   ✅ mobbr:advanceWeek / mobbr:endNationalWeek でストレージを進めない（受信しない）
-   ✅ 大会終了の mobbr:goMain は「表示だけ」（recentの表示反映、ポップ閉じ等）
-   ✅ 週進行ポップは app.js から呼ぶ表示専用API showWeekAdvancePop を提供
-
-   NOTE：
-   - World phase は「event detail.phase」で渡すのが正。
-     （互換のため tour_state.world.phase 保存も残すが、基本は detail を優先）
+   v19.6 変更点（WORLD整合・WL吸収）
+   - ✅ world phase を 'qual'|'losers'|'final' に統一
+   - ✅ 旧 “WL” 表記は互換として losers に吸収
 ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.5';
+  const VERSION = 'v19.6';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -236,7 +230,6 @@ window.MOBBR = window.MOBBR || {};
       : `企業ランクにより ${totalGain}G 獲得！（${weeks}週分）`;
 
     showWeekPop(`${y}年${m}月 第${w}週`, msg, () => {
-      // 表示専用：ストレージは一切触らない
       render();
     });
   }
@@ -352,31 +345,24 @@ window.MOBBR = window.MOBBR || {};
   }
 
   // =========================================================
-  // ★★ 大会名からタイプ判定（新スケジュール対応） ★★
+  // ★★ 大会名からタイプ判定（WORLD: qual/losers/final） ★★
   // =========================================================
   function detectTournamentType(tourName){
     const name = String(tourName || '');
 
-    // Championship
     if (name.includes('チャンピオンシップ')) return { type:'championship' };
 
-    // World
     if (name.includes('ワールドファイナル') || name.includes('ワールド')){
-      // 予選 / WL / 決勝
+      // ✅ v19.6: losers を正式化。互換として WL 文字列も losers 扱い
       if (name.includes('予選')) return { type:'world', phase:'qual' };
-      if (name.includes('WL') || name.includes('winners') || name.includes('losers')) return { type:'world', phase:'wl' };
+      if (name.includes('Losers') || name.includes('LOSERS') || name.includes('敗者')) return { type:'world', phase:'losers' };
+      if (name.includes('WL') || name.includes('winners') || name.includes('losers')) return { type:'world', phase:'losers' }; // 互換吸収
       if (name.includes('決勝')) return { type:'world', phase:'final' };
-      // 何も書かれてない場合は安全に予選扱い
       return { type:'world', phase:'qual' };
     }
 
-    // LastChance
     if (name.includes('ラストチャンス')) return { type:'lastchance' };
-
-    // National
     if (name.includes('ナショナル')) return { type:'national' };
-
-    // Default: Local
     return { type:'local' };
   }
 
@@ -384,8 +370,10 @@ window.MOBBR = window.MOBBR || {};
   // ★ world phase を tour_state に保存（互換用：必要最小限マージ）
   // =========================================================
   function saveWorldPhaseToTourState(phase){
-    const ph = String(phase || '').trim().toLowerCase();
-    const ok = (ph === 'qual' || ph === 'wl' || ph === 'final');
+    const ph0 = String(phase || '').trim().toLowerCase();
+    // ✅ v19.6: losers を許可、wl は losers に吸収
+    const ph = (ph0 === 'wl') ? 'losers' : ph0;
+    const ok = (ph === 'qual' || ph === 'losers' || ph === 'final');
     if (!ok) return false;
 
     try{
@@ -412,8 +400,7 @@ window.MOBBR = window.MOBBR || {};
   }
 
   // =========================================================
-  // ✅ v19.5：大会起動は「mobbr:startTournament」イベントに統一
-  // - app.js（v18.3）が受けて startTournamentByState(detail) を実行する
+  // ✅ 大会起動は「mobbr:startTournament」イベントに統一
   // =========================================================
   function dispatchStartTournament(detail){
     try{
@@ -441,7 +428,7 @@ window.MOBBR = window.MOBBR || {};
       hideBack();
       render();
 
-      // ===== Championship（app.js側にまだルートが無い想定なので直叩き維持）=====
+      // ===== Championship =====
       if (det.type === 'championship'){
         const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
         if (Flow && typeof Flow.startChampionshipTournament === 'function'){
@@ -455,13 +442,12 @@ window.MOBBR = window.MOBBR || {};
 
       // ===== World =====
       if (det.type === 'world'){
-        const ph = (det.phase === 'wl' || det.phase === 'final') ? det.phase : 'qual';
+        const ph = (det.phase === 'losers' || det.phase === 'final') ? det.phase : 'qual';
 
-        // 互換用に保存（基本は detail.phase を app.js に渡す）
         saveWorldPhaseToTourState(ph);
 
         if (ph === 'qual') setRecent('大会：ワールドファイナル予選リーグを開始！');
-        else if (ph === 'wl') setRecent('大会：ワールドファイナルWLを開始！');
+        else if (ph === 'losers') setRecent('大会：ワールドファイナルLosersリーグを開始！');
         else setRecent('大会：ワールドファイナル決勝戦を開始！');
 
         if (!dispatchStartTournament({ type:'world', phase: ph })){
@@ -559,7 +545,7 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
-    // ★★★ BATTLE（大会）：v19.5はイベント起動に統一 ★★★
+    // ★★★ BATTLE（大会） ★★★
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => {
       startTournamentByNextTour();
     });
@@ -608,14 +594,12 @@ window.MOBBR = window.MOBBR || {};
       window.MOBBR.ui.main = window.MOBBR.ui.main || {};
     }catch(e){}
 
-    // ✅ app.js が呼ぶ：週進行ポップ（表示だけ）
     if (!window.MOBBR.ui.main.showWeekAdvancePop){
       window.MOBBR.ui.main.showWeekAdvancePop = function(info){
         try{ showWeekAdvancePop(info); }catch(_){}
       };
     }
 
-    // ✅ 大会終了：UI側は「閉じ/描画」だけ。ストレージは触らない。
     window.addEventListener('mobbr:goMain', (e)=>{
       try{
         hideBack();
@@ -623,9 +607,6 @@ window.MOBBR = window.MOBBR || {};
       }catch(_){}
 
       const d = e?.detail || {};
-
-      // recentは app.js が最終責務で保存する。
-      // ここでは保存せず表示更新だけ。
       if (d.localFinished || d.nationalFinished || d.lastChanceFinished || d.worldFinished || d.tournamentFinished){
         render();
       }else{
