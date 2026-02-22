@@ -1,3 +1,5 @@
+'use strict';
+
 /* =========================================================
    sim_tournament_core_step.js（FULL） v4.9 + SKIP
    - v4.8 の全機能維持（Local / LastChance / National は壊さない）
@@ -15,8 +17,15 @@
         - 点灯後にチャンピオン獲得で優勝
         - 上限12試合（上限到達時の救済あり：総合上位を優勝扱い）
    - ✅ 追加: MATCH SKIP（match_skip_fast / T.skipCurrentMatch）
+
+   v4.9.1 修正：
+   - ✅ WORLD予選の分岐で「31〜40位なのにFinalに進む」バグを潰す
+     → world_qual_total_result_wait_branch で PLAYER順位を見て
+        * 1-10: Finalへ（seed）
+        * 11-30: Losersへ
+        * 31-40: 敗退（終了）
+     ※ Losersを実際に回さず seed の場合は「予選11-30位の上位10」を Losers通過扱いでFinal枠に採用（壊さない最小修正）
    ========================================================= */
-'use strict';
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.sim = window.MOBBR.sim || {};
@@ -542,9 +551,16 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
+    // ✅ v4.9.1: WORLD予選 31〜40位 敗退表示 → 次のNEXTで終了
+    if (state.phase === 'world_eliminated_wait_end'){
+      state.phase = 'done';
+      setRequest('endTournament', {});
+      return;
+    }
+
     // ✅ v4.9: WORLD 予選総合RESULTの次（分岐）
     if (state.phase === 'world_qual_total_result_wait_branch'){
-      // ここで分岐を確定して Losers or Final へ
+      // ここで分岐を確定して Losers or Final or Eliminated へ
       initWorldMetaIfNeeded(state);
 
       const ranked = computeRankedIdsFromTotal(state.tournamentTotal);
@@ -563,7 +579,58 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldQualFinished) window.MOBBR.sim.tournamentCorePost.onWorldQualFinished(state, state.tournamentTotal);
       }catch(e){}
 
-      // Losersへ
+      // ✅ v4.9.1: PLAYER順位で分岐（34位でもFinalに行かない）
+      const playerId = 'PLAYER';
+      const pr = ranked.indexOf(playerId) + 1; // 1-based, 0なら不明
+      const playerRank = pr > 0 ? pr : 999;
+
+      // 31〜40位 → 敗退（終了）
+      if (playerRank >= 31){
+        state.worldPhase = 'eliminated';
+
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setCenter3('WORLD 予選 敗退…', `総合順位：${playerRank}位`, '31〜40位は敗退');
+        setRequest('showNationalNotice', {
+          qualified: false,
+          line1: 'WORLD 予選 敗退…',
+          line2: `総合順位：${playerRank}位`,
+          line3: 'NEXTで終了'
+        });
+
+        state.phase = 'world_eliminated_wait_end';
+        return;
+      }
+
+      // 上位10 → Final進出（seed）
+      // ※ Losersリーグを実走させず、予選11〜30位の上位10を Losers通過扱いで採用（最小修正）
+      if (playerRank <= 10){
+        const finalIds = [];
+        const pushU = (id)=>{
+          const s = String(id||'');
+          if (!s) return;
+          if (finalIds.includes(s)) return;
+          finalIds.push(s);
+        };
+
+        for (const id of top10) pushU(id);
+
+        // Losers枠10（予選11-30の上位10を採用）
+        for (const id of mid20.slice(0,10)) pushU(id);
+
+        state.worldMeta.finalIds = finalIds.slice(0,20);
+
+        state.worldPhase = 'final';
+        initWorldFinalStateIfNeeded(state);
+
+        state.phase = 'intro';
+        setRequest('noop', {});
+        return;
+      }
+
+      // 11〜30位 → Losersへ
       state.worldPhase = 'losers';
 
       // roster 20 を差し替え（合算はLosers専用にリセット）
@@ -808,6 +875,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }else if (wp === 'losers'){
           // Losers は単発リーグなので session 表記は形だけ（壊さない）
           setCenter3('LOSERSリーグ 開幕！', '20チーム / 5試合', '上位10がFINALへ！');
+        }else if (wp === 'eliminated'){
+          setCenter3('WORLD 予選 敗退…', '', '');
         }else{
           initWorldFinalStateIfNeeded(state);
           setCenter3('FINAL ROUND 開始！', '80ptで点灯（マッチポイント）', '点灯→チャンピオンで優勝‼︎');
