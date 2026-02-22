@@ -1,10 +1,12 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.8 split-2） + SkipMatch button
+   ui_tournament.handlers.js（v3.6.9 split-2）FULL
    - 各 handleShow*** / buildTable 系
-   - ✅追加: コーチ選択画面に「この試合をスキップ」ボタン
-     * 2段階確認（1回目=警告表示 / 2回目=実行）
+   - ✅変更:
+     1) SKIPボタン/スキップ確認ロジックを完全廃止
+     2) コーチスキルは「現状使わない」ため UIを廃止（選択させない）
+        ※ flow 側の仕組みは壊さず、UIだけ無効化（将来の交戦スキル追加に備える）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -43,11 +45,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     imgExists
   } = MOD;
-
-  // ✅ スキップ確認フラグ（このファイル内で保持）
-  //  - 1回目クリックで警告
-  //  - 2回目クリックで実行
-  MOD._skipMatchArmed = false;
 
   function pickChats(n){
     const a = shuffle(BATTLE_CHAT);
@@ -207,9 +204,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = getState();
       if (!st) return;
 
-      // ✅ コーチ画面に入る前なので解除
-      MOD._skipMatchArmed = false;
-
       setBackdrop(TOURNEY_BACKDROP);
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
@@ -244,9 +238,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      // ✅ AUTO中はスキップ不可なので解除
-      MOD._skipMatchArmed = false;
-
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
       setChars('', '');
@@ -276,8 +267,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      MOD._skipMatchArmed = false;
-
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
       setChars('', '');
@@ -305,8 +294,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      MOD._skipMatchArmed = false;
-
       const st = getState();
       if (!st) return;
 
@@ -330,6 +317,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // =========================================================
+  // ✅ コーチスキル UI 廃止（現状使わない）
+  // - 将来「交戦時スキル」に置換する想定
+  // - flow側の仕様を壊さないため request/phase は維持しつつ、
+  //   この画面では「選択無しでNEXTで進行」だけを表示
+  // =========================================================
   async function handleShowCoachSelect(payload){
     lockUI();
     try{
@@ -343,9 +336,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = getState();
       if (!st) return;
 
-      // ✅ コーチ選択に来たら毎回解除（2段階確認）
-      MOD._skipMatchArmed = false;
-
       setBackdrop(TOURNEY_BACKDROP);
       const sq = await resolveFirstExisting([st.ui?.squareBg || ASSET.tent, ASSET.tent]);
       setSquareBg(sq || ASSET.tent);
@@ -356,104 +346,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBanners(st.bannerLeft, st.bannerRight);
 
-      const equipped = Array.isArray(payload?.equipped) ? payload.equipped : [];
-      const master = (payload?.master && typeof payload.master === 'object') ? payload.master : {};
-
       const wrap = document.createElement('div');
       wrap.className = 'coachWrap';
 
       const hint = document.createElement('div');
       hint.className = 'coachHint';
-      hint.textContent = '装備中のコーチスキルから1つ選択（NEXTで進行）';
+      hint.textContent = 'コーチスキルは現在廃止（未使用）です。NEXTで進行します。';
       wrap.appendChild(hint);
 
-      const list = document.createElement('div');
-      list.className = 'coachList';
-
-      equipped.forEach(id=>{
-        const m = master[String(id)] || null;
-        const btn = document.createElement('button');
-        btn.className = 'coachBtn';
-        btn.type = 'button';
-        btn.textContent = m ? `${String(id)} / x${m.mult}` : String(id);
-
-        btn.addEventListener('click', ()=>{
-          const flow = getFlow();
-          if (flow?.setCoachSkill) flow.setCoachSkill(String(id));
-          setLines('✅ コーチスキル決定！', m?.quote || '', 'NEXTで進行');
-          // スキップ確認は解除
-          MOD._skipMatchArmed = false;
-        });
-
-        list.appendChild(btn);
-      });
-
-      wrap.appendChild(list);
-
-      // =========================================================
-      // ✅ 追加: この試合をスキップ（2段階確認）
-      // =========================================================
-      const skipBox = document.createElement('div');
-      skipBox.style.marginTop = '10px';
-
-      const skipHint = document.createElement('div');
-      skipHint.className = 'coachHint';
-      skipHint.textContent = 'テスト用：この試合を高速処理でRESULTまで進める（デメリットあり）';
-      skipBox.appendChild(skipHint);
-
-      const skipBtn = document.createElement('button');
-      skipBtn.type = 'button';
-      skipBtn.className = 'coachBtn';
-      skipBtn.textContent = 'この試合をスキップ';
-      skipBtn.style.width = '100%';
-
-      skipBtn.addEventListener('click', ()=>{
-        const flow = getFlow();
-        const st2 = getState();
-        if (!flow || !st2) return;
-
-        // AUTOや総合結果中は押しても無効（壊さない）
-        const ph = String(st2.phase||'');
-        if (ph.startsWith('national_auto_') || ph.includes('total_result_wait') || ph === 'done'){
-          setLines('⛔ スキップ不可', '今の画面ではスキップできません', '');
-          MOD._skipMatchArmed = false;
-          skipBtn.textContent = 'この試合をスキップ';
-          return;
-        }
-
-        if (!MOD._skipMatchArmed){
-          MOD._skipMatchArmed = true;
-          skipBtn.textContent = '本当にスキップ（デメリットあり）';
-          setLines(
-            '⚠️ スキップ確認',
-            'イベント/バフ無し・TRE/FLG無し・少し勝ちにくい',
-            'もう一度押すと実行'
-          );
-          return;
-        }
-
-        // 実行
-        MOD._skipMatchArmed = false;
-        skipBtn.textContent = 'この試合をスキップ';
-
-        try{
-          st2._skipMatchRequested = true;
-        }catch(_){}
-
-        // 即進める
-        flow.step();
-        MOD.render();
-      });
-
-      skipBox.appendChild(skipBtn);
-      wrap.appendChild(skipBox);
-
-      showPanel('コーチスキル', wrap);
+      // 「装備中一覧」だけ見せたい場合はここで表示できるが、
+      // 事故を避けるため、今回はUI要素最小（=案内のみ）にする。
+      showPanel('コーチ', wrap);
 
       setLines(
         st.ui?.center3?.[0] || 'それでは試合を開始します！',
-        st.ui?.center3?.[1] || '使用するコーチスキルを選択してください！',
-        st.ui?.center3?.[2] || ''
+        st.ui?.center3?.[1] || '（コーチスキル無し）',
+        st.ui?.center3?.[2] || 'NEXTで進行'
       );
       syncSessionBar();
     }finally{
@@ -470,9 +378,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      // ✅ 降下開始に入ったら、スキップ確認は解除
-      MOD._skipMatchArmed = false;
 
       const st = getState();
       if (!st) return;
@@ -1039,8 +944,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
-      MOD._skipMatchArmed = false;
-
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
 
@@ -1100,8 +1003,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       resetEncounterGate();
       clearHold();
       setBattleMode(false);
-
-      MOD._skipMatchArmed = false;
 
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
