@@ -1,9 +1,9 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.core.js（v3.6.9 split-1）
+   ui_tournament.core.js（v3.6.9 split-1 FULL）
    - DOM生成 / 共通ユーティリティ / 状態 / 共通UI操作
-   - ✅ 追加: SKIPボタン（mobbrTourSkipBtn）をDOMに追加＆dom参照に追加
+   - ✅ SKIPボタン廃止（DOMにもロジックにも存在しない）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -262,9 +262,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
             <div class="t2" id="mobbrTourSplash2"></div>
           </div>
 
-          <!-- ✅ 追加: SKIPボタン -->
-          <button class="skipBtn" id="mobbrTourSkipBtn" type="button">SKIP</button>
-
           <button class="nextBtn" id="mobbrTourNextBtn" type="button">NEXT</button>
           <button class="closeBtn" id="mobbrTourCloseBtn" type="button">×</button>
         </div>
@@ -296,10 +293,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       splash: overlay.querySelector('#mobbrTourSplash'),
       splash1: overlay.querySelector('#mobbrTourSplash1'),
       splash2: overlay.querySelector('#mobbrTourSplash2'),
-
-      // ✅ 追加
-      skipBtn: overlay.querySelector('#mobbrTourSkipBtn'),
-
       nextBtn: overlay.querySelector('#mobbrTourNextBtn'),
       closeBtn: overlay.querySelector('#mobbrTourCloseBtn')
     };
