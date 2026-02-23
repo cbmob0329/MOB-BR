@@ -1,15 +1,16 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.10 split-2）FULL
+   ui_tournament.handlers.js（v3.6.11 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
      2) コーチスキルは「現状使わない」ため UIを廃止（選択させない）
         ※ flow 側の仕組みは壊さず、UIだけ無効化（将来の交戦スキル追加に備える）
 
-   ✅ v3.6.10 変更
-   - FIX: 次の試合表示の「/ 5」ハードコード撤去（world final=12等に追従）
+   ✅ v3.6.11 変更（今回の不具合対策）
+   - FIX: 敵画像候補の生成で “空 → P1.png” に落ちないようにする
+          （coreの guessEnemyImageCandidates を使用）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -43,6 +44,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     syncSessionBar,
     preloadEventIcons,
     guessPlayerImageCandidates,
+    guessEnemyImageCandidates,     // ✅ v3.6.11
     guessTeamImageCandidates,
     resolveFirstExisting,
 
@@ -534,9 +536,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const foeId = payload?.foeTeamId || '';
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
-      const rightResolved = await resolveFirstExisting(
-        guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
-      );
+
+      // ✅ v3.6.11: 敵側は “空ならP1.pngに落ちない” candidates にする
+      const rightCands = []
+        .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
+        .concat(guessTeamImageCandidates(foeId));
+
+      const rightResolved = await resolveFirstExisting(rightCands);
 
       setNames('', '');
       setChars(leftResolved, '');
@@ -613,10 +619,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       showCenterStamp(ASSET.brbattle);
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
+
       const foeId = payload?.foeTeamId || '';
-      const rightResolved = await resolveFirstExisting(
-        guessPlayerImageCandidates(st.ui?.rightImg || '').concat(guessTeamImageCandidates(foeId))
-      );
+
+      // ✅ v3.6.11: 敵側は “空ならP1.pngに落ちない”
+      const rightCands = []
+        .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
+        .concat(guessTeamImageCandidates(foeId));
+
+      const rightResolved = await resolveFirstExisting(rightCands);
 
       const meName = payload?.meName || '';
       const foeName = payload?.foeName || '';
@@ -733,9 +744,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       let champImg = '';
       if (champTeam?.id){
-        champImg = await resolveFirstExisting(
-          guessTeamImageCandidates(champTeam.id).concat(guessPlayerImageCandidates(champTeam?.img || ''))
-        );
+        const cands = []
+          .concat(guessEnemyImageCandidates(champTeam?.img || ''))
+          .concat(guessTeamImageCandidates(champTeam.id));
+        champImg = await resolveFirstExisting(cands);
       }
 
       setChars(leftResolved, champImg || '');
