@@ -9,6 +9,10 @@
   - buildMatchesForRound を「必ず slots 本作る」方式に変更
     → R1=4 / R2=4 / R3=4 / R4=4 / R5=2 / R6=1 の交戦数を安定化
     → 交戦不足による「キルが全然入らない」状態を防止
+
+  ✅追加（2026-02-xx）
+  - UI側で参照できる「大会ごとの総マッチ数」推定関数を追加（安全側の補助）
+    ※ core が totalMatches 等を持っていればそちらが優先される前提
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -217,6 +221,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (round === 2) return 0.70;
     if (round === 3) return 0.75;
     return 1.0;
+  }
+
+  // ===== tournament totals (helper) =====
+  // ※ coreが totalMatches を持っていればそちらが正。これは「UI矯正用の保険」。
+  function guessTotalMatchesByModePhase(mode, phase){
+    const m = String(mode || '').toLowerCase();
+    const p = String(phase || '').toLowerCase();
+
+    if (m === 'world'){
+      if (p === 'final') return 12;   // ✅ ユーザー報告：決勝は12マッチ
+      if (p === 'wl') return 6;       // 想定（必要なら core 側が上書き）
+      return 6;                       // qual想定（必要なら core 側が上書き）
+    }
+    if (m === 'national') return 5;
+    if (m === 'lastchance') return 5;
+    return 5; // local他
   }
 
   // ===== drop =====
@@ -433,6 +453,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     battleSlots,
     eventCount,
     playerBattleProb,
+
+    // ✅ helper
+    guessTotalMatchesByModePhase,
 
     resetForNewMatch,
     initDropPositions,
