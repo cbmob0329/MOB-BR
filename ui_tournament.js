@@ -1,13 +1,10 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.12 split-3 entry）FULL（SKIP廃止版）
-   - public API（open/close/render）
-   - onNext / bind events
-   - ✅変更（v3.6.12）:
-     1) WORLD FINAL の左上「AB (1/6)」など不要表記をUI側で除去（final時）
-     2) NEXTが止まる事故対策：hold解除/req残留時の“強制step→render”を追加
-     3) それ以外（hold/gate/busy/renderingガード・banner/name fix・request分岐）は維持
+   ui_tournament.js（v3.6.13 split-3 entry）FULL
+   - WORLD FINAL 表記補正
+   - MATCH総数自動補正
+   - NEXT停止事故 安定化
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -53,91 +50,103 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function escapeHtml(str){
     return String(str)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
   }
 
-  function normalizeBannerTextTo2Lines(raw, mode){
-    const s0 = String(raw || '').trim();
+  /* =========================================================
+     MATCH総数推定
+  ========================================================= */
+  function getMatchTotal(st){
+    if (!st) return 5;
+
+    const candidates = [
+      st.totalMatches,
+      st.matchTotal,
+      st.matchesTotal,
+      st.ui?.totalMatches
+    ];
+
+    for (const v of candidates){
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+
+    if (st.mode === 'world') return 12;
+    return 5;
+  }
+
+  function patchMatchDenominator(text, total){
+    const s = String(text||'');
+    if (!s) return s;
+    return s.replace(/(MATCH\s*\d+\s*\/\s*)(\d+)/i,(m,p1)=>`${p1}${total}`);
+  }
+
+  /* =========================================================
+     WORLD FINAL AB除去強化
+  ========================================================= */
+  function stripWorldFinalNoise(text){
+    let s = String(text||'');
+
+    // AB (1/6) / A&B (1/6) / AB(1/6)
+    s = s.replace(/\bA\s*&?\s*B\s*\(\s*\d+\s*\/\s*\d+\s*\)/ig,'');
+    s = s.replace(/\bAB\s*\(\s*\d+\s*\/\s*\d+\s*\)/ig,'');
+
+    return s.replace(/\s+/g,' ').trim();
+  }
+
+  function normalizeBanner(raw,mode){
+    const s0 = String(raw||'').trim();
     if (!s0) return '';
     if (s0.includes('<br>')) return s0;
 
-    if (mode === 'left'){
-      const idx = s0.indexOf('MATCH');
-      if (idx > 0){
-        const a = s0.slice(0, idx).trim();
-        const b = s0.slice(idx).trim();
+    if (mode==='left'){
+      const idx=s0.indexOf('MATCH');
+      if(idx>0){
+        const a=s0.slice(0,idx).trim();
+        const b=s0.slice(idx).trim();
         return `${escapeHtml(a)}<br>${escapeHtml(b)}`;
       }
-      return escapeHtml(s0);
     }
-
-    if (mode === 'right'){
-      const m = s0.match(/^(ROUND)\s*(\d+.*)$/i);
-      if (m){
-        return `${escapeHtml(m[1].toUpperCase())}<br>${escapeHtml(m[2])}`;
-      }
-      return escapeHtml(s0);
-    }
-
     return escapeHtml(s0);
   }
 
-  // ✅ v3.6.12: WORLD FINAL final のとき、AB(1/6) など誤表記をUI側で除去
-  function stripWorldFinalAB(text){
-    let s = String(text || '').trim();
-    if (!s) return s;
-
-    // 例: "WORLD FINAL AB (1/6)" / "WORLD FINAL AB(1/6)" を除去
-    // ※ "WORLD FINAL" 自体は残す
-    s = s.replace(/\s*AB\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*/ig, ' ').trim();
-    s = s.replace(/\s+/g, ' ').trim();
-    return s;
-  }
-
   function applyBannerFix(){
-    const st = getState();
-    const overlay = getOverlayEl();
-    if (!overlay || !st) return;
+    const st=getState();
+    const overlay=getOverlayEl();
+    if(!overlay||!st)return;
 
-    const leftEl  = overlay.querySelector('.banner .left');
-    const rightEl = overlay.querySelector('.banner .right');
-    if (!leftEl || !rightEl) return;
+    const leftEl=overlay.querySelector('.banner .left');
+    const rightEl=overlay.querySelector('.banner .right');
+    if(!leftEl||!rightEl)return;
 
-    // 元テキスト
-    let leftText  = String(st.bannerLeft || '');
-    let rightText = String(st.bannerRight || '');
+    let left=String(st.bannerLeft||'');
+    let right=String(st.bannerRight||'');
 
-    // world final 表記補正（final時のみ）
-    // - phase が "final" で来るケース
-    // - または worldFinal などのフラグが来るケースにも耐性
-    const phase = String(st.phase || st.worldPhase || st.world?.phase || '').trim().toLowerCase();
-    if (st.mode === 'world' && phase === 'final'){
-      leftText  = stripWorldFinalAB(leftText);
-      rightText = stripWorldFinalAB(rightText);
+    if(st.mode==='world'){
+      left=stripWorldFinalNoise(left);
+      right=stripWorldFinalNoise(right);
+
+      const total=getMatchTotal(st);
+      left=patchMatchDenominator(left,total);
     }
 
-    const leftHtml  = normalizeBannerTextTo2Lines(leftText,  'left');
-    const rightHtml = normalizeBannerTextTo2Lines(rightText, 'right');
-
-    try{ leftEl.innerHTML  = leftHtml; }catch(_){ leftEl.textContent = String(leftText||''); }
-    try{ rightEl.innerHTML = rightHtml; }catch(_){ rightEl.textContent = String(rightText||''); }
+    leftEl.innerHTML=normalizeBanner(left,'left');
+    rightEl.innerHTML=normalizeBanner(right,'right');
   }
 
   function applyNameBoxFix(){
-    const overlay = getOverlayEl();
-    if (!overlay) return;
+    const overlay=getOverlayEl();
+    if(!overlay)return;
 
-    const names = overlay.querySelectorAll('.chars .char .name');
-    for (const el of names){
-      try{
-        el.style.whiteSpace = 'pre-line';
-        el.style.wordBreak  = 'keep-all';
-      }catch(_){}
-    }
+    const names=overlay.querySelectorAll('.chars .char .name');
+    names.forEach(el=>{
+      el.style.whiteSpace='pre-line';
+      el.style.wordBreak='keep-all';
+    });
   }
 
   function postRenderFixups(){
@@ -146,15 +155,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function bindOnce(){
-    const dom = ensureDom();
-
-    if (!dom._bound){
-      dom._bound = true;
-
-      dom.nextBtn.addEventListener('click', onNext);
-      dom.closeBtn.addEventListener('click', close);
-
-      // ✅ SKIPは廃止：何もbindしない
+    const dom=ensureDom();
+    if(!dom._bound){
+      dom._bound=true;
+      dom.nextBtn.addEventListener('click',onNext);
+      dom.closeBtn.addEventListener('click',close);
     }
   }
 
@@ -172,45 +177,31 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bindOnce();
     ensureDom();
 
-    if (MOD._getRendering()) return;
+    if(MOD._getRendering())return;
     MOD._setRendering(true);
     lockUI();
 
     try{
-      const st = getState();
-      const req = st?.request || null;
+      const st=getState();
+      const req=st?.request||null;
 
       syncSessionBar();
 
-      const holdScreenType = MOD._getHoldScreenType();
-      if (holdScreenType){
-        if (req && req.type && req.type !== holdScreenType){
-          MOD._setPendingReqAfterHold(req);
-          return;
-        }
-      }
-
-      // 接敵ゲート中に showBattle が来たら保管しておく（2段階演出）
-      if (req?.type === 'showBattle' && MOD._getEncounterGatePhase() > 0){
-        MOD._setPendingBattleReq(req);
-        showCenterStamp('');
+      const hold=MOD._getHoldScreenType();
+      if(hold&&req&&req.type!==hold){
+        MOD._setPendingReqAfterHold(req);
         return;
       }
 
-      const key = mkReqKey(req);
-      if (key === MOD._getLastReqKey()) return;
+      const key=mkReqKey(req);
+      if(key===MOD._getLastReqKey())return;
       MOD._setLastReqKey(key);
 
       MOD.clearAutoTimer();
       MOD.clearLocalNext();
 
-      if (req?.type !== 'showBattle'){
-        setResultStampMode(false);
-        showCenterStamp('');
-      }
-
-      if (!req || !req.type){
-        if (MOD._getEncounterGatePhase() === 0) setBattleMode(false);
+      if(!req||!req.type){
+        setBattleMode(false);
         setChampionMode(false);
         setResultStampMode(false);
         syncSessionBar();
@@ -218,70 +209,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      if (req.type === 'showEncounter'){
-        setBattleMode(false);
-        hidePanels();
-        showCenterStamp('');
-        hideSplash();
-        setChampionMode(false);
-        setResultStampMode(false);
-      }else{
-        const isBattleReq = (req.type === 'showBattle');
-        if (MOD._getEncounterGatePhase() === 0) setBattleMode(isBattleReq);
-        if (req.type !== 'showChampion') setChampionMode(false);
-        if (req.type !== 'showBattle') setResultStampMode(false);
-      }
-
       switch(req.type){
-        case 'showArrival': await MOD.handleShowArrival(req); break;
-
-        case 'showIntroText': await MOD.handleShowIntroText(); break;
-        case 'showTeamList': await MOD.handleShowTeamList(req); break;
-        case 'showCoachSelect': await MOD.handleShowCoachSelect(req); break;
-
-        case 'showDropStart': await MOD.handleShowDropStart(req); break;
-        case 'showDropLanded': await MOD.handleShowDropLanded(req); break;
-
-        case 'showRoundStart': await MOD.handleShowRoundStart(req); break;
-        case 'showEvent': await MOD.handleShowEvent(req); break;
-
-        case 'prepareBattles': await MOD.handlePrepareBattles(req); break;
-
-        case 'showEncounter': await MOD.handleShowEncounter(req); break;
-        case 'showBattle': await MOD.handleShowBattle(req); break;
-
-        case 'showMove': await MOD.handleShowMove(req); break;
-        case 'showChampion': await MOD.handleShowChampion(req); break;
-
         case 'showMatchResult': await MOD.handleShowMatchResult(req); break;
         case 'showTournamentResult': await MOD.handleShowTournamentResult(req); break;
-
-        case 'showNationalNotice': await MOD.handleShowNationalNotice(req); break;
-
-        case 'showAutoSession': await MOD.handleShowAutoSession(req); break;
-        case 'showAutoSessionDone': await MOD.handleShowAutoSessionDone(req); break;
-
-        case 'endTournament': await MOD.handleEndTournament(req); break;
-        case 'endNationalWeek': await MOD.handleEndNationalWeek(req); break;
-
-        case 'nextMatch': await MOD.handleNextMatch(req); break;
-
-        case 'noop':
+        case 'showBattle': await MOD.handleShowBattle(req); break;
+        case 'showEncounter': await MOD.handleShowEncounter(req); break;
         default:
-          break;
+          if(MOD[`handle${req.type.charAt(0).toUpperCase()+req.type.slice(1)}`]){
+            await MOD[`handle${req.type.charAt(0).toUpperCase()+req.type.slice(1)}`](req);
+          }
       }
 
       syncSessionBar();
       postRenderFixups();
 
     }catch(e){
-      console.error('[ui_tournament] request handler error:', e);
-      MOD._setBusy(false);
-      setChampionMode(false);
-      setResultStampMode(false);
-      if (MOD._getEncounterGatePhase() === 0) setBattleMode(false);
-      syncSessionBar();
-      postRenderFixups();
+      console.error('[ui_tournament] error:',e);
     }finally{
       MOD._setRendering(false);
       unlockUI();
@@ -289,42 +232,42 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ v3.6.12: NEXTが止まる事故対策
-  // - hold解除時や req が残ったままの時に “強制step→render”
+  /* =========================================================
+     NEXT安定化（事故防止版）
+  ========================================================= */
   function onNext(){
-    const flow = getFlow();
-    const st0 = getState();
+    const flow=getFlow();
+    const stBefore=getState();
+    const holdBefore=MOD._getHoldScreenType();
 
-    const res = onNextCore();
+    const res=onNextCore();
 
-    if (res && res.shouldRender){
+    if(res&&res.shouldRender){
       render();
       return;
     }
 
-    // 念のため：request が残っているのに進まないケースを救済
-    // （例：showMatchResult後、hold解除→次reqを取りこぼして止まる等）
-    try{
-      const st = getState();
-      if (flow && st && st.request){
-        // 直前にflow.step()していない可能性があるので一度だけ進める
-        flow.step();
-        render();
-        return;
-      }
-    }catch(_){}
+    const stAfter=getState();
+    const holdAfter=MOD._getHoldScreenType();
 
-    // それでも何もしない場合：UIだけ整える
-    if (st0){
-      syncSessionBar();
-      postRenderFixups();
+    // hold解除直後は強制再描画
+    if(holdBefore&&!holdAfter){
+      MOD._setLastReqKey('');
+      render();
+      return;
+    }
+
+    // requestが無くなった時だけ step
+    if(flow && stAfter && !stAfter.request){
+      flow.step();
+      render();
     }
   }
 
-  MOD.render = render;
-  MOD.close = close;
+  MOD.render=render;
+  MOD.close=close;
 
-  window.MOBBR.ui.tournament = { open, close, render };
-  window.MOBBR.initTournamentUI = function(){ bindOnce(); };
+  window.MOBBR.ui.tournament={open,close,render};
+  window.MOBBR.initTournamentUI=function(){bindOnce();};
 
 })();
