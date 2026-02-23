@@ -1,16 +1,14 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.core.js（v3.6.10 split-1 FULL）
+   ui_tournament.core.js（v3.6.11 split-1 FULL）
    - DOM生成 / 共通ユーティリティ / 状態 / 共通UI操作
    - ✅ SKIPボタン廃止（DOMにもロジックにも存在しない）
 
-   ✅ v3.6.10 変更
-   - FIX: WORLD FINAL 表記の「AB(1/6)」「MATCH 1/5」ズレを安全に矯正
-     * final のときはグループ表記(AB/1/6等)を消す
-     * MATCH x/y の y を state.totalMatches 等に合わせる（無ければ world final=12）
-   - FIX: result後NEXTが進まない事がある問題のUI側フェイルセーフ
-     * flow.step() 前に lastReqKey を必ずクリアして再描画ガードで止まらないようにする
+   ✅ v3.6.11 変更（今回の不具合対策）
+   - FIX: 敵画像の候補生成で「空なのにP1.pngに落ちる」事故を回避するため、
+          右側（敵）専用の candidates を提供（handlers 側で利用）
+   - 既存: WORLD FINAL 表記ズレ矯正、result後NEXT停止フェイルセーフ維持
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -596,7 +594,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return `showEvent|m:${matchIndex}|r:${round}|id:${String(req?.eventId||req?.id||req?.icon||'')}`;
     }
     if (t === 'showChampion'){
-      return `showChampion|m:${matchIndex}|name:${String(req?.championName||'')}`;
+      // ✅ champion は “同じ名前でも matchIndex/round を必ず含む”
+      return `showChampion|m:${matchIndex}|r:${round}|name:${String(req?.championName||'')}`;
     }
     if (t === 'showMatchResult'){
       return `showMatchResult|m:${matchIndex}`;
@@ -672,6 +671,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const arr = [];
     arr.push(base);
     if (!/\.png$/i.test(base)) arr.push(base + '.png');
+    return arr;
+  }
+
+  // ✅ v3.6.11: 右側（敵）用。空なら “何も返さない” （P1.pngに落ちない）
+  function guessEnemyImageCandidates(src){
+    const s = String(src || '').trim();
+    if (!s) return [];
+    const arr = [s];
+    if (!/\.png$/i.test(s)) arr.push(s + '.png');
     return arr;
   }
 
@@ -906,6 +914,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     onNextCore,
 
     guessPlayerImageCandidates,
+    guessEnemyImageCandidates,   // ✅ v3.6.11
     guessTeamImageCandidates,
     resolveFirstExisting,
 
