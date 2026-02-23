@@ -1,12 +1,15 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.9 split-2）FULL
+   ui_tournament.handlers.js（v3.6.10 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
      2) コーチスキルは「現状使わない」ため UIを廃止（選択させない）
         ※ flow 側の仕組みは壊さず、UIだけ無効化（将来の交戦スキル追加に備える）
+
+   ✅ v3.6.10 変更
+   - FIX: 次の試合表示の「/ 5」ハードコード撤去（world final=12等に追従）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -43,7 +46,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     guessTeamImageCandidates,
     resolveFirstExisting,
 
-    imgExists
+    // v3.6.10 helper
+    getMatchTotalFromState
   } = MOD;
 
   function pickChats(n){
@@ -319,9 +323,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ コーチスキル UI 廃止（現状使わない）
-  // - 将来「交戦時スキル」に置換する想定
-  // - flow側の仕様を壊さないため request/phase は維持しつつ、
-  //   この画面では「選択無しでNEXTで進行」だけを表示
   // =========================================================
   async function handleShowCoachSelect(payload){
     lockUI();
@@ -354,8 +355,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       hint.textContent = 'コーチスキルは現在廃止（未使用）です。NEXTで進行します。';
       wrap.appendChild(hint);
 
-      // 「装備中一覧」だけ見せたい場合はここで表示できるが、
-      // 事故を避けるため、今回はUI要素最小（=案内のみ）にする。
       showPanel('コーチ', wrap);
 
       setLines(
@@ -1007,7 +1006,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
-      setLines('➡️ 次の試合へ', `MATCH ${payload?.matchIndex || ''} / 5`, 'NEXTで進行');
+      const st = getState() || {};
+      const total = getMatchTotalFromState(st);
+      const mi = Number(payload?.matchIndex ?? st.matchIndex ?? st.match ?? 0) || 0;
+
+      setLines('➡️ 次の試合へ', `MATCH ${mi} / ${total}`, 'NEXTで進行');
       syncSessionBar();
     }finally{
       unlockUI();
