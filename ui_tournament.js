@@ -1,12 +1,13 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.11 split-3 entry）FULL（SKIP廃止版）
+   ui_tournament.js（v3.6.12 split-3 entry）FULL（SKIP廃止版）
    - public API（open/close/render）
    - onNext / bind events
-   - ✅変更:
-     - SKIPボタン/confirm/step/render の仕組みを完全廃止
-     - それ以外（hold/gate/busy/renderingガード・banner/name fix・request分岐）は維持
+   - ✅変更（v3.6.12）:
+     1) WORLD FINAL の左上「AB (1/6)」など不要表記をUI側で除去（final時）
+     2) NEXTが止まる事故対策：hold解除/req残留時の“強制step→render”を追加
+     3) それ以外（hold/gate/busy/renderingガード・banner/name fix・request分岐）は維持
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -22,6 +23,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const {
     ensureDom,
+    getFlow,
     getState,
     mkReqKey,
 
@@ -47,6 +49,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function getOverlayEl(){
     return document.getElementById('mobbrTournamentOverlay');
+  }
+
+  function escapeHtml(str){
+    return String(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
   function normalizeBannerTextTo2Lines(raw, mode){
@@ -75,13 +86,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return escapeHtml(s0);
   }
 
-  function escapeHtml(str){
-    return String(str)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+  // ✅ v3.6.12: WORLD FINAL final のとき、AB(1/6) など誤表記をUI側で除去
+  function stripWorldFinalAB(text){
+    let s = String(text || '').trim();
+    if (!s) return s;
+
+    // 例: "WORLD FINAL AB (1/6)" / "WORLD FINAL AB(1/6)" を除去
+    // ※ "WORLD FINAL" 自体は残す
+    s = s.replace(/\s*AB\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*/ig, ' ').trim();
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
   }
 
   function applyBannerFix(){
@@ -93,11 +107,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const rightEl = overlay.querySelector('.banner .right');
     if (!leftEl || !rightEl) return;
 
-    const leftHtml  = normalizeBannerTextTo2Lines(st.bannerLeft,  'left');
-    const rightHtml = normalizeBannerTextTo2Lines(st.bannerRight, 'right');
+    // 元テキスト
+    let leftText  = String(st.bannerLeft || '');
+    let rightText = String(st.bannerRight || '');
 
-    try{ leftEl.innerHTML  = leftHtml; }catch(_){ leftEl.textContent = String(st.bannerLeft||''); }
-    try{ rightEl.innerHTML = rightHtml; }catch(_){ rightEl.textContent = String(st.bannerRight||''); }
+    // world final 表記補正（final時のみ）
+    // - phase が "final" で来るケース
+    // - または worldFinal などのフラグが来るケースにも耐性
+    const phase = String(st.phase || st.worldPhase || st.world?.phase || '').trim().toLowerCase();
+    if (st.mode === 'world' && phase === 'final'){
+      leftText  = stripWorldFinalAB(leftText);
+      rightText = stripWorldFinalAB(rightText);
+    }
+
+    const leftHtml  = normalizeBannerTextTo2Lines(leftText,  'left');
+    const rightHtml = normalizeBannerTextTo2Lines(rightText, 'right');
+
+    try{ leftEl.innerHTML  = leftHtml; }catch(_){ leftEl.textContent = String(leftText||''); }
+    try{ rightEl.innerHTML = rightHtml; }catch(_){ rightEl.textContent = String(rightText||''); }
   }
 
   function applyNameBoxFix(){
@@ -163,6 +190,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
       }
 
+      // 接敵ゲート中に showBattle が来たら保管しておく（2段階演出）
       if (req?.type === 'showBattle' && MOD._getEncounterGatePhase() > 0){
         MOD._setPendingBattleReq(req);
         showCenterStamp('');
@@ -261,10 +289,35 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ✅ v3.6.12: NEXTが止まる事故対策
+  // - hold解除時や req が残ったままの時に “強制step→render”
   function onNext(){
+    const flow = getFlow();
+    const st0 = getState();
+
     const res = onNextCore();
+
     if (res && res.shouldRender){
       render();
+      return;
+    }
+
+    // 念のため：request が残っているのに進まないケースを救済
+    // （例：showMatchResult後、hold解除→次reqを取りこぼして止まる等）
+    try{
+      const st = getState();
+      if (flow && st && st.request){
+        // 直前にflow.step()していない可能性があるので一度だけ進める
+        flow.step();
+        render();
+        return;
+      }
+    }catch(_){}
+
+    // それでも何もしない場合：UIだけ整える
+    if (st0){
+      syncSessionBar();
+      postRenderFixups();
     }
   }
 
