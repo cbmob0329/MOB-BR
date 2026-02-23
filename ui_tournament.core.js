@@ -1,9 +1,16 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.core.js（v3.6.9 split-1 FULL）
+   ui_tournament.core.js（v3.6.10 split-1 FULL）
    - DOM生成 / 共通ユーティリティ / 状態 / 共通UI操作
    - ✅ SKIPボタン廃止（DOMにもロジックにも存在しない）
+
+   ✅ v3.6.10 変更
+   - FIX: WORLD FINAL 表記の「AB(1/6)」「MATCH 1/5」ズレを安全に矯正
+     * final のときはグループ表記(AB/1/6等)を消す
+     * MATCH x/y の y を state.totalMatches 等に合わせる（無ければ world final=12）
+   - FIX: result後NEXTが進まない事がある問題のUI側フェイルセーフ
+     * flow.step() 前に lastReqKey を必ずクリアして再描画ガードで止まらないようにする
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -383,10 +390,66 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureDom();
     dom.squareBg.style.backgroundImage = src ? `url(${src})` : 'none';
   }
+
+  // ===== match total helpers =====
+  function getMatchTotalFromState(st){
+    const s = st || {};
+    const mode = String(s.mode || '').toLowerCase();
+    const phase = String(s.phase || s.worldPhase || s.world?.phase || '').toLowerCase();
+
+    const n =
+      Number(s.totalMatches ?? s.matchTotal ?? s.matchCount ?? s.matchesTotal ?? s.matchesPerTournament ?? s.maxMatches);
+
+    if (Number.isFinite(n) && n > 0) return n;
+
+    // 補助：logic側があれば使う
+    try{
+      const g = window.MOBBR?.sim?.tournamentLogic?.guessTotalMatchesByModePhase;
+      if (typeof g === 'function'){
+        const v = Number(g(mode, phase));
+        if (Number.isFinite(v) && v > 0) return v;
+      }
+    }catch(e){}
+
+    // 最低限の安全デフォルト
+    if (mode === 'world' && phase === 'final') return 12;
+    return 5;
+  }
+
+  function sanitizeWorldFinalBannerText(text, st){
+    let s = String(text || '');
+
+    const mode = String(st?.mode || '').toLowerCase();
+    const phase = String(st?.phase || st?.worldPhase || st?.world?.phase || '').toLowerCase();
+    const isWorldFinal = (mode === 'world' && phase === 'final');
+
+    // finalならグループ表記を出さない（AB / (1/6) 等）
+    if (isWorldFinal){
+      s = s.replace(/\bAB\b/gi, '').trim();
+      // (1/6) / （1/6） / [1/6] などを削除
+      s = s.replace(/[\(\（\[]\s*\d+\s*\/\s*\d+\s*[\)\）\]]/g, '').trim();
+      // 余分な二重スペース
+      s = s.replace(/\s{2,}/g, ' ').trim();
+    }
+
+    // MATCH x / y の y を正しい total に合わせる
+    const total = getMatchTotalFromState(st);
+    s = s.replace(/(MATCH)\s*(\d+)\s*\/\s*(\d+)/i, (m, a, x)=>{
+      return `${a} ${x} / ${total}`;
+    });
+
+    return s;
+  }
+
   function setBanners(l, r){
     ensureDom();
-    dom.bannerL.textContent = String(l || '');
-    dom.bannerR.textContent = String(r || '');
+    const st = getState();
+
+    const left = sanitizeWorldFinalBannerText(l, st);
+    const right = sanitizeWorldFinalBannerText(r, st);
+
+    dom.bannerL.textContent = String(left || '');
+    dom.bannerR.textContent = String(right || '');
     syncSessionBar();
   }
 
@@ -596,6 +659,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const flow = getFlow();
     if (!flow) return { consumed:true };
+
+    // ✅ フェイルセーフ：同じrequestが返っても描画ガードで止まらないようにする
+    lastReqKey = '';
 
     flow.step();
     return { consumed:false, shouldRender:true };
@@ -846,7 +912,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     clampNum,
     buffMultiplierFromEventBuffs,
     getPlayerTeam,
-    computeEventPowerLine
+    computeEventPowerLine,
+
+    // helpers export（handlers側でも使えるように）
+    getMatchTotalFromState,
+    sanitizeWorldFinalBannerText
   });
 
 })();
