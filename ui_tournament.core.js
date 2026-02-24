@@ -1,14 +1,15 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.core.js（v3.6.11 split-1 FULL）
+   ui_tournament.core.js（v3.6.12 split-1 FULL）
    - DOM生成 / 共通ユーティリティ / 状態 / 共通UI操作
    - ✅ SKIPボタン廃止（DOMにもロジックにも存在しない）
 
-   ✅ v3.6.11 変更（今回の不具合対策）
-   - FIX: 敵画像の候補生成で「空なのにP1.pngに落ちる」事故を回避するため、
-          右側（敵）専用の candidates を提供（handlers 側で利用）
+   ✅ v3.6.12 変更（今回の②対応：UI側）
+   - ADD: showPanel() 時にスクロール位置を必ず先頭へ（scrollTop=0）
+          → 総合result / 試合result のスクロール残り問題を解消
    - 既存: WORLD FINAL 表記ズレ矯正、result後NEXT停止フェイルセーフ維持
+   - 既存: 敵画像候補生成で “空→P1.png” 事故回避（敵専用 candidates）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -534,12 +535,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.panelBody.innerHTML = '';
   }
 
+  // ✅ v3.6.12: Panel表示のたびにスクロールを先頭へ
   function showPanel(title, node){
     ensureDom();
     dom.panel.classList.add('isOn');
     dom.panelHead.textContent = String(title || '');
     dom.panelBody.innerHTML = '';
     dom.panelBody.appendChild(node);
+
+    try{
+      dom.panelBody.scrollTop = 0;
+    }catch(e){}
   }
 
   function setEventIcon(iconPath){
@@ -674,7 +680,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return arr;
   }
 
-  // ✅ v3.6.11: 右側（敵）用。空なら “何も返さない” （P1.pngに落ちない）
+  // ✅ 右側（敵）用。空なら “何も返さない” （P1.pngに落ちない）
   function guessEnemyImageCandidates(src){
     const s = String(src || '').trim();
     if (!s) return [];
@@ -914,7 +920,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     onNextCore,
 
     guessPlayerImageCandidates,
-    guessEnemyImageCandidates,   // ✅ v3.6.11
+    guessEnemyImageCandidates,
     guessTeamImageCandidates,
     resolveFirstExisting,
 
