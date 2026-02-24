@@ -1,13 +1,13 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.1
-   - v5.0 の全機能維持（Local / LastChance / National / WORLD Qual+Losers は壊さない）
-   - ✅ v5.1: WORLD FINAL をマッチポイント形式で成立（あなた指定）
-     - 80pt点灯
-     - 点灯した試合でチャンピオンでも優勝しない
-     - 点灯した次の試合以降でチャンピオンを取ったら優勝
-     - 最終(12試合)まで決まらなければ総合1位優勝
+   sim_tournament_core_step.js（FULL） v5.2
+   - v5.1 の全機能維持（Local / LastChance / National / WORLD Qual+Losers は壊さない）
+   - ✅ v5.1: WORLD FINAL をマッチポイント形式で成立（80pt点灯→次試合以降でCHAMP優勝）
+   - ✅ v5.2: National と WORLD Qual の “A〜Dグループ戦” を 5→3試合に短縮（あなた指定）
+     - National: session中の matchCount を常に 3
+     - World Qual: session中の matchCount を常に 3
+     - それ以外（Local/LastChance/Losers/Final）は既存通り
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -443,8 +443,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         else if (window.MOBBR?.sim?.tournamentCorePost?.onWorldWLFinished) window.MOBBR.sim.tournamentCorePost.onWorldWLFinished(state, state.tournamentTotal);
       }catch(_){}
 
-      // UIへ通知（endTournament → post が goMain を投げる前提でも、
-      // ここでは “壊さない” ため endTournament に統一）
       setRequest('showNationalNotice', {
         qualified: true,
         line1: 'FINAL進出チームが確定！',
@@ -452,7 +450,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         line3: 'NEXTでメインへ'
       });
 
-      // 次NEXTで確実に終了させる
       state.phase = 'world_final_reserved_wait_end';
       return true;
     }catch(e){
@@ -506,7 +503,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         const sum = Number(t.sumTotal||0);
         if (sum >= mp){
-          // まだ点灯してないなら、このmatchで点灯
           if (state.worldFinalMP.litAtMatch[id] == null){
             state.worldFinalMP.litAtMatch[id] = mIdx;
           }
@@ -525,7 +521,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const litAt = state.worldFinalMP.litAtMatch[champId];
       const mIdx = Number(state.matchIndex||1);
 
-      // ✅ 重要：点灯した「同じ試合」では優勝しない → mIdx > litAt が必要
+      // ✅ 点灯した「同じ試合」では優勝しない → mIdx > litAt
       if (litAt != null && Number.isFinite(Number(litAt)) && mIdx > Number(litAt)){
         return champId;
       }
@@ -721,7 +717,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         // AUTOで5試合を即解決→総合resultへ
         try{
-          // 5試合分まるごと高速処理
           for (let i=0; i<5; i++){
             try{ fastForwardToMatchEnd(); }catch(_){}
             try{ finishMatchAndBuildResult(); }catch(_){}
@@ -732,7 +727,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           }
         }catch(_){}
 
-        // Losers総合を見せる
         setRequest('showTournamentResult', { total: state.tournamentTotal });
         state.phase = 'world_losers_total_result_wait_branch';
         return;
@@ -768,14 +762,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       state.worldMeta.finalIds = finalIds.slice(0,20);
 
-      // ✅ ここでFinalへ突入しない。tour_state に予約して来週へ戻す。
       if (showWorldFinalReservedAndGoMain(state, state.worldMeta.finalIds)){
         return;
       }
 
-      // 万一失敗したら従来互換で“そのままFinal”に落とす（壊さない）
       state.worldPhase = 'final';
-      // Final rosterへ切替（ただし0チーム化防止済み）
       swapTeamsToIds(state, state.worldMeta.finalIds);
       state.matchCount = 12;
       state.phase = 'intro';
@@ -928,6 +919,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ===== intro =====
     if (state.phase === 'intro'){
+
+      // ===========================
+      // ✅ v5.2: matchCount 固定（壊さない：introでだけ上書き）
+      // ===========================
+      // National（A〜D）: 3試合
+      if (state.mode === 'national'){
+        state.matchCount = 3;
+      }
+      // World Qual（A〜D）: 3試合
+      if (state.mode === 'world' && String(state.worldPhase||'qual') === 'qual'){
+        state.matchCount = 3;
+      }
+      // それ以外は触らない（Local=5 / LastChance=5 / Losers=5 / Final=12）
+
       if (state.mode === 'national'){
         _setNationalBanners();
       }else if (state.mode === 'lastchance'){
@@ -987,7 +992,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }else if (wp === 'eliminated'){
           setCenter3('WORLD 予選 敗退…', '', '');
         }else{
-          // ✅ v5.1: マッチポイント説明を正確化
           ensureWorldFinalMP(state);
           const mp = Number(state.worldFinalMP?.matchPoint||WORLD_FINAL_MATCH_POINT);
           setCenter3('FINAL ROUND 開始！', `${mp}ptで点灯（マッチポイント）`, '点灯した次の試合以降にチャンピオンで優勝‼︎');
@@ -1471,27 +1475,19 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (state.mode === 'world'){
         const wp = String(state.worldPhase||'qual');
 
-        // ✅ v5.1: FINAL（マッチポイント制）
+        // ✅ FINAL（マッチポイント制）
         if (wp === 'final'){
-          // 初期化（途中復帰にも耐える）
           ensureWorldFinalMP(state);
-
-          // このmatch終了時点で点灯更新
           updateWorldFinalLitByTotals(state);
-
-          // 優勝判定（点灯matchでは勝っても優勝しない）
           const winnerId = checkWorldFinalWinnerByRule(state);
 
           if (winnerId){
             state.worldFinalMP.winnerId = winnerId;
-
-            // 総合RESULTへ（postは既存の world_total_result_wait_post へ）
             setRequest('showTournamentResult', { total: state.tournamentTotal });
             state.phase = 'world_total_result_wait_post';
             return;
           }
 
-          // まだ決着しない → 次の試合 or 最終総合1位
           if (state.matchIndex < state.matchCount){
             startNextMatch();
 
@@ -1510,7 +1506,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
             return;
           }
 
-          // 最終試合まで決まらない → 総合1位を勝者扱いで終了
           const topId = getOverallTopId(state);
           if (topId){
             state.worldFinalMP.winnerId = topId;
@@ -1521,7 +1516,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           return;
         }
 
-        // Losers（5試合固定）: 5試合終わったら総合→branchへ
+        // Losers（5試合固定）
         if (wp === 'losers'){
           if (state.matchIndex < state.matchCount){
             startNextMatch();
@@ -1546,7 +1541,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           return;
         }
 
-        // qual（ナショナル同様のセッション進行）
+        // qual（セッション進行：v5.2で matchCount=3 に固定済み）
         if (wp === 'qual'){
           const nat = state.national || {};
           const si = Number(nat.sessionIndex||0);
