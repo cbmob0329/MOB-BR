@@ -1,12 +1,16 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.3
-   - v5.2 の全機能維持（Local / LastChance / National / WORLD Qual+Losers は壊さない）
+   sim_tournament_core_step.js（FULL） v5.4
+   - v5.3 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
    - ✅ v5.1: WORLD FINAL をマッチポイント形式で成立（80pt点灯→次試合以降でCHAMP優勝）
    - ✅ v5.2: National と WORLD Qual の “A〜Dグループ戦” を 5→3試合に短縮
    - ✅ v5.3: コーチスキル廃止（showCoachSelect を呼ばない／導線を消す）
      - teamListの次は「NEXTで降下」へ直行（phase名は互換のため coach_done を維持）
+   - ✅ v5.4: ログ強化（WORLD FINAL）
+     - 「〇〇チームが点灯！」（80pt到達の瞬間のみ）
+     - 「〇〇チームが点灯状態でチャンピオンを獲得！」（優勝成立の瞬間）
+     - 「世界一に輝いたのは〇〇‼︎」（世界一発表）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -541,6 +545,83 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // =========================================================
+  // ✅ v5.4: WORLD FINAL ログ強化 helpers
+  // =========================================================
+  function resolveTeamNameById(state, id){
+    const tid = String(id||'');
+    if (!tid) return '???';
+
+    try{
+      const teams = Array.isArray(state?.teams) ? state.teams : [];
+      for (const t of teams){
+        if (!t) continue;
+        if (String(t.id||'') === tid){
+          if (t.name) return String(t.name);
+          return tid;
+        }
+      }
+    }catch(_){}
+
+    try{
+      const defs = state?.national?.allTeamDefs || null;
+      if (defs && defs[tid]){
+        const d = defs[tid];
+        if (d?.name) return String(d.name);
+      }
+    }catch(_){}
+
+    return tid;
+  }
+
+  function getNewlyLitIdsThisMatch(state){
+    try{
+      ensureWorldFinalMP(state);
+      const mIdx = Number(state.matchIndex||1);
+
+      // litAtMatch[id] === mIdx の中で、まだannounceしてないものだけを返す
+      if (!state._worldFinalLitAnnounced || typeof state._worldFinalLitAnnounced !== 'object'){
+        state._worldFinalLitAnnounced = {};
+      }
+
+      const out = [];
+      const lit = state.worldFinalMP.litAtMatch || {};
+      for (const id of Object.keys(lit)){
+        const at = Number(lit[id]);
+        if (!Number.isFinite(at)) continue;
+        if (at !== mIdx) continue;
+
+        if (state._worldFinalLitAnnounced[id] === true) continue;
+        out.push(String(id));
+      }
+
+      return out;
+    }catch(_){
+      return [];
+    }
+  }
+
+  function markLitAnnounced(state, ids){
+    try{
+      if (!state._worldFinalLitAnnounced || typeof state._worldFinalLitAnnounced !== 'object'){
+        state._worldFinalLitAnnounced = {};
+      }
+      for (const id of (ids||[])){
+        const s = String(id||'');
+        if (!s) continue;
+        state._worldFinalLitAnnounced[s] = true;
+      }
+    }catch(_){}
+  }
+
+  function buildLitNamesLine(state, ids){
+    const names = (ids||[]).map(id=>resolveTeamNameById(state, id)).filter(Boolean);
+    if (!names.length) return '';
+    // 長すぎる場合は先頭3つ＋… にする
+    if (names.length <= 3) return names.join(' / ');
+    return `${names.slice(0,3).join(' / ')} / …`;
+  }
+
+  // =========================================================
   // ✅ 追加: MATCH SKIP（外部から呼ぶAPI）
   // =========================================================
   function skipCurrentMatch(){
@@ -559,6 +640,44 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!state) return;
 
     const p = getPlayer();
+
+    // =========================================================
+    // ✅ v5.4: WORLD FINAL 点灯 notice → NEXTで元の分岐へ戻す
+    // =========================================================
+    if (state.phase === 'world_final_lit_notice_wait'){
+      // ここは notice 表示後の NEXT
+      state.phase = 'match_result_done';
+      setRequest('noop', {});
+      return;
+    }
+
+    // ✅ v5.4: WORLD FINAL 優勝 notice → NEXTで世界一発表(showChampion)
+    if (state.phase === 'world_final_winner_notice_wait'){
+      const champName = String(state._worldFinalWinnerName || '???');
+
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      // 世界一発表（showChampionはUI側で大きく出せる）
+      setCenter3('🏆 世界一に輝いたのは', `${champName}‼︎`, 'おめでとう！');
+      setRequest('showChampion', {
+        matchIndex: state.matchIndex,
+        championName: champName,
+        worldChampion: true,
+        isWorldFinal: true
+      });
+
+      state.phase = 'world_final_worldchamp_show';
+      return;
+    }
+
+    // ✅ v5.4: 世界一発表の次 → 総合RESULTへ
+    if (state.phase === 'world_final_worldchamp_show'){
+      setRequest('showTournamentResult', { total: state.tournamentTotal });
+      state.phase = 'world_total_result_wait_post';
+      return;
+    }
 
     // =========================================================
     // ✅ match skip fast
@@ -977,7 +1096,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }else{
           ensureWorldFinalMP(state);
           const mp = Number(state.worldFinalMP?.matchPoint||WORLD_FINAL_MATCH_POINT);
-          setCenter3('FINAL ROUND 開始！', `${mp}ptで点灯（マッチポイント）`, '点灯した次の試合以降にチャンピオンで優勝‼︎');
+
+          // v5.4: 点灯チーム一覧（短く）
+          let litLine = '';
+          try{
+            const litIds = Object.keys(state.worldFinalMP?.litAtMatch || {}).filter(Boolean);
+            if (litIds.length){
+              litLine = `点灯：${buildLitNamesLine(state, litIds)}`;
+            }
+          }catch(_){}
+
+          setCenter3('FINAL ROUND 開始！', `${mp}ptで点灯（マッチポイント）`, litLine || '点灯した次の試合以降にチャンピオンで優勝‼︎');
         }
 
         if (wp === 'qual'){
@@ -1460,13 +1589,57 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         // FINAL（マッチポイント制）
         if (wp === 'final'){
           ensureWorldFinalMP(state);
+
+          // 点灯更新（このmatch_result_doneのタイミングで確定）
           updateWorldFinalLitByTotals(state);
+
+          // ✅ v5.4: 新規点灯が出たら、まず「点灯！」を挟む（この試合で初点灯したチームだけ）
+          const newlyLit = getNewlyLitIdsThisMatch(state);
+          if (Array.isArray(newlyLit) && newlyLit.length){
+            markLitAnnounced(state, newlyLit);
+
+            const lineNames = buildLitNamesLine(state, newlyLit);
+            const oneName = resolveTeamNameById(state, newlyLit[0]);
+
+            // 1件なら「〇〇チームが点灯！」、複数なら「複数点灯！」も自然に
+            const line1 = (newlyLit.length === 1)
+              ? `${oneName}チームが点灯！`
+              : '複数チームが点灯！';
+
+            const line2 = (newlyLit.length === 1)
+              ? `${oneName}が80ptに到達！`
+              : `点灯：${lineNames}`;
+
+            setRequest('showNationalNotice', {
+              qualified: true,
+              line1,
+              line2,
+              line3: 'NEXTで進行'
+            });
+
+            // notice後、同じmatch_result_doneへ戻して通常分岐を続行
+            state.phase = 'world_final_lit_notice_wait';
+            return;
+          }
+
+          // 優勝成立判定
           const winnerId = checkWorldFinalWinnerByRule(state);
 
           if (winnerId){
             state.worldFinalMP.winnerId = winnerId;
-            setRequest('showTournamentResult', { total: state.tournamentTotal });
-            state.phase = 'world_total_result_wait_post';
+
+            const wName = resolveTeamNameById(state, winnerId);
+
+            // ✅ v5.4: 「点灯状態でチャンピオン獲得！」→ 次NEXTで世界一発表
+            setRequest('showNationalNotice', {
+              qualified: true,
+              line1: `${wName}チームが`,
+              line2: '点灯状態でチャンピオンを獲得！',
+              line3: 'NEXTで世界一発表！'
+            });
+
+            state._worldFinalWinnerName = wName;
+            state.phase = 'world_final_winner_notice_wait';
             return;
           }
 
@@ -1488,13 +1661,24 @@ window.MOBBR.sim = window.MOBBR.sim || {};
             return;
           }
 
+          // 最終matchまで優勝が出なかった場合：総合1位を世界一として確定（保険）
           const topId = getOverallTopId(state);
           if (topId){
             state.worldFinalMP.winnerId = topId;
           }
 
-          setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'world_total_result_wait_post';
+          const topName = resolveTeamNameById(state, state.worldFinalMP.winnerId || topId || '');
+
+          // 「点灯状態で…」が成立しない可能性があるので、ここは言い回しを安全に
+          setRequest('showNationalNotice', {
+            qualified: true,
+            line1: 'WORLD FINAL 終了！',
+            line2: `世界一候補：${topName}`,
+            line3: 'NEXTで世界一発表！'
+          });
+
+          state._worldFinalWinnerName = topName;
+          state.phase = 'world_final_winner_notice_wait';
           return;
         }
 
