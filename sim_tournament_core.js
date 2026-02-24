@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core.js（FULL） v4.7
+   sim_tournament_core.js（FULL） v4.8
    - tournament core (entry)
    - ✅ 重要：shared(_tcore) を「上書きしない」
      → shared/step と構造がズレると National で teamDef/name/image が壊れる
@@ -8,6 +8,10 @@
      - world30 = world basePower上位10確定 + 残りからランダム20
      - 合計40を A〜D (10ずつ) に分配（PLAYERは必ずAグループ）
      - tour_state.worldRosterIds / worldGroups を保存し、phase間で再利用
+   - ✅ v4.8 追加（World FINAL が 5試合で終わる問題を修正）
+     - FINALだけ「セッション型(AB/CD...)」を使わない
+     - FINALは 20チーム固定 + matchCount=12
+     - tour_state.world.finalIds があればそれを優先、無ければ roster40Ids の先頭20を使用
 ========================================================= */
 'use strict';
 
@@ -672,13 +676,67 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     };
 
-    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-    // ✅ 追加（破壊ゼロ）：step.js(v4.7) は state.worldPhase を見て段階判定する
-    //   ここを同期しないと WL/FINAL でも常に QUAL 扱いになってしまう
+    // ✅ step.js が見る判定キー（ここがズレると QUAL 扱いになる）
     st.worldPhase = st.world.phase;
-    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
-    // step互換（現行資産の再利用）
+    // ---------------------------------------------------------
+    // ✅ v4.8: FINALは「セッション型」を使わない（5試合固定バグ潰し）
+    // ---------------------------------------------------------
+    if (String(st.world.phase||'').toLowerCase() === 'final'){
+      // FINALは20チーム固定（tour_state.world.finalIds があれば最優先）
+      const savedFinal = Array.isArray(tourState?.world?.finalIds) ? tourState.world.finalIds.slice() : [];
+      const finalIds = (savedFinal.length >= 20)
+        ? uniq(savedFinal).slice(0,20)
+        : uniq(st.world.roster40Ids).slice(0,20);
+
+      const finalTeams = [];
+      for (const id0 of finalIds){
+        const id = String(id0||'');
+        if (!id) continue;
+
+        if (id === 'PLAYER'){
+          finalTeams.push(playerRuntime);
+        }else{
+          const def = getCpuById(id);
+          const rt = def && T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null;
+          if (rt) finalTeams.push(rt);
+        }
+
+        if (finalTeams.length >= 20) break;
+      }
+
+      // 補完（足りない場合はworldから）
+      if (finalTeams.length < 20){
+        const pool = getCpuByPrefix('world');
+        for (const def of pool){
+          if (finalTeams.length >= 20) break;
+          const cid = String(def?.teamId || def?.id || '');
+          if (!cid) continue;
+          if (finalTeams.some(t=>String(t?.id||'') === cid)) continue;
+          const rt = T._mkRuntimeTeamFromCpuDef ? T._mkRuntimeTeamFromCpuDef(def) : null;
+          if (rt) finalTeams.push(rt);
+        }
+      }
+
+      for (const t of finalTeams) T.ensureTeamRuntimeShape(t);
+
+      st.teams = finalTeams.slice(0,20);
+
+      // 🔥 FINALは12試合固定
+      st.matchCount = 12;
+
+      // FINALは session 構造を使わない（AB(1/6) 等を出さない）
+      st.national = null;
+
+      // total for FINAL 20
+      st.tournamentTotal = initTotalForIds(st.teams.map(t=>t.id));
+
+      T.setState(st);
+      T.setRequest('openTournament', { mode:'world', phase: st.world.phase });
+      return st;
+    }
+
+    // step互換（現行資産の再利用：QUAL/WL は national構造を使う）
     st.national = {
       split: Number(tourState.split||0) || 1,
       plan,
