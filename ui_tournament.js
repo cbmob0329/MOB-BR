@@ -1,15 +1,13 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.12 split-3 FULL）
+   ui_tournament.js（v3.6.13 split-3 FULL）
    - entry / bind / dispatcher / render だけ担当（core+handlers を利用）
    - ✅ core: ui_tournament.core.js（split-1）FULL が先に読み込まれている前提
    - ✅ handlers: ui_tournament.handlers.js（split-2）FULL が先に読み込まれている前提
 
-   ✅ v3.6.12（今回の②対応：UI側の最終まとめ）
-   - 試合result と 総合result の “表示分離” は handlers 側で対応済み
-   - 総合result の通過ライン色分け / WORLD FINAL点灯色分け は handlers 側で対応済み
-   - スクロール位置リセットは core 側で対応済み
+   ✅ v3.6.13（FIX）
+   - ✅ noop req は “即 consume” して詰まりを根絶（NEXTで進まない事故対策）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -59,10 +57,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     mkReqKey,
     setNextEnabled,
-    onNextCore,
-
-    lockUI,
-    unlockUI
+    onNextCore
   } = MOD;
 
   let bound = false;
@@ -184,7 +179,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const t = String(req?.type || '');
     const p = req?.payload ?? req;
 
-    // ここで “UNKNOWN” は食わない（デバッグで分かるように）
     switch(t){
       case 'showArrival':            return MOD.handleShowArrival(p);
       case 'showIntroText':          return MOD.handleShowIntroText(p);
@@ -219,7 +213,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const flow = getFlow();
     if (!flow){
-      // flow が居ないときはUIだけ開いていても意味がないので落とさないが操作不能に
       setNextEnabled(false);
       return;
     }
@@ -231,8 +224,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     const req = peekReq(flow);
+
+    // ✅ FIX：noop は即消化（詰まり防止）
+    if (req && String(req.type || '') === 'noop'){
+      consumeReq(flow);
+      setNextEnabled(true);
+      return;
+    }
+
     if (!req){
-      // リクエスト無し：NEXTだけ押せる状態に戻す（busy/lockはcoreが面倒見る）
       setNextEnabled(true);
       return;
     }
@@ -247,7 +247,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const key = mkReqKey(req);
     const last = MOD._getLastReqKey ? MOD._getLastReqKey() : '';
     if (key && key === last){
-      // ただし、NEXTが止まる事故を避けるため enable は戻す
       setNextEnabled(true);
       return;
     }
@@ -265,7 +264,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       console.error('[ui_tournament] render error:', e);
     }finally{
       if (MOD._setRendering) MOD._setRendering(false);
-      // lock/busyが無ければNEXT戻す
       setNextEnabled(true);
     }
   }
@@ -273,8 +271,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function open(){
     bindOnce();
     openCore();
-
-    // open直後に1回描画
     render();
   }
 
