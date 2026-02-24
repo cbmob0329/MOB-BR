@@ -1,22 +1,13 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.0
-   - v4.9 の全機能維持（Local / LastChance / National は壊さない）
-   - ✅ v5.0: WORLDを「予選+Losers=同週」「Final=翌週」に最適化
-     ① 予選リーグ（40チーム）: ナショナル同型 / 6セッション / 総合順位で確定
-     ② 分岐:
-        - 上位10 → Final候補（ただしこの週はLosersをAUTO処理してFinal20確定）
-        - 31〜40位 → 敗退
-        - 11〜30位 → Losersリーグ（20チーム）へ（同週）
-     ③ Losersリーグ（20チーム / 5試合固定）:
-        - 上位10 → Final枠10（予選Top10 + LosersTop10 = Final20を確定）
-        - 下位10 → 敗退
-     ④ Losers終了時点で Final20 を tour_state に保存し「来週Final」を予約してメインへ戻す
-     ⑤ Final（20チーム）は翌週の nextTour から開始される（tour_state.world.phase === 'final'）
-   - ✅ 追加: Final開始時 “チームデータ0” 防止
-     → swapTeamsToIds が defsに無いIDでも必ず runtime を生成して補完
-   - ✅ 追加: MATCH SKIP（match_skip_fast / T.skipCurrentMatch）
+   sim_tournament_core_step.js（FULL） v5.1
+   - v5.0 の全機能維持（Local / LastChance / National / WORLD Qual+Losers は壊さない）
+   - ✅ v5.1: WORLD FINAL をマッチポイント形式で成立（あなた指定）
+     - 80pt点灯
+     - 点灯した試合でチャンピオンでも優勝しない
+     - 点灯した次の試合以降でチャンピオンを取ったら優勝
+     - 最終(12試合)まで決まらなければ総合1位優勝
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -388,6 +379,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state._matchCursor = 0;
       state.lastMatchResultRows = [];
       state.currentOverallRows = [];
+
+      // ✅ v5.1: WORLD FINAL マッチポイント用の状態を初期化（壊さない：final時だけ）
+      try{
+        if (state.mode === 'world' && String(state.worldPhase||'') === 'final'){
+          state.worldFinalMP = {
+            litAtMatch: {},   // { teamId: matchIndexWhenLit }
+            winnerId: '',
+            matchPoint: 80
+          };
+        }
+      }catch(_){}
+
     }catch(e){}
   }
 
@@ -454,6 +457,101 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return true;
     }catch(e){
       return false;
+    }
+  }
+
+  // =========================================================
+  // ✅ v5.1: WORLD FINAL マッチポイント（80pt点灯→次試合以降のチャンピオンで優勝）
+  // =========================================================
+  const WORLD_FINAL_MATCH_POINT = 80;
+
+  function ensureWorldFinalMP(state){
+    try{
+      if (!state.worldFinalMP || typeof state.worldFinalMP !== 'object'){
+        state.worldFinalMP = { litAtMatch:{}, winnerId:'', matchPoint: WORLD_FINAL_MATCH_POINT };
+      }
+      if (!state.worldFinalMP.litAtMatch || typeof state.worldFinalMP.litAtMatch !== 'object'){
+        state.worldFinalMP.litAtMatch = {};
+      }
+      if (!Number.isFinite(Number(state.worldFinalMP.matchPoint))){
+        state.worldFinalMP.matchPoint = WORLD_FINAL_MATCH_POINT;
+      }
+    }catch(_){}
+  }
+
+  function getThisMatchChampionId(state){
+    try{
+      const rows = state?.lastMatchResultRows;
+      if (Array.isArray(rows) && rows.length){
+        const top = rows[0];
+        if (top && top.id) return String(top.id);
+        if (top && top.teamId) return String(top.teamId);
+      }
+    }catch(_){}
+    return '';
+  }
+
+  function updateWorldFinalLitByTotals(state){
+    try{
+      ensureWorldFinalMP(state);
+      const mp = Number(state.worldFinalMP.matchPoint||WORLD_FINAL_MATCH_POINT);
+      const mIdx = Number(state.matchIndex||1);
+
+      const total = state.tournamentTotal || {};
+      for (const k of Object.keys(total)){
+        const t = total[k];
+        if (!t) continue;
+        const id = String(t.id||k||'');
+        if (!id) continue;
+
+        const sum = Number(t.sumTotal||0);
+        if (sum >= mp){
+          // まだ点灯してないなら、このmatchで点灯
+          if (state.worldFinalMP.litAtMatch[id] == null){
+            state.worldFinalMP.litAtMatch[id] = mIdx;
+          }
+        }
+      }
+    }catch(_){}
+  }
+
+  function checkWorldFinalWinnerByRule(state){
+    try{
+      ensureWorldFinalMP(state);
+
+      const champId = getThisMatchChampionId(state);
+      if (!champId) return '';
+
+      const litAt = state.worldFinalMP.litAtMatch[champId];
+      const mIdx = Number(state.matchIndex||1);
+
+      // ✅ 重要：点灯した「同じ試合」では優勝しない → mIdx > litAt が必要
+      if (litAt != null && Number.isFinite(Number(litAt)) && mIdx > Number(litAt)){
+        return champId;
+      }
+      return '';
+    }catch(_){
+      return '';
+    }
+  }
+
+  function getOverallTopId(state){
+    try{
+      const list = Object.values(state.tournamentTotal||{}).filter(Boolean);
+      list.sort((a,b)=>{
+        const at = Number(a.sumTotal||0), bt = Number(b.sumTotal||0);
+        if (bt !== at) return bt - at;
+        const ap = Number(a.sumPlacementP||0), bp = Number(b.sumPlacementP||0);
+        if (bp !== ap) return bp - ap;
+        const ak = Number(a.sumKP||0), bk = Number(b.sumKP||0);
+        if (bk !== ak) return bk - ak;
+        const aa = Number(a.sumAP||0), ba = Number(b.sumAP||0);
+        if (ba !== aa) return ba - aa;
+        return String(a.id||'').localeCompare(String(b.id||''));
+      });
+      return list[0]?.id ? String(list[0].id) : '';
+    }catch(_){
+      return '';
     }
   }
 
@@ -889,8 +987,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }else if (wp === 'eliminated'){
           setCenter3('WORLD 予選 敗退…', '', '');
         }else{
-          // Finalは翌週開始想定（ここに来るのは互換/直叩き時のみ）
-          setCenter3('FINAL ROUND 開始！', '80ptで点灯（マッチポイント）', '点灯→チャンピオンで優勝‼︎');
+          // ✅ v5.1: マッチポイント説明を正確化
+          ensureWorldFinalMP(state);
+          const mp = Number(state.worldFinalMP?.matchPoint||WORLD_FINAL_MATCH_POINT);
+          setCenter3('FINAL ROUND 開始！', `${mp}ptで点灯（マッチポイント）`, '点灯した次の試合以降にチャンピオンで優勝‼︎');
         }
 
         if (wp === 'qual'){
@@ -1370,6 +1470,56 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       // WORLD
       if (state.mode === 'world'){
         const wp = String(state.worldPhase||'qual');
+
+        // ✅ v5.1: FINAL（マッチポイント制）
+        if (wp === 'final'){
+          // 初期化（途中復帰にも耐える）
+          ensureWorldFinalMP(state);
+
+          // このmatch終了時点で点灯更新
+          updateWorldFinalLitByTotals(state);
+
+          // 優勝判定（点灯matchでは勝っても優勝しない）
+          const winnerId = checkWorldFinalWinnerByRule(state);
+
+          if (winnerId){
+            state.worldFinalMP.winnerId = winnerId;
+
+            // 総合RESULTへ（postは既存の world_total_result_wait_post へ）
+            setRequest('showTournamentResult', { total: state.tournamentTotal });
+            state.phase = 'world_total_result_wait_post';
+            return;
+          }
+
+          // まだ決着しない → 次の試合 or 最終総合1位
+          if (state.matchIndex < state.matchCount){
+            startNextMatch();
+
+            state.ui.bg = 'tent.png';
+            state.ui.squareBg = 'tent.png';
+            state.ui.leftImg = getPlayerSkin();
+            state.ui.rightImg = '';
+            state.ui.topLeftName = '';
+            state.ui.topRightName = '';
+
+            setWorldBanners(state, '');
+
+            setCenter3(`次の試合へ`, `FINAL  MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+            setRequest('nextMatch', { matchIndex: state.matchIndex });
+            state.phase = 'coach_done';
+            return;
+          }
+
+          // 最終試合まで決まらない → 総合1位を勝者扱いで終了
+          const topId = getOverallTopId(state);
+          if (topId){
+            state.worldFinalMP.winnerId = topId;
+          }
+
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'world_total_result_wait_post';
+          return;
+        }
 
         // Losers（5試合固定）: 5試合終わったら総合→branchへ
         if (wp === 'losers'){
