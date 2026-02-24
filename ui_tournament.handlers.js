@@ -1,16 +1,19 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.11 split-2）FULL
+   ui_tournament.handlers.js（v3.6.12 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
      2) コーチスキルは「現状使わない」ため UIを廃止（選択させない）
         ※ flow 側の仕組みは壊さず、UIだけ無効化（将来の交戦スキル追加に備える）
 
-   ✅ v3.6.11 変更（今回の不具合対策）
-   - FIX: 敵画像候補の生成で “空 → P1.png” に落ちないようにする
-          （coreの guessEnemyImageCandidates を使用）
+   ✅ v3.6.12 変更（今回の②対応：UI側）
+   - FIX: 試合resultに currentOverall を “同じパネル内に混在表示” しない（分離）
+   - ADD: 総合resultで「通過ライン色分け」
+          Local上位10 / National上位8 / LastChance上位2 / WORLD予選上位10 / Losers上位10
+   - ADD: WORLD FINALは「80pt点灯チーム」を色分け（state.worldFinalMP.litAtMatch）
+   - 既存: 敵画像候補の生成で “空 → P1.png” に落ちない（coreの guessEnemyImageCandidates）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -44,11 +47,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     syncSessionBar,
     preloadEventIcons,
     guessPlayerImageCandidates,
-    guessEnemyImageCandidates,     // ✅ v3.6.11
+    guessEnemyImageCandidates,
     guessTeamImageCandidates,
     resolveFirstExisting,
 
-    // v3.6.10 helper
     getMatchTotalFromState
   } = MOD;
 
@@ -165,6 +167,63 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     return null;
+  }
+
+  // =========================================================
+  // ✅ 通過ライン / 点灯ライン（色分け用）
+  // =========================================================
+  function getQualLineByState(st){
+    const mode = String(st?.mode || '').toLowerCase();
+    const wp = String(st?.worldPhase || st?.phase || '').toLowerCase();
+
+    if (mode === 'local') return { line: 10, label: 'TOP10通過' };
+    if (mode === 'national') return { line: 8, label: 'TOP8通過' };
+    if (mode === 'lastchance') return { line: 2, label: 'TOP2通過' };
+
+    if (mode === 'world'){
+      if (wp === 'qual') return { line: 10, label: 'TOP10通過' };
+      if (wp === 'losers') return { line: 10, label: 'TOP10通過' };
+      if (wp === 'final') return { line: 0, label: '' }; // finalは点灯で表示
+      if (wp === 'eliminated') return { line: 0, label: '' };
+    }
+    return { line: 0, label: '' };
+  }
+
+  function getWorldFinalLitSet(st){
+    try{
+      const mp = st?.worldFinalMP;
+      const lit = mp?.litAtMatch;
+      if (!lit || typeof lit !== 'object') return new Set();
+      const s = new Set();
+      for (const k of Object.keys(lit)){
+        const id = String(k||'');
+        if (!id) continue;
+        s.add(id);
+      }
+      return s;
+    }catch(_){
+      return new Set();
+    }
+  }
+
+  function applyRowHighlight(tr, opts){
+    // opts: { qualified:boolean, cut:boolean, lit:boolean }
+    if (!tr) return;
+
+    if (opts?.qualified){
+      tr.classList.add('isQualified');
+      // CSSが無い環境でも一応見えるように（薄め）
+      tr.style.background = 'rgba(80, 200, 120, 0.12)';
+    }
+    if (opts?.cut){
+      tr.classList.add('isCut');
+      tr.style.opacity = '0.72';
+    }
+    if (opts?.lit){
+      tr.classList.add('isLit');
+      tr.style.background = 'rgba(255, 215, 0, 0.14)';
+      tr.style.boxShadow = 'inset 0 0 0 1px rgba(255, 215, 0, 0.35)';
+    }
   }
 
   async function handleShowArrival(payload){
@@ -537,7 +596,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
 
-      // ✅ v3.6.11: 敵側は “空ならP1.pngに落ちない” candidates にする
+      // ✅ 敵側は “空ならP1.pngに落ちない” candidates
       const rightCands = []
         .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
         .concat(guessTeamImageCandidates(foeId));
@@ -622,7 +681,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const foeId = payload?.foeTeamId || '';
 
-      // ✅ v3.6.11: 敵側は “空ならP1.pngに落ちない”
+      // ✅ 敵側は “空ならP1.pngに落ちない”
       const rightCands = []
         .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
         .concat(guessTeamImageCandidates(foeId));
@@ -765,6 +824,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // =========================================================
+  // ✅ 試合結果：ここでは “試合resultのみ” を表示（総合は分離）
+  // =========================================================
   async function handleShowMatchResult(payload){
     lockUI();
     try{
@@ -779,7 +841,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setSquareBg(ASSET.tent);
 
       const srcRows = Array.isArray(payload?.rows) ? payload.rows : [];
-      const currentOverall = Array.isArray(payload?.currentOverall) ? payload.currentOverall : [];
 
       const wrap = document.createElement('div');
       wrap.className = 'resultWrap';
@@ -833,28 +894,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       wrap.appendChild(table);
 
-      if (currentOverall.length){
-        const sep = document.createElement('div');
-        sep.style.height = '10px';
-        wrap.appendChild(sep);
-
-        const title = document.createElement('div');
-        title.className = 'coachHint';
-        title.textContent = '現在の総合順位（この20チーム）';
-        wrap.appendChild(title);
-
-        wrap.appendChild(buildCurrentOverallTable(currentOverall));
-      }
-
       showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
-      setLines('📊 試合結果', currentOverall.length ? '＋現在の総合順位を表示' : '（NEXTで進行）', '');
+      // ✅ ここでは総合を見せない（分離）
+      setLines('📊 試合結果', 'NEXTで総合RESULTへ', '');
       syncSessionBar();
     }finally{
       unlockUI();
     }
   }
 
+  // =========================================================
+  // ✅ 総合結果：通過ライン色分け / WORLD FINAL 点灯色分け
+  // =========================================================
   async function handleShowTournamentResult(payload){
     lockUI();
     try{
@@ -868,6 +920,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg(ASSET.tent);
 
+      const st = getState() || {};
       const total = payload?.total || {};
       const arr = Object.values(total);
 
@@ -887,8 +940,25 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return String(a.name || a.squad || a.id || '').localeCompare(String(b.name || b.squad || b.id || ''));
       });
 
+      const q = getQualLineByState(st);
+      const litSet = getWorldFinalLitSet(st);
+      const isWorldFinal = (String(st.mode||'').toLowerCase()==='world' && String(st.worldPhase||st.phase||'').toLowerCase()==='final');
+
       const wrap = document.createElement('div');
       wrap.className = 'tourneyWrap';
+
+      const hint = document.createElement('div');
+      hint.className = 'coachHint';
+
+      if (isWorldFinal){
+        const mp = Number(st?.worldFinalMP?.matchPoint ?? 80);
+        hint.textContent = `WORLD FINAL：${mp}pt点灯チーム（次試合以降のチャンピオンで優勝）`;
+      }else if (q.line > 0){
+        hint.textContent = `通過ライン：${q.label}`;
+      }else{
+        hint.textContent = '総合ポイント';
+      }
+      wrap.appendChild(hint);
 
       const table = document.createElement('table');
       table.className = 'tourneyTable';
@@ -909,12 +979,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const tb = table.querySelector('tbody');
 
       arr.forEach((r,i)=>{
+        const rank = i + 1;
+
         const tr = document.createElement('tr');
-        const isPlayer = (String(r.id||'') === 'PLAYER') || !!r.isPlayer;
+        const id = String(r.id ?? '');
+        const isPlayer = (id === 'PLAYER') || !!r.isPlayer;
         if (isPlayer) tr.classList.add('isPlayer');
 
         const teamName = String(r.name ?? r.squad ?? r.id ?? '');
-        const teamLabel = `#${i+1} ${teamName}`;
+        let teamLabel = `#${rank} ${teamName}`;
+
+        // FINAL 点灯マーク
+        const lit = isWorldFinal && litSet.has(id);
+        if (lit){
+          teamLabel = `🟡 ${teamLabel}`; // 点灯チーム
+        }
 
         const PT = Number(r.sumTotal ?? r.total ?? 0);
         const PP = Number(r.sumPlacementP ?? r.PP ?? r.placementP ?? 0);
@@ -932,13 +1011,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           <td class="num">${escapeHtml(String(TRE))}</td>
           <td class="num">${escapeHtml(String(FLG))}</td>
         `;
+
+        // 通過ライン色分け（FINALは点灯色分け優先）
+        const qualified = (!isWorldFinal && q.line > 0 && rank <= q.line);
+        const cut = (!isWorldFinal && q.line > 0 && rank > q.line);
+
+        applyRowHighlight(tr, { qualified, cut, lit });
+
         tb.appendChild(tr);
       });
 
       wrap.appendChild(table);
       showPanel('TOURNAMENT RESULT', wrap);
 
-      setLines('🏁 大会結果', '（NEXTで進行）', '');
+      setLines('🏁 総合RESULT', '（NEXTで進行）', '');
       syncSessionBar();
     }finally{
       unlockUI();
