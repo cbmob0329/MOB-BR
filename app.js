@@ -1,14 +1,14 @@
-/* =========================================================
-   app.js（FULL） v18.7
-   - v18.6 の全機能維持
-   - ✅ WORLD phase を最新版へ整合（qual / losers / final）
-     * 互換：wl / winners / losers 相当は losers に吸収
-   - ✅ ui_tournament 3分割読み込み対応は維持
-        読み込み順：ui_tournament.core.js → ui_tournament.handlers.js → ui_tournament.js（entry）
-========================================================= */
 'use strict';
 
-const APP_VER = 18.7; // ★ここを上げる（キャッシュ強制更新の核）
+/* =========================================================
+   app.js（FULL） v18.8
+   - v18.7 の全機能維持
+   - ✅ FIX: app.js 内に ui_tournament.js が混入していた事故を排除（完全分離）
+   - ✅ FIX: startTournamentPipeline 初期stepを robust化
+       flow.step() が無い構成でも window.MOBBR.sim._tcore.step() を1回回して初期req生成
+========================================================= */
+
+const APP_VER = 18.8; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -197,7 +197,7 @@ async function loadModules(){
 let modulesLoaded = false;
 
 // ==========================================
-// 大会開始ブリッジ（v18.7）
+// 大会開始ブリッジ（v18.8）
 // - UIはこれだけ呼べばOK（または mobbr:startTournament を投げる）
 // ==========================================
 
@@ -245,7 +245,7 @@ function getTourState(){
 }
 
 // =========================================================
-// ✅ WORLD phase 正規化（v18.7）
+// ✅ WORLD phase 正規化（v18.8）
 // - 最新：qual / losers / final
 // - 互換：wl / winners / (old) losers などは losers に吸収
 // =========================================================
@@ -268,7 +268,7 @@ function normalizeWorldPhase(phase){
   return 'qual';
 }
 
-// ✅ v18.6：必ず「sim開始→（初期request生成）→UI open→UI render」
+// ✅ v18.8：必ず「sim開始→（初期request生成）→UI open→UI render」
 function startTournamentPipeline(simStartFn, uiOpenArg){
   ensureModulesOrThrow();
 
@@ -286,10 +286,15 @@ function startTournamentPipeline(simStartFn, uiOpenArg){
     throw e;
   }
 
-  // 2) 初期request生成：openTournament は ui が処理しないので step を1回回す
+  // 2) 初期request生成：openTournament は ui が処理しないので step を1回回す（robust）
   try{
     if (flow && typeof flow.step === 'function'){
       flow.step();
+    }else if (window.MOBBR?.sim?._tcore?.step){
+      // ✅ flow.step が無い構成でも必ず初期reqを作る
+      window.MOBBR.sim._tcore.step();
+    }else{
+      console.warn('[TOUR] initial step: no flow.step and no _tcore.step');
     }
   }catch(e){
     console.warn('[TOUR] initial step failed (continue):', e);
@@ -316,7 +321,7 @@ function startTournamentPipeline(simStartFn, uiOpenArg){
 
 function startLocalTournament(){
   const flow = window.MOBBR?.sim?.tournamentFlow;
-  // 新API（sim_tournament_core.js v4.3）
+  // 新API（sim_tournament_core.js v4.3+）
   if (flow && typeof flow.startLocalTournament === 'function'){
     startTournamentPipeline(() => flow.startLocalTournament(), { mode:'local' });
     return;
@@ -359,7 +364,7 @@ function startWorldTournament(phase){
   const flow = window.MOBBR?.sim?.tournamentFlow;
   const p = normalizeWorldPhase(phase);
 
-  // ✅ v18.7：UIへ渡す openArg.phase も最新へ統一（qual/losers/final）
+  // ✅ v18.8：UIへ渡す openArg.phase も最新へ統一（qual/losers/final）
   if (flow && typeof flow.startWorldTournament === 'function'){
     startTournamentPipeline(() => flow.startWorldTournament(p), { mode:'world', phase:p });
     return;
@@ -399,13 +404,11 @@ function startTournamentByState(detail){
     return startLastChanceTournament();
   }
   if (stage === 'world'){
-    // ✅ v18.7：qual/losers/final で確実に開始
     if (wphase === 'final') return startWorldTournament('final');
     if (wphase === 'losers') return startWorldTournament('losers');
     return startWorldTournament('qual');
   }
 
-  // ここまで来たら開始不可（UIでメッセージ出すのが理想）
   console.warn('[TOUR] startTournamentByState: not eligible', { stage, wphase, ts });
   alert('大会を開始できません（出場条件未達 or 進行状態が未設定の可能性）');
 }
@@ -459,13 +462,11 @@ async function bootAfterNext(){
         tournamentCorePost: !!window.MOBBR?.sim?.tournamentCorePost
       });
 
-      // ★3分割が揃ってるか（任意チェック）
       console.log('[CHECK] tcore split =', {
         core_shared: !!window.MOBBR?.sim?._tcore,
         core_step: !!window.MOBBR?.sim?._tcore?.step
       });
 
-      // ✅ UI tournament split check（分割確認）
       console.log('[CHECK] ui_tournament split =', {
         core: !!window.MOBBR?.ui?._tournamentCore,
         handlers: !!window.MOBBR?.ui?._tournamentHandlers,
@@ -557,7 +558,6 @@ function advanceWeekBy(weeks){
 }
 
 function closeTournamentOverlayHard(){
-  // 大会UIがcloseを持つなら優先
   try{
     if (window.MOBBR?.ui?.tournament?.close){
       window.MOBBR.ui.tournament.close();
@@ -565,7 +565,6 @@ function closeTournamentOverlayHard(){
     }
   }catch(e){}
 
-  // フォールバック：DOM直落とし
   const overlay = document.getElementById('mobbrTournamentOverlay');
   if (overlay){
     overlay.classList.remove('isOpen');
@@ -607,8 +606,6 @@ function bindGlobalEvents(){
   });
 
   // ✅ 大会開始（UI→appの疎結合）
-  // - detail.type/mode: 'local'|'national'|'lastchance'|'world'
-  // - detail.phase: 'qual'|'losers'|'final'（worldのみ・旧 wl も互換で吸収）
   window.addEventListener('mobbr:startTournament', (e) => {
     try{
       const detail = e?.detail || {};
@@ -656,7 +653,7 @@ function bindGlobalEvents(){
         setStrLS(KLS.recent, recent);
       }
 
-      // 4) メインUI再描画（initMainUIは二重bind防止が入ってる前提）
+      // 4) メインUI再描画
       if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
     }catch(err){
       console.error(err);
@@ -668,7 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
   bindGlobalEvents();
   showTitle();
 
-  // ★起動確認（これが出ないなら app.js 自体が古い/読まれてない）
   logLoaded('app.js DOMContentLoaded');
 
   const btn = $('btnTitleNext');
