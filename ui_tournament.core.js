@@ -935,3 +935,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   });
 
 })();
+
+// ✅ splitロード検知（app.js の [CHECK] ui_tournament split 用）
+window.MOBBR = window.MOBBR || {};
+window.MOBBR.ui = window.MOBBR.ui || {};
+window.MOBBR.ui._tournamentCore = true;
