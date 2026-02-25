@@ -1,13 +1,16 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.13 split-3 FULL）
-   - entry / bind / dispatcher / render だけ担当（core+handlers を利用）
-   - ✅ core: ui_tournament.core.js（split-1）FULL が先に読み込まれている前提
-   - ✅ handlers: ui_tournament.handlers.js（split-2）FULL が先に読み込まれている前提
+   ui_tournament.js（v3.6.14 split-3 FULL）
+   - entry / bind / dispatcher / render
+   - core: ui_tournament.core.js（split-1）FULL 前提
+   - handlers: ui_tournament.handlers.js（split-2）FULL 前提
 
-   ✅ v3.6.13（FIX）
-   - ✅ noop req は “即 consume” して詰まりを根絶（NEXTで進まない事故対策）
+   ✅ v3.6.14（FIX）
+   - ✅ noop req は即 consume（v3.6.13踏襲）
+   - ✅ hold中 pendingReq を “必ず復帰して描画” する（止まり根絶）
+   - ✅ lastReqKey は「描画成功後」に更新（途中returnで固定化しない）
+   - ✅ 同一reqが残留しても “UI側で進行不能にならない” 防止策を追加
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -21,8 +24,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
-  // split-2 が先に読めてない場合でも “後から” 注入される想定で動くようにする
-  //（ただし handlers が無いと render できない）
+  // split-2 が後から注入される想定でも動くようにする
   const HANDLER_NAMES = [
     'handleShowArrival',
     'handleShowIntroText',
@@ -57,7 +59,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     mkReqKey,
     setNextEnabled,
-    onNextCore
+    onNextCore,
+
+    // 以下は split-1 に存在（render中の補助）
+    syncSessionBar,
+    setBattleMode,
+    setChampionMode,
+    setResultStampMode,
+    hidePanels,
+    hideSplash,
+    showCenterStamp
   } = MOD;
 
   let bound = false;
@@ -66,6 +77,81 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return HANDLER_NAMES.every(k => typeof MOD[k] === 'function');
   }
 
+  // ===== 表示の後処理（v3.6.11相当を保持）=====
+  function escapeHtml(str){
+    return String(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function getOverlayEl(){
+    return document.getElementById('mobbrTournamentOverlay');
+  }
+
+  function normalizeBannerTextTo2Lines(raw, mode){
+    const s0 = String(raw || '').trim();
+    if (!s0) return '';
+    if (s0.includes('<br>')) return s0;
+
+    if (mode === 'left'){
+      const idx = s0.indexOf('MATCH');
+      if (idx > 0){
+        const a = s0.slice(0, idx).trim();
+        const b = s0.slice(idx).trim();
+        return `${escapeHtml(a)}<br>${escapeHtml(b)}`;
+      }
+      return escapeHtml(s0);
+    }
+
+    if (mode === 'right'){
+      const m = s0.match(/^(ROUND)\s*(\d+.*)$/i);
+      if (m){
+        return `${escapeHtml(m[1].toUpperCase())}<br>${escapeHtml(m[2])}`;
+      }
+      return escapeHtml(s0);
+    }
+
+    return escapeHtml(s0);
+  }
+
+  function applyBannerFix(){
+    const st = getState();
+    const overlay = getOverlayEl();
+    if (!overlay || !st) return;
+
+    const leftEl  = overlay.querySelector('.banner .left');
+    const rightEl = overlay.querySelector('.banner .right');
+    if (!leftEl || !rightEl) return;
+
+    const leftHtml  = normalizeBannerTextTo2Lines(st.bannerLeft,  'left');
+    const rightHtml = normalizeBannerTextTo2Lines(st.bannerRight, 'right');
+
+    try{ leftEl.innerHTML  = leftHtml; }catch(_){ leftEl.textContent = String(st.bannerLeft||''); }
+    try{ rightEl.innerHTML = rightHtml; }catch(_){ rightEl.textContent = String(st.bannerRight||''); }
+  }
+
+  function applyNameBoxFix(){
+    const overlay = getOverlayEl();
+    if (!overlay) return;
+
+    const names = overlay.querySelectorAll('.chars .char .name');
+    for (const el of names){
+      try{
+        el.style.whiteSpace = 'pre-line';
+        el.style.wordBreak  = 'keep-all';
+      }catch(_){}
+    }
+  }
+
+  function postRenderFixups(){
+    applyBannerFix();
+    applyNameBoxFix();
+  }
+
+  // ===== bind =====
   function bindOnce(){
     if (bound) return;
     bound = true;
@@ -174,34 +260,47 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return true;
   }
 
+  // ✅ v3.6.14: hold解除後は pending を最優先で描画
+  function popPendingIfReady(){
+    const holdType = MOD._getHoldScreenType ? MOD._getHoldScreenType() : null;
+    if (holdType) return null; // まだhold中
+
+    const pending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
+    if (!pending) return null;
+
+    // pending取り出し
+    if (MOD._setPendingReqAfterHold) MOD._setPendingReqAfterHold(null);
+    return pending;
+  }
+
   // =============== Dispatcher ===============
   async function dispatch(req){
     const t = String(req?.type || '');
-    const p = req?.payload ?? req;
 
     switch(t){
-      case 'showArrival':            return MOD.handleShowArrival(p);
-      case 'showIntroText':          return MOD.handleShowIntroText(p);
-      case 'showAutoSession':        return MOD.handleShowAutoSession(p);
-      case 'showAutoSessionDone':    return MOD.handleShowAutoSessionDone(p);
-      case 'showTeamList':           return MOD.handleShowTeamList(p);
-      case 'showCoachSelect':        return MOD.handleShowCoachSelect(p);
-      case 'showDropStart':          return MOD.handleShowDropStart(p);
-      case 'showDropLanded':         return MOD.handleShowDropLanded(p);
-      case 'showRoundStart':         return MOD.handleShowRoundStart(p);
-      case 'showEvent':              return MOD.handleShowEvent(p);
-      case 'prepareBattles':         return MOD.handlePrepareBattles(p);
-      case 'showEncounter':          return MOD.handleShowEncounter(p);
-      case 'showBattle':             return MOD.handleShowBattle(p);
-      case 'showMove':               return MOD.handleShowMove(p);
-      case 'showChampion':           return MOD.handleShowChampion(p);
-      case 'showMatchResult':        return MOD.handleShowMatchResult(p);
-      case 'showTournamentResult':   return MOD.handleShowTournamentResult(p);
-      case 'showNationalNotice':     return MOD.handleShowNationalNotice(p);
-      case 'nextMatch':              return MOD.handleNextMatch(p);
-      case 'endTournament':          return MOD.handleEndTournament(p);
-      case 'endNationalWeek':        return MOD.handleEndNationalWeek(p);
+      case 'showArrival':            return MOD.handleShowArrival(req);
+      case 'showIntroText':          return MOD.handleShowIntroText(req);
+      case 'showAutoSession':        return MOD.handleShowAutoSession(req);
+      case 'showAutoSessionDone':    return MOD.handleShowAutoSessionDone(req);
+      case 'showTeamList':           return MOD.handleShowTeamList(req);
+      case 'showCoachSelect':        return MOD.handleShowCoachSelect(req);
+      case 'showDropStart':          return MOD.handleShowDropStart(req);
+      case 'showDropLanded':         return MOD.handleShowDropLanded(req);
+      case 'showRoundStart':         return MOD.handleShowRoundStart(req);
+      case 'showEvent':              return MOD.handleShowEvent(req);
+      case 'prepareBattles':         return MOD.handlePrepareBattles(req);
+      case 'showEncounter':          return MOD.handleShowEncounter(req);
+      case 'showBattle':             return MOD.handleShowBattle(req);
+      case 'showMove':               return MOD.handleShowMove(req);
+      case 'showChampion':           return MOD.handleShowChampion(req);
+      case 'showMatchResult':        return MOD.handleShowMatchResult(req);
+      case 'showTournamentResult':   return MOD.handleShowTournamentResult(req);
+      case 'showNationalNotice':     return MOD.handleShowNationalNotice(req);
+      case 'nextMatch':              return MOD.handleNextMatch(req);
+      case 'endTournament':          return MOD.handleEndTournament(req);
+      case 'endNationalWeek':        return MOD.handleEndNationalWeek(req);
       default:
+        // unknown/unused は握りつぶし（止まり要因にしない）
         console.warn('[ui_tournament] unknown req.type:', t, req);
         return;
     }
@@ -209,6 +308,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =============== Public API ===============
   async function render(){
+    bindOnce();
+    ensureDom();
+
+    // rendering中の多重呼び出しガード
     if (MOD._getRendering && MOD._getRendering()) return;
 
     const flow = getFlow();
@@ -223,45 +326,98 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
+    // UI側でも最新化（存在すれば）
+    try{ if (typeof syncSessionBar === 'function') syncSessionBar(); }catch(e){}
+
+    // ✅ pending（hold解除後）は最優先で描画する
+    const pend = popPendingIfReady();
+    if (pend){
+      await renderOne(flow, pend, { fromPending:true });
+      postRenderFixups();
+      return;
+    }
+
     const req = peekReq(flow);
 
-    // ✅ FIX：noop は即消化（詰まり防止）
+    // ✅ noop は即消化（詰まり防止）
     if (req && String(req.type || '') === 'noop'){
       consumeReq(flow);
       setNextEnabled(true);
+      postRenderFixups();
       return;
     }
 
     if (!req){
       setNextEnabled(true);
+      postRenderFixups();
       return;
     }
 
     // hold中なら “別req” は保管して、現画面維持
     if (stashPendingIfHolding(req)){
       setNextEnabled(true);
+      postRenderFixups();
       return;
     }
 
-    // 同じreqを二重描画しない
-    const key = mkReqKey(req);
-    const last = MOD._getLastReqKey ? MOD._getLastReqKey() : '';
-    if (key && key === last){
-      setNextEnabled(true);
-      return;
-    }
+    await renderOne(flow, req, { fromPending:false });
+    postRenderFixups();
+  }
 
+  // ✅ v3.6.14: lastReqKey の更新は「描画成功後」
+  async function renderOne(flow, req, opt){
     if (MOD._setRendering) MOD._setRendering(true);
-    if (MOD._setLastReqKey) MOD._setLastReqKey(key);
 
     // 描画中はNEXT無効（handlers内の lock/unlock と二重でもOK）
     setNextEnabled(false);
 
     try{
+      // “同一req二重描画防止” は保つが、詰まりを防ぐため扱いを慎重にする
+      const key = mkReqKey(req);
+      const last = MOD._getLastReqKey ? MOD._getLastReqKey() : '';
+
+      // ただし「同一keyが残り続ける」場合に、ここでreturnすると永遠に止まるので
+      // fromPending のときはブロックしない（hold復帰で同一keyになりやすい）
+      if (!opt?.fromPending && key && key === last){
+        // もし同一keyなのにreqが残っている＝flow側がconsumeできてない可能性があるので
+        // UI側で消して先へ進める（詰まり根絶）
+        consumeReq(flow);
+        setNextEnabled(true);
+        return;
+      }
+
+      // 画面状態の最低限整合（存在すれば）
+      try{
+        const t = String(req?.type||'');
+        if (!t || t === 'noop'){
+          if (typeof setBattleMode === 'function' && MOD._getEncounterGatePhase && MOD._getEncounterGatePhase() === 0){
+            setBattleMode(false);
+          }
+          if (typeof setChampionMode === 'function') setChampionMode(false);
+          if (typeof setResultStampMode === 'function') setResultStampMode(false);
+          if (typeof hidePanels === 'function') hidePanels();
+          if (typeof hideSplash === 'function') hideSplash();
+          if (typeof showCenterStamp === 'function') showCenterStamp('');
+        }
+      }catch(e){}
+
       await dispatch(req);
+
+      // 基本は描画後にconsume（ここが最重要）
       consumeReq(flow);
+
+      // ✅ 描画成功後に lastReqKey 更新（途中return/例外で固定化しない）
+      if (MOD._setLastReqKey){
+        const key2 = mkReqKey(req);
+        MOD._setLastReqKey(key2);
+      }
+
     }catch(e){
       console.error('[ui_tournament] render error:', e);
+
+      // 例外でも “reqが残って止まる” のを防ぐため、一旦consumeして進行可能にする
+      try{ consumeReq(flow); }catch(_){}
+
     }finally{
       if (MOD._setRendering) MOD._setRendering(false);
       setNextEnabled(true);
@@ -279,13 +435,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== expose =====
-  Object.assign(MOD, {
-    open,
-    close,
-    render
-  });
+  Object.assign(MOD, { open, close, render });
 
-  // 既存互換：window.MOBBR.ui.tournament
   window.MOBBR.ui.tournament = window.MOBBR.ui.tournament || {};
   Object.assign(window.MOBBR.ui.tournament, {
     open: ()=>MOD.open(),
