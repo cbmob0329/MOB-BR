@@ -1,14 +1,12 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.0
-   - v18.9 の全機能維持
-   - ✅ FIX: startTournamentPipeline が simStartFn の state を捨てていた
-       -> state を open/render に必ず渡す（Promise対応も含む）
-   - ✅ FIX: uiOpenArg は state にマージして UI へ渡す（mode/phase 上書き可）
+   app.js（FULL） v19.1
+   - v19.0 の全機能維持（削除なし）
+   - ✅ ADD: sim_tournament_core_step_base.js をロード（step 2分割の前提）
 ========================================================= */
 
-const APP_VER = 19.0; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.1; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -171,10 +169,11 @@ async function loadModules(){
     `sim_match_events.js${v}`,
     `sim_match_flow.js${v}`,
 
-    // tournament 3分割（依存順：logic -> result -> core_shared -> core_step -> core(entry)）
+    // tournament 3分割（依存順：logic -> result -> core_shared -> core_step_base -> core_step -> core(entry)）
     `sim_tournament_logic.js${v}`,
     `sim_tournament_result.js${v}`,
     `sim_tournament_core_shared.js${v}`,
+    `sim_tournament_core_step_base.js${v}`, // ✅ 追加（2分割対応）
     `sim_tournament_core_step.js${v}`,
     `sim_tournament_core.js${v}`, // entry
 
