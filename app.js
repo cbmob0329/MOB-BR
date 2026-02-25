@@ -8,7 +8,7 @@
        flow.step() が無い構成でも window.MOBBR.sim._tcore.step() を1回回して初期req生成
 ========================================================= */
 
-const APP_VER = 18.8; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 18.9; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
