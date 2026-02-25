@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v18.8
+   app.js（FULL） v18.9
    - v18.7 の全機能維持
    - ✅ FIX: app.js 内に ui_tournament.js が混入していた事故を排除（完全分離）
    - ✅ FIX: startTournamentPipeline 初期stepを robust化
