@@ -422,6 +422,15 @@ function exposeTournamentAPI(){
     world: startWorldTournament,
     byState: startTournamentByState
   };
+
+  // =====================================================
+  // ✅ 追加（壊さないalias）
+  // - 旧UI/呼び出し側が window.MOBBR.ui.startTournament.local() を呼んでも落ちないように
+  // - hard-guard により ui を破壊せず「マージ」される
+  // =====================================================
+  window.MOBBR.ui = window.MOBBR.ui || {};
+  window.MOBBR.ui.startTournament = window.MOBBR.startTournament;
+
   try{
     console.log('[TOUR] startTournament API exposed:', Object.keys(window.MOBBR.startTournament || {}));
   }catch(e){}
