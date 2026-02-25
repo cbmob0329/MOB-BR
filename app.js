@@ -1,14 +1,14 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v18.9
-   - v18.7 の全機能維持
-   - ✅ FIX: app.js 内に ui_tournament.js が混入していた事故を排除（完全分離）
-   - ✅ FIX: startTournamentPipeline 初期stepを robust化
-       flow.step() が無い構成でも window.MOBBR.sim._tcore.step() を1回回して初期req生成
+   app.js（FULL） v19.0
+   - v18.9 の全機能維持
+   - ✅ FIX: startTournamentPipeline が simStartFn の state を捨てていた
+       -> state を open/render に必ず渡す（Promise対応も含む）
+   - ✅ FIX: uiOpenArg は state にマージして UI へ渡す（mode/phase 上書き可）
 ========================================================= */
 
-const APP_VER = 18.9; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.0; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -268,16 +268,59 @@ function normalizeWorldPhase(phase){
   return 'qual';
 }
 
-// ✅ v18.8：必ず「sim開始→（初期request生成）→UI open→UI render」
+// ✅ v19.0：必ず「sim開始→（初期request生成）→UI open(state)→UI render(state)」
+// - simStartFn が Promise を返す構成にも対応
 function startTournamentPipeline(simStartFn, uiOpenArg){
   ensureModulesOrThrow();
 
   const flow = window.MOBBR?.sim?.tournamentFlow;
 
+  const doInitialStep = () => {
+    // 初期request生成：openTournament は ui が処理しないので step を1回回す（robust）
+    try{
+      if (flow && typeof flow.step === 'function'){
+        flow.step();
+      }else if (window.MOBBR?.sim?._tcore?.step){
+        // ✅ flow.step が無い構成でも必ず初期reqを作る
+        window.MOBBR.sim._tcore.step();
+      }else{
+        console.warn('[TOUR] initial step: no flow.step and no _tcore.step');
+      }
+    }catch(e){
+      console.warn('[TOUR] initial step failed (continue):', e);
+    }
+  };
+
+  const doUiOpenRender = (state) => {
+    const s = (state && typeof state === 'object') ? state : {};
+    const arg = Object.assign({}, s, (uiOpenArg && typeof uiOpenArg === 'object') ? uiOpenArg : {});
+
+    // 3) UI open（オーバーレイを確実に開く）
+    try{
+      if (window.MOBBR?.ui?.tournament?.open){
+        window.MOBBR.ui.tournament.open(arg);
+      }
+    }catch(e){
+      console.warn('[TOUR] ui.open failed (continue):', e);
+    }
+
+    // 4) UI render（初回描画）
+    try{
+      if (window.MOBBR?.ui?.tournament?.render){
+        window.MOBBR.ui.tournament.render(arg);
+      }
+    }catch(e){
+      console.warn('[TOUR] ui.render failed:', e);
+    }
+
+    return arg;
+  };
+
   // 1) sim開始（state生成）
+  let ret;
   try{
     if (typeof simStartFn === 'function'){
-      simStartFn();
+      ret = simStartFn(); // ★ここで state を受ける（重要）
     }else{
       throw new Error('simStartFn missing');
     }
@@ -286,37 +329,20 @@ function startTournamentPipeline(simStartFn, uiOpenArg){
     throw e;
   }
 
-  // 2) 初期request生成：openTournament は ui が処理しないので step を1回回す（robust）
-  try{
-    if (flow && typeof flow.step === 'function'){
-      flow.step();
-    }else if (window.MOBBR?.sim?._tcore?.step){
-      // ✅ flow.step が無い構成でも必ず初期reqを作る
-      window.MOBBR.sim._tcore.step();
-    }else{
-      console.warn('[TOUR] initial step: no flow.step and no _tcore.step');
-    }
-  }catch(e){
-    console.warn('[TOUR] initial step failed (continue):', e);
+  // Promise 対応（national/world が async 化しても壊れない）
+  if (ret && typeof ret.then === 'function'){
+    return ret.then((state) => {
+      doInitialStep();
+      return doUiOpenRender(state);
+    }).catch((e) => {
+      console.error('[TOUR] sim start promise rejected:', e);
+      throw e;
+    });
   }
 
-  // 3) UI open（オーバーレイを確実に開く）
-  try{
-    if (window.MOBBR?.ui?.tournament?.open){
-      window.MOBBR.ui.tournament.open(uiOpenArg || {});
-    }
-  }catch(e){
-    console.warn('[TOUR] ui.open failed (continue):', e);
-  }
-
-  // 4) UI render（初回描画）
-  try{
-    if (window.MOBBR?.ui?.tournament?.render){
-      window.MOBBR.ui.tournament.render();
-    }
-  }catch(e){
-    console.warn('[TOUR] ui.render failed:', e);
-  }
+  // sync
+  doInitialStep();
+  return doUiOpenRender(ret);
 }
 
 function startLocalTournament(){
