@@ -1,8 +1,8 @@
-/* tournament.css（フル） v3.2.5
-  - ✅ v3.2.4 の見た目を維持しつつ、以下を修正（今回の要望）
-    1) 交戦開始BATTLEバナーの位置を “さらに上” へ（被り/低すぎ解消）
-    2) WIN/LOSE を “もっと大きく” へ
-    3) 他は崩さない（レイアウト/文字/2行バナー/4行ネーム維持）
+/* tournament.css（フル） v3.2.6
+  - v3.2.5 の見た目を維持
+  - ✅ FIX: sessionBar が .hasSessionBar 依存で永遠に出ない問題を解消
+    → CSS側の gating を廃止し、JS(syncSessionBar) の display 制御に統一
+  - 他のレイアウト/文字/2行バナー/4行ネーム維持
 */
 
 :root{
@@ -211,7 +211,7 @@
 
 /* ✅ v3.2.5: 交戦開始BATTLEバナーを “さらに上” へ */
 #mobbrTournamentOverlay.isBattle .centerStamp{
-  top: 170px;     /* ← v3.2.4:200px から上げる */
+  top: 170px;
   height: 44px;
   z-index: 7;
 }
@@ -221,12 +221,12 @@
 
 /* ✅ v3.2.5: 交戦結果スタンプ（WIN/LOSE）を “さらに大きく” */
 #mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp{
-  top: 120px;     /* ← v3.2.4:170px から上げる */
+  top: 120px;
   height: 190px;
   z-index: 12;
 }
 #mobbrTournamentOverlay.isBattle.isResultStamp .centerStamp img{
-  height: 168px;  /* ← v3.2.4:128px から拡大 */
+  height: 168px;
   filter: drop-shadow(0 14px 26px rgba(0,0,0,.75));
 }
 
@@ -439,7 +439,8 @@
 }
 
 /* =========================================================
-   ✅ 追加：sessionBar（AB CD AC AD BC BD）専用（ここから）
+   ✅ sessionBar（AB CD AC AD BC BD）専用
+   - v3.2.6: hasSessionBar gating 廃止（JS制御に統一）
    ========================================================= */
 
 #mobbrTournamentOverlay .sessionBar{
@@ -447,17 +448,16 @@
   left: 12px;
   right: 12px;
   top: 56px;
-  display:none;
+
+  /* ✅ JS(syncSessionBar) が display を 'none' にする/戻す前提 */
+  display:flex;
+
   gap: 6px;
   justify-content: space-between;
   align-items:center;
   user-select:none;
   pointer-events:none;
   z-index: 6;
-}
-
-#mobbrTournamentOverlay.hasSessionBar .sessionBar{
-  display:flex;
 }
 
 #mobbrTournamentOverlay .sessionBar .seg{
