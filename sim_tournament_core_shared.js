@@ -1,22 +1,24 @@
 'use strict';
 
 /*
-  sim_tournament_core_shared.js（FULL）
+  sim_tournament_core_shared.js（FULL） v4.9
   - sim_tournament_core.js を 3分割するための「共通土台」
   - state/共通関数/内部ユーティリティを集約（削除ゼロで移植）
   - step本体は sim_tournament_core_step.js に置く
   - start/export は sim_tournament_core.js（entry）に置く
 
-  ✅FIX（重要）:
-  - setRequest を「{ type, payload }」に統一（entry/ui と整合）
-    かつ互換のため payload の直置きも同時保持
+  ✅FIX（重要・大会が始まらない対策の本命）:
+  - request を「新旧両対応」にする（互換レイヤー）
+    新: state.requestObj = { type, payload }
+    旧: state.request = 'openTournament'（文字列も維持）
+    さらに互換：state.ui.req / state.ui.request / state.ui.reqObj も保持
+  - UI側がどの形式を見ていても確実に拾えるように
+    peekUiRequest / consumeUiRequest を _tcore に提供
+
+  ✅既存FIX（維持）:
   - setCenter3 を「state.center {a,b,c}」に統一（entry/ui と整合）
     かつ互換のため state.ui.center3 も同時保持
-
-  ✅追加FIX（今回）:
   - tournamentResult(R) を “固定参照” しない（ロード順/差し替えで総合0になるのを防止）
-
-  ✅追加（今回の要望）:
   - NATIONAL / WORLD の左上表示で「MATCH」を必ず表記できるように、
     _setNationalBanners() で bannerLeft に MATCH を常時含める（bannerRight は ROUND/降下 等の上書き用）
 */
@@ -116,22 +118,130 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return { state, player, playerCoach: coachFlags };
   }
 
-  // ===== UI helper =====
-  // ✅FIX: requestの形を core(entry)/ui と揃える
-  //  - state.request = { type, payload }
-  //  - 互換のため payload のキーも直置き（UIが request.icon を見ても動く）
+  // =========================================================
+  // ✅ UI Request helper（新旧両対応の核）
+  //  - UIがどこを見ていても request を拾えるようにする
+  // =========================================================
+
+  function _ensureUiObj(){
+    if (!state) return null;
+    if (!state.ui || typeof state.ui !== 'object') state.ui = {};
+    return state.ui;
+  }
+
+  // ✅FIX: requestの形を「新旧両対応」で保持
+  //
+  // 新: state.requestObj = { type, payload }
+  // 旧: state.request = 'openTournament'（文字列）
+  // 互換: state.request（オブジェクト）を見ている実装にも耐えるため
+  //      state.requestObj のコピーを state.requestObjFlat に持つ
+  //      さらに state.ui.req / state.ui.request / state.ui.reqObj / state.ui.requestObj も同期
   function setRequest(type, payload){
     if (!state) return;
+
     const t = String(type || 'noop');
     const p = (payload && typeof payload === 'object') ? payload : {};
-    state.request = { type: t, payload: p };
+
+    // --- NEW canonical ---
+    state.requestObj = { type: t, payload: p };
+
+    // --- also keep a flat copy for legacy "req.icon" style reads ---
+    // (ui_tournament 側が req.payload ではなく req.icon を見ても壊れない)
+    state.requestObjFlat = { type: t, payload: p };
     try{
       for (const k of Object.keys(p)){
-        state.request[k] = p[k];
+        state.requestObjFlat[k] = p[k];
       }
+    }catch(_){}
+
+    // --- LEGACY string mode (most common old pattern) ---
+    // old UI might do: if (state.request === 'openTournament') ...
+    state.request = t;
+
+    // --- LEGACY object mode (some old implementations) ---
+    // old UI might do: st.request.type / st.request.payload
+    // ただし上の文字列と衝突するので、別名で置く方が安全。
+    // それでも "state.request" をオブジェクトとして参照している場合に備えて
+    // state.ui.req を必ずオブジェクトで持つ。
+    const ui = _ensureUiObj();
+    if (ui){
+      ui.reqObj = { type: t, payload: p };
+      ui.requestObj = ui.reqObj;
+
+      // よくある旧キー
+      ui.req = ui.reqObj;
+      ui.request = ui.reqObj;
+
+      // 旧UIが ui.req.icon を直接読むケースにも耐える
+      try{
+        for (const k of Object.keys(p)){
+          ui.reqObj[k] = p[k];
+        }
+      }catch(_){}
+    }
+  }
+
+  // UI（ui_tournament側）から「次の描画要求」を取得するための共通API
+  function peekUiRequest(){
+    const st = state;
+    if (!st) return null;
+
+    // 1) ui.req / ui.request（最優先：今回ここに必ず入れる）
+    try{
+      const u = st.ui;
+      if (u && u.req && typeof u.req === 'object' && u.req.type) return u.req;
+      if (u && u.request && typeof u.request === 'object' && u.request.type) return u.request;
+      if (u && u.reqObj && typeof u.reqObj === 'object' && u.reqObj.type) return u.reqObj;
+      if (u && u.requestObj && typeof u.requestObj === 'object' && u.requestObj.type) return u.requestObj;
+    }catch(_){}
+
+    // 2) requestObj（新）
+    try{
+      if (st.requestObj && typeof st.requestObj === 'object' && st.requestObj.type) return st.requestObj;
+    }catch(_){}
+
+    // 3) requestObjFlat（新・flat）
+    try{
+      if (st.requestObjFlat && typeof st.requestObjFlat === 'object' && st.requestObjFlat.type) return st.requestObjFlat;
+    }catch(_){}
+
+    // 4) request（旧：文字列）
+    try{
+      if (typeof st.request === 'string' && st.request){
+        return { type: st.request, payload: {} };
+      }
+    }catch(_){}
+
+    return null;
+  }
+
+  function consumeUiRequest(){
+    const st = state;
+    if (!st) return;
+
+    // ui側
+    try{
+      if (st.ui){
+        if ('req' in st.ui) st.ui.req = null;
+        if ('request' in st.ui) st.ui.request = null;
+        if ('reqObj' in st.ui) st.ui.reqObj = null;
+        if ('requestObj' in st.ui) st.ui.requestObj = null;
+      }
+    }catch(_){}
+
+    // core側
+    try{
+      if ('requestObj' in st) st.requestObj = null;
+      if ('requestObjFlat' in st) st.requestObjFlat = null;
+    }catch(_){}
+
+    // 旧文字列は noop に戻す（null だと旧UIが詰まる実装があるため）
+    try{
+      st.request = 'noop';
     }catch(_){}
   }
 
+  // ===== UI helper =====
   // ✅FIX: centerの形を core(entry) と揃える
   //  - state.center = {a,b,c}
   //  - 互換のため state.ui.center3 = [a,b,c] も同時保持
@@ -601,9 +711,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   T.ensureTeamRuntimeShape = ensureTeamRuntimeShape;
   T.computeCtx = computeCtx;
 
+  // ✅ request (new+legacy)
   T.setRequest = setRequest;
+  T.peekUiRequest = peekUiRequest;
+  T.consumeUiRequest = consumeUiRequest;
+
+  // center
   T.setCenter3 = setCenter3;
 
+  // UI-facing helpers
   T.getCoachMaster = getCoachMaster;
   T.getEquippedCoachList = getEquippedCoachList;
   T.setCoachSkill = setCoachSkill;
@@ -613,6 +729,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   T.applyEventForTeam = applyEventForTeam;
   T.initMatchDrop = initMatchDrop;
 
+  // sim
   T.simulateRound = simulateRound;
   T.fastForwardToMatchEnd = fastForwardToMatchEnd;
   T.finishMatchAndBuildResult = finishMatchAndBuildResult;
