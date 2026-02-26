@@ -1,19 +1,24 @@
 'use strict';
 
 /*
-  MOB BR - ui_team.js v16（フル）
-  追加：
-  - コーチスキルの「装備 / 取り外し」(最大3枠)
-    所持：mobbr_coachSkillsOwned（shopで増える）
-    装備：mobbr_coachSkillsEquipped（このファイルで管理）
-  - 既存機能は維持：
-    ・カード効果込み総合% 表示（赤文字 +「カード効果！」）
-    ・セーブ削除（完全リセット）時に全ポップアップ/スクリーンを閉じる
+  MOB BR - ui_team.js v17（フル）
 
-  ★今回の修正（power55問題）
-  - window.MOBBR.ui.team.calcTeamPower() を実装（試合側が参照）
-  - renderTeamPower() のたびに localStorage[mobbr_playerTeam].teamPower を保存
-    → 大会/試合側の calcPlayerTeamPower() が 55 に落ちなくなる
+  ✅ 今回の変更（確定仕様を反映）
+  - コーチスキル機能は完全削除（不要）
+  - チーム画面に「能力アップ」「能力獲得（スキル取得/強化）」を追加
+  - タップで右に「+」の保留値が増える → 「決定」でまとめて反映
+  - 足りない時は「ポイントが足りません」を表示して反映しない
+  - ステータス上限 99
+  - スキル強化上限 +30
+  - ステータスアップ：必要ポイントが +1 ずつ増加（同一メンバー×同一ステの累計回数で増える）
+  - スキル：必要ポイントが +2 ずつ増加（同一メンバー×同一スキルの現在+値で増える）
+  - 発動率は 100% 上限でクランプ（表示も同様）
+
+  ✅ 既存維持
+  - 名前変更
+  - チーム%（カード効果込み表示）
+  - power55対策：calcTeamPower() と teamPower 永続化
+  - セーブ削除（完全リセット）時に全ポップアップ/スクリーンを閉じる
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -38,56 +43,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ===== keys =====
   const K = S.KEYS;
 
-  // ===== Coach Skills Storage =====
-  const COACH_OWNED_KEY = 'mobbr_coachSkillsOwned';     // { id: count }
-  const COACH_EQUIP_KEY = 'mobbr_coachSkillsEquipped';  // [id|null, id|null, id|null]
-
-  // ===== Coach Skills Master =====
-  const COACH_SKILLS = [
-    {
-      id: 'tactics_note',
-      name: '戦術ノート',
-      effectLabel: 'この試合、総合戦闘力が1%アップする',
-      coachLine: '基本を徹底。丁寧に戦おう！'
-    },
-    {
-      id: 'mental_care',
-      name: 'メンタル整備',
-      effectLabel: 'この試合、チームの雰囲気が安定する',
-      coachLine: '全員で勝つぞ！'
-    },
-    {
-      id: 'endgame_power',
-      name: '終盤の底力',
-      effectLabel: 'この試合、終盤の勝負で総合戦闘力が3%アップする',
-      coachLine: '終盤一気に押すぞ！'
-    },
-    {
-      id: 'clearing',
-      name: 'クリアリング徹底',
-      effectLabel: 'この試合、ファイトに勝った後に人数が残りやすい',
-      coachLine: '周辺をしっかり見ろ！'
-    },
-    {
-      id: 'score_mind',
-      name: 'スコア意識',
-      effectLabel: 'この試合、お宝やフラッグを取りやすい',
-      coachLine: 'この試合はポイント勝負だ！'
-    },
-    {
-      id: 'igl_call',
-      name: 'IGL強化コール',
-      effectLabel: 'この試合、総合戦闘力が4%アップする',
-      coachLine: 'コールを信じろ！チャンピオン取るぞ！'
-    },
-    {
-      id: 'protagonist',
-      name: '主人公ムーブ',
-      effectLabel: 'この試合、総合戦闘力が6%アップし、アシストも出やすくなる',
-      coachLine: 'チームの力を信じろ！'
-    }
-  ];
-  const COACH_BY_ID = Object.fromEntries(COACH_SKILLS.map(s => [s.id, s]));
+  // ===== Training / Skill storage (inside playerTeam) =====
+  // playerTeam.members[i].trainPts: { muscle, tech, spirit }
+  // playerTeam.members[i].upgradeCount: { hp, aim, tech, mental }  // ステータスアップ累計（必要+1）
+  // playerTeam.members[i].skills: { [skillId]: { plus:number } }   // 取得/強化（必要+2）
+  // ※既存セーブ互換のため、存在しなければ初期化する
 
   // ===== DOM =====
   const dom = {
@@ -153,6 +113,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     el.textContent = String(text ?? '');
   }
 
+  function clamp(n, min, max){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return min;
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function clamp01to100(n){
+    return clamp(n, 0, 100);
+  }
+  function clamp1to100(n){
+    return clamp(n, 1, 100);
+  }
+  function clamp0to99(n){
+    return clamp(n, 0, 99);
+  }
+
   function getNameA(){ return S.getStr(K.m1, 'A'); }
   function getNameB(){ return S.getStr(K.m2, 'B'); }
   function getNameC(){ return S.getStr(K.m3, 'C'); }
@@ -172,6 +148,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(e){}
     return DP.buildDefaultTeam();
+  }
+
+  function writePlayerTeam(team){
+    try{
+      localStorage.setItem(K.playerTeam, JSON.stringify(team));
+    }catch(e){}
+  }
+
+  function clone(obj){
+    return JSON.parse(JSON.stringify(obj));
   }
 
   // ===== reflect names everywhere =====
@@ -199,18 +185,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     armor: 0.10,
     hp: 0.10
   };
-
-  function clamp01to100(n){
-    const v = Number(n);
-    if (!Number.isFinite(v)) return 0;
-    return Math.max(0, Math.min(100, v));
-  }
-
-  function clamp1to100(n){
-    const v = Number(n);
-    if (!Number.isFinite(v)) return 1;
-    return Math.max(1, Math.min(100, v));
-  }
 
   function calcCharBasePower(stats){
     const s = {
@@ -325,7 +299,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function persistTeamPower(teamPowerInt){
-    // localStorage[mobbr_playerTeam].teamPower を確実に保存（試合側のフォールバック用）
     try{
       const raw = localStorage.getItem(K.playerTeam);
       if (!raw) return;
@@ -333,8 +306,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (!t || typeof t !== 'object') return;
 
       t.teamPower = clamp1to100(teamPowerInt);
-
-      // 念のため members の name など既存構造はそのまま維持して上書き保存
       localStorage.setItem(K.playerTeam, JSON.stringify(t));
     }catch(e){}
   }
@@ -355,234 +326,828 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       ui.cardEl.textContent = `${total.toFixed(2)}%`;
     }
 
-    // ★大会/試合で使う整数power（1..100）を保存
     const totalInt = clamp1to100(Math.round(total));
     persistTeamPower(totalInt);
   }
 
-  // ===== Coach Skills: load/save =====
-  function readCoachOwned(){
-    try{
-      const obj = JSON.parse(localStorage.getItem(COACH_OWNED_KEY) || '{}');
-      return (obj && typeof obj === 'object') ? obj : {};
-    }catch{
-      return {};
+  // =========================================================
+  // ここから：能力アップ / 能力獲得（スキル）UI
+  // =========================================================
+
+  const PTS_KEYS = ['muscle','tech','spirit'];
+  const PTS_LABEL = { muscle:'筋力', tech:'技術力', spirit:'精神力' };
+
+  // ステータスアップの対象（あなたの指定）
+  const UP_STATS = [
+    { key:'hp',     label:'体力'   },
+    { key:'aim',    label:'エイム' },
+    { key:'tech',   label:'技術'   },
+    { key:'mental', label:'メンタル' }
+  ];
+
+  // ステータスアップ：基礎コスト（+回数で各項目に +1 ずつ増える）
+  function baseCostForStat(statKey){
+    if (statKey === 'hp')     return { muscle:10, tech:0,  spirit:0 };
+    if (statKey === 'aim')    return { muscle:4,  tech:4,  spirit:2 };
+    if (statKey === 'tech')   return { muscle:2,  tech:8,  spirit:0 };
+    if (statKey === 'mental') return { muscle:0,  tech:2,  spirit:8 };
+    return { muscle:0, tech:0, spirit:0 };
+  }
+
+  // スキル定義（確定仕様）
+  // - baseChance: %（0..100）
+  // - baseEffect: %（効果が%のもの）
+  // - plusで chance+1, effect+1（ただし100%上限）
+  // - cost: 取得コスト（強化は「必要が2ずつアップ」= +値に応じて各項目に +2*plus）
+  const SKILLS = [
+    // IGL
+    {
+      id:'igl_inspire',
+      role:'IGL',
+      name:'閃きと輝き',
+      cost:{ muscle:50, tech:50, spirit:60 },
+      baseChance: 1.0,
+      trigger:'接敵時',
+      type:'buff_team',
+      baseEffect: 10, // チーム全員10%
+      desc:'接敵時に発動。チーム全員のステータスを10%アップ。'
+    },
+    {
+      id:'igl_control',
+      role:'IGL',
+      name:'空間制圧',
+      cost:{ muscle:30, tech:60, spirit:80 },
+      baseChance: 0.5,
+      trigger:'接敵時',
+      type:'debuff_enemy_power',
+      baseEffect: 5, // 敵総合戦闘力 -5
+      desc:'接敵時に発動。敵チームの総合戦闘力を5ダウン。'
+    },
+
+    // Attacker
+    {
+      id:'atk_speedstar',
+      role:'アタッカー',
+      name:'スピードスター',
+      cost:{ muscle:70, tech:20, spirit:30 },
+      baseChance: 1.0,
+      trigger:'接敵時',
+      type:'buff_self_aim',
+      baseEffect: 20, // 自身エイム +20%
+      desc:'接敵時に発動。自身のエイムが20%アップ。'
+    },
+    {
+      id:'atk_physical',
+      role:'アタッカー',
+      name:'フィジカルモンスター',
+      cost:{ muscle:90, tech:40, spirit:60 },
+      baseChance: 0.5,
+      trigger:'マッチ開始時',
+      type:'buff_match_aim',
+      baseEffect: 50, // 試合中エイム +50%
+      desc:'マッチ開始時に発動。発動した試合中、エイムが50%アップ。'
+    },
+
+    // Support
+    {
+      id:'sup_shingan',
+      role:'サポーター',
+      name:'心眼',
+      cost:{ muscle:20, tech:30, spirit:40 }, // ★不足していた取得ポイントを付与
+      baseChance: 1.0,
+      trigger:'マッチ開始時',
+      type:'block_debuff',
+      baseEffect: 100, // 「デバフイベント発生しない」を便宜上100%効果として扱う
+      desc:'マッチ開始時に発動。発動した試合でデバフイベントが発生しなくなる。'
+    },
+    {
+      id:'sup_godcover',
+      role:'サポーター',
+      name:'神カバー',
+      cost:{ muscle:30, tech:30, spirit:20 }, // ★不足していた取得ポイントを付与
+      baseChance: 5.0,
+      trigger:'接敵時',
+      type:'buff_others',
+      baseEffect: 5, // 自分以外 全能力 +5%
+      desc:'接敵時に発動。自分以外の全能力を5%アップ。'
     }
-  }
+  ];
 
-  function writeCoachOwned(obj){
-    localStorage.setItem(COACH_OWNED_KEY, JSON.stringify(obj || {}));
-  }
+  const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
-  function readCoachEquipped(){
-    try{
-      const arr = JSON.parse(localStorage.getItem(COACH_EQUIP_KEY) || '[]');
-      if (Array.isArray(arr)){
-        const out = [arr[0] ?? null, arr[1] ?? null, arr[2] ?? null].slice(0,3);
-        return out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
+  // ===== team data normalize =====
+  function ensureMemberMeta(mem){
+    if (!mem) return;
+
+    // trainPts
+    if (!mem.trainPts || typeof mem.trainPts !== 'object'){
+      mem.trainPts = { muscle:0, tech:0, spirit:0 };
+    }
+    for (const k of PTS_KEYS){
+      mem.trainPts[k] = clamp(Number(mem.trainPts[k] ?? 0), 0, 999999);
+    }
+
+    // upgradeCount
+    if (!mem.upgradeCount || typeof mem.upgradeCount !== 'object'){
+      mem.upgradeCount = { hp:0, aim:0, tech:0, mental:0 };
+    }
+    for (const s of ['hp','aim','tech','mental']){
+      mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] ?? 0), 0, 999999);
+    }
+
+    // skills
+    if (!mem.skills || typeof mem.skills !== 'object'){
+      mem.skills = {};
+    }
+    // 正規化
+    for (const sid in mem.skills){
+      const ent = mem.skills[sid];
+      if (!ent || typeof ent !== 'object'){
+        mem.skills[sid] = { plus:0 };
+        continue;
       }
-      return [null,null,null];
-    }catch{
-      return [null,null,null];
+      ent.plus = clamp(Number(ent.plus ?? 0), 0, 30);
     }
   }
 
-  function writeCoachEquipped(arr){
-    const out = Array.isArray(arr) ? arr.slice(0,3) : [null,null,null];
-    const norm = out.map(v => (typeof v === 'string' && v.trim()) ? v : null);
-    while (norm.length < 3) norm.push(null);
-    localStorage.setItem(COACH_EQUIP_KEY, JSON.stringify(norm));
+  function ensureTeamMeta(team){
+    if (!team || !Array.isArray(team.members)) return;
+    team.members.forEach(ensureMemberMeta);
   }
 
-  function countEquipped(id, equipped){
-    return equipped.filter(x => x === id).length;
+  function getMemberNameById(id){
+    if (id === 'A') return getNameA();
+    if (id === 'B') return getNameB();
+    if (id === 'C') return getNameC();
+    return String(id || '');
   }
 
-  // ===== Coach Skills UI (injected) =====
-  let coachUI = null;
+  function getMemberRole(mem){
+    return String(mem?.role || '');
+  }
+
+  // ===== UI injection =====
+  let trainingUI = null;
 
   function findTeamPanel(){
     if (!dom.teamScreen) return null;
-    // teamPanel がある想定（team.cssの構造）
     return dom.teamScreen.querySelector?.('.teamPanel') || dom.teamScreen;
   }
 
-  function ensureCoachUI(){
+  function createSectionTitle(text){
+    const t = document.createElement('div');
+    t.style.fontWeight = '1000';
+    t.style.fontSize = '14px';
+    t.style.opacity = '0.98';
+    t.style.marginTop = '10px';
+    t.textContent = text;
+    return t;
+  }
+
+  function createSubText(text){
+    const s = document.createElement('div');
+    s.style.marginTop = '6px';
+    s.style.fontSize = '12px';
+    s.style.opacity = '0.92';
+    s.style.lineHeight = '1.35';
+    s.textContent = text;
+    return s;
+  }
+
+  function createTabRow(){
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+    row.style.gap = '8px';
+    row.style.marginTop = '10px';
+    return row;
+  }
+
+  function createTabBtn(label, active){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.border = '1px solid rgba(255,255,255,.16)';
+    b.style.borderRadius = '12px';
+    b.style.padding = '10px 10px';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '13px';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.style.background = active ? 'rgba(255,255,255,.86)' : 'rgba(255,255,255,.10)';
+    b.style.color = active ? '#111' : '#fff';
+    b.textContent = label;
+    b.addEventListener('touchstart', ()=>{}, {passive:true});
+    b.onmousedown = ()=>{};
+    return b;
+  }
+
+  function createCard(){
+    const c = document.createElement('div');
+    c.style.borderRadius = '14px';
+    c.style.padding = '12px';
+    c.style.background = 'rgba(255,255,255,.10)';
+    c.style.border = '1px solid rgba(255,255,255,.14)';
+    return c;
+  }
+
+  function createMiniPill(text){
+    const p = document.createElement('div');
+    p.style.display = 'inline-block';
+    p.style.padding = '4px 8px';
+    p.style.borderRadius = '999px';
+    p.style.fontSize = '11px';
+    p.style.fontWeight = '1000';
+    p.style.border = '1px solid rgba(255,255,255,.18)';
+    p.style.background = 'rgba(0,0,0,.25)';
+    p.style.opacity = '0.95';
+    p.textContent = text;
+    return p;
+  }
+
+  function createPrimaryBtn(text){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.width = '100%';
+    b.style.border = '1px solid rgba(255,255,255,.18)';
+    b.style.borderRadius = '14px';
+    b.style.padding = '12px 12px';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '14px';
+    b.style.background = 'rgba(255,255,255,.86)';
+    b.style.color = '#111';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.addEventListener('touchstart', ()=>{}, {passive:true});
+    b.onmousedown = ()=>{};
+    b.textContent = text;
+    return b;
+  }
+
+  function createGhostBtn(text){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.width = '100%';
+    b.style.border = '1px solid rgba(255,255,255,.16)';
+    b.style.borderRadius = '14px';
+    b.style.padding = '12px 12px';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '14px';
+    b.style.background = 'rgba(255,255,255,.10)';
+    b.style.color = '#fff';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.addEventListener('touchstart', ()=>{}, {passive:true});
+    b.onmousedown = ()=>{};
+    b.textContent = text;
+    return b;
+  }
+
+  function ensureTrainingUI(){
     const panel = findTeamPanel();
     if (!panel) return null;
 
-    const existing = panel.querySelector?.('#coachSkillSection');
+    const existing = panel.querySelector?.('#teamTrainingSection');
     if (existing){
-      coachUI = {
+      trainingUI = {
         root: existing,
-        equipRow: existing.querySelector('.coachEquipRow'),
-        ownedList: existing.querySelector('.coachOwnedList')
+        memberTabs: existing.querySelector('.ttMemberTabs'),
+        ptRow: existing.querySelector('.ttPointRow'),
+        upArea: existing.querySelector('.ttUpArea'),
+        skillArea: existing.querySelector('.ttSkillArea'),
+        msg: existing.querySelector('.ttMsg')
       };
-      return coachUI;
+      return trainingUI;
     }
 
-    // なるべく下の方に追加：.teamSection の最後の後ろ
-    const lastSection = panel.querySelector?.('.teamSection:last-of-type');
-
+    // 追加位置：できるだけ下の方
     const section = document.createElement('div');
-    section.id = 'coachSkillSection';
-    section.className = 'teamSection';
+    section.id = 'teamTrainingSection';
     section.style.marginTop = '12px';
 
-    const title = document.createElement('div');
-    title.className = 'teamSectionTitle';
-    title.textContent = 'コーチスキル（装備：最大3つ）';
-
-    const sub = document.createElement('div');
-    sub.style.marginTop = '6px';
-    sub.style.fontSize = '13px';
-    sub.style.opacity = '0.92';
-    sub.style.lineHeight = '1.35';
-    sub.textContent = '所持スキルをタップで装備。装備中枠をタップで取り外し。';
-
-    // equipped row
-    const equipWrap = document.createElement('div');
-    equipWrap.style.marginTop = '10px';
-
-    const equipLabel = document.createElement('div');
-    equipLabel.style.fontWeight = '1000';
-    equipLabel.style.fontSize = '14px';
-    equipLabel.style.opacity = '0.95';
-    equipLabel.textContent = '装備中（3枠）';
-
-    const equipRow = document.createElement('div');
-    equipRow.className = 'coachEquipRow';
-    equipRow.style.display = 'grid';
-    equipRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
-    equipRow.style.gap = '10px';
-    equipRow.style.marginTop = '8px';
-
-    // owned list
-    const ownedWrap = document.createElement('div');
-    ownedWrap.style.marginTop = '14px';
-
-    const ownedLabel = document.createElement('div');
-    ownedLabel.style.fontWeight = '1000';
-    ownedLabel.style.fontSize = '14px';
-    ownedLabel.style.opacity = '0.95';
-    ownedLabel.textContent = '所持一覧（タップで装備）';
-
-    const ownedList = document.createElement('div');
-    ownedList.className = 'coachOwnedList';
-    ownedList.style.display = 'flex';
-    ownedList.style.flexDirection = 'column';
-    ownedList.style.gap = '10px';
-    ownedList.style.marginTop = '8px';
-
+    const title = createSectionTitle('育成（能力アップ / 能力獲得）');
     section.appendChild(title);
-    section.appendChild(sub);
+    section.appendChild(createSubText('タップで右に + が増えます。決定でまとめて反映します。足りない時は反映しません。'));
 
-    equipWrap.appendChild(equipLabel);
-    equipWrap.appendChild(equipRow);
-    section.appendChild(equipWrap);
+    const memberTabs = createTabRow();
+    memberTabs.className = 'ttMemberTabs';
+    section.appendChild(memberTabs);
 
-    ownedWrap.appendChild(ownedLabel);
-    ownedWrap.appendChild(ownedList);
-    section.appendChild(ownedWrap);
+    const ptRow = document.createElement('div');
+    ptRow.className = 'ttPointRow';
+    ptRow.style.display = 'flex';
+    ptRow.style.flexWrap = 'wrap';
+    ptRow.style.gap = '8px';
+    ptRow.style.marginTop = '10px';
+    section.appendChild(ptRow);
 
-    if (lastSection && lastSection.parentElement){
-      lastSection.parentElement.insertBefore(section, lastSection.nextSibling);
-    }else{
-      panel.appendChild(section);
+    const msg = document.createElement('div');
+    msg.className = 'ttMsg';
+    msg.style.marginTop = '8px';
+    msg.style.fontSize = '12px';
+    msg.style.lineHeight = '1.35';
+    msg.style.opacity = '0.95';
+    msg.style.display = 'none';
+    msg.style.padding = '10px 10px';
+    msg.style.borderRadius = '12px';
+    msg.style.border = '1px solid rgba(255,255,255,.16)';
+    msg.style.background = 'rgba(0,0,0,.25)';
+    section.appendChild(msg);
+
+    const upTitle = createSectionTitle('能力アップ');
+    section.appendChild(upTitle);
+
+    const upArea = document.createElement('div');
+    upArea.className = 'ttUpArea';
+    upArea.style.marginTop = '10px';
+    section.appendChild(upArea);
+
+    const skillTitle = createSectionTitle('能力獲得（スキル取得 / 強化）');
+    section.appendChild(skillTitle);
+
+    const skillArea = document.createElement('div');
+    skillArea.className = 'ttSkillArea';
+    skillArea.style.marginTop = '10px';
+    section.appendChild(skillArea);
+
+    panel.appendChild(section);
+
+    trainingUI = { root: section, memberTabs, ptRow, upArea, skillArea, msg };
+    return trainingUI;
+  }
+
+  function showMsg(text){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.msg) return;
+    ui.msg.textContent = String(text || '');
+    ui.msg.style.display = text ? 'block' : 'none';
+  }
+
+  // ===== pending state (not saved) =====
+  let ttSelectedId = 'A';
+  let pendingUp = {
+    A: { hp:0, aim:0, tech:0, mental:0 },
+    B: { hp:0, aim:0, tech:0, mental:0 },
+    C: { hp:0, aim:0, tech:0, mental:0 }
+  };
+  let pendingSkill = {
+    A: {}, B: {}, C: {}
+  };
+
+  function resetPending(){
+    pendingUp = {
+      A: { hp:0, aim:0, tech:0, mental:0 },
+      B: { hp:0, aim:0, tech:0, mental:0 },
+      C: { hp:0, aim:0, tech:0, mental:0 }
+    };
+    pendingSkill = { A:{}, B:{}, C:{} };
+  }
+
+  function getMemById(team, id){
+    return (team?.members || []).find(m => String(m?.id) === String(id));
+  }
+
+  function formatPtsCost(cost){
+    const parts = [];
+    for (const k of PTS_KEYS){
+      const v = Number(cost?.[k] || 0);
+      if (v > 0) parts.push(`${PTS_LABEL[k]}${v}`);
+    }
+    return parts.join(' / ') || '0';
+  }
+
+  function calcStatCost(mem, statKey, addCount /* 1..n */){
+    // 1回分のコスト：base + (upgradeCount[stat] + (i-1)) を各項目に加算
+    // addCount回ぶんを合算する
+    const base = baseCostForStat(statKey);
+    const cur = Number(mem?.upgradeCount?.[statKey] || 0);
+
+    const sum = { muscle:0, tech:0, spirit:0 };
+
+    for (let i=0;i<addCount;i++){
+      const inc = cur + i; // これが「必要 +1ずつアップ」の増分
+      for (const k of PTS_KEYS){
+        const b = Number(base[k] || 0);
+        if (b <= 0) continue;
+        sum[k] += (b + inc);
+      }
+    }
+    return sum;
+  }
+
+  function calcSkillCost(mem, skillId, addCount /* 1..n */){
+    const def = SKILL_BY_ID[skillId];
+    if (!def) return { muscle:0, tech:0, spirit:0 };
+
+    const curPlus = clamp(Number(mem?.skills?.[skillId]?.plus || 0), 0, 30);
+
+    // 1回分のコスト：base + (curPlus + (i)) *2 を各項目に加算（「必要 +2ずつアップ」）
+    // 取得（+1）も同じ扱い（curPlusが0なら base + 0*2）
+    const sum = { muscle:0, tech:0, spirit:0 };
+
+    for (let i=0;i<addCount;i++){
+      const p = curPlus + i;        // 今から増やす前の+値
+      const inc2 = p * 2;           // +2ずつ
+      for (const k of PTS_KEYS){
+        const b = Number(def.cost?.[k] || 0);
+        if (b <= 0) continue;
+        sum[k] += (b + inc2);
+      }
+    }
+    return sum;
+  }
+
+  function hasEnoughPts(mem, cost){
+    for (const k of PTS_KEYS){
+      const have = Number(mem?.trainPts?.[k] || 0);
+      const need = Number(cost?.[k] || 0);
+      if (have < need) return false;
+    }
+    return true;
+  }
+
+  function consumePts(mem, cost){
+    for (const k of PTS_KEYS){
+      mem.trainPts[k] = clamp(Number(mem.trainPts[k] || 0) - Number(cost?.[k] || 0), 0, 999999);
+    }
+  }
+
+  function applyPendingToTeam(team){
+    // 決定：不足チェック → 全部OKなら反映
+    const ids = ['A','B','C'];
+
+    // 1) cost集計
+    const totalCostByMem = { A:{muscle:0,tech:0,spirit:0}, B:{muscle:0,tech:0,spirit:0}, C:{muscle:0,tech:0,spirit:0} };
+
+    for (const id of ids){
+      const mem = getMemById(team, id);
+      if (!mem) continue;
+
+      // stat
+      for (const s of ['hp','aim','tech','mental']){
+        const add = Number(pendingUp?.[id]?.[s] || 0);
+        if (add > 0){
+          const c = calcStatCost(mem, s, add);
+          for (const k of PTS_KEYS) totalCostByMem[id][k] += c[k];
+        }
+      }
+
+      // skill
+      const pmap = pendingSkill[id] || {};
+      for (const sid in pmap){
+        const add = Number(pmap[sid] || 0);
+        if (add > 0){
+          const c = calcSkillCost(mem, sid, add);
+          for (const k of PTS_KEYS) totalCostByMem[id][k] += c[k];
+        }
+      }
     }
 
-    coachUI = { root: section, equipRow, ownedList };
-    return coachUI;
+    // 2) 不足判定（誰か1人でも不足なら全員反映しない）
+    for (const id of ids){
+      const mem = getMemById(team, id);
+      if (!mem) continue;
+      if (!hasEnoughPts(mem, totalCostByMem[id])){
+        return { ok:false, reason:'ポイントが足りません' };
+      }
+    }
+
+    // 3) 反映
+    for (const id of ids){
+      const mem = getMemById(team, id);
+      if (!mem) continue;
+
+      // consume
+      consumePts(mem, totalCostByMem[id]);
+
+      // stat apply
+      for (const s of ['hp','aim','tech','mental']){
+        const add = Number(pendingUp?.[id]?.[s] || 0);
+        if (add <= 0) continue;
+
+        mem.stats = mem.stats || {};
+        mem.stats[s] = clamp0to99(Number(mem.stats[s] || 0) + add);
+
+        // upgrade count update
+        mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] || 0) + add, 0, 999999);
+      }
+
+      // skill apply
+      mem.skills = mem.skills || {};
+      const pmap = pendingSkill[id] || {};
+      for (const sid in pmap){
+        const add = Number(pmap[sid] || 0);
+        if (add <= 0) continue;
+
+        if (!mem.skills[sid]) mem.skills[sid] = { plus:0 };
+        const cur = clamp(Number(mem.skills[sid].plus || 0), 0, 30);
+        const next = clamp(cur + add, 0, 30);
+        mem.skills[sid].plus = next;
+      }
+    }
+
+    return { ok:true };
   }
 
-  function createPillButton(text){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.style.width = '100%';
-    btn.style.border = '0';
-    btn.style.borderRadius = '12px';
-    btn.style.padding = '10px 10px';
-    btn.style.background = 'rgba(255,255,255,.12)';
-    btn.style.color = '#fff';
-    btn.style.fontWeight = '1000';
-    btn.style.fontSize = '13px';
-    btn.style.textAlign = 'left';
-    btn.style.touchAction = 'manipulation';
-    btn.textContent = text;
-    btn.addEventListener('touchstart', ()=>{}, {passive:true});
-    btn.onmousedown = ()=>{};
-    return btn;
+  function formatChance(def, plus){
+    const base = Number(def?.baseChance || 0);
+    const p = clamp(Number(plus || 0), 0, 30);
+    const v = Math.min(100, base + p);
+    return `${v.toFixed(1)}%`;
   }
 
-  function renderCoachUI(){
-    const ui = ensureCoachUI();
-    if (!ui) return;
+  function formatEffect(def, plus){
+    const base = Number(def?.baseEffect || 0);
+    const p = clamp(Number(plus || 0), 0, 30);
+    const v = base + p;
+    // block_debuff は「発生しない」が主効果。表示は特別扱い
+    if (def?.type === 'block_debuff'){
+      return 'デバフイベント発生なし';
+    }
+    return `${v}%`;
+  }
 
-    const owned = readCoachOwned();
-    const equipped = readCoachEquipped();
+  function renderPtsRow(mem){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.ptRow) return;
+    ui.ptRow.innerHTML = '';
 
-    // ===== equipped 3 slots =====
-    ui.equipRow.innerHTML = '';
-    for (let i=0;i<3;i++){
-      const id = equipped[i];
-      const skill = id ? COACH_BY_ID[id] : null;
+    for (const k of PTS_KEYS){
+      const pill = createMiniPill(`${PTS_LABEL[k]}：${Number(mem?.trainPts?.[k] || 0)}`);
+      ui.ptRow.appendChild(pill);
+    }
+  }
 
-      const btn = createPillButton('');
-      btn.style.background = id ? 'rgba(255,59,48,.18)' : 'rgba(255,255,255,.10)';
-      btn.style.border = id ? '1px solid rgba(255,59,48,.38)' : '1px solid rgba(255,255,255,.14)';
+  function renderMemberTabs(team){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.memberTabs) return;
 
-      const name = skill ? skill.name : '（空き）';
-      const line1 = document.createElement('div');
-      line1.style.fontSize = '13px';
-      line1.style.fontWeight = '1000';
-      line1.textContent = `枠${i+1}：${name}`;
+    ui.memberTabs.innerHTML = '';
 
-      const line2 = document.createElement('div');
-      line2.style.fontSize = '11px';
-      line2.style.opacity = '0.92';
-      line2.style.marginTop = '4px';
-      line2.textContent = skill ? 'タップで取り外し' : '所持一覧から装備';
+    const ids = ['A','B','C'];
+    ids.forEach(id=>{
+      const mem = getMemById(team, id);
+      const name = getMemberNameById(id);
+      const role = getMemberRole(mem);
+      const label = role ? `${name}（${role}）` : name;
 
-      btn.textContent = '';
-      btn.appendChild(line1);
-      btn.appendChild(line2);
-
+      const btn = createTabBtn(label, ttSelectedId === id);
       btn.addEventListener('click', ()=>{
-        const cur = readCoachEquipped();
-        if (!cur[i]) return; // 空は何もしない
-        cur[i] = null;
-        writeCoachEquipped(cur);
-        renderCoachUI();
-        alert('取り外しました。');
+        ttSelectedId = id;
+        showMsg('');
+        renderTrainingSection(); // 全再描画
+      });
+      ui.memberTabs.appendChild(btn);
+    });
+  }
+
+  function renderUpArea(team){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.upArea) return;
+
+    ui.upArea.innerHTML = '';
+
+    const mem = getMemById(team, ttSelectedId);
+    if (!mem) return;
+
+    const card = createCard();
+
+    const head = document.createElement('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.alignItems = 'baseline';
+    head.style.gap = '10px';
+
+    const left = document.createElement('div');
+    left.style.fontWeight = '1000';
+    left.style.fontSize = '14px';
+    left.textContent = `${getMemberNameById(mem.id)}：能力アップ`;
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.gap = '6px';
+    right.style.flexWrap = 'wrap';
+    right.appendChild(createMiniPill('上限 99'));
+    right.appendChild(createMiniPill('必要：+1ずつ増加'));
+
+    head.appendChild(left);
+    head.appendChild(right);
+    card.appendChild(head);
+
+    const note = document.createElement('div');
+    note.style.marginTop = '8px';
+    note.style.fontSize = '12px';
+    note.style.opacity = '0.92';
+    note.style.lineHeight = '1.35';
+    note.textContent = 'タップで + を保留します。決定でまとめて反映します。';
+    card.appendChild(note);
+
+    // rows
+    const list = document.createElement('div');
+    list.style.marginTop = '10px';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '10px';
+
+    UP_STATS.forEach(st=>{
+      const row = document.createElement('div');
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = '1fr auto';
+      row.style.gap = '10px';
+      row.style.alignItems = 'center';
+
+      const info = document.createElement('div');
+
+      const curVal = clamp0to99(Number(mem?.stats?.[st.key] || 0));
+      const pend = Number(pendingUp?.[mem.id]?.[st.key] || 0);
+      const after = clamp0to99(curVal + pend);
+
+      const line1 = document.createElement('div');
+      line1.style.fontWeight = '1000';
+      line1.style.fontSize = '13px';
+      line1.textContent = `${st.label}：${curVal}  →  ${after}${pend>0 ? `（+${pend}）` : ''}`;
+
+      const c1 = calcStatCost(mem, st.key, Math.max(0, pend || 0));
+      const base = baseCostForStat(st.key);
+      const line2 = document.createElement('div');
+      line2.style.marginTop = '4px';
+      line2.style.fontSize = '12px';
+      line2.style.opacity = '0.92';
+      line2.textContent =
+        `基礎：${formatPtsCost(base)} / 保留分コスト：${pend>0 ? formatPtsCost(c1) : '0'}`;
+
+      info.appendChild(line1);
+      info.appendChild(line2);
+
+      const btnCol = document.createElement('div');
+      btnCol.style.display = 'flex';
+      btnCol.style.flexDirection = 'column';
+      btnCol.style.gap = '6px';
+      btnCol.style.minWidth = '120px';
+
+      const plusBtn = createGhostBtn('＋1');
+      plusBtn.style.padding = '10px 10px';
+      plusBtn.addEventListener('click', ()=>{
+        // 上限チェック（表示上は上限99）
+        const cur = clamp0to99(Number(mem?.stats?.[st.key] || 0));
+        const pendNow = Number(pendingUp?.[mem.id]?.[st.key] || 0);
+        if (cur + pendNow >= 99){
+          showMsg('ステータス上限（99）です。');
+          return;
+        }
+        pendingUp[mem.id][st.key] = pendNow + 1;
+        showMsg('');
+        renderTrainingSection();
       });
 
-      ui.equipRow.appendChild(btn);
+      const minusBtn = createGhostBtn('－1');
+      minusBtn.style.padding = '10px 10px';
+      minusBtn.addEventListener('click', ()=>{
+        const pendNow = Number(pendingUp?.[mem.id]?.[st.key] || 0);
+        if (pendNow <= 0) return;
+        pendingUp[mem.id][st.key] = pendNow - 1;
+        showMsg('');
+        renderTrainingSection();
+      });
+
+      // right-side pending indicator
+      const pendTag = document.createElement('div');
+      pendTag.style.textAlign = 'right';
+      pendTag.style.fontSize = '12px';
+      pendTag.style.fontWeight = '1000';
+      pendTag.style.opacity = '0.95';
+      pendTag.textContent = pendNowText(pendingUp[mem.id][st.key]);
+
+      function pendNowText(n){
+        const v = Number(n || 0);
+        return v > 0 ? `保留：+${v}` : '保留：0';
+      }
+
+      // keep updated visually
+      pendTag.textContent = pendNowText(pendingUp[mem.id][st.key]);
+
+      btnCol.appendChild(plusBtn);
+      btnCol.appendChild(minusBtn);
+      btnCol.appendChild(pendTag);
+
+      row.appendChild(info);
+      row.appendChild(btnCol);
+
+      list.appendChild(row);
+    });
+
+    card.appendChild(list);
+
+    // 결정 버튼（このメンバーだけ確정ではなく、仕様通일을 위해 "全員分の保留を決定"）
+    const btns = document.createElement('div');
+    btns.style.marginTop = '12px';
+    btns.style.display = 'grid';
+    btns.style.gridTemplateColumns = '1fr 1fr';
+    btns.style.gap = '10px';
+
+    const btnCommit = createPrimaryBtn('決定（保留を反映）');
+    btnCommit.addEventListener('click', ()=>{
+      const team2 = clone(team);
+      ensureTeamMeta(team2);
+
+      const res = applyPendingToTeam(team2);
+      if (!res.ok){
+        showMsg(res.reason || 'ポイントが足りません');
+        return;
+      }
+
+      // 保存
+      writePlayerTeam(team2);
+
+      // pending 리셋
+      resetPending();
+      showMsg('反映しました。');
+
+      // チーム%更新（ステ上がったため）
+      renderTeamPower();
+
+      // 画面再描画
+      render();
+    });
+
+    const btnClear = createGhostBtn('保留をクリア');
+    btnClear.addEventListener('click', ()=>{
+      resetPending();
+      showMsg('保留をクリアしました。');
+      renderTrainingSection();
+    });
+
+    btns.appendChild(btnCommit);
+    btns.appendChild(btnClear);
+
+    card.appendChild(btns);
+
+    ui.upArea.appendChild(card);
+  }
+
+  function renderSkillArea(team){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.skillArea) return;
+
+    ui.skillArea.innerHTML = '';
+
+    const mem = getMemById(team, ttSelectedId);
+    if (!mem) return;
+
+    const card = createCard();
+
+    const head = document.createElement('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.alignItems = 'baseline';
+    head.style.gap = '10px';
+
+    const left = document.createElement('div');
+    left.style.fontWeight = '1000';
+    left.style.fontSize = '14px';
+    left.textContent = `${getMemberNameById(mem.id)}：能力獲得（スキル）`;
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.gap = '6px';
+    right.style.flexWrap = 'wrap';
+    right.appendChild(createMiniPill('上限 +30'));
+    right.appendChild(createMiniPill('必要：+2ずつ増加'));
+    head.appendChild(left);
+    head.appendChild(right);
+
+    card.appendChild(head);
+
+    const note = document.createElement('div');
+    note.style.marginTop = '8px';
+    note.style.fontSize = '12px';
+    note.style.opacity = '0.92';
+    note.style.lineHeight = '1.35';
+    note.textContent = '取得/強化は + を保留し、決定でまとめて反映します。';
+    card.appendChild(note);
+
+    const role = getMemberRole(mem);
+
+    const list = document.createElement('div');
+    list.style.marginTop = '10px';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '10px';
+
+    const skills = SKILLS.filter(s => !role || s.role === role);
+    if (!skills.length){
+      const none = document.createElement('div');
+      none.style.opacity = '0.92';
+      none.style.fontSize = '13px';
+      none.textContent = 'このメンバーのロールに対応するスキルがありません。';
+      list.appendChild(none);
     }
 
-    // ===== owned list =====
-    ui.ownedList.innerHTML = '';
-
-    // 表示順：マスター順
-    const hasAny = COACH_SKILLS.some(s => (Number(owned[s.id])||0) > 0);
-    if (!hasAny){
-      const note = document.createElement('div');
-      note.style.opacity = '0.92';
-      note.style.fontSize = '13px';
-      note.textContent = '所持しているコーチスキルがありません（ショップで購入できます）';
-      ui.ownedList.appendChild(note);
-      return;
-    }
-
-    COACH_SKILLS.forEach(skill=>{
-      const cnt = Number(owned[skill.id]) || 0;
-      if (cnt <= 0) return;
-
-      const equippedNow = readCoachEquipped();
-      const already = countEquipped(skill.id, equippedNow) > 0;
-
-      const btn = createPillButton('');
-      btn.style.border = '1px solid rgba(255,255,255,.14)';
-      btn.style.background = already ? 'rgba(255,59,48,.16)' : 'rgba(255,255,255,.10)';
+    skills.forEach(def=>{
+      const row = document.createElement('div');
+      row.style.borderRadius = '12px';
+      row.style.padding = '12px';
+      row.style.background = 'rgba(0,0,0,.18)';
+      row.style.border = '1px solid rgba(255,255,255,.14)';
 
       const top = document.createElement('div');
       top.style.display = 'flex';
@@ -590,60 +1155,152 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       top.style.alignItems = 'baseline';
       top.style.gap = '10px';
 
-      const left = document.createElement('div');
-      left.style.fontSize = '14px';
-      left.style.fontWeight = '1000';
-      left.textContent = skill.name;
+      const name = document.createElement('div');
+      name.style.fontWeight = '1000';
+      name.style.fontSize = '14px';
+      name.textContent = def.name;
 
-      const right = document.createElement('div');
-      right.style.fontSize = '12px';
-      right.style.opacity = '0.95';
-      right.textContent = already ? '装備中' : `所持：${cnt}`;
+      const tag = document.createElement('div');
+      tag.style.display = 'flex';
+      tag.style.gap = '6px';
+      tag.style.flexWrap = 'wrap';
+      tag.appendChild(createMiniPill(def.role));
+      tag.appendChild(createMiniPill(def.trigger));
 
-      top.appendChild(left);
-      top.appendChild(right);
+      top.appendChild(name);
+      top.appendChild(tag);
 
-      const eff = document.createElement('div');
-      eff.style.marginTop = '6px';
-      eff.style.fontSize = '12px';
-      eff.style.opacity = '0.92';
-      eff.textContent = skill.effectLabel;
+      const curPlus = clamp(Number(mem?.skills?.[def.id]?.plus || 0), 0, 30);
+      const pend = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
 
-      const line = document.createElement('div');
-      line.style.marginTop = '6px';
-      line.style.fontSize = '12px';
-      line.style.opacity = '0.92';
-      line.textContent = `コーチ：「${skill.coachLine}」`;
+      const line1 = document.createElement('div');
+      line1.style.marginTop = '8px';
+      line1.style.fontSize = '12px';
+      line1.style.opacity = '0.95';
+      line1.textContent = def.desc;
 
-      btn.textContent = '';
-      btn.appendChild(top);
-      btn.appendChild(eff);
-      btn.appendChild(line);
+      const line2 = document.createElement('div');
+      line2.style.marginTop = '6px';
+      line2.style.fontSize = '12px';
+      line2.style.opacity = '0.95';
 
-      btn.addEventListener('click', ()=>{
-        const curEq = readCoachEquipped();
+      const chanceText = formatChance(def, curPlus + pend);
+      const effText = formatEffect(def, curPlus + pend);
 
-        // 同一スキル2枠禁止
-        if (curEq.includes(skill.id)){
-          alert('このスキルはすでに装備中です。');
+      // 特記事項：接敵時発動スキルは交戦後リセット（仕様メモ）
+      const resetNote = (def.trigger === '接敵時') ? '（交戦後リセット）' : '';
+
+      line2.textContent =
+        `現在：+${curPlus} → +${clamp(curPlus + pend, 0, 30)}${pend>0 ? `（保留+${pend}）` : ''} / 発動率：${chanceText} / 効果：${effText} ${resetNote}`;
+
+      const costNow = calcSkillCost(mem, def.id, 1); // 次の+1を取るコスト（表示用）
+      const costPend = pend > 0 ? calcSkillCost(mem, def.id, pend) : { muscle:0, tech:0, spirit:0 };
+
+      const line3 = document.createElement('div');
+      line3.style.marginTop = '6px';
+      line3.style.fontSize = '12px';
+      line3.style.opacity = '0.92';
+      line3.textContent =
+        `取得/強化コスト（次+1）：${formatPtsCost(costNow)} / 保留分コスト：${pend>0 ? formatPtsCost(costPend) : '0'}`;
+
+      const btnRow = document.createElement('div');
+      btnRow.style.marginTop = '10px';
+      btnRow.style.display = 'grid';
+      btnRow.style.gridTemplateColumns = '1fr 1fr';
+      btnRow.style.gap = '8px';
+
+      const btnPlus = createGhostBtn('＋1');
+      btnPlus.style.padding = '10px 10px';
+      btnPlus.addEventListener('click', ()=>{
+        const cur = clamp(Number(mem?.skills?.[def.id]?.plus || 0), 0, 30);
+        const pendNow = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
+        if (cur + pendNow >= 30){
+          showMsg('スキル強化上限（+30）です。');
           return;
         }
-
-        // 空き枠を探す
-        const emptyIdx = curEq.findIndex(v => !v);
-        if (emptyIdx === -1){
-          alert('装備枠が埋まっています。先にどれか取り外してください。');
-          return;
-        }
-
-        curEq[emptyIdx] = skill.id;
-        writeCoachEquipped(curEq);
-        renderCoachUI();
-        alert(`装備しました（枠${emptyIdx+1}）。`);
+        pendingSkill[mem.id] = pendingSkill[mem.id] || {};
+        pendingSkill[mem.id][def.id] = pendNow + 1;
+        showMsg('');
+        renderTrainingSection();
       });
 
-      ui.ownedList.appendChild(btn);
+      const btnMinus = createGhostBtn('－1');
+      btnMinus.style.padding = '10px 10px';
+      btnMinus.addEventListener('click', ()=>{
+        const pendNow = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
+        if (pendNow <= 0) return;
+        pendingSkill[mem.id][def.id] = pendNow - 1;
+        showMsg('');
+        renderTrainingSection();
+      });
+
+      btnRow.appendChild(btnPlus);
+      btnRow.appendChild(btnMinus);
+
+      row.appendChild(top);
+      row.appendChild(line1);
+      row.appendChild(line2);
+      row.appendChild(line3);
+      row.appendChild(btnRow);
+
+      list.appendChild(row);
     });
+
+    card.appendChild(list);
+
+    // 決定/クリアは能力アップと同じ（上のカード側にもあるが、ここにも置く）
+    const btns = document.createElement('div');
+    btns.style.marginTop = '12px';
+    btns.style.display = 'grid';
+    btns.style.gridTemplateColumns = '1fr 1fr';
+    btns.style.gap = '10px';
+
+    const btnCommit = createPrimaryBtn('決定（保留を反映）');
+    btnCommit.addEventListener('click', ()=>{
+      const team2 = clone(team);
+      ensureTeamMeta(team2);
+
+      const res = applyPendingToTeam(team2);
+      if (!res.ok){
+        showMsg(res.reason || 'ポイントが足りません');
+        return;
+      }
+
+      writePlayerTeam(team2);
+      resetPending();
+      showMsg('反映しました。');
+
+      renderTeamPower();
+      render();
+    });
+
+    const btnClear = createGhostBtn('保留をクリア');
+    btnClear.addEventListener('click', ()=>{
+      resetPending();
+      showMsg('保留をクリアしました。');
+      renderTrainingSection();
+    });
+
+    btns.appendChild(btnCommit);
+    btns.appendChild(btnClear);
+
+    card.appendChild(btns);
+
+    ui.skillArea.appendChild(card);
+  }
+
+  function renderTrainingSection(){
+    const team = getPlayerTeam();
+    ensureTeamMeta(team);
+
+    const mem = getMemById(team, ttSelectedId) || getMemById(team, 'A');
+    if (!mem){
+      return;
+    }
+    renderMemberTabs(team);
+    renderPtsRow(mem);
+    renderUpArea(team);
+    renderSkillArea(team);
   }
 
   // ===== main render =====
@@ -652,8 +1309,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
     safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
 
-    // team members + stats
     const team = getPlayerTeam();
+    ensureTeamMeta(team);
+
+    // team members + stats
     const byId = {};
     for (const m of (team.members || [])) byId[m.id] = m;
 
@@ -705,8 +1364,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     reflectNamesEverywhere();
     renderTeamPower();
 
-    // coach skills
-    renderCoachUI();
+    // 育成UI（注入）
+    ensureTrainingUI();
+    renderTrainingSection();
   }
 
   // ===== open/close =====
@@ -751,6 +1411,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }catch(e){}
 
         reflectNamesEverywhere();
+        renderTrainingSection();
       });
     }
 
@@ -776,6 +1437,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }catch(e){}
 
         reflectNamesEverywhere();
+        renderTrainingSection();
       });
     }
 
@@ -801,6 +1463,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }catch(e){}
 
         reflectNamesEverywhere();
+        renderTrainingSection();
       });
     }
   }
@@ -808,7 +1471,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ===== save =====
   function manualSave(){
     const snap = {
-      ver: 'v16',
+      ver: 'v17',
       ts: Date.now(),
       company: S.getStr(K.company, 'CB Memory'),
       team: S.getStr(K.team, 'PLAYER TEAM'),
@@ -822,10 +1485,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       rank: S.getNum(K.rank, 10),
       nextTour: S.getStr(K.nextTour, '未定'),
       nextTourW: S.getStr(K.nextTourW, '未定'),
-      recent: S.getStr(K.recent, '未定'),
-
-      coachOwned: readCoachOwned(),
-      coachEquipped: readCoachEquipped()
+      recent: S.getStr(K.recent, '未定')
     };
 
     localStorage.setItem('mobbr_save1', JSON.stringify(snap));
@@ -839,7 +1499,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       'weekPop',
       'trainingResultPop',
       'trainingWeekPop',
-      'cardPreview'
+      'cardPreview',
+      'trainingLockPop'
     ];
 
     const idsRemoveShow = [
@@ -911,7 +1572,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (closeBound) return;
     closeBound = true;
 
-    // open は ui_main のルーティングが担当（ここでは close だけ確実に）
     if (dom.btnCloseTeam){
       dom.btnCloseTeam.addEventListener('click', close);
     }
@@ -923,8 +1583,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bindRename();
     bindSave();
 
-    // 初回：装備配列の形を安定化
-    writeCoachEquipped(readCoachEquipped());
+    // 互換初期化：teamに育成メタを付与して保存しておく（存在しないとUIでnullになるため）
+    const team = getPlayerTeam();
+    ensureTeamMeta(team);
+    writePlayerTeam(team);
 
     render();
   }
