@@ -1,6 +1,8 @@
-/* =========================================================
-   training.css  (MOB BR / v15)
-   修行画面フルCSS（アイコン対応版）
+　/* =========================================================
+   training.css（MOB BR / v16）
+   - 新仕様：修行は「1回選ぶだけ」→ A/B/C 全員に同じポイント付与
+   - メニュー：射撃 / パズル / 研究 / ダッシュ（4つ）
+   - 既存ID前提：#trainingScreen / #trainingCards / #btnTrainingStart 等
 ========================================================= */
 
 /* =========================
@@ -36,7 +38,7 @@
 #trainingCards{
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .trainingCard{
@@ -46,18 +48,25 @@
   padding: 14px;
 }
 
-.trainingMember{
+.trainingTitle{
   font-weight: 1000;
   font-size: 18px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+}
+
+.trainingDesc{
+  font-size: 13px;
+  opacity: .92;
+  line-height: 1.45;
 }
 
 /* =========================
    MENU GRID
 ========================= */
 .trainingMenuList{
+  margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -67,8 +76,8 @@
 .trainingMenuBtn{
   position: relative;
   width: 100%;
-  min-height: 58px;
-  padding: 10px 8px 8px 8px;
+  min-height: 64px;
+  padding: 12px 10px 10px 10px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,.18);
   background: rgba(0,0,0,.35);
@@ -80,13 +89,14 @@
 }
 
 /* text */
-.trainingMenuBtn div:first-child{
-  font-size: 14px;
+.trainingMenuBtn .t1{
+  font-size: 15px;
   line-height: 1.1;
 }
-.trainingMenuBtn div:last-child{
+.trainingMenuBtn .t2{
   font-size: 12px;
   opacity: .9;
+  margin-top: 4px;
 }
 
 /* selected */
@@ -108,8 +118,8 @@
 .trainingMenuBtn::before{
   content:"";
   position:absolute;
-  top:6px;
-  left:6px;
+  top:8px;
+  left:8px;
   width:18px;
   height:18px;
   background-size: contain;
@@ -118,51 +128,28 @@
   opacity:.9;
 }
 
-/* 1 射撃練習 */
+/* 1 射撃 */
 .trainingMenuBtn:nth-child(1)::before{
   background-image: url("syageki.png");
 }
-
-/* 2 ダッシュ */
+/* 2 パズル */
 .trainingMenuBtn:nth-child(2)::before{
-  background-image: url("dash.png");
-}
-
-/* 3 パズル */
-.trainingMenuBtn:nth-child(3)::before{
   background-image: url("paz.png");
 }
-
-/* 4 実戦練習 */
-.trainingMenuBtn:nth-child(4)::before{
-  background-image: url("zitugi.png");
-}
-
-/* 5 滝修行 */
-.trainingMenuBtn:nth-child(5)::before{
-  background-image: url("taki.png");
-}
-
-/* 6 研究 */
-.trainingMenuBtn:nth-child(6)::before{
+/* 3 研究 */
+.trainingMenuBtn:nth-child(3)::before{
   background-image: url("kenq.png");
 }
-
-/* 7 総合演習 */
-.trainingMenuBtn:nth-child(7)::before{
-  background-image: url("sougou.png");
-}
-
-/* 総合演習は横長 */
-.trainingMenuBtn:nth-child(7){
-  grid-column: 2 / span 2;
+/* 4 ダッシュ */
+.trainingMenuBtn:nth-child(4)::before{
+  background-image: url("dash.png");
 }
 
 /* =========================
    START BUTTON
 ========================= */
 #btnTrainingStart{
-  margin-top: 18px;
+  margin-top: 16px;
   width: 100%;
   border-radius: 14px;
   font-size: 18px;
@@ -189,20 +176,7 @@
 /* =========================
    RESPONSIVE
 ========================= */
-@media (max-width: 640px){
-  .trainingMenuList{
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .trainingMenuBtn:nth-child(7){
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 420px){
-  .trainingMember{
-    font-size: 16px;
-  }
-  .trainingMenuBtn{
-    min-height: 54px;
-  }
+  .trainingTitle{ font-size: 16px; }
+  .trainingMenuBtn{ min-height: 60px; }
 }
