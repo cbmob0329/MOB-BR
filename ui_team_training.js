@@ -1,28 +1,25 @@
 'use strict';
 
 /*
-  MOB BR - ui_team_training.js v18-split（FULL）
-  - 元 ui_team.js から「育成（成長 / パッシブ強化）」部分を分離
+  MOB BR - ui_team_training.js v18-growth（FULL）
+  - 元 ui_team.js の「育成」部分を分離して運用している前提のまま
   - ui_team_core.js が提供する coreApi に attach して動作
 
-  ★あなたの要望（今回の確定）
-  - ✅ ポイント（ストック）完全撤去（muscle/tech/mental を使わない）
-  - ✅ スキル取得/強化は廃止 → 既存SKILLSを「パッシブ」としてそのまま使う
-  - ✅ 既存の mem.passive は使わない（= “消す/無視”）
-  - ✅ パッシブはGで強化可能
-       - 次の+1コスト：10000G（初回）→ 以降 +5000Gずつ増加
-       - cost = 10000 + (現在plus * 5000)
-  - ✅ 発動率 初期値変更
-       - 1.0% → 5.0%
-       - 0.5% → 2.0%
-  - ✅ ポップアップで反映結果を表示（1画面完結を避ける）
-  - ✅ ポップアップを開くたびスクロール先頭へ（スクロールリセット）
-  - ✅ ログ超強化（育成ログを保存し、後から見返せる）
-       ※ここでいうログは「育成/成長/強化」の便利ログ（右下ログとは別）
+  ★今回の修正（あなたのA仕様）
+  ✅ パワプロ風はやめた → 「ポイント（stock）」は廃止（完全に使わない）
+  ✅ ステータスアップは “Gではない” → トレーニング＝成長（ゲージ）方式
+  ✅ スキル取得/強化はやらない → 既存の SKILLS を「パッシブ」としてそのまま使う
+     - 既存の mem.passive（文字列）は廃止（消す）
+     - mem.skills が既にある場合は mem.passives へ移行して維持（互換）
+  ✅ パッシブ強化だけG
+     - +1: 10000G
+     - 以後 +5000Gずつ増加（次の強化コスト = 10000 + 5000*現在plus）
+  ✅ 発動率初期値変更：1.0%→5.0% / 0.5%→2.0%
+  ✅ ポップアップ（反映結果/ログ）
+  ✅ スクロールリセット（ポップアップを開くたび先頭）
+  ✅ ログ超強化（トレーニング/成長/あと少し/レベルアップ/パッシブ強化を保存し見返し可能）
 
-  追加メモ：
-  - 成長（能力アップ）は、ポイント無しでG消費に切り替えています。
-    ★コストはこのファイル内の定数で管理（簡単に調整できる）。
+  ※「右下のログ」とは別系統：このファイル内の“育成ログ”のこと。
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -43,25 +40,22 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       return;
     }
 
-    // core側へ showMsg を差し込み（育成UI内の小メッセージ）
+    // core側へ showMsg を差し込み（必要なら使う）
     T.showMsg = showMsg;
 
     // 初回UI生成
     ensureTrainingUI();
   }
 
-  // coreが先にロードされて training が後から来ても attach できるように
   if (!window.MOBBR.uiTeamTraining.attach){
     window.MOBBR.uiTeamTraining.attach = attach;
   }
-
-  // coreが既に存在するなら即 attach
   if (window.MOBBR?._uiTeamCore){
     attach(window.MOBBR._uiTeamCore);
   }
 
   // =========================================================
-  // 成長（能力アップ）
+  // 定数
   // =========================================================
 
   const UP_STATS = [
@@ -71,37 +65,41 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     { key:'mental', label:'メンタル' }
   ];
 
-  // ★成長コスト（G）
-  // - ここは “あなたのゲームのテンポ” に合わせて調整しやすいよう定数化
-  // - cost = base + (現在upgradeCount * step)
-  const STAT_GOLD_BASE = { hp: 9000, aim: 10000, tech: 10000, mental: 10000 };
-  const STAT_GOLD_STEP = 2000;
+  const TRAIN_LOG_KEY = 'mobbr:trainingLogs:v2'; // v2（ポイント廃止/成長対応）
+  const TRAIN_LOG_LIMIT = 160;
 
-  function goldCostForStat(mem, statKey, addCount){
-    const base = Number(STAT_GOLD_BASE[statKey] || 0);
-    const curUp = Number(mem?.upgradeCount?.[statKey] || 0);
-    let sum = 0;
-    for (let i=0;i<addCount;i++){
-      const inc = curUp + i;
-      sum += (base + inc * STAT_GOLD_STEP);
-    }
-    return Math.max(0, Math.floor(sum));
-  }
+  const GKEY = 'mobbr_gold';
+
+  // 成長ゲージ（0..100で+1、余り繰り越し）
+  const GROW_MAX = 100;
+
+  // 「あと少し」判定（ゲージがこの値以上）
+  const NEAR_UP_TH = 85;
+
+  // 1回のトレーニングで増える量（ランダム）
+  const GROW_ADD_MIN = 12;
+  const GROW_ADD_MAX = 26;
+
+  // ステ上限
+  const STAT_MAX = 99;
+
+  // パッシブ強化コスト
+  const PASSIVE_COST_BASE = 10000;
+  const PASSIVE_COST_STEP = 5000;
+  const PASSIVE_PLUS_MAX = 30;
 
   // =========================================================
-  // パッシブ（旧スキル）定義
+  // パッシブ定義（旧SKILLSをそのまま流用）
+  // ※「取得」はしない。存在するものを強化するだけ。
   // =========================================================
 
-  // ★発動率初期値変更
-  // - 1.0 → 5.0
-  // - 0.5 → 2.0
   const PASSIVES = [
     // IGL
     {
       id:'igl_inspire',
       role:'IGL',
       name:'閃きと輝き',
-      baseChance: 5.0,
+      baseChance: 1.0,      // 後で 5.0 へ補正
       trigger:'接敵時',
       type:'buff_team',
       baseEffect: 10,
@@ -111,7 +109,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'igl_control',
       role:'IGL',
       name:'空間制圧',
-      baseChance: 2.0,
+      baseChance: 0.5,      // 後で 2.0 へ補正
       trigger:'接敵時',
       type:'debuff_enemy_power',
       baseEffect: 5,
@@ -123,7 +121,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'atk_speedstar',
       role:'アタッカー',
       name:'スピードスター',
-      baseChance: 5.0,
+      baseChance: 1.0,      // → 5.0
       trigger:'接敵時',
       type:'buff_self_aim',
       baseEffect: 20,
@@ -133,7 +131,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'atk_physical',
       role:'アタッカー',
       name:'フィジカルモンスター',
-      baseChance: 2.0,
+      baseChance: 0.5,      // → 2.0
       trigger:'マッチ開始時',
       type:'buff_match_aim',
       baseEffect: 50,
@@ -145,7 +143,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'sup_shingan',
       role:'サポーター',
       name:'心眼',
-      baseChance: 5.0,
+      baseChance: 1.0,      // → 5.0
       trigger:'マッチ開始時',
       type:'block_debuff',
       baseEffect: 100,
@@ -155,7 +153,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'sup_godcover',
       role:'サポーター',
       name:'神カバー',
-      baseChance: 5.0,
+      baseChance: 5.0,      // これはそのまま（仕様に出てないので触らない）
       trigger:'接敵時',
       type:'buff_others',
       baseEffect: 5,
@@ -163,26 +161,24 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     }
   ];
 
+  // ★発動率初期値補正（あなたの指定）
+  PASSIVES.forEach(p=>{
+    if (Number(p.baseChance) === 1.0) p.baseChance = 5.0;
+    else if (Number(p.baseChance) === 0.5) p.baseChance = 2.0;
+  });
+
   const PASSIVE_BY_ID = Object.fromEntries(PASSIVES.map(p => [p.id, p]));
 
-  // ★パッシブ強化コスト（G）
-  // 10000Gで+1、以降 5000Gずつ増える
-  function goldCostForPassivePlus(curPlus, addCount){
-    const p0 = clamp0to30(Number(curPlus || 0));
-    let sum = 0;
-    for (let i=0;i<addCount;i++){
-      const p = p0 + i;
-      sum += (10000 + p * 5000);
-    }
-    return Math.max(0, Math.floor(sum));
+  // =========================================================
+  // util
+  // =========================================================
+
+  function clamp(n, min, max){
+    const v = Number(n);
+    if (!Number.isFinite(v)) return min;
+    return Math.max(min, Math.min(max, v));
   }
-
-  // =========================================================
-  // ★ログ超強化：保存 / 閲覧 / 反映結果ポップアップ
-  // =========================================================
-
-  const TRAIN_LOG_KEY = 'mobbr:trainingLogs:v2';
-  const TRAIN_LOG_LIMIT = 140; // 最新だけ残す
+  function clamp0(n){ return Math.max(0, Number.isFinite(Number(n)) ? Number(n) : 0); }
 
   function nowISO(){
     try { return new Date().toISOString(); } catch(e){ return ''; }
@@ -191,6 +187,29 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   function safeJsonParse(s, fallback){
     try{ return JSON.parse(s); }catch(e){ return fallback; }
   }
+
+  function getGold(){
+    // 可能なら storage.js を使う
+    const S = window.MOBBR?.storage;
+    if (S?.getNum && S?.KEYS?.gold){
+      return Number(S.getNum(S.KEYS.gold, 0)) || 0;
+    }
+    return Number(localStorage.getItem(GKEY) || 0) || 0;
+  }
+
+  function setGold(v){
+    const n = Math.max(0, Number(v) || 0);
+    const S = window.MOBBR?.storage;
+    if (S?.setNum && S?.KEYS?.gold){
+      S.setNum(S.KEYS.gold, n);
+      return;
+    }
+    localStorage.setItem(GKEY, String(n));
+  }
+
+  // =========================================================
+  // ログ（保存/閲覧/ポップアップ）
+  // =========================================================
 
   function getTrainingLogs(){
     const raw = localStorage.getItem(TRAIN_LOG_KEY);
@@ -228,6 +247,24 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     return pop;
   }
 
+  function makeBtn(text, primary){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.style.border = '1px solid rgba(255,255,255,.18)';
+    b.style.borderRadius = '14px';
+    b.style.padding = '12px 12px';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '14px';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.style.background = primary ? 'rgba(255,255,255,.86)' : 'rgba(255,255,255,.10)';
+    b.style.color = primary ? '#111' : '#fff';
+    b.addEventListener('touchstart', ()=>{}, {passive:true});
+    b.onmousedown = ()=>{};
+    return b;
+  }
+
   function openPopup(title, lines, footerButtons){
     const pop = buildPopupBase();
 
@@ -256,62 +293,36 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     body.textContent = text;
     wrap.appendChild(body);
 
-    // 追加ボタン（任意）
-    if (Array.isArray(footerButtons) && footerButtons.length){
-      const extraRow = document.createElement('div');
-      extraRow.style.marginTop = '12px';
-      extraRow.style.display = 'grid';
-      extraRow.style.gridTemplateColumns = '1fr 1fr';
-      extraRow.style.gap = '10px';
-
-      footerButtons.slice(0,2).forEach(b=>{
-        extraRow.appendChild(b);
-      });
-
-      wrap.appendChild(extraRow);
-    }
-
     const btnRow = document.createElement('div');
     btnRow.style.marginTop = '12px';
     btnRow.style.display = 'grid';
     btnRow.style.gridTemplateColumns = '1fr 1fr';
     btnRow.style.gap = '10px';
 
-    const topBtn = document.createElement('button');
-    topBtn.type = 'button';
-    topBtn.textContent = '先頭へ';
-    topBtn.style.border = '1px solid rgba(255,255,255,.18)';
-    topBtn.style.borderRadius = '14px';
-    topBtn.style.padding = '12px 12px';
-    topBtn.style.fontWeight = '1000';
-    topBtn.style.fontSize = '14px';
-    topBtn.style.background = 'rgba(255,255,255,.86)';
-    topBtn.style.color = '#111';
-    topBtn.style.cursor = 'pointer';
-    topBtn.style.touchAction = 'manipulation';
+    const topBtn = makeBtn('先頭へ', true);
     topBtn.addEventListener('click', ()=>{ pop.scrollTop = 0; });
 
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.textContent = '閉じる';
-    closeBtn.style.border = '1px solid rgba(255,255,255,.18)';
-    closeBtn.style.borderRadius = '14px';
-    closeBtn.style.padding = '12px 12px';
-    closeBtn.style.fontWeight = '1000';
-    closeBtn.style.fontSize = '14px';
-    closeBtn.style.background = 'rgba(255,255,255,.10)';
-    closeBtn.style.color = '#fff';
-    closeBtn.style.cursor = 'pointer';
-    closeBtn.style.touchAction = 'manipulation';
+    const closeBtn = makeBtn('閉じる', false);
     closeBtn.addEventListener('click', ()=>{ pop.remove(); });
+
+    // 追加ボタン（任意、最大2つ）
+    if (Array.isArray(footerButtons) && footerButtons.length){
+      const extraRow = document.createElement('div');
+      extraRow.style.marginTop = '10px';
+      extraRow.style.display = 'grid';
+      extraRow.style.gridTemplateColumns = '1fr 1fr';
+      extraRow.style.gap = '10px';
+      footerButtons.slice(0,2).forEach(b=>extraRow.appendChild(b));
+      wrap.appendChild(extraRow);
+    }
 
     btnRow.appendChild(topBtn);
     btnRow.appendChild(closeBtn);
-    wrap.appendChild(btnRow);
 
+    wrap.appendChild(btnRow);
     pop.appendChild(wrap);
 
-    // ✅ スクロールリセット（開くたび先頭）
+    // ✅ スクロールリセット
     pop.scrollTop = 0;
   }
 
@@ -326,13 +337,13 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     lines.push(`育成ログ（最新${Math.min(logs.length, TRAIN_LOG_LIMIT)}件）`);
     lines.push('────────────────────────');
 
-    logs.slice(0, 40).forEach((e, idx)=>{
+    logs.slice(0, 50).forEach((e, idx)=>{
       lines.push(`【${idx+1}】${e.title || '育成'}  (${e.at || ''})`);
       (e.lines || []).slice(0, 80).forEach(l=>lines.push(`  ${l}`));
       lines.push('────────────────────────');
     });
 
-    const clearBtn = createGhostBtn('ログ全削除');
+    const clearBtn = makeBtn('ログ全削除', false);
     clearBtn.addEventListener('click', ()=>{
       clearTrainingLogs();
       openLogsPopup();
@@ -342,50 +353,69 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   }
 
   // =========================================================
-  // GOLD（storage.js）
+  // ★ポイント廃止/成長/パッシブ のデータ整形（互換）
   // =========================================================
 
-  function getGold(){
-    try{
-      const S = window.MOBBR?.storage;
-      const key = S?.KEYS?.gold || 'mobbr_gold';
-      if (S?.getNum) return Number(S.getNum(key, 0)) || 0;
-      const v = Number(localStorage.getItem(key));
-      return Number.isFinite(v) ? v : 0;
-    }catch(e){
-      return 0;
+  function ensureGrowth(mem){
+    if (!mem || typeof mem !== 'object') return;
+    if (!mem.growth || typeof mem.growth !== 'object'){
+      mem.growth = { hp:0, aim:0, tech:0, mental:0 };
+    }
+    for (const s of ['hp','aim','tech','mental']){
+      mem.growth[s] = clamp(Number(mem.growth[s] || 0), 0, GROW_MAX);
     }
   }
 
-  function setGold(val){
-    const v = Math.max(0, Math.floor(Number(val) || 0));
-    try{
-      const S = window.MOBBR?.storage;
-      const key = S?.KEYS?.gold || 'mobbr_gold';
-      if (S?.setNum){ S.setNum(key, v); return; }
-      localStorage.setItem(key, String(v));
-    }catch(e){}
+  function ensurePassives(mem){
+    if (!mem || typeof mem !== 'object') return;
+
+    // 旧: skills を passives に移行（維持）
+    if (!mem.passives || typeof mem.passives !== 'object'){
+      if (mem.skills && typeof mem.skills === 'object'){
+        mem.passives = mem.skills;
+      }else{
+        mem.passives = {};
+      }
+    }
+
+    // 既存の passive（文字列）は廃止
+    if ('passive' in mem) mem.passive = '';
+
+    // skills を残していても害はないが、混乱を避けて空にする（ただし互換保持）
+    // 「既存のpassiveは消して」＝ passiveフィールドを消す/空にするが主目的。
+    // skills は他が参照してる可能性があるので完全削除はしない。
+    // 代わりに passives を正として運用する。
+    if (!mem.skills || typeof mem.skills !== 'object'){
+      mem.skills = {};
+    }
+
+    // plus 正規化
+    for (const pid in mem.passives){
+      const ent = mem.passives[pid];
+      if (!ent || typeof ent !== 'object'){
+        mem.passives[pid] = { plus:0 };
+        continue;
+      }
+      ent.plus = clamp(Number(ent.plus || 0), 0, PASSIVE_PLUS_MAX);
+    }
   }
 
-  function formatG(n){
-    const v = Math.max(0, Math.floor(Number(n) || 0));
-    return `${v.toLocaleString()}G`;
+  function ensureNoPoints(mem){
+    if (!mem || typeof mem !== 'object') return;
+    // stock/points 系は完全に使わない（残ってても表示/計算に使わない）
+    // 誤挙動を避けるため“見た目上は無い”扱いにするだけ（データは壊さない）
   }
 
-  // =========================================================
-  // util（clamp）
-  // =========================================================
-
-  function clamp(n, min, max){
-    const v = Number(n);
-    if (!Number.isFinite(v)) return min;
-    return Math.max(min, Math.min(max, v));
+  function migrateTeamForTraining(team){
+    if (!team || typeof team !== 'object') return team;
+    if (!Array.isArray(team.members)) team.members = [];
+    for (const mem of team.members){
+      ensureNoPoints(mem);
+      ensureGrowth(mem);
+      ensurePassives(mem);
+    }
+    return team;
   }
-  function clamp0(n){
-    const v = Number(n);
-    return Number.isFinite(v) ? Math.max(0, v) : 0;
-  }
-  function clamp0to30(n){ return clamp(n, 0, 30); }
 
   // =========================================================
   // UI injection
@@ -517,11 +547,11 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       trainingUI = {
         root: existing,
         memberTabs: existing.querySelector('.ttMemberTabs'),
-        goldRow: existing.querySelector('.ttGoldRow'),
-        upArea: existing.querySelector('.ttUpArea'),
-        passiveArea: existing.querySelector('.ttPassiveArea'),
+        topRow: existing.querySelector('.ttTopRow'),
+        logBtn: existing.querySelector('.ttLogBtn'),
         msg: existing.querySelector('.ttMsg'),
-        logBtn: existing.querySelector('.ttLogBtn')
+        growthArea: existing.querySelector('.ttGrowthArea'),
+        passiveArea: existing.querySelector('.ttPassiveArea')
       };
       return trainingUI;
     }
@@ -531,21 +561,20 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     section.style.marginTop = '12px';
 
     section.appendChild(createSectionTitle('育成（成長 / パッシブ強化）'));
-    section.appendChild(createSubText('タップで + を保留。決定でまとめて反映します。足りない時は反映しません。'));
+    section.appendChild(createSubText('ステータスは「トレーニング＝成長」で上がります。Gは使いません。Gはパッシブ強化だけ。'));
 
     const memberTabs = createTabRow();
     memberTabs.className = 'ttMemberTabs';
     section.appendChild(memberTabs);
 
-    const goldRow = document.createElement('div');
-    goldRow.className = 'ttGoldRow';
-    goldRow.style.display = 'flex';
-    goldRow.style.flexWrap = 'wrap';
-    goldRow.style.gap = '8px';
-    goldRow.style.marginTop = '10px';
-    section.appendChild(goldRow);
+    const topRow = document.createElement('div');
+    topRow.className = 'ttTopRow';
+    topRow.style.display = 'flex';
+    topRow.style.flexWrap = 'wrap';
+    topRow.style.gap = '8px';
+    topRow.style.marginTop = '10px';
+    section.appendChild(topRow);
 
-    // ★ログ閲覧ボタン（ポップアップ）
     const logBtn = createGhostBtn('育成ログを見る');
     logBtn.className = 'ttLogBtn';
     logBtn.style.marginTop = '10px';
@@ -565,13 +594,13 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     msg.style.background = 'rgba(0,0,0,.25)';
     section.appendChild(msg);
 
-    section.appendChild(createSectionTitle('成長（能力アップ）'));
-    const upArea = document.createElement('div');
-    upArea.className = 'ttUpArea';
-    upArea.style.marginTop = '10px';
-    section.appendChild(upArea);
+    section.appendChild(createSectionTitle('成長（トレーニング）'));
+    const growthArea = document.createElement('div');
+    growthArea.className = 'ttGrowthArea';
+    growthArea.style.marginTop = '10px';
+    section.appendChild(growthArea);
 
-    section.appendChild(createSectionTitle('パッシブ（強化）'));
+    section.appendChild(createSectionTitle('パッシブ（Gで強化）'));
     const passiveArea = document.createElement('div');
     passiveArea.className = 'ttPassiveArea';
     passiveArea.style.marginTop = '10px';
@@ -579,7 +608,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     panel.appendChild(section);
 
-    trainingUI = { root: section, memberTabs, goldRow, upArea, passiveArea, msg, logBtn };
+    trainingUI = { root: section, memberTabs, topRow, logBtn, msg, growthArea, passiveArea };
     return trainingUI;
   }
 
@@ -591,305 +620,37 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   }
 
   // =========================================================
-  // pending state（保留）
+  // 描画
   // =========================================================
 
   let ttSelectedId = 'A';
-
-  // 成長（能力アップ）保留
-  let pendingUp = {
-    A: { hp:0, aim:0, tech:0, mental:0 },
-    B: { hp:0, aim:0, tech:0, mental:0 },
-    C: { hp:0, aim:0, tech:0, mental:0 }
-  };
-
-  // パッシブ（強化）保留：memberId -> { passiveId: +count }
-  let pendingPassive = { A:{}, B:{}, C:{} };
-
-  function resetPendingUp(){
-    pendingUp = {
-      A: { hp:0, aim:0, tech:0, mental:0 },
-      B: { hp:0, aim:0, tech:0, mental:0 },
-      C: { hp:0, aim:0, tech:0, mental:0 }
-    };
-  }
-
-  function resetPendingPassive(){
-    pendingPassive = { A:{}, B:{}, C:{} };
-  }
-
-  function resetPendingAll(){
-    resetPendingUp();
-    resetPendingPassive();
-  }
 
   function getMemById(team, id){
     return (team?.members || []).find(m => String(m?.id) === String(id));
   }
 
-  // =========================================================
-  // 表示フォーマット（発動率/効果）
-  // =========================================================
-
-  function formatChance(def, plus){
-    const base = Number(def?.baseChance || 0);
-    const p = clamp0to30(Number(plus || 0));
-    const v = Math.min(100, base + p);
-    return `${v.toFixed(1)}%`;
+  function getName(id){
+    try{
+      if (T?.getMemberNameById) return T.getMemberNameById(id);
+    }catch(e){}
+    return String(id);
   }
 
-  function formatEffect(def, plus){
-    const base = Number(def?.baseEffect || 0);
-    const p = clamp0to30(Number(plus || 0));
-    const v = base + p;
-
-    if (def?.type === 'block_debuff'){
-      return 'デバフイベント発生なし';
-    }
-    return `${v}%`;
+  function getRole(mem){
+    try{
+      if (T?.getMemberRole) return T.getMemberRole(mem);
+    }catch(e){}
+    return String(mem?.role || '');
   }
 
-  // =========================================================
-  // G不足（便利ログ）
-  // =========================================================
-
-  function buildShortageLines(title, needG, haveG, detailLines){
-    const lines = [];
-    lines.push(title || '不足');
-    lines.push('────────────────────────');
-    lines.push(`所持G：${formatG(haveG)}`);
-    lines.push(`必要G：${formatG(needG)}`);
-    lines.push(`不足G：${formatG(Math.max(0, needG - haveG))}`);
-    if (Array.isArray(detailLines) && detailLines.length){
-      lines.push('');
-      lines.push('内訳：');
-      detailLines.forEach(l=>lines.push(`  ${l}`));
-    }
-    lines.push('');
-    lines.push('※Gが足りないので反映しませんでした。');
-    return lines;
+  function statVal(mem, key){
+    const v = Number(mem?.stats?.[key] || 0);
+    if (T?.clamp0to99) return T.clamp0to99(v);
+    return clamp(v, 0, 99);
   }
 
-  // =========================================================
-  // 成長（能力アップ）反映（G消費）
-  // =========================================================
-
-  function applyPendingUpToTeam(team){
-    const ids = ['A','B','C'];
-
-    // cost集計（保留分のみ）
-    let needG = 0;
-    const detail = [];
-
-    for (const id of ids){
-      const mem = getMemById(team, id);
-      if (!mem) continue;
-
-      // upgradeCount を安全化
-      mem.upgradeCount = mem.upgradeCount || { hp:0, aim:0, tech:0, mental:0 };
-
-      for (const s of ['hp','aim','tech','mental']){
-        const add = Number(pendingUp?.[id]?.[s] || 0);
-        if (add > 0){
-          const c = goldCostForStat(mem, s, add);
-          needG += c;
-
-          const name = (T?.getMemberNameById ? T.getMemberNameById(id) : id);
-          detail.push(`${name} ${s.toUpperCase()} +${add}：${formatG(c)}`);
-        }
-      }
-    }
-
-    if (needG <= 0){
-      return { ok:false, reason:'保留がありません（成長）', needG:0, detail:[] };
-    }
-
-    const haveG = getGold();
-    if (haveG < needG){
-      return { ok:false, reason:'Gが足りません（成長）', needG, haveG, detail };
-    }
-
-    // 反映（G消費 → ステ加算）
-    setGold(haveG - needG);
-
-    for (const id of ids){
-      const mem = getMemById(team, id);
-      if (!mem) continue;
-
-      mem.stats = mem.stats || {};
-      mem.upgradeCount = mem.upgradeCount || { hp:0, aim:0, tech:0, mental:0 };
-
-      for (const s of ['hp','aim','tech','mental']){
-        const add = Number(pendingUp?.[id]?.[s] || 0);
-        if (add <= 0) continue;
-
-        const cur = T?.clamp0to99 ? T.clamp0to99(Number(mem.stats[s] || 0)) : clamp(Number(mem.stats[s]||0), 0, 99);
-        const next = T?.clamp0to99 ? T.clamp0to99(cur + add) : clamp(cur + add, 0, 99);
-
-        mem.stats[s] = next;
-        mem.upgradeCount[s] = clamp0(Number(mem.upgradeCount[s] || 0) + add);
-      }
-    }
-
-    return { ok:true, needG, haveGBefore: haveG, haveGAfter: haveG - needG, detail };
-  }
-
-  // =========================================================
-  // パッシブ強化反映（G消費）
-  // =========================================================
-
-  function getPassivePlus(mem, pid){
-    const p = Number(mem?.skills?.[pid]?.plus || 0);
-    return clamp0to30(p);
-  }
-
-  function setPassivePlus(mem, pid, plus){
-    mem.skills = mem.skills || {};
-    if (!mem.skills[pid]) mem.skills[pid] = { plus:0 };
-    mem.skills[pid].plus = clamp0to30(Number(plus || 0));
-  }
-
-  function applyPendingPassiveToTeam(team){
-    const ids = ['A','B','C'];
-
-    let needG = 0;
-    const detail = [];
-
-    for (const id of ids){
-      const mem = getMemById(team, id);
-      if (!mem) continue;
-
-      mem.skills = (mem.skills && typeof mem.skills === 'object') ? mem.skills : {};
-
-      const pmap = pendingPassive[id] || {};
-      for (const pid in pmap){
-        const add = Number(pmap[pid] || 0);
-        if (add <= 0) continue;
-
-        const curPlus = getPassivePlus(mem, pid);
-        if (curPlus >= 30) continue;
-
-        const realAdd = Math.max(0, Math.min(add, 30 - curPlus));
-        const c = goldCostForPassivePlus(curPlus, realAdd);
-        needG += c;
-
-        const name = (T?.getMemberNameById ? T.getMemberNameById(id) : id);
-        const def = PASSIVE_BY_ID[pid];
-        const pname = def?.name || pid;
-        detail.push(`${name} ${pname} +${realAdd}：${formatG(c)}`);
-      }
-    }
-
-    if (needG <= 0){
-      return { ok:false, reason:'保留がありません（パッシブ）', needG:0, detail:[] };
-    }
-
-    const haveG = getGold();
-    if (haveG < needG){
-      return { ok:false, reason:'Gが足りません（パッシブ）', needG, haveG, detail };
-    }
-
-    setGold(haveG - needG);
-
-    for (const id of ids){
-      const mem = getMemById(team, id);
-      if (!mem) continue;
-
-      mem.skills = (mem.skills && typeof mem.skills === 'object') ? mem.skills : {};
-
-      const pmap = pendingPassive[id] || {};
-      for (const pid in pmap){
-        const add = Number(pmap[pid] || 0);
-        if (add <= 0) continue;
-
-        const curPlus = getPassivePlus(mem, pid);
-        if (curPlus >= 30) continue;
-
-        const realAdd = Math.max(0, Math.min(add, 30 - curPlus));
-        setPassivePlus(mem, pid, curPlus + realAdd);
-      }
-    }
-
-    return { ok:true, needG, haveGBefore: haveG, haveGAfter: haveG - needG, detail };
-  }
-
-  // =========================================================
-  // 反映結果ログ（超強化）
-  // =========================================================
-
-  function buildApplyResultLines(beforeTeam, afterTeam, title, goldBefore, goldAfter, spentDetail){
-    const lines = [];
-    lines.push(title || '育成反映');
-    lines.push('────────────────────────');
-    lines.push(`G：${formatG(goldBefore)} → ${formatG(goldAfter)}（消費 ${formatG(Math.max(0, goldBefore - goldAfter))}）`);
-    if (Array.isArray(spentDetail) && spentDetail.length){
-      lines.push('');
-      lines.push('内訳：');
-      spentDetail.slice(0, 60).forEach(d=>lines.push(`  ${d}`));
-    }
-    lines.push('');
-    lines.push('────────────────────────');
-
-    const ids = ['A','B','C'];
-
-    ids.forEach(id=>{
-      const b = getMemById(beforeTeam, id);
-      const a = getMemById(afterTeam, id);
-      if (!b || !a) return;
-
-      const name = (T?.getMemberNameById ? T.getMemberNameById(id) : id);
-      const role = (T?.getMemberRole ? T.getMemberRole(a) : (a.role || ''));
-      lines.push(`■ ${name}${role ? `（${role}）` : ''}`);
-
-      // 成長（4ステ）
-      let anyStat = false;
-      for (const s of ['hp','aim','tech','mental']){
-        const bv = Number(b?.stats?.[s] || 0);
-        const av = Number(a?.stats?.[s] || 0);
-        if (av !== bv){
-          anyStat = true;
-          const d = av - bv;
-          const nearMax = (av >= 99) ? ' ★MAX' : ((av >= 95) ? '（もう少し）' : '');
-          lines.push(`  ${s.toUpperCase()}: ${bv} → ${av}（+${d}）${nearMax}`);
-        }
-      }
-      if (!anyStat) lines.push('  成長：なし');
-
-      // パッシブ（強化）
-      const changed = [];
-      for (const pid in PASSIVE_BY_ID){
-        const def = PASSIVE_BY_ID[pid];
-        const bp = Number(b?.skills?.[pid]?.plus || 0);
-        const ap = Number(a?.skills?.[pid]?.plus || 0);
-        if (ap !== bp){
-          changed.push(`  ${def.name}: +${bp} → +${ap}（発動率 ${formatChance(def, ap)} / 効果 ${formatEffect(def, ap)}）`);
-        }
-      }
-      if (changed.length){
-        lines.push('  パッシブ：');
-        changed.forEach(x=>lines.push(x));
-      }else{
-        lines.push('  パッシブ変化：なし');
-      }
-
-      lines.push('');
-    });
-
-    return lines;
-  }
-
-  // =========================================================
-  // render pieces
-  // =========================================================
-
-  function renderGoldRow(){
-    const ui = ensureTrainingUI();
-    if (!ui || !ui.goldRow) return;
-
-    ui.goldRow.innerHTML = '';
-    ui.goldRow.appendChild(createMiniPill(`所持G：${formatG(getGold())}`));
-    ui.goldRow.appendChild(createMiniPill('成長：G消費'));
-    ui.goldRow.appendChild(createMiniPill('パッシブ：Gで強化'));
+  function growthVal(mem, key){
+    return clamp(Number(mem?.growth?.[key] || 0), 0, GROW_MAX);
   }
 
   function renderMemberTabs(team){
@@ -898,11 +659,10 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     ui.memberTabs.innerHTML = '';
 
-    const ids = ['A','B','C'];
-    ids.forEach(id=>{
+    ['A','B','C'].forEach(id=>{
       const mem = getMemById(team, id);
-      const name = T.getMemberNameById(id);
-      const role = T.getMemberRole(mem);
+      const name = getName(id);
+      const role = getRole(mem);
       const label = role ? `${name}（${role}）` : name;
 
       const btn = createTabBtn(label, ttSelectedId === id);
@@ -915,18 +675,126 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     });
   }
 
-  function renderUpArea(team){
+  function renderTopRow(team){
     const ui = ensureTrainingUI();
-    if (!ui || !ui.upArea) return;
+    if (!ui || !ui.topRow) return;
+    ui.topRow.innerHTML = '';
 
-    ui.upArea.innerHTML = '';
+    const g = getGold();
+    ui.topRow.appendChild(createMiniPill(`所持G：${g}G`));
+
+    // ここに“成長の説明”を軽く出す
+    ui.topRow.appendChild(createMiniPill(`成長ゲージ：${GROW_MAX}で+1`));
+    ui.topRow.appendChild(createMiniPill(`あと少し：${NEAR_UP_TH}以上`));
+  }
+
+  // =========================================================
+  // 成長（トレーニング）
+  // =========================================================
+
+  function randInt(min, max){
+    const a = Math.ceil(min);
+    const b = Math.floor(max);
+    const r = Math.random();
+    return Math.floor(a + r * (b - a + 1));
+  }
+
+  function buildTrainingLines(memBefore, memAfter, statKey, add, upCount){
+    const name = getName(memAfter.id);
+    const role = getRole(memAfter);
+
+    const label = (UP_STATS.find(x=>x.key===statKey)?.label || statKey);
+    const bStat = statVal(memBefore, statKey);
+    const aStat = statVal(memAfter, statKey);
+    const bGrow = growthVal(memBefore, statKey);
+    const aGrow = growthVal(memAfter, statKey);
+
+    const lines = [];
+    lines.push(`${name}${role?`（${role}）`:''}：トレーニング（${label}）`);
+    lines.push(`成長 +${add}  →  ゲージ ${bGrow} → ${aGrow}`);
+    if (upCount > 0){
+      lines.push(`成長！ ${label} ${bStat} → ${aStat}（+${aStat - bStat}）`);
+    }else{
+      if (aGrow >= NEAR_UP_TH){
+        lines.push(`あと少しで成長！（${label}）`);
+      }else{
+        lines.push(`成長中…（${label}）`);
+      }
+    }
+    return lines;
+  }
+
+  function applyTraining(team, memberId, statKey){
+    const team2 = T?.clone ? T.clone(team) : safeJsonParse(JSON.stringify(team), team);
+    migrateTeamForTraining(team2);
+
+    const mem = getMemById(team2, memberId);
+    if (!mem) return { ok:false, reason:'メンバーが見つかりません' };
+
+    // before snapshot（1人だけで十分）
+    const beforeMem = safeJsonParse(JSON.stringify(mem), mem);
+
+    // 既に上限なら止める
+    const curStat = statVal(mem, statKey);
+    if (curStat >= STAT_MAX){
+      return { ok:false, reason:'ステータス上限（99）です' };
+    }
+
+    const add = randInt(GROW_ADD_MIN, GROW_ADD_MAX);
+
+    ensureGrowth(mem);
+    let g = growthVal(mem, statKey);
+    let stat = curStat;
+
+    g += add;
+
+    let upCount = 0;
+    while (g >= GROW_MAX && stat < STAT_MAX){
+      g -= GROW_MAX;
+      stat += 1;
+      upCount += 1;
+    }
+
+    mem.growth[statKey] = clamp(g, 0, GROW_MAX);
+    mem.stats = mem.stats || {};
+    mem.stats[statKey] = clamp(stat, 0, STAT_MAX);
+
+    // 保存
+    if (T?.writePlayerTeam){
+      T.writePlayerTeam(team2);
+    }else{
+      // coreが無い事故対策（通常は来ない）
+      try{ localStorage.setItem('mobbr_playerTeam', JSON.stringify(team2)); }catch(e){}
+    }
+
+    // UI更新
+    try{ if (T?.renderTeamPower) T.renderTeamPower(); }catch(e){}
+    try{ if (T?.render) T.render(); }catch(e){}
+
+    const afterMem = getMemById(team2, memberId) || mem;
+
+    const lines = buildTrainingLines(beforeMem, afterMem, statKey, add, upCount);
+
+    // ログ保存＆ポップアップ
+    pushTrainingLog({
+      at: nowISO(),
+      title: 'トレーニング',
+      lines
+    });
+
+    openPopup('成長：トレーニング結果', lines);
+
+    return { ok:true };
+  }
+
+  function renderGrowthArea(team){
+    const ui = ensureTrainingUI();
+    if (!ui || !ui.growthArea) return;
+
+    ui.growthArea.innerHTML = '';
 
     const mem = getMemById(team, ttSelectedId);
     if (!mem) return;
-
-    // 既存 passive を “使わない” ので、ここで UI上も前提を明確化（データを消す処理はしない）
-    // ※「既存のパッシブは消して」は仕様として “使用しない” で対応（データ破壊を避ける）
-    // mem.passive は参照しません。
 
     const card = createCard();
 
@@ -939,14 +807,15 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     const left = document.createElement('div');
     left.style.fontWeight = '1000';
     left.style.fontSize = '14px';
-    left.textContent = `${T.getMemberNameById(mem.id)}：成長`;
+    left.textContent = `${getName(mem.id)}：成長（トレーニング）`;
 
     const right = document.createElement('div');
     right.style.display = 'flex';
     right.style.gap = '6px';
     right.style.flexWrap = 'wrap';
-    right.appendChild(createMiniPill('上限 99'));
-    right.appendChild(createMiniPill('G消費'));
+    right.appendChild(createMiniPill(`1回 +${GROW_ADD_MIN}〜${GROW_ADD_MAX}`));
+    right.appendChild(createMiniPill(`ゲージ${GROW_MAX}で+1`));
+
     head.appendChild(left);
     head.appendChild(right);
     card.appendChild(head);
@@ -956,7 +825,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     note.style.fontSize = '12px';
     note.style.opacity = '0.92';
     note.style.lineHeight = '1.35';
-    note.textContent = 'タップで + を保留します。決定でまとめて反映します。';
+    note.textContent = 'ボタンを押すと成長ゲージが進み、満タンでステータスが+1されます（Gは使いません）。';
     card.appendChild(note);
 
     const list = document.createElement('div');
@@ -965,8 +834,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     list.style.flexDirection = 'column';
     list.style.gap = '10px';
 
-    // upgradeCount 安全化
-    mem.upgradeCount = mem.upgradeCount || { hp:0, aim:0, tech:0, mental:0 };
+    migrateTeamForTraining(team); // 表示のため最低限整形
 
     UP_STATS.forEach(st=>{
       const row = document.createElement('div');
@@ -977,76 +845,43 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
       const info = document.createElement('div');
 
-      const curVal = T.clamp0to99(Number(mem?.stats?.[st.key] || 0));
-      const pend = Number(pendingUp?.[mem.id]?.[st.key] || 0);
-      const after = T.clamp0to99(curVal + pend);
+      const sv = statVal(mem, st.key);
+      const gv = growthVal(mem, st.key);
 
       const line1 = document.createElement('div');
       line1.style.fontWeight = '1000';
       line1.style.fontSize = '13px';
-      line1.textContent = `${st.label}：${curVal}  →  ${after}${pend>0 ? `（+${pend}）` : ''}`;
-
-      const costPend = pend > 0 ? goldCostForStat(mem, st.key, pend) : 0;
-      const costNext1 = (curVal >= 99) ? 0 : goldCostForStat(mem, st.key, 1);
+      line1.textContent = `${st.label}：${sv}（成長ゲージ ${gv}/${GROW_MAX}）`;
 
       const line2 = document.createElement('div');
       line2.style.marginTop = '4px';
       line2.style.fontSize = '12px';
       line2.style.opacity = '0.92';
-      line2.textContent = `次+1コスト：${formatG(costNext1)} / 保留分コスト：${formatG(costPend)}`;
-
-      // “あと少し” 表示（便利ログの補助）
-      const line3 = document.createElement('div');
-      line3.style.marginTop = '4px';
-      line3.style.fontSize = '12px';
-      line3.style.opacity = '0.88';
-      const remain = Math.max(0, 99 - after);
-      line3.textContent = remain === 0 ? 'MAXです。' : `MAXまで残り：${remain}`;
+      line2.textContent = (sv >= STAT_MAX)
+        ? '上限（99）です。'
+        : (gv >= NEAR_UP_TH ? 'あと少しで成長！' : '成長中…');
 
       info.appendChild(line1);
       info.appendChild(line2);
-      info.appendChild(line3);
 
       const btnCol = document.createElement('div');
+      btnCol.style.minWidth = '160px';
       btnCol.style.display = 'flex';
       btnCol.style.flexDirection = 'column';
-      btnCol.style.gap = '6px';
-      btnCol.style.minWidth = '120px';
+      btnCol.style.gap = '8px';
 
-      const plusBtn = createGhostBtn('＋1');
-      plusBtn.style.padding = '10px 10px';
-      plusBtn.addEventListener('click', ()=>{
-        const cur = T.clamp0to99(Number(mem?.stats?.[st.key] || 0));
-        const pendNow = Number(pendingUp?.[mem.id]?.[st.key] || 0);
-        if (cur + pendNow >= 99){
-          showMsg('ステータス上限（99）です。');
-          return;
+      const trainBtn = createPrimaryBtn('トレーニング');
+      trainBtn.style.padding = '10px 10px';
+      trainBtn.addEventListener('click', ()=>{
+        const res = applyTraining(team, mem.id, st.key);
+        if (!res.ok){
+          showMsg(res.reason || '失敗しました');
+        }else{
+          showMsg('');
         }
-        pendingUp[mem.id][st.key] = pendNow + 1;
-        showMsg('');
-        render();
       });
 
-      const minusBtn = createGhostBtn('－1');
-      minusBtn.style.padding = '10px 10px';
-      minusBtn.addEventListener('click', ()=>{
-        const pendNow = Number(pendingUp?.[mem.id]?.[st.key] || 0);
-        if (pendNow <= 0) return;
-        pendingUp[mem.id][st.key] = pendNow - 1;
-        showMsg('');
-        render();
-      });
-
-      const pendTag = document.createElement('div');
-      pendTag.style.textAlign = 'right';
-      pendTag.style.fontSize = '12px';
-      pendTag.style.fontWeight = '1000';
-      pendTag.style.opacity = '0.95';
-      pendTag.textContent = pend > 0 ? `保留：+${pend}` : '保留：0';
-
-      btnCol.appendChild(plusBtn);
-      btnCol.appendChild(minusBtn);
-      btnCol.appendChild(pendTag);
+      btnCol.appendChild(trainBtn);
 
       row.appendChild(info);
       row.appendChild(btnCol);
@@ -1055,65 +890,111 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     card.appendChild(list);
 
-    const btns = document.createElement('div');
-    btns.style.marginTop = '12px';
-    btns.style.display = 'grid';
-    btns.style.gridTemplateColumns = '1fr 1fr';
-    btns.style.gap = '10px';
+    ui.growthArea.appendChild(card);
+  }
 
-    const btnCommit = createPrimaryBtn('決定（成長を反映）');
-    btnCommit.addEventListener('click', ()=>{
-      const team2 = T.clone(team);
-      T.ensureTeamMeta(team2);
+  // =========================================================
+  // パッシブ（Gで強化）
+  // =========================================================
 
-      // before snapshot（ログ用）
-      const before = T.clone(team);
+  function passivePlus(mem, pid){
+    const v = Number(mem?.passives?.[pid]?.plus || 0);
+    return clamp(v, 0, PASSIVE_PLUS_MAX);
+  }
 
-      const goldBefore = getGold();
-      const res = applyPendingUpToTeam(team2);
+  function nextPassiveCost(curPlus){
+    // 次の +1 に必要なG
+    return PASSIVE_COST_BASE + (PASSIVE_COST_STEP * clamp0(curPlus));
+  }
 
-      if (!res.ok){
-        if (res.needG && typeof res.haveG === 'number'){
-          const lines = buildShortageLines('成長：G不足', res.needG, res.haveG, res.detail);
-          pushTrainingLog({ at: nowISO(), title:'成長：不足', lines });
-          openPopup('成長：反映できません', lines);
-        }else{
-          showMsg(res.reason || '反映できません');
-        }
-        return;
-      }
+  function formatChance(def, plus){
+    const base = Number(def?.baseChance || 0);
+    const p = clamp(Number(plus || 0), 0, PASSIVE_PLUS_MAX);
+    const v = Math.min(100, base + p);
+    return `${v.toFixed(1)}%`;
+  }
 
-      // 保存（チーム）
+  function formatEffect(def, plus){
+    const base = Number(def?.baseEffect || 0);
+    const p = clamp(Number(plus || 0), 0, PASSIVE_PLUS_MAX);
+    const v = base + p;
+    if (def?.type === 'block_debuff'){
+      return 'デバフイベント発生なし';
+    }
+    return `${v}%`;
+  }
+
+  function buildPassiveUpgradeLines(memBefore, memAfter, def, cost){
+    const name = getName(memAfter.id);
+    const role = getRole(memAfter);
+
+    const bPlus = passivePlus(memBefore, def.id);
+    const aPlus = passivePlus(memAfter, def.id);
+
+    const lines = [];
+    lines.push(`${name}${role?`（${role}）`:''}：パッシブ強化`);
+    lines.push(`${def.name}  +${bPlus} → +${aPlus}`);
+    lines.push(`消費：${cost}G`);
+    lines.push(`所持G：${getGold()}G`);
+    lines.push(`発動率：${formatChance(def, aPlus)} / 効果：${formatEffect(def, aPlus)}`);
+    return lines;
+  }
+
+  function upgradePassive(team, memberId, passiveId){
+    const def = PASSIVE_BY_ID[passiveId];
+    if (!def) return { ok:false, reason:'パッシブ定義が見つかりません' };
+
+    const team2 = T?.clone ? T.clone(team) : safeJsonParse(JSON.stringify(team), team);
+    migrateTeamForTraining(team2);
+
+    const mem = getMemById(team2, memberId);
+    if (!mem) return { ok:false, reason:'メンバーが見つかりません' };
+
+    const beforeMem = safeJsonParse(JSON.stringify(mem), mem);
+
+    const curPlus = passivePlus(mem, passiveId);
+    if (curPlus >= PASSIVE_PLUS_MAX){
+      return { ok:false, reason:'パッシブ強化上限（+30）です' };
+    }
+
+    const cost = nextPassiveCost(curPlus);
+    const g = getGold();
+    if (g < cost){
+      return { ok:false, reason:`Gが足りません（必要 ${cost}G）` };
+    }
+
+    // 消費
+    setGold(g - cost);
+
+    // 強化
+    mem.passives = mem.passives || {};
+    if (!mem.passives[passiveId]) mem.passives[passiveId] = { plus:0 };
+    mem.passives[passiveId].plus = clamp(curPlus + 1, 0, PASSIVE_PLUS_MAX);
+
+    // 保存
+    if (T?.writePlayerTeam){
       T.writePlayerTeam(team2);
+    }else{
+      try{ localStorage.setItem('mobbr_playerTeam', JSON.stringify(team2)); }catch(e){}
+    }
 
-      // 保留クリア（成長だけ）
-      resetPendingUp();
+    // UI更新
+    try{ if (T?.renderTeamPower) T.renderTeamPower(); }catch(e){}
+    try{ if (T?.render) T.render(); }catch(e){}
 
-      // 再描画
-      showMsg('成長を反映しました。');
-      renderGoldRow();
-      T.renderTeamPower();
-      T.render();
+    const afterMem = getMemById(team2, memberId) || mem;
 
-      // ログ生成＆ポップアップ
-      const goldAfter = getGold();
-      const lines = buildApplyResultLines(before, team2, '育成：成長（反映結果）', goldBefore, goldAfter, res.detail);
-      pushTrainingLog({ at: nowISO(), title:'成長：反映', lines });
-      openPopup('成長：反映結果', lines);
+    const lines = buildPassiveUpgradeLines(beforeMem, afterMem, def, cost);
+
+    pushTrainingLog({
+      at: nowISO(),
+      title: 'パッシブ強化',
+      lines
     });
 
-    const btnClear = createGhostBtn('保留をクリア');
-    btnClear.addEventListener('click', ()=>{
-      resetPendingUp();
-      showMsg('保留（成長）をクリアしました。');
-      render();
-    });
+    openPopup('パッシブ：強化結果', lines);
 
-    btns.appendChild(btnCommit);
-    btns.appendChild(btnClear);
-    card.appendChild(btns);
-
-    ui.upArea.appendChild(card);
+    return { ok:true };
   }
 
   function renderPassiveArea(team){
@@ -1125,6 +1006,8 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     const mem = getMemById(team, ttSelectedId);
     if (!mem) return;
 
+    migrateTeamForTraining(team);
+
     const card = createCard();
 
     const head = document.createElement('div');
@@ -1136,14 +1019,16 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     const left = document.createElement('div');
     left.style.fontWeight = '1000';
     left.style.fontSize = '14px';
-    left.textContent = `${T.getMemberNameById(mem.id)}：パッシブ`;
+    left.textContent = `${getName(mem.id)}：パッシブ（Gで強化）`;
 
     const right = document.createElement('div');
     right.style.display = 'flex';
     right.style.gap = '6px';
     right.style.flexWrap = 'wrap';
-    right.appendChild(createMiniPill('上限 +30'));
-    right.appendChild(createMiniPill('10000G→+5000Gずつ増加'));
+    right.appendChild(createMiniPill(`+1: ${PASSIVE_COST_BASE}G`));
+    right.appendChild(createMiniPill(`増分: +${PASSIVE_COST_STEP}G`));
+    right.appendChild(createMiniPill(`上限 +${PASSIVE_PLUS_MAX}`));
+
     head.appendChild(left);
     head.appendChild(right);
     card.appendChild(head);
@@ -1153,10 +1038,10 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     note.style.fontSize = '12px';
     note.style.opacity = '0.92';
     note.style.lineHeight = '1.35';
-    note.textContent = 'パッシブは最初から持っています。強化（+）だけできます。';
+    note.textContent = 'ここだけGを使います。スキルの取得/強化ではなく、パッシブの強化として扱います。';
     card.appendChild(note);
 
-    const role = T.getMemberRole(mem);
+    const role = getRole(mem);
 
     const list = document.createElement('div');
     list.style.marginTop = '10px';
@@ -1201,9 +1086,8 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       top.appendChild(name);
       top.appendChild(tag);
 
-      const curPlus = getPassivePlus(mem, def.id);
-      const pend = clamp0to30(Number((pendingPassive[mem.id] || {})[def.id] || 0));
-      const nextPlus = clamp0to30(curPlus + pend);
+      const curPlus = passivePlus(mem, def.id);
+      const cost = (curPlus >= PASSIVE_PLUS_MAX) ? null : nextPassiveCost(curPlus);
 
       const line1 = document.createElement('div');
       line1.style.marginTop = '8px';
@@ -1211,8 +1095,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       line1.style.opacity = '0.95';
       line1.textContent = def.desc;
 
-      const chanceText = formatChance(def, nextPlus);
-      const effText = formatEffect(def, nextPlus);
       const resetNote = (def.trigger === '接敵時') ? '（交戦後リセット）' : '';
 
       const line2 = document.createElement('div');
@@ -1220,51 +1102,38 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       line2.style.fontSize = '12px';
       line2.style.opacity = '0.95';
       line2.textContent =
-        `現在：+${curPlus} → +${nextPlus}${pend>0 ? `（保留+${pend}）` : ''} / 発動率：${chanceText} / 効果：${effText} ${resetNote}`;
-
-      const costNext1 = (curPlus >= 30) ? 0 : goldCostForPassivePlus(curPlus, 1);
-      const costPend = pend > 0 ? goldCostForPassivePlus(curPlus, Math.min(pend, 30-curPlus)) : 0;
+        `現在：+${curPlus} / 発動率：${formatChance(def, curPlus)} / 効果：${formatEffect(def, curPlus)} ${resetNote}`;
 
       const line3 = document.createElement('div');
       line3.style.marginTop = '6px';
       line3.style.fontSize = '12px';
       line3.style.opacity = '0.92';
       line3.textContent =
-        `次+1コスト：${formatG(costNext1)} / 保留分コスト：${formatG(costPend)}`;
+        (curPlus >= PASSIVE_PLUS_MAX)
+          ? '強化上限です。'
+          : `次の強化（+1）コスト：${cost}G`;
 
       const btnRow = document.createElement('div');
       btnRow.style.marginTop = '10px';
       btnRow.style.display = 'grid';
-      btnRow.style.gridTemplateColumns = '1fr 1fr';
+      btnRow.style.gridTemplateColumns = '1fr';
       btnRow.style.gap = '8px';
 
-      const btnPlus = createGhostBtn('＋1');
-      btnPlus.style.padding = '10px 10px';
-      btnPlus.addEventListener('click', ()=>{
-        const cur = getPassivePlus(mem, def.id);
-        const pendNow = clamp0to30(Number((pendingPassive[mem.id] || {})[def.id] || 0));
-        if (cur + pendNow >= 30){
-          showMsg('パッシブ強化上限（+30）です。');
-          return;
+      const upBtn = createPrimaryBtn(curPlus >= PASSIVE_PLUS_MAX ? '上限です' : `強化する（${cost}G）`);
+      upBtn.style.padding = '10px 10px';
+      upBtn.disabled = (curPlus >= PASSIVE_PLUS_MAX);
+      upBtn.style.opacity = upBtn.disabled ? '0.5' : '1';
+      upBtn.addEventListener('click', ()=>{
+        const res = upgradePassive(team, mem.id, def.id);
+        if (!res.ok){
+          showMsg(res.reason || '失敗しました');
+        }else{
+          showMsg('');
+          render();
         }
-        pendingPassive[mem.id] = pendingPassive[mem.id] || {};
-        pendingPassive[mem.id][def.id] = pendNow + 1;
-        showMsg('');
-        render();
       });
 
-      const btnMinus = createGhostBtn('－1');
-      btnMinus.style.padding = '10px 10px';
-      btnMinus.addEventListener('click', ()=>{
-        const pendNow = clamp0to30(Number((pendingPassive[mem.id] || {})[def.id] || 0));
-        if (pendNow <= 0) return;
-        pendingPassive[mem.id][def.id] = pendNow - 1;
-        showMsg('');
-        render();
-      });
-
-      btnRow.appendChild(btnPlus);
-      btnRow.appendChild(btnMinus);
+      btnRow.appendChild(upBtn);
 
       row.appendChild(top);
       row.appendChild(line1);
@@ -1276,82 +1145,39 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     });
 
     card.appendChild(list);
-
-    const btns = document.createElement('div');
-    btns.style.marginTop = '12px';
-    btns.style.display = 'grid';
-    btns.style.gridTemplateColumns = '1fr 1fr';
-    btns.style.gap = '10px';
-
-    const btnCommit = createPrimaryBtn('決定（パッシブ強化を反映）');
-    btnCommit.addEventListener('click', ()=>{
-      const team2 = T.clone(team);
-      T.ensureTeamMeta(team2);
-
-      // before snapshot（ログ用）
-      const before = T.clone(team);
-
-      const goldBefore = getGold();
-      const res = applyPendingPassiveToTeam(team2);
-
-      if (!res.ok){
-        if (res.needG && typeof res.haveG === 'number'){
-          const lines = buildShortageLines('パッシブ：G不足', res.needG, res.haveG, res.detail);
-          pushTrainingLog({ at: nowISO(), title:'パッシブ：不足', lines });
-          openPopup('パッシブ：反映できません', lines);
-        }else{
-          showMsg(res.reason || '反映できません');
-        }
-        return;
-      }
-
-      // 保存（チーム）
-      T.writePlayerTeam(team2);
-
-      // 保留クリア（パッシブだけ）
-      resetPendingPassive();
-
-      // 再描画
-      showMsg('パッシブ強化を反映しました。');
-      renderGoldRow();
-      T.renderTeamPower();
-      T.render();
-
-      // ログ生成＆ポップアップ
-      const goldAfter = getGold();
-      const lines = buildApplyResultLines(before, team2, '育成：パッシブ（反映結果）', goldBefore, goldAfter, res.detail);
-      pushTrainingLog({ at: nowISO(), title:'パッシブ：反映', lines });
-      openPopup('パッシブ：反映結果', lines);
-    });
-
-    const btnClear = createGhostBtn('保留をクリア');
-    btnClear.addEventListener('click', ()=>{
-      resetPendingPassive();
-      showMsg('保留（パッシブ）をクリアしました。');
-      render();
-    });
-
-    btns.appendChild(btnCommit);
-    btns.appendChild(btnClear);
-    card.appendChild(btns);
-
     ui.passiveArea.appendChild(card);
   }
 
   // =========================================================
-  // main render
+  // render 本体
   // =========================================================
 
   function render(){
     if (!T) return;
 
-    const team = T.migrateAndPersistTeam();
+    // core の migrateAndPersistTeam を使いつつ、こちらの育成仕様用に整形
+    let team = null;
+    try{
+      team = T.migrateAndPersistTeam ? T.migrateAndPersistTeam() : null;
+    }catch(e){
+      team = null;
+    }
+    if (!team){
+      // 最低限救済
+      try{
+        team = safeJsonParse(localStorage.getItem('mobbr_playerTeam'), null);
+      }catch(e){}
+    }
+    if (!team) return;
+
+    migrateTeamForTraining(team);
+
     const mem = getMemById(team, ttSelectedId) || getMemById(team, 'A');
     if (!mem) return;
 
     renderMemberTabs(team);
-    renderGoldRow();
-    renderUpArea(team);
+    renderTopRow(team);
+    renderGrowthArea(team);
     renderPassiveArea(team);
   }
 
