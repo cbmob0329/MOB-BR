@@ -1,10 +1,5 @@
 'use strict';
 
-/*
-  MOB BR - data_player.js v4stat
-  完全4ステ仕様固定版
-*/
-
 window.MOBBR = window.MOBBR || {};
 
 (function(){
@@ -12,9 +7,9 @@ window.MOBBR = window.MOBBR || {};
   const STAT_KEYS = ['hp','aim','tech','mental'];
 
   const DEFAULT_STATS = {
-    A:{ hp:50, aim:25, tech:35, mental:40 }, // IGL
-    B:{ hp:55, aim:35, tech:25, mental:30 }, // ATK
-    C:{ hp:55, aim:20, tech:30, mental:30 }  // SUP
+    A:{ hp:50, aim:25, tech:35, mental:40 },
+    B:{ hp:55, aim:35, tech:25, mental:30 },
+    C:{ hp:55, aim:20, tech:30, mental:30 }
   };
 
   function clamp99(v){
@@ -35,7 +30,7 @@ window.MOBBR = window.MOBBR || {};
 
       upgradeCount:{ hp:0, aim:0, tech:0, mental:0 },
 
-      skills:{} // { skillId:{ plus:0 } }
+      skills:{}
     };
   }
 
@@ -57,7 +52,7 @@ window.MOBBR = window.MOBBR || {};
 
     team.members.forEach(m=>{
 
-      // 旧不要キー削除
+      // 旧キー削除
       delete m.agi;
       delete m.support;
       delete m.scan;
