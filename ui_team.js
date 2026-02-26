@@ -2,8 +2,9 @@
 
 /*
   MOB BR - ui_team.js v17（フル）
+  ✅ズレない版（points統一 + 旧セーブ自動移行）
 
-  ✅ 今回の変更（確定仕様を反映）
+  ✅今回の変更（確定仕様を反映）
   - コーチスキル機能は完全削除（不要）
   - チーム画面に「能力アップ」「能力獲得（スキル取得/強化）」を追加
   - タップで右に「+」の保留値が増える → 「決定」でまとめて反映
@@ -13,12 +14,13 @@
   - ステータスアップ：必要ポイントが +1 ずつ増加（同一メンバー×同一ステの累計回数で増える）
   - スキル：必要ポイントが +2 ずつ増加（同一メンバー×同一スキルの現在+値で増える）
   - 発動率は 100% 上限でクランプ（表示も同様）
+  - 接敵時スキルは交戦終了後に必ずリセット（※試合側の適用/解除で実装する前提。ここは表示/保存の整合）
 
-  ✅ 既存維持
-  - 名前変更
-  - チーム%（カード効果込み表示）
-  - power55対策：calcTeamPower() と teamPower 永続化
-  - セーブ削除（完全リセット）時に全ポップアップ/スクリーンを閉じる
+  ✅ズレないための最重要（固定）
+  - 付与/消費ポイントは members[*].points のみ
+    points = { muscle, tech, mental }
+  - 旧セーブ互換：
+    trainPts -> pointsへ吸収 / spirit -> mentalへ吸収 / 欠落補完
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -29,7 +31,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   const S  = window.MOBBR?.storage;
   const DP = window.MOBBR?.data?.player;
-  const DC = window.MOBBR?.data?.cards; // あればカードボーナス計算
+  const DC = window.MOBBR?.data?.cards;
 
   if (!S || !S.KEYS){
     console.warn('[ui_team] storage.js not found');
@@ -40,36 +42,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
-  // ===== keys =====
   const K = S.KEYS;
-
-  // ===== Training / Skill storage (inside playerTeam) =====
-  // playerTeam.members[i].trainPts: { muscle, tech, spirit }
-  // playerTeam.members[i].upgradeCount: { hp, aim, tech, mental }  // ステータスアップ累計（必要+1）
-  // playerTeam.members[i].skills: { [skillId]: { plus:number } }   // 取得/強化（必要+2）
-  // ※既存セーブ互換のため、存在しなければ初期化する
 
   // ===== DOM =====
   const dom = {
-    // screen
     teamScreen: $('teamScreen'),
     btnCloseTeam: $('btnCloseTeam'),
 
-    // meta
     tCompany: $('tCompany'),
     tTeam: $('tTeam'),
 
-    // names
     tNameA: $('tNameA'),
     tNameB: $('tNameB'),
     tNameC: $('tNameC'),
 
-    // team power（任意）
     tTeamPower: $('tTeamPower'),
     tTeamPowerRow: $('tTeamPowerRow'),
     tTeamPowerWrap: $('tTeamPowerWrap'),
 
-    // stats A
     tA_hp: $('tA_hp'),
     tA_mental: $('tA_mental'),
     tA_aim: $('tA_aim'),
@@ -80,7 +70,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tA_passive: $('tA_passive'),
     tA_ult: $('tA_ult'),
 
-    // stats B
     tB_hp: $('tB_hp'),
     tB_mental: $('tB_mental'),
     tB_aim: $('tB_aim'),
@@ -91,7 +80,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tB_passive: $('tB_passive'),
     tB_ult: $('tB_ult'),
 
-    // stats C
     tC_hp: $('tC_hp'),
     tC_mental: $('tC_mental'),
     tC_aim: $('tC_aim'),
@@ -102,7 +90,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     tC_passive: $('tC_passive'),
     tC_ult: $('tC_ult'),
 
-    // save buttons
     btnManualSave: $('btnManualSave'),
     btnDeleteSave: $('btnDeleteSave')
   };
@@ -118,16 +105,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!Number.isFinite(v)) return min;
     return Math.max(min, Math.min(max, v));
   }
-
-  function clamp01to100(n){
-    return clamp(n, 0, 100);
-  }
-  function clamp1to100(n){
-    return clamp(n, 1, 100);
-  }
-  function clamp0to99(n){
-    return clamp(n, 0, 99);
-  }
+  function clamp01to100(n){ return clamp(n, 0, 100); }
+  function clamp1to100(n){ return clamp(n, 1, 100); }
+  function clamp0to99(n){ return clamp(n, 0, 99); }
+  function clamp0to30(n){ return clamp(n, 0, 30); }
+  function clamp0(n){ return Math.max(0, Number.isFinite(Number(n)) ? Number(n) : 0); }
 
   function getNameA(){ return S.getStr(K.m1, 'A'); }
   function getNameB(){ return S.getStr(K.m2, 'B'); }
@@ -172,6 +154,103 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (uiM1) uiM1.textContent = getNameA();
     if (uiM2) uiM2.textContent = getNameB();
     if (uiM3) uiM3.textContent = getNameC();
+  }
+
+  // =========================================================
+  // ✅ポイント統一（唯一の正）：points {muscle, tech, mental}
+  // ✅旧セーブ互換：trainPts / spirit
+  // =========================================================
+  const PTS_KEYS = ['muscle','tech','mental'];
+  const PTS_LABEL = { muscle:'筋力', tech:'技術力', mental:'精神力' };
+
+  function ensurePoints(mem){
+    if (!mem || typeof mem !== 'object') return;
+
+    // points init
+    if (!mem.points || typeof mem.points !== 'object'){
+      mem.points = { muscle:0, tech:0, mental:0 };
+    }
+    if (!Number.isFinite(Number(mem.points.muscle))) mem.points.muscle = 0;
+    if (!Number.isFinite(Number(mem.points.tech))) mem.points.tech = 0;
+    if (!Number.isFinite(Number(mem.points.mental))) mem.points.mental = 0;
+
+    // old trainPts -> points
+    if (mem.trainPts && typeof mem.trainPts === 'object'){
+      const tm = Number(mem.trainPts.muscle ?? 0);
+      const tt = Number(mem.trainPts.tech ?? 0);
+      const ts = Number(mem.trainPts.spirit ?? 0);
+      const tme = Number(mem.trainPts.mental ?? 0);
+
+      mem.points.muscle = clamp0(mem.points.muscle + (Number.isFinite(tm)?tm:0));
+      mem.points.tech   = clamp0(mem.points.tech   + (Number.isFinite(tt)?tt:0));
+
+      const addMental = (Number.isFinite(tme)?tme:0) + (Number.isFinite(ts)?ts:0);
+      mem.points.mental = clamp0(mem.points.mental + addMental);
+
+      try{ delete mem.trainPts; }catch(e){}
+    }
+
+    // old spirit -> mental
+    if (Number.isFinite(Number(mem.spirit))){
+      mem.points.mental = clamp0(mem.points.mental + Number(mem.spirit));
+      try{ delete mem.spirit; }catch(e){}
+    }
+
+    // clamp
+    mem.points.muscle = clamp0(mem.points.muscle);
+    mem.points.tech   = clamp0(mem.points.tech);
+    mem.points.mental = clamp0(mem.points.mental);
+  }
+
+  // ===== team meta normalize =====
+  function ensureMemberMeta(mem){
+    if (!mem) return;
+
+    ensurePoints(mem);
+
+    // upgradeCount（ステアップ累計）
+    if (!mem.upgradeCount || typeof mem.upgradeCount !== 'object'){
+      mem.upgradeCount = { hp:0, aim:0, tech:0, mental:0 };
+    }
+    for (const s of ['hp','aim','tech','mental']){
+      mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] ?? 0), 0, 999999);
+    }
+
+    // skills（+強化）
+    if (!mem.skills || typeof mem.skills !== 'object'){
+      mem.skills = {};
+    }
+    for (const sid in mem.skills){
+      const ent = mem.skills[sid];
+      if (!ent || typeof ent !== 'object'){
+        mem.skills[sid] = { plus:0 };
+        continue;
+      }
+      ent.plus = clamp0to30(ent.plus);
+    }
+  }
+
+  function ensureTeamMeta(team){
+    if (!team || !Array.isArray(team.members)) return;
+    team.members.forEach(ensureMemberMeta);
+  }
+
+  function migrateAndPersistTeam(){
+    const team = getPlayerTeam();
+    ensureTeamMeta(team);
+    writePlayerTeam(team);
+    return team;
+  }
+
+  function getMemberNameById(id){
+    if (id === 'A') return getNameA();
+    if (id === 'B') return getNameB();
+    if (id === 'C') return getNameC();
+    return String(id || '');
+  }
+
+  function getMemberRole(mem){
+    return String(mem?.role || '');
   }
 
   // ===== Team Power (base + cards) =====
@@ -288,12 +367,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return { baseEl, cardEl, labelEl };
   }
 
-  // ★ power55対策：試合が参照する「チーム戦闘力」をこのUIで確定させる
   function calcTeamPower(){
     const team = getPlayerTeam();
     const base = calcTeamBasePercent(team);
     const bonus = calcCollectionBonusPercent();
-    const total = base + bonus;     // float
+    const total = base + bonus;
     const totalInt = Math.round(total);
     return clamp1to100(totalInt);
   }
@@ -319,7 +397,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     const ui = ensureCardPowerUI();
-    const bonus = calcCollectionBonusPercent(); // 例 0.27
+    const bonus = calcCollectionBonusPercent();
     const total = base + bonus;
 
     if (ui.cardEl){
@@ -331,13 +409,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // ここから：能力アップ / 能力獲得（スキル）UI
+  // 育成（能力アップ / 能力獲得）
   // =========================================================
 
-  const PTS_KEYS = ['muscle','tech','spirit'];
-  const PTS_LABEL = { muscle:'筋力', tech:'技術力', spirit:'精神力' };
-
-  // ステータスアップの対象（あなたの指定）
   const UP_STATS = [
     { key:'hp',     label:'体力'   },
     { key:'aim',    label:'エイム' },
@@ -345,42 +419,37 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     { key:'mental', label:'メンタル' }
   ];
 
-  // ステータスアップ：基礎コスト（+回数で各項目に +1 ずつ増える）
   function baseCostForStat(statKey){
-    if (statKey === 'hp')     return { muscle:10, tech:0,  spirit:0 };
-    if (statKey === 'aim')    return { muscle:4,  tech:4,  spirit:2 };
-    if (statKey === 'tech')   return { muscle:2,  tech:8,  spirit:0 };
-    if (statKey === 'mental') return { muscle:0,  tech:2,  spirit:8 };
-    return { muscle:0, tech:0, spirit:0 };
+    if (statKey === 'hp')     return { muscle:10, tech:0,  mental:0 };
+    if (statKey === 'aim')    return { muscle:4,  tech:4,  mental:2 };
+    if (statKey === 'tech')   return { muscle:2,  tech:8,  mental:0 };
+    if (statKey === 'mental') return { muscle:0,  tech:2,  mental:8 };
+    return { muscle:0, tech:0, mental:0 };
   }
 
   // スキル定義（確定仕様）
-  // - baseChance: %（0..100）
-  // - baseEffect: %（効果が%のもの）
-  // - plusで chance+1, effect+1（ただし100%上限）
-  // - cost: 取得コスト（強化は「必要が2ずつアップ」= +値に応じて各項目に +2*plus）
   const SKILLS = [
     // IGL
     {
       id:'igl_inspire',
       role:'IGL',
       name:'閃きと輝き',
-      cost:{ muscle:50, tech:50, spirit:60 },
+      cost:{ muscle:50, tech:50, mental:60 },
       baseChance: 1.0,
       trigger:'接敵時',
       type:'buff_team',
-      baseEffect: 10, // チーム全員10%
+      baseEffect: 10,
       desc:'接敵時に発動。チーム全員のステータスを10%アップ。'
     },
     {
       id:'igl_control',
       role:'IGL',
       name:'空間制圧',
-      cost:{ muscle:30, tech:60, spirit:80 },
+      cost:{ muscle:30, tech:60, mental:80 },
       baseChance: 0.5,
       trigger:'接敵時',
       type:'debuff_enemy_power',
-      baseEffect: 5, // 敵総合戦闘力 -5
+      baseEffect: 5,
       desc:'接敵時に発動。敵チームの総合戦闘力を5ダウン。'
     },
 
@@ -389,22 +458,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       id:'atk_speedstar',
       role:'アタッカー',
       name:'スピードスター',
-      cost:{ muscle:70, tech:20, spirit:30 },
+      cost:{ muscle:70, tech:20, mental:30 },
       baseChance: 1.0,
       trigger:'接敵時',
       type:'buff_self_aim',
-      baseEffect: 20, // 自身エイム +20%
+      baseEffect: 20,
       desc:'接敵時に発動。自身のエイムが20%アップ。'
     },
     {
       id:'atk_physical',
       role:'アタッカー',
       name:'フィジカルモンスター',
-      cost:{ muscle:90, tech:40, spirit:60 },
+      cost:{ muscle:90, tech:40, mental:60 },
       baseChance: 0.5,
       trigger:'マッチ開始時',
       type:'buff_match_aim',
-      baseEffect: 50, // 試合中エイム +50%
+      baseEffect: 50,
       desc:'マッチ開始時に発動。発動した試合中、エイムが50%アップ。'
     },
 
@@ -413,78 +482,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       id:'sup_shingan',
       role:'サポーター',
       name:'心眼',
-      cost:{ muscle:20, tech:30, spirit:40 }, // ★不足していた取得ポイントを付与
+      cost:{ muscle:20, tech:30, mental:40 },
       baseChance: 1.0,
       trigger:'マッチ開始時',
       type:'block_debuff',
-      baseEffect: 100, // 「デバフイベント発生しない」を便宜上100%効果として扱う
+      baseEffect: 100,
       desc:'マッチ開始時に発動。発動した試合でデバフイベントが発生しなくなる。'
     },
     {
       id:'sup_godcover',
       role:'サポーター',
       name:'神カバー',
-      cost:{ muscle:30, tech:30, spirit:20 }, // ★不足していた取得ポイントを付与
+      cost:{ muscle:30, tech:30, mental:20 },
       baseChance: 5.0,
       trigger:'接敵時',
       type:'buff_others',
-      baseEffect: 5, // 自分以外 全能力 +5%
+      baseEffect: 5,
       desc:'接敵時に発動。自分以外の全能力を5%アップ。'
     }
   ];
-
   const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
-
-  // ===== team data normalize =====
-  function ensureMemberMeta(mem){
-    if (!mem) return;
-
-    // trainPts
-    if (!mem.trainPts || typeof mem.trainPts !== 'object'){
-      mem.trainPts = { muscle:0, tech:0, spirit:0 };
-    }
-    for (const k of PTS_KEYS){
-      mem.trainPts[k] = clamp(Number(mem.trainPts[k] ?? 0), 0, 999999);
-    }
-
-    // upgradeCount
-    if (!mem.upgradeCount || typeof mem.upgradeCount !== 'object'){
-      mem.upgradeCount = { hp:0, aim:0, tech:0, mental:0 };
-    }
-    for (const s of ['hp','aim','tech','mental']){
-      mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] ?? 0), 0, 999999);
-    }
-
-    // skills
-    if (!mem.skills || typeof mem.skills !== 'object'){
-      mem.skills = {};
-    }
-    // 正規化
-    for (const sid in mem.skills){
-      const ent = mem.skills[sid];
-      if (!ent || typeof ent !== 'object'){
-        mem.skills[sid] = { plus:0 };
-        continue;
-      }
-      ent.plus = clamp(Number(ent.plus ?? 0), 0, 30);
-    }
-  }
-
-  function ensureTeamMeta(team){
-    if (!team || !Array.isArray(team.members)) return;
-    team.members.forEach(ensureMemberMeta);
-  }
-
-  function getMemberNameById(id){
-    if (id === 'A') return getNameA();
-    if (id === 'B') return getNameB();
-    if (id === 'C') return getNameC();
-    return String(id || '');
-  }
-
-  function getMemberRole(mem){
-    return String(mem?.role || '');
-  }
 
   // ===== UI injection =====
   let trainingUI = null;
@@ -619,13 +636,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return trainingUI;
     }
 
-    // 追加位置：できるだけ下の方
     const section = document.createElement('div');
     section.id = 'teamTrainingSection';
     section.style.marginTop = '12px';
 
-    const title = createSectionTitle('育成（能力アップ / 能力獲得）');
-    section.appendChild(title);
+    section.appendChild(createSectionTitle('育成（能力アップ / 能力獲得）'));
     section.appendChild(createSubText('タップで右に + が増えます。決定でまとめて反映します。足りない時は反映しません。'));
 
     const memberTabs = createTabRow();
@@ -653,17 +668,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     msg.style.background = 'rgba(0,0,0,.25)';
     section.appendChild(msg);
 
-    const upTitle = createSectionTitle('能力アップ');
-    section.appendChild(upTitle);
-
+    section.appendChild(createSectionTitle('能力アップ'));
     const upArea = document.createElement('div');
     upArea.className = 'ttUpArea';
     upArea.style.marginTop = '10px';
     section.appendChild(upArea);
 
-    const skillTitle = createSectionTitle('能力獲得（スキル取得 / 強化）');
-    section.appendChild(skillTitle);
-
+    section.appendChild(createSectionTitle('能力獲得（スキル取得 / 強化）'));
     const skillArea = document.createElement('div');
     skillArea.className = 'ttSkillArea';
     skillArea.style.marginTop = '10px';
@@ -689,9 +700,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     B: { hp:0, aim:0, tech:0, mental:0 },
     C: { hp:0, aim:0, tech:0, mental:0 }
   };
-  let pendingSkill = {
-    A: {}, B: {}, C: {}
-  };
+  let pendingSkill = { A:{}, B:{}, C:{} };
 
   function resetPending(){
     pendingUp = {
@@ -715,16 +724,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return parts.join(' / ') || '0';
   }
 
-  function calcStatCost(mem, statKey, addCount /* 1..n */){
-    // 1回分のコスト：base + (upgradeCount[stat] + (i-1)) を各項目に加算
-    // addCount回ぶんを合算する
+  function calcStatCost(mem, statKey, addCount){
     const base = baseCostForStat(statKey);
     const cur = Number(mem?.upgradeCount?.[statKey] || 0);
 
-    const sum = { muscle:0, tech:0, spirit:0 };
+    const sum = { muscle:0, tech:0, mental:0 };
 
     for (let i=0;i<addCount;i++){
-      const inc = cur + i; // これが「必要 +1ずつアップ」の増分
+      const inc = cur + i;
       for (const k of PTS_KEYS){
         const b = Number(base[k] || 0);
         if (b <= 0) continue;
@@ -734,19 +741,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return sum;
   }
 
-  function calcSkillCost(mem, skillId, addCount /* 1..n */){
+  function calcSkillCost(mem, skillId, addCount){
     const def = SKILL_BY_ID[skillId];
-    if (!def) return { muscle:0, tech:0, spirit:0 };
+    if (!def) return { muscle:0, tech:0, mental:0 };
 
-    const curPlus = clamp(Number(mem?.skills?.[skillId]?.plus || 0), 0, 30);
+    const curPlus = clamp0to30(Number(mem?.skills?.[skillId]?.plus || 0));
 
-    // 1回分のコスト：base + (curPlus + (i)) *2 を各項目に加算（「必要 +2ずつアップ」）
-    // 取得（+1）も同じ扱い（curPlusが0なら base + 0*2）
-    const sum = { muscle:0, tech:0, spirit:0 };
+    const sum = { muscle:0, tech:0, mental:0 };
 
     for (let i=0;i<addCount;i++){
-      const p = curPlus + i;        // 今から増やす前の+値
-      const inc2 = p * 2;           // +2ずつ
+      const p = curPlus + i;    // 今から増やす前の+値
+      const inc2 = p * 2;       // 必要が+2ずつ増加
       for (const k of PTS_KEYS){
         const b = Number(def.cost?.[k] || 0);
         if (b <= 0) continue;
@@ -758,7 +763,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function hasEnoughPts(mem, cost){
     for (const k of PTS_KEYS){
-      const have = Number(mem?.trainPts?.[k] || 0);
+      const have = Number(mem?.points?.[k] || 0);
       const need = Number(cost?.[k] || 0);
       if (have < need) return false;
     }
@@ -767,22 +772,23 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function consumePts(mem, cost){
     for (const k of PTS_KEYS){
-      mem.trainPts[k] = clamp(Number(mem.trainPts[k] || 0) - Number(cost?.[k] || 0), 0, 999999);
+      mem.points[k] = clamp0(Number(mem.points[k] || 0) - Number(cost?.[k] || 0));
     }
   }
 
   function applyPendingToTeam(team){
-    // 決定：不足チェック → 全部OKなら反映
     const ids = ['A','B','C'];
+    const totalCostByMem = {
+      A:{muscle:0,tech:0,mental:0},
+      B:{muscle:0,tech:0,mental:0},
+      C:{muscle:0,tech:0,mental:0}
+    };
 
     // 1) cost集計
-    const totalCostByMem = { A:{muscle:0,tech:0,spirit:0}, B:{muscle:0,tech:0,spirit:0}, C:{muscle:0,tech:0,spirit:0} };
-
     for (const id of ids){
       const mem = getMemById(team, id);
       if (!mem) continue;
 
-      // stat
       for (const s of ['hp','aim','tech','mental']){
         const add = Number(pendingUp?.[id]?.[s] || 0);
         if (add > 0){
@@ -791,7 +797,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         }
       }
 
-      // skill
       const pmap = pendingSkill[id] || {};
       for (const sid in pmap){
         const add = Number(pmap[sid] || 0);
@@ -816,7 +821,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const mem = getMemById(team, id);
       if (!mem) continue;
 
-      // consume
       consumePts(mem, totalCostByMem[id]);
 
       // stat apply
@@ -827,7 +831,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         mem.stats = mem.stats || {};
         mem.stats[s] = clamp0to99(Number(mem.stats[s] || 0) + add);
 
-        // upgrade count update
         mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] || 0) + add, 0, 999999);
       }
 
@@ -839,8 +842,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         if (add <= 0) continue;
 
         if (!mem.skills[sid]) mem.skills[sid] = { plus:0 };
-        const cur = clamp(Number(mem.skills[sid].plus || 0), 0, 30);
-        const next = clamp(cur + add, 0, 30);
+        const cur = clamp0to30(Number(mem.skills[sid].plus || 0));
+        const next = clamp0to30(cur + add);
         mem.skills[sid].plus = next;
       }
     }
@@ -850,16 +853,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function formatChance(def, plus){
     const base = Number(def?.baseChance || 0);
-    const p = clamp(Number(plus || 0), 0, 30);
+    const p = clamp0to30(Number(plus || 0));
     const v = Math.min(100, base + p);
     return `${v.toFixed(1)}%`;
   }
 
   function formatEffect(def, plus){
     const base = Number(def?.baseEffect || 0);
-    const p = clamp(Number(plus || 0), 0, 30);
+    const p = clamp0to30(Number(plus || 0));
     const v = base + p;
-    // block_debuff は「発生しない」が主効果。表示は特別扱い
     if (def?.type === 'block_debuff'){
       return 'デバフイベント発生なし';
     }
@@ -872,7 +874,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ui.ptRow.innerHTML = '';
 
     for (const k of PTS_KEYS){
-      const pill = createMiniPill(`${PTS_LABEL[k]}：${Number(mem?.trainPts?.[k] || 0)}`);
+      const pill = createMiniPill(`${PTS_LABEL[k]}：${Number(mem?.points?.[k] || 0)}`);
       ui.ptRow.appendChild(pill);
     }
   }
@@ -894,7 +896,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       btn.addEventListener('click', ()=>{
         ttSelectedId = id;
         showMsg('');
-        renderTrainingSection(); // 全再描画
+        renderTrainingSection();
       });
       ui.memberTabs.appendChild(btn);
     });
@@ -941,7 +943,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     note.textContent = 'タップで + を保留します。決定でまとめて反映します。';
     card.appendChild(note);
 
-    // rows
     const list = document.createElement('div');
     list.style.marginTop = '10px';
     list.style.display = 'flex';
@@ -966,14 +967,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       line1.style.fontSize = '13px';
       line1.textContent = `${st.label}：${curVal}  →  ${after}${pend>0 ? `（+${pend}）` : ''}`;
 
-      const c1 = calcStatCost(mem, st.key, Math.max(0, pend || 0));
+      const c1 = pend > 0 ? calcStatCost(mem, st.key, pend) : { muscle:0, tech:0, mental:0 };
       const base = baseCostForStat(st.key);
+
       const line2 = document.createElement('div');
       line2.style.marginTop = '4px';
       line2.style.fontSize = '12px';
       line2.style.opacity = '0.92';
-      line2.textContent =
-        `基礎：${formatPtsCost(base)} / 保留分コスト：${pend>0 ? formatPtsCost(c1) : '0'}`;
+      line2.textContent = `基礎：${formatPtsCost(base)} / 保留分コスト：${pend>0 ? formatPtsCost(c1) : '0'}`;
 
       info.appendChild(line1);
       info.appendChild(line2);
@@ -987,7 +988,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const plusBtn = createGhostBtn('＋1');
       plusBtn.style.padding = '10px 10px';
       plusBtn.addEventListener('click', ()=>{
-        // 上限チェック（表示上は上限99）
         const cur = clamp0to99(Number(mem?.stats?.[st.key] || 0));
         const pendNow = Number(pendingUp?.[mem.id]?.[st.key] || 0);
         if (cur + pendNow >= 99){
@@ -1009,21 +1009,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         renderTrainingSection();
       });
 
-      // right-side pending indicator
       const pendTag = document.createElement('div');
       pendTag.style.textAlign = 'right';
       pendTag.style.fontSize = '12px';
       pendTag.style.fontWeight = '1000';
       pendTag.style.opacity = '0.95';
-      pendTag.textContent = pendNowText(pendingUp[mem.id][st.key]);
-
-      function pendNowText(n){
-        const v = Number(n || 0);
-        return v > 0 ? `保留：+${v}` : '保留：0';
-      }
-
-      // keep updated visually
-      pendTag.textContent = pendNowText(pendingUp[mem.id][st.key]);
+      pendTag.textContent = pend > 0 ? `保留：+${pend}` : '保留：0';
 
       btnCol.appendChild(plusBtn);
       btnCol.appendChild(minusBtn);
@@ -1031,13 +1022,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       row.appendChild(info);
       row.appendChild(btnCol);
-
       list.appendChild(row);
     });
 
     card.appendChild(list);
 
-    // 결정 버튼（このメンバーだけ確정ではなく、仕様通일을 위해 "全員分の保留を決定"）
     const btns = document.createElement('div');
     btns.style.marginTop = '12px';
     btns.style.display = 'grid';
@@ -1055,17 +1044,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         return;
       }
 
-      // 保存
       writePlayerTeam(team2);
-
-      // pending 리셋
       resetPending();
       showMsg('反映しました。');
 
-      // チーム%更新（ステ上がったため）
       renderTeamPower();
-
-      // 画面再描画
       render();
     });
 
@@ -1078,7 +1061,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     btns.appendChild(btnCommit);
     btns.appendChild(btnClear);
-
     card.appendChild(btns);
 
     ui.upArea.appendChild(card);
@@ -1112,9 +1094,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     right.style.flexWrap = 'wrap';
     right.appendChild(createMiniPill('上限 +30'));
     right.appendChild(createMiniPill('必要：+2ずつ増加'));
+
     head.appendChild(left);
     head.appendChild(right);
-
     card.appendChild(head);
 
     const note = document.createElement('div');
@@ -1170,8 +1152,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       top.appendChild(name);
       top.appendChild(tag);
 
-      const curPlus = clamp(Number(mem?.skills?.[def.id]?.plus || 0), 0, 30);
-      const pend = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
+      const curPlus = clamp0to30(Number(mem?.skills?.[def.id]?.plus || 0));
+      const pend = clamp0to30(Number((pendingSkill[mem.id] || {})[def.id] || 0));
+      const nextPlus = clamp0to30(curPlus + pend);
 
       const line1 = document.createElement('div');
       line1.style.marginTop = '8px';
@@ -1179,22 +1162,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       line1.style.opacity = '0.95';
       line1.textContent = def.desc;
 
+      const chanceText = formatChance(def, nextPlus);
+      const effText = formatEffect(def, nextPlus);
+      const resetNote = (def.trigger === '接敵時') ? '（交戦後リセット）' : '';
+
       const line2 = document.createElement('div');
       line2.style.marginTop = '6px';
       line2.style.fontSize = '12px';
       line2.style.opacity = '0.95';
-
-      const chanceText = formatChance(def, curPlus + pend);
-      const effText = formatEffect(def, curPlus + pend);
-
-      // 特記事項：接敵時発動スキルは交戦後リセット（仕様メモ）
-      const resetNote = (def.trigger === '接敵時') ? '（交戦後リセット）' : '';
-
       line2.textContent =
-        `現在：+${curPlus} → +${clamp(curPlus + pend, 0, 30)}${pend>0 ? `（保留+${pend}）` : ''} / 発動率：${chanceText} / 効果：${effText} ${resetNote}`;
+        `現在：+${curPlus} → +${nextPlus}${pend>0 ? `（保留+${pend}）` : ''} / 発動率：${chanceText} / 効果：${effText} ${resetNote}`;
 
-      const costNow = calcSkillCost(mem, def.id, 1); // 次の+1を取るコスト（表示用）
-      const costPend = pend > 0 ? calcSkillCost(mem, def.id, pend) : { muscle:0, tech:0, spirit:0 };
+      const costNow = calcSkillCost(mem, def.id, 1);
+      const costPend = pend > 0 ? calcSkillCost(mem, def.id, pend) : { muscle:0, tech:0, mental:0 };
 
       const line3 = document.createElement('div');
       line3.style.marginTop = '6px';
@@ -1212,8 +1192,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const btnPlus = createGhostBtn('＋1');
       btnPlus.style.padding = '10px 10px';
       btnPlus.addEventListener('click', ()=>{
-        const cur = clamp(Number(mem?.skills?.[def.id]?.plus || 0), 0, 30);
-        const pendNow = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
+        const cur = clamp0to30(Number(mem?.skills?.[def.id]?.plus || 0));
+        const pendNow = clamp0to30(Number((pendingSkill[mem.id] || {})[def.id] || 0));
         if (cur + pendNow >= 30){
           showMsg('スキル強化上限（+30）です。');
           return;
@@ -1227,7 +1207,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const btnMinus = createGhostBtn('－1');
       btnMinus.style.padding = '10px 10px';
       btnMinus.addEventListener('click', ()=>{
-        const pendNow = clamp(Number((pendingSkill[mem.id] || {})[def.id] || 0), 0, 30);
+        const pendNow = clamp0to30(Number((pendingSkill[mem.id] || {})[def.id] || 0));
         if (pendNow <= 0) return;
         pendingSkill[mem.id][def.id] = pendNow - 1;
         showMsg('');
@@ -1248,7 +1228,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     card.appendChild(list);
 
-    // 決定/クリアは能力アップと同じ（上のカード側にもあるが、ここにも置く）
     const btns = document.createElement('div');
     btns.style.marginTop = '12px';
     btns.style.display = 'grid';
@@ -1283,20 +1262,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     btns.appendChild(btnCommit);
     btns.appendChild(btnClear);
-
     card.appendChild(btns);
 
     ui.skillArea.appendChild(card);
   }
 
   function renderTrainingSection(){
-    const team = getPlayerTeam();
-    ensureTeamMeta(team);
-
+    const team = migrateAndPersistTeam(); // 必ず移行済みを使う
     const mem = getMemById(team, ttSelectedId) || getMemById(team, 'A');
-    if (!mem){
-      return;
-    }
+    if (!mem) return;
+
     renderMemberTabs(team);
     renderPtsRow(mem);
     renderUpArea(team);
@@ -1305,18 +1280,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ===== main render =====
   function render(){
-    // meta
     safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
     safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
 
-    const team = getPlayerTeam();
-    ensureTeamMeta(team);
-
-    // team members + stats
+    const team = migrateAndPersistTeam();
     const byId = {};
     for (const m of (team.members || [])) byId[m.id] = m;
 
-    // A
     const A = byId.A;
     if (A){
       const st = normalize(A.stats);
@@ -1331,7 +1301,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tA_ult, A.ult || '未定');
     }
 
-    // B
     const B = byId.B;
     if (B){
       const st = normalize(B.stats);
@@ -1346,7 +1315,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tB_ult, B.ult || '未定');
     }
 
-    // C
     const C = byId.C;
     if (C){
       const st = normalize(C.stats);
@@ -1364,12 +1332,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     reflectNamesEverywhere();
     renderTeamPower();
 
-    // 育成UI（注入）
     ensureTrainingUI();
     renderTrainingSection();
   }
 
-  // ===== open/close =====
   function open(){
     if (!dom.teamScreen) return;
     dom.teamScreen.classList.add('show');
@@ -1492,7 +1458,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     alert('セーブしました。');
   }
 
-  // ★リセット前に「全ポップアップを閉じる」
   function closeAllOverlays(){
     const idsHideDisplay = [
       'membersPop',
@@ -1577,23 +1542,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ===== init =====
   function initTeamUI(){
     bindClose();
     bindRename();
     bindSave();
 
-    // 互換初期化：teamに育成メタを付与して保存しておく（存在しないとUIでnullになるため）
-    const team = getPlayerTeam();
-    ensureTeamMeta(team);
-    writePlayerTeam(team);
+    // ✅起動時に必ず移行して保存（ズレ根絶）
+    migrateAndPersistTeam();
 
     render();
   }
 
   window.MOBBR.initTeamUI = initTeamUI;
-
-  // ★ calcTeamPower を公開（大会/試合が参照する）
   window.MOBBR.ui.team = { open, close, render, calcTeamPower };
 
   document.addEventListener('DOMContentLoaded', ()=>{
