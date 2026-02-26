@@ -157,8 +157,8 @@ async function loadModules(){
     `ui_main.js${v}`,
 
     // ✅ ui_team 分割ロード（順番厳守：core -> training）
-    `ui_team.core.js${v}`,
-    `ui_team.training.js${v}`,
+    `ui_team_core.js${v}`,
+    `ui_team_training.js${v}`,
 
     `ui_training.js${v}`,
     `ui_card.js${v}`,
