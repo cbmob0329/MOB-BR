@@ -9,6 +9,13 @@
   - 4ステ（hp/aim/tech/mental）を中核にしつつ、
     旧UI互換の表示項目（agi/support/scan/armor）も安全に補完
   - points / upgradeCount / skills の初期形も同時に保証できるように定義
+
+  v1.1 変更（重要）：
+  - ✅ 初期ステを 55 固定にしない（“全部55” 問題の根）
+    -> default base を 66 に変更
+    -> teamPower 初期値も 66 に変更
+  ※既存セーブを上書きして“勝手に66化”はしません。
+    buildDefaultTeam() は「セーブが無い/壊れた時だけ」使われる前提のまま。
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -66,8 +73,9 @@ window.MOBBR.data = window.MOBBR.data || {};
   // Default Member Template
   // =========================
   function buildDefaultMember(id, role){
-    // 4ステは 55 基準（あなたの要望：試合側の55固定回避・%反映の土台としても安定）
-    const base = 55;
+    // ✅ default 基準値（“全部55”になる原因だったので 66 に変更）
+    // ※この値は「初回/破損時の初期チーム」にしか効かない（既存セーブは維持）
+    const base = 66;
 
     return {
       id: String(id),
@@ -116,7 +124,9 @@ window.MOBBR.data = window.MOBBR.data || {};
   P.buildDefaultTeam = function buildDefaultTeam(){
     const team = {
       ver: 'team_v1',
-      teamPower: 55,
+
+      // ✅ 初期 teamPower も 66 に変更（“試合で55になる”誤解を誘発しない）
+      teamPower: 66,
 
       // メンバー3人
       members: [
