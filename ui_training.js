@@ -26,6 +26,11 @@
   - trainPts があれば points に吸収（trainPtsは削除）
   - spirit があれば mental に吸収（spiritは削除）
   - points が無ければ初期化
+
+  v17.1（軽微）：
+  - 仕様変更なし。data_player.js 側の default base を 66 にしたため、
+    “初回/破損時”に buildDefaultTeam() が返るチームが 66 基準になる。
+    本ファイルは points のみ扱うのでそのまま。
 */
 
 window.MOBBR = window.MOBBR || {};
