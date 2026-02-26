@@ -1,21 +1,25 @@
-'use strict';
+　'use strict';
 
 /*
-  MOB BR - ui_training.js v16（フル / 大会週ブロック = nextTour基準）
+  MOB BR - ui_training.js v17（FULL / 新修行：1回選択→全員ポイント付与）
 
   役割：
   - 育成（修行）画面の制御
-  - 3人分の修行を選択 → 実行 → 結果を必ずポップアップ表示
-  - 結果OKでのみ確定（EXP反映 + Lv処理 + 1週進行 + 企業ランク報酬G）
+  - 修行メニューを「1つ」選択 → 実行 → 結果を必ずポップアップ表示
+  - 結果OKでのみ確定（ポイント反映 + 1週進行 + 企業ランク報酬G）
+  - 大会週ブロックは nextTour / nextTourW を参照して判定（v16踏襲）
 
-  v16 変更点（重要）：
-  - 「大会週ブロック」を固定スケジュール参照ではなく
-    storage の nextTour / nextTourW を参照して判定する
-    => 出場権が無い大会は nextTour に入らない想定なので誤ロックしない
+  新仕様（確定）：
+  - 1回の修行で A/B/C 全員に同じポイントが入る
+    射撃：筋力 +10
+    パズル：技術力 +10
+    研究：精神力 +10
+    ダッシュ：筋力 +5 / 技術力 +5
+  - 付与したポイントの「振り分け」は別UI（チーム画面の能力アップ/能力獲得）で消費する想定
 
-  ブロック条件：
-  - 今週 (month/week) が nextTourW（例: "2-1"）と一致する場合は修行不可
-  - nextTourW が未定/不正ならブロックしない
+  保存：
+  - localStorage[mobbr_playerTeam] 内の members[*].points を使用
+    points = { muscle:0, tech:0, mental:0 }
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -35,20 +39,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const K = S.KEYS;
 
   /* =========================
-     修行メニュー定義（確定仕様）
-     - 共通：全能力 EXP +1
-     - 専門：対象能力 EXP +4（＝共通+1 +追加+3）
-     - 総合：全能力 EXP +2（＝共通+1 +追加+1）
+     修行メニュー（新仕様：全員に同じポイント）
   ========================= */
   const TRAININGS = [
-    { id:'shoot',  name:'射撃練習',  up:['aim','agi'] },
-    { id:'dash',   name:'ダッシュ',  up:['agi','hp'] },
-    { id:'puzzle', name:'パズル',    up:['tech','mental'] },
-    { id:'battle', name:'実戦練習',  up:['aim','hp'] },
-    { id:'water',  name:'滝修行',    up:['mental','hp'] },
-    { id:'lab',    name:'研究',      up:['tech','support'] },
-    { id:'all',    name:'総合演習',  up:'all' }
+    { id:'shoot',  name:'射撃',  give:{ muscle:10, tech:0,  mental:0  }, note:'筋力 +10（全員）' },
+    { id:'puzzle', name:'パズル',give:{ muscle:0,  tech:10, mental:0  }, note:'技術力 +10（全員）' },
+    { id:'study',  name:'研究',  give:{ muscle:0,  tech:0,  mental:10 }, note:'精神力 +10（全員）' },
+    { id:'dash',   name:'ダッシュ',give:{ muscle:5, tech:5,  mental:0  }, note:'筋力 +5 / 技術力 +5（全員）' }
   ];
+
+  const POINT_LABEL = {
+    muscle: '筋力',
+    tech: '技術力',
+    mental: '精神力'
+  };
 
   /* =========================
      DOM（既存HTML前提）
@@ -71,13 +75,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   /* =========================
      内部状態（保存しない）
   ========================= */
-  let selected = { A:null, B:null, C:null };
+  let selectedTraining = null;
 
   // bind多重防止
   let bound = false;
 
   /* =========================
-     ユーティリティ
+     util
   ========================= */
   function getStr(key, def){
     const v = localStorage.getItem(key);
@@ -110,16 +114,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     modalBack.setAttribute('aria-hidden', 'true');
   }
 
-  function allSelected(){
-    return !!(selected.A && selected.B && selected.C);
+  function clamp0(n){
+    const v = Number(n);
+    return Number.isFinite(v) ? Math.max(0, v) : 0;
   }
 
-  function labelUp(tr){
-    if (!tr) return '';
-    if (tr.up === 'all') return '全能力';
-    const keys = tr.up || [];
-    const parts = keys.map(k => DP.STAT_LABEL?.[k] || k);
-    return parts.join(' / ');
+  function clone(obj){
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function weeklyGoldByRank(rank){
+    if (rank >= 1 && rank <= 5) return 500;
+    if (rank >= 6 && rank <= 10) return 800;
+    if (rank >= 11 && rank <= 20) return 1000;
+    if (rank >= 21 && rank <= 30) return 2000;
+    return 3000;
   }
 
   function getDisplayNameById(id){
@@ -142,35 +151,34 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     localStorage.setItem(K.playerTeam, JSON.stringify(team));
   }
 
+  function ensurePoints(mem){
+    if (!mem || typeof mem !== 'object') return;
+    if (!mem.points || typeof mem.points !== 'object'){
+      mem.points = { muscle:0, tech:0, mental:0 };
+    }else{
+      // 欠けを補完
+      if (!Number.isFinite(Number(mem.points.muscle))) mem.points.muscle = 0;
+      if (!Number.isFinite(Number(mem.points.tech))) mem.points.tech = 0;
+      if (!Number.isFinite(Number(mem.points.mental))) mem.points.mental = 0;
+    }
+  }
+
   function normalizeTeam(team){
     if (!team || !Array.isArray(team.members)) return DP.buildDefaultTeam();
 
     team.members.forEach(mem=>{
-      mem.exp = DP.normalizeExp(mem.exp);
-      mem.lv  = DP.normalizeLv(mem.lv);
-
       if (mem.id === 'A') mem.name = getDisplayNameById('A');
       if (mem.id === 'B') mem.name = getDisplayNameById('B');
       if (mem.id === 'C') mem.name = getDisplayNameById('C');
+
+      ensurePoints(mem);
     });
 
     return team;
   }
 
-  function clone(obj){
-    return JSON.parse(JSON.stringify(obj));
-  }
-
-  function weeklyGoldByRank(rank){
-    if (rank >= 1 && rank <= 5) return 500;
-    if (rank >= 6 && rank <= 10) return 800;
-    if (rank >= 11 && rank <= 20) return 1000;
-    if (rank >= 21 && rank <= 30) return 2000;
-    return 3000;
-  }
-
   /* =========================
-     大会週ブロック（nextTour基準）
+     大会週ブロック（nextTour基準） v16踏襲
   ========================= */
   function parseTourW(str){
     // "2-1" 形式のみ許可
@@ -279,104 +287,96 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   /* =========================
-     UI生成：修行カード
+     UI描画：1枚カード＋メニュー
   ========================= */
   function renderCards(){
     if (!dom.cards) return;
     dom.cards.innerHTML = '';
 
-    const team = normalizeTeam(readPlayerTeam());
-    const members = team.members;
+    const wrap = document.createElement('div');
+    wrap.className = 'trainingCard';
 
-    members.forEach(mem=>{
-      const wrap = document.createElement('div');
-      wrap.className = 'trainingCard';
+    const title = document.createElement('div');
+    title.className = 'trainingTitle';
+    title.textContent = '修行（1回選ぶだけ）';
 
-      const title = document.createElement('div');
-      title.className = 'trainingMember';
-      title.textContent = getDisplayNameById(mem.id);
+    const desc = document.createElement('div');
+    desc.className = 'trainingDesc';
+    desc.textContent =
+      '修行メニューを1つ選択すると、A/B/C 全員に同じポイントが入ります。\n' +
+      'ポイントの振り分けは「能力アップ / 能力獲得」で行います。';
 
-      const list = document.createElement('div');
-      list.className = 'trainingMenuList';
+    const list = document.createElement('div');
+    list.className = 'trainingMenuList';
 
-      TRAININGS.forEach(tr=>{
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'trainingMenuBtn';
+    TRAININGS.forEach(tr=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'trainingMenuBtn';
 
-        const line1 = document.createElement('div');
-        line1.textContent = tr.name;
+      const t1 = document.createElement('div');
+      t1.className = 't1';
+      t1.textContent = tr.name;
 
-        const line2 = document.createElement('div');
-        line2.style.fontSize = '12px';
-        line2.style.opacity = '0.9';
-        line2.style.marginTop = '2px';
-        line2.textContent = `↑ ${labelUp(tr)}`;
+      const t2 = document.createElement('div');
+      t2.className = 't2';
+      t2.textContent = tr.note;
 
-        btn.appendChild(line1);
-        btn.appendChild(line2);
+      btn.appendChild(t1);
+      btn.appendChild(t2);
 
-        if (selected[mem.id]?.id === tr.id){
-          btn.classList.add('selected');
-        }
+      if (selectedTraining?.id === tr.id){
+        btn.classList.add('selected');
+      }
 
-        btn.addEventListener('click', ()=>{
-          selected[mem.id] = tr;
-          renderCards();
-          if (dom.btnStart) dom.btnStart.disabled = !allSelected();
-        });
-
-        list.appendChild(btn);
+      btn.addEventListener('click', ()=>{
+        selectedTraining = tr;
+        renderCards();
+        if (dom.btnStart) dom.btnStart.disabled = !selectedTraining;
       });
 
-      wrap.appendChild(title);
-      wrap.appendChild(list);
-      dom.cards.appendChild(wrap);
+      list.appendChild(btn);
     });
+
+    wrap.appendChild(title);
+    wrap.appendChild(desc);
+    wrap.appendChild(list);
+
+    dom.cards.appendChild(wrap);
   }
 
   /* =========================
-     結果計算（プレビュー）
+     preview（結果表示用）
   ========================= */
-  function calcExpAddForTraining(tr){
-    const add = {};
-    DP.STAT_KEYS.forEach(k => add[k] = 1); // 共通 +1
-
-    if (tr.up === 'all'){
-      DP.STAT_KEYS.forEach(k => add[k] += 1); // 合計 +2
-    }else{
-      (tr.up || []).forEach(k => add[k] += 3); // 合計 +4
-    }
-    return add;
+  function buildGiveText(give){
+    const parts = [];
+    if (give.muscle) parts.push(`${POINT_LABEL.muscle}+${give.muscle}`);
+    if (give.tech) parts.push(`${POINT_LABEL.tech}+${give.tech}`);
+    if (give.mental) parts.push(`${POINT_LABEL.mental}+${give.mental}`);
+    return parts.join(' / ') || 'なし';
   }
 
-  function applyTrainingPreview(team){
+  function applyTrainingPreview(team, tr){
     const res = [];
+    const give = tr?.give || { muscle:0, tech:0, mental:0 };
 
     team.members.forEach(mem=>{
-      const tr = selected[mem.id];
-      const expAdd = calcExpAddForTraining(tr);
+      ensurePoints(mem);
 
-      mem.exp = DP.normalizeExp(mem.exp);
-      mem.lv  = DP.normalizeLv(mem.lv);
+      const before = clone(mem.points);
 
-      const before = { exp: clone(mem.exp), lv: clone(mem.lv) };
+      mem.points.muscle = clamp0(mem.points.muscle + (give.muscle || 0));
+      mem.points.tech   = clamp0(mem.points.tech   + (give.tech   || 0));
+      mem.points.mental = clamp0(mem.points.mental + (give.mental || 0));
 
-      DP.STAT_KEYS.forEach(k=>{
-        mem.exp[k] += expAdd[k];
-        while (mem.exp[k] >= 20){
-          mem.exp[k] -= 20;
-          mem.lv[k] += 1;
-        }
-      });
-
-      const after = { exp: clone(mem.exp), lv: clone(mem.lv) };
+      const after = clone(mem.points);
 
       res.push({
         id: mem.id,
         name: getDisplayNameById(mem.id),
         trainingName: tr.name,
-        expAdd,
+        give: clone(give),
+        giveText: buildGiveText(give),
         before,
         after
       });
@@ -386,7 +386,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   /* =========================
-     結果ポップアップ（DOM動的生成）
+     結果ポップアップ
   ========================= */
   let resultPop = null;
   function ensureResultPop(){
@@ -455,32 +455,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     hideBack();
   }
 
-  function renderExpBar(exp){
-    const wrap = document.createElement('div');
-    wrap.style.marginTop = '6px';
-
-    const bar = document.createElement('div');
-    bar.style.width = '100%';
-    bar.style.height = '10px';
-    bar.style.borderRadius = '999px';
-    bar.style.background = 'rgba(255,255,255,.18)';
-    bar.style.overflow = 'hidden';
-
-    const fill = document.createElement('div');
-    fill.style.height = '100%';
-    fill.style.width = `${Math.max(0, Math.min(100, (exp/20)*100))}%`;
-    fill.style.background = 'rgba(255,255,255,.78)';
-
-    bar.appendChild(fill);
-    wrap.appendChild(bar);
-    return wrap;
-  }
-
-  function renderResultPop(previewResults){
+  function renderResultPop(previewResults, tr){
     const sub = $('trainingResultSub');
     const list = $('trainingResultListPop');
 
-    if (sub) sub.textContent = '修行完了！OKで確定して1週進みます。';
+    if (sub){
+      sub.textContent = `「${tr.name}」を実行しました。A/B/C 全員に ${buildGiveText(tr.give)} が入ります。`;
+    }
     if (!list) return;
 
     list.innerHTML = '';
@@ -495,63 +476,29 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const top = document.createElement('div');
       top.style.fontWeight = '1000';
       top.style.fontSize = '16px';
-      top.textContent = `${r.name}：${r.trainingName}`;
+      top.textContent = `${r.name}`;
 
-      const note = document.createElement('div');
-      note.style.marginTop = '4px';
-      note.style.opacity = '0.92';
-      note.style.fontSize = '13px';
-      note.textContent = `共通 +1 / 専門 or 総合で追加（表示はEXPのみ）`;
+      const add = document.createElement('div');
+      add.style.marginTop = '6px';
+      add.style.fontSize = '13px';
+      add.style.opacity = '0.95';
+      add.textContent = `付与：${r.giveText}`;
+
+      const now = document.createElement('div');
+      now.style.marginTop = '10px';
+      now.style.fontSize = '12px';
+      now.style.opacity = '0.92';
+      now.style.lineHeight = '1.45';
+      now.textContent =
+        `所持ポイント：` +
+        `${POINT_LABEL.muscle}${r.after.muscle} / ` +
+        `${POINT_LABEL.tech}${r.after.tech} / ` +
+        `${POINT_LABEL.mental}${r.after.mental}`;
 
       card.appendChild(top);
-      card.appendChild(note);
+      card.appendChild(add);
+      card.appendChild(now);
 
-      const grid = document.createElement('div');
-      grid.style.marginTop = '10px';
-      grid.style.display = 'flex';
-      grid.style.flexDirection = 'column';
-      grid.style.gap = '8px';
-
-      DP.STAT_KEYS.forEach(k=>{
-        const row = document.createElement('div');
-
-        const label = DP.STAT_LABEL?.[k] || k;
-        const add = r.expAdd[k] || 0;
-
-        const afterExp = r.after.exp[k] ?? 0;
-        const beforeLv = r.before.lv[k] ?? 1;
-        const afterLv = r.after.lv[k] ?? beforeLv;
-
-        const head = document.createElement('div');
-        head.style.display = 'flex';
-        head.style.justifyContent = 'space-between';
-        head.style.alignItems = 'baseline';
-        head.style.gap = '10px';
-
-        const left = document.createElement('div');
-        left.style.fontWeight = '1000';
-        left.style.fontSize = '13px';
-        left.textContent = `${label}  +${add}EXP`;
-
-        const right = document.createElement('div');
-        right.style.fontWeight = '900';
-        right.style.fontSize = '12px';
-        right.style.opacity = '0.95';
-
-        const need = Math.max(0, 20 - (afterExp % 20));
-        const lvText = (afterLv !== beforeLv) ? `LvUP! (${beforeLv}→${afterLv})` : `あと${need}でLvUP`;
-        right.textContent = `EXP ${afterExp}/20  ・ ${lvText}`;
-
-        head.appendChild(left);
-        head.appendChild(right);
-
-        row.appendChild(head);
-        row.appendChild(renderExpBar(afterExp % 20));
-
-        grid.appendChild(row);
-      });
-
-      card.appendChild(grid);
       list.appendChild(card);
     });
   }
@@ -632,20 +579,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function commitAndAdvance(previewResults){
     let team = normalizeTeam(readPlayerTeam());
 
+    // previewResults の after をそのまま確定
     team.members.forEach(mem=>{
       const r = previewResults.find(x => x.id === mem.id);
       if (!r) return;
-
-      mem.exp = DP.normalizeExp(mem.exp);
-      mem.lv  = DP.normalizeLv(mem.lv);
-
-      DP.STAT_KEYS.forEach(k=>{
-        mem.exp[k] += (r.expAdd[k] || 0);
-        while (mem.exp[k] >= 20){
-          mem.exp[k] -= 20;
-          mem.lv[k] += 1;
-        }
-      });
+      ensurePoints(mem);
+      mem.points.muscle = clamp0(r.after.muscle);
+      mem.points.tech   = clamp0(r.after.tech);
+      mem.points.mental = clamp0(r.after.mental);
     });
 
     writePlayerTeam(team);
@@ -692,15 +633,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      open / close
   ========================= */
   function open(){
-    // === 大会週ブロック（nextTour基準）===
+    // 大会週ブロック（nextTour基準）
     const lock = isTournamentWeekNow();
     if (lock.locked){
-      // 画面は開かない
       showLockedPopup(lock.tourName, lock.tourWStr, lock.now);
       return;
     }
 
-    selected = { A:null, B:null, C:null };
+    selectedTraining = null;
     closeResultPop();
 
     if (dom.btnStart) dom.btnStart.disabled = true;
@@ -745,14 +685,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           return;
         }
 
-        if (!allSelected()) return;
+        if (!selectedTraining) return;
 
         if (dom.close) dom.close.disabled = true;
 
         const teamPreview = clone(normalizeTeam(readPlayerTeam()));
-        const previewResults = applyTrainingPreview(teamPreview);
+        const previewResults = applyTrainingPreview(teamPreview, selectedTraining);
 
-        renderResultPop(previewResults);
+        renderResultPop(previewResults, selectedTraining);
         openResultPop();
 
         const ok = $('btnTrainingResultOk');
