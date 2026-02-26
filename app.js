@@ -1,12 +1,14 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.1
-   - v19.0 の全機能維持（削除なし）
-   - ✅ ADD: sim_tournament_core_step_base.js をロード（step 2分割の前提）
+   app.js（FULL） v19.2
+   - v19.1 の全機能維持（削除なし）
+   - ✅ CHANGE: ui_team.js を 2分割ロードに変更
+     -> ui_team.core.js / ui_team.training.js
+   - ✅ KEEP: sim_tournament_core_step_base.js をロード（step 2分割の前提）
 ========================================================= */
 
-const APP_VER = 19.1; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.2; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -153,7 +155,11 @@ async function loadModules(){
 
     // UI
     `ui_main.js${v}`,
-    `ui_team.js${v}`,
+
+    // ✅ ui_team 分割ロード（順番厳守：core -> training）
+    `ui_team.core.js${v}`,
+    `ui_team.training.js${v}`,
+
     `ui_training.js${v}`,
     `ui_card.js${v}`,
 
@@ -505,6 +511,12 @@ async function bootAfterNext(){
         core: !!window.MOBBR?.ui?._tournamentCore,
         handlers: !!window.MOBBR?.ui?._tournamentHandlers,
         entry: !!window.MOBBR?.ui?.tournament
+      });
+
+      console.log('[CHECK] ui_team split =', {
+        core: !!window.MOBBR?.ui?._teamCore,
+        training: !!window.MOBBR?.ui?._teamTraining,
+        initTeamUI: !!window.MOBBR?.initTeamUI
       });
     }catch(e){}
 
