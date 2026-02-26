@@ -1,7 +1,8 @@
-　'use strict';
+'use strict';
 
 /*
   MOB BR - ui_training.js v17（FULL / 新修行：1回選択→全員ポイント付与）
+  ✅ズレない版（points統一 + 旧セーブ自動移行）
 
   役割：
   - 育成（修行）画面の制御
@@ -9,17 +10,22 @@
   - 結果OKでのみ確定（ポイント反映 + 1週進行 + 企業ランク報酬G）
   - 大会週ブロックは nextTour / nextTourW を参照して判定（v16踏襲）
 
-  新仕様（確定）：
-  - 1回の修行で A/B/C 全員に同じポイントが入る
+  確定仕様：
+  - 1回の修行で A/B/C 全員に同じポイントが入る（pointsに加算）
     射撃：筋力 +10
     パズル：技術力 +10
     研究：精神力 +10
     ダッシュ：筋力 +5 / 技術力 +5
-  - 付与したポイントの「振り分け」は別UI（チーム画面の能力アップ/能力獲得）で消費する想定
+  - 付与したポイントの振り分けは別UI（チーム画面の能力アップ/能力獲得）で消費
 
-  保存：
-  - localStorage[mobbr_playerTeam] 内の members[*].points を使用
+  ✅保存（唯一の正）：
+  - localStorage[mobbr_playerTeam].members[*].points を使用
     points = { muscle:0, tech:0, mental:0 }
+
+  ✅旧セーブ互換（自動移行）：
+  - trainPts があれば points に吸収（trainPtsは削除）
+  - spirit があれば mental に吸収（spiritは削除）
+  - points が無ければ初期化
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -39,13 +45,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const K = S.KEYS;
 
   /* =========================
-     修行メニュー（新仕様：全員に同じポイント）
+     修行メニュー（全員に同じポイント）
   ========================= */
   const TRAININGS = [
-    { id:'shoot',  name:'射撃',  give:{ muscle:10, tech:0,  mental:0  }, note:'筋力 +10（全員）' },
-    { id:'puzzle', name:'パズル',give:{ muscle:0,  tech:10, mental:0  }, note:'技術力 +10（全員）' },
-    { id:'study',  name:'研究',  give:{ muscle:0,  tech:0,  mental:10 }, note:'精神力 +10（全員）' },
-    { id:'dash',   name:'ダッシュ',give:{ muscle:5, tech:5,  mental:0  }, note:'筋力 +5 / 技術力 +5（全員）' }
+    { id:'shoot',  name:'射撃',    give:{ muscle:10, tech:0,  mental:0  }, note:'筋力 +10（全員）' },
+    { id:'puzzle', name:'パズル',  give:{ muscle:0,  tech:10, mental:0  }, note:'技術力 +10（全員）' },
+    { id:'study',  name:'研究',    give:{ muscle:0,  tech:0,  mental:10 }, note:'精神力 +10（全員）' },
+    { id:'dash',   name:'ダッシュ', give:{ muscle:5,  tech:5,  mental:0  }, note:'筋力 +5 / 技術力 +5（全員）' }
   ];
 
   const POINT_LABEL = {
@@ -76,8 +82,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      内部状態（保存しない）
   ========================= */
   let selectedTraining = null;
-
-  // bind多重防止
   let bound = false;
 
   /* =========================
@@ -86,6 +90,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function getStr(key, def){
     const v = localStorage.getItem(key);
     return (v === null || v === undefined || v === '') ? def : v;
+  }
+
+  function clamp0(n){
+    const v = Number(n);
+    return Number.isFinite(v) ? Math.max(0, v) : 0;
+  }
+
+  function clone(obj){
+    return JSON.parse(JSON.stringify(obj));
   }
 
   function getDate(){
@@ -112,15 +125,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!modalBack) return;
     modalBack.style.display = 'none';
     modalBack.setAttribute('aria-hidden', 'true');
-  }
-
-  function clamp0(n){
-    const v = Number(n);
-    return Number.isFinite(v) ? Math.max(0, v) : 0;
-  }
-
-  function clone(obj){
-    return JSON.parse(JSON.stringify(obj));
   }
 
   function weeklyGoldByRank(rank){
@@ -151,15 +155,44 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     localStorage.setItem(K.playerTeam, JSON.stringify(team));
   }
 
+  /* =========================
+     ✅ポイントの唯一正：points（muscle/tech/mental）
+     ✅旧セーブ互換移行：trainPts / spirit
+  ========================= */
   function ensurePoints(mem){
     if (!mem || typeof mem !== 'object') return;
+
+    // 1) points初期化
     if (!mem.points || typeof mem.points !== 'object'){
       mem.points = { muscle:0, tech:0, mental:0 };
-    }else{
-      // 欠けを補完
-      if (!Number.isFinite(Number(mem.points.muscle))) mem.points.muscle = 0;
-      if (!Number.isFinite(Number(mem.points.tech))) mem.points.tech = 0;
-      if (!Number.isFinite(Number(mem.points.mental))) mem.points.mental = 0;
+    }
+
+    // 2) 欠け補完
+    if (!Number.isFinite(Number(mem.points.muscle))) mem.points.muscle = 0;
+    if (!Number.isFinite(Number(mem.points.tech))) mem.points.tech = 0;
+    if (!Number.isFinite(Number(mem.points.mental))) mem.points.mental = 0;
+
+    // 3) 旧：trainPts -> points に吸収
+    if (mem.trainPts && typeof mem.trainPts === 'object'){
+      const tm = Number(mem.trainPts.muscle ?? 0);
+      const tt = Number(mem.trainPts.tech ?? 0);
+      const ts = Number(mem.trainPts.spirit ?? 0); // 旧spirit
+      const tme = Number(mem.trainPts.mental ?? 0); // 万一存在
+
+      mem.points.muscle = clamp0(mem.points.muscle + (Number.isFinite(tm)?tm:0));
+      mem.points.tech   = clamp0(mem.points.tech   + (Number.isFinite(tt)?tt:0));
+
+      // spirit/mental は mentalへ
+      const addMental = (Number.isFinite(tme)?tme:0) + (Number.isFinite(ts)?ts:0);
+      mem.points.mental = clamp0(mem.points.mental + addMental);
+
+      try{ delete mem.trainPts; }catch(e){}
+    }
+
+    // 4) 旧：spirit -> mental に吸収（直下に残ってた場合）
+    if (Number.isFinite(Number(mem.spirit))){
+      mem.points.mental = clamp0(mem.points.mental + Number(mem.spirit));
+      try{ delete mem.spirit; }catch(e){}
     }
   }
 
@@ -177,11 +210,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return team;
   }
 
+  function migrateAndPersistTeam(){
+    const team = normalizeTeam(readPlayerTeam());
+    writePlayerTeam(team);
+    return team;
+  }
+
   /* =========================
      大会週ブロック（nextTour基準） v16踏襲
   ========================= */
   function parseTourW(str){
-    // "2-1" 形式のみ許可
     const s = String(str || '').trim();
     const m = s.match(/^(\d{1,2})-(\d{1,2})$/);
     if (!m) return null;
@@ -577,6 +615,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      commit（OKでのみ）
   ========================= */
   function commitAndAdvance(previewResults){
+    // まず移行込みで正規化してから確定（ズレ防止）
     let team = normalizeTeam(readPlayerTeam());
 
     // previewResults の after をそのまま確定
@@ -633,6 +672,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
      open / close
   ========================= */
   function open(){
+    // 起動時に必ず移行して保存（ズレ防止）
+    migrateAndPersistTeam();
+
     // 大会週ブロック（nextTour基準）
     const lock = isTournamentWeekNow();
     if (lock.locked){
@@ -679,6 +721,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.btnStart){
       dom.btnStart.addEventListener('click', ()=>{
         // 念のため：開始ボタン押下時も大会週チェック
+        migrateAndPersistTeam();
+
         const lock = isTournamentWeekNow();
         if (lock.locked){
           showLockedPopup(lock.tourName, lock.tourWStr, lock.now);
@@ -720,6 +764,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function initTrainingUI(){
     bind();
+    // ここでも一度移行して保存（ズレ防止）
+    migrateAndPersistTeam();
   }
 
   // expose
