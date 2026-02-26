@@ -7,8 +7,10 @@
 
   ★追加（あなたの要望）
   - ✅ ポップアップで「反映結果」を見せる（1画面完結を避ける）
-  - ✅ スクロールリセット（ポップアップを開くたび先頭へ）
+  - ✅ スクロールリセット（ポップアップを開くたび先頭へ / 閉じたら先頭へ）
   - ✅ ログ超強化（育成ログを保存し、後から見返せる）
+  - ✅ 残り3（=上限まで残り3/2/1）をログに出す（ステ99 / スキル+30）
+  - ✅ 育成パネル内にも「直近ログ（プレビュー）」を常設（右下ログとは別）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -34,6 +36,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     // 初回UI生成
     ensureTrainingUI();
+    renderLogPreview();
   }
 
   // coreが先にロードされて training が後から来ても attach できるように
@@ -148,6 +151,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
   const TRAIN_LOG_KEY = 'mobbr:trainingLogs:v1';
   const TRAIN_LOG_LIMIT = 120; // 重くなりすぎ防止（最新だけ残す）
+  const TRAIN_PREVIEW_LIMIT = 10; // パネル内プレビュー行数
 
   function nowISO(){
     try { return new Date().toISOString(); } catch(e){ return ''; }
@@ -168,10 +172,12 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     logs.unshift(entry);
     if (logs.length > TRAIN_LOG_LIMIT) logs.length = TRAIN_LOG_LIMIT;
     localStorage.setItem(TRAIN_LOG_KEY, JSON.stringify(logs));
+    renderLogPreview();
   }
 
   function clearTrainingLogs(){
     localStorage.removeItem(TRAIN_LOG_KEY);
+    renderLogPreview();
   }
 
   function buildPopupBase(){
@@ -191,6 +197,17 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     }
     pop.innerHTML = '';
     return pop;
+  }
+
+  function closePopup(){
+    const pop = document.getElementById('mobbrTrainingPopup');
+    if (pop) pop.remove();
+
+    // ✅ 閉じたらプレビューも先頭へ（スクロールリセット）
+    const ui = ensureTrainingUI();
+    if (ui?.logPreview){
+      ui.logPreview.scrollTop = 0;
+    }
   }
 
   function openPopup(title, lines, footerButtons){
@@ -221,6 +238,21 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     body.textContent = text;
     wrap.appendChild(body);
 
+    // 追加ボタン（任意・最大2）
+    if (Array.isArray(footerButtons) && footerButtons.length){
+      const extraRow = document.createElement('div');
+      extraRow.style.marginTop = '12px';
+      extraRow.style.display = 'grid';
+      extraRow.style.gridTemplateColumns = '1fr 1fr';
+      extraRow.style.gap = '10px';
+
+      footerButtons.slice(0,2).forEach(b=>{
+        extraRow.appendChild(b);
+      });
+
+      wrap.appendChild(extraRow);
+    }
+
     const btnRow = document.createElement('div');
     btnRow.style.marginTop = '12px';
     btnRow.style.display = 'grid';
@@ -239,7 +271,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     closeBtn.style.color = '#fff';
     closeBtn.style.cursor = 'pointer';
     closeBtn.style.touchAction = 'manipulation';
-    closeBtn.addEventListener('click', ()=>{ pop.remove(); });
+    closeBtn.addEventListener('click', closePopup);
 
     const topBtn = document.createElement('button');
     topBtn.type = 'button';
@@ -257,21 +289,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     btnRow.appendChild(topBtn);
     btnRow.appendChild(closeBtn);
-
-    // 追加ボタン（任意）
-    if (Array.isArray(footerButtons) && footerButtons.length){
-      const extraRow = document.createElement('div');
-      extraRow.style.marginTop = '10px';
-      extraRow.style.display = 'grid';
-      extraRow.style.gridTemplateColumns = '1fr 1fr';
-      extraRow.style.gap = '10px';
-
-      footerButtons.slice(0,2).forEach(b=>{
-        extraRow.appendChild(b);
-      });
-
-      wrap.appendChild(extraRow);
-    }
 
     wrap.appendChild(btnRow);
     pop.appendChild(wrap);
@@ -293,7 +310,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     logs.slice(0, 40).forEach((e, idx)=>{
       lines.push(`【${idx+1}】${e.title || '育成'}  (${e.at || ''})`);
-      (e.lines || []).slice(0, 60).forEach(l=>lines.push(`  ${l}`));
+      (e.lines || []).slice(0, 80).forEach(l=>lines.push(`  ${l}`));
       lines.push('────────────────────────');
     });
 
@@ -448,7 +465,8 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
         upArea: existing.querySelector('.ttUpArea'),
         skillArea: existing.querySelector('.ttSkillArea'),
         msg: existing.querySelector('.ttMsg'),
-        logBtn: existing.querySelector('.ttLogBtn')
+        logBtn: existing.querySelector('.ttLogBtn'),
+        logPreview: existing.querySelector('.ttLogPreview')
       };
       return trainingUI;
     }
@@ -479,6 +497,23 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     logBtn.addEventListener('click', ()=>openLogsPopup());
     section.appendChild(logBtn);
 
+    // ★直近ログ（プレビュー）右下ログとは別
+    const logPreview = document.createElement('div');
+    logPreview.className = 'ttLogPreview';
+    logPreview.style.marginTop = '10px';
+    logPreview.style.padding = '10px';
+    logPreview.style.borderRadius = '12px';
+    logPreview.style.border = '1px solid rgba(255,255,255,.16)';
+    logPreview.style.background = 'rgba(0,0,0,.22)';
+    logPreview.style.fontSize = '12px';
+    logPreview.style.lineHeight = '1.35';
+    logPreview.style.opacity = '0.95';
+    logPreview.style.maxHeight = '180px';
+    logPreview.style.overflow = 'auto';
+    logPreview.style.whiteSpace = 'pre-wrap';
+    logPreview.textContent = '育成ログ：まだありません。';
+    section.appendChild(logPreview);
+
     const msg = document.createElement('div');
     msg.className = 'ttMsg';
     msg.style.marginTop = '8px';
@@ -506,7 +541,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     panel.appendChild(section);
 
-    trainingUI = { root: section, memberTabs, ptRow, upArea, skillArea, msg, logBtn };
+    trainingUI = { root: section, memberTabs, ptRow, upArea, skillArea, msg, logBtn, logPreview };
     return trainingUI;
   }
 
@@ -515,6 +550,33 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     if (!ui || !ui.msg) return;
     ui.msg.textContent = String(text || '');
     ui.msg.style.display = text ? 'block' : 'none';
+  }
+
+  function renderLogPreview(){
+    const ui = ensureTrainingUI();
+    if (!ui?.logPreview) return;
+
+    const logs = getTrainingLogs();
+    if (!logs.length){
+      ui.logPreview.textContent = '育成ログ：まだありません。';
+      ui.logPreview.scrollTop = 0;
+      return;
+    }
+
+    const lines = [];
+    const latest = logs.slice(0, 3);
+
+    latest.forEach((e, idx)=>{
+      lines.push(`【${idx+1}】${e.title || '育成'}  ${e.at || ''}`);
+      (e.lines || []).slice(0, TRAIN_PREVIEW_LIMIT).forEach(l=>{
+        lines.push(`  ${l}`);
+      });
+      if ((e.lines || []).length > TRAIN_PREVIEW_LIMIT) lines.push('  ...');
+      lines.push('');
+    });
+
+    ui.logPreview.textContent = lines.join('\n');
+    ui.logPreview.scrollTop = 0;
   }
 
   // ===== pending state (not saved) =====
@@ -720,6 +782,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
         ttSelectedId = id;
         showMsg('');
         render();
+        // タブ切替でも「プレビュー先頭固定」
+        const ui2 = ensureTrainingUI();
+        if (ui2?.logPreview) ui2.logPreview.scrollTop = 0;
       });
       ui.memberTabs.appendChild(btn);
     });
@@ -799,8 +864,21 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       line2.style.opacity = '0.92';
       line2.textContent = `基礎：${formatPtsCost(base)} / 保留分コスト：${pend>0 ? formatPtsCost(c1) : '0'}`;
 
+      // ★上限まで残り3/2/1（UIにも出す）
+      const remainToCap = Math.max(0, 99 - after);
+      const line3 = document.createElement('div');
+      line3.style.marginTop = '4px';
+      line3.style.fontSize = '12px';
+      line3.style.opacity = '0.92';
+      if (remainToCap > 0 && remainToCap <= 3){
+        line3.textContent = `上限まで残り：${remainToCap}`;
+      }else{
+        line3.textContent = '';
+      }
+
       info.appendChild(line1);
       info.appendChild(line2);
+      if (line3.textContent) info.appendChild(line3);
 
       const btnCol = document.createElement('div');
       btnCol.style.display = 'flex';
@@ -1005,6 +1083,18 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       line2.textContent =
         `現在：+${curPlus} → +${nextPlus}${pend>0 ? `（保留+${pend}）` : ''} / 発動率：${chanceText} / 効果：${effText} ${resetNote}`;
 
+      // ★上限まで残り3/2/1（UIにも出す）
+      const remainSkillCap = Math.max(0, 30 - nextPlus);
+      const line2b = document.createElement('div');
+      line2b.style.marginTop = '4px';
+      line2b.style.fontSize = '12px';
+      line2b.style.opacity = '0.92';
+      if (remainSkillCap > 0 && remainSkillCap <= 3){
+        line2b.textContent = `上限まで残り：${remainSkillCap}`;
+      }else{
+        line2b.textContent = '';
+      }
+
       const costNow = calcSkillCost(mem, def.id, 1);
       const costPend = pend > 0 ? calcSkillCost(mem, def.id, pend) : { muscle:0, tech:0, mental:0 };
 
@@ -1052,6 +1142,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       row.appendChild(top);
       row.appendChild(line1);
       row.appendChild(line2);
+      if (line2b.textContent) row.appendChild(line2b);
       row.appendChild(line3);
       row.appendChild(btnRow);
 
@@ -1129,6 +1220,31 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     };
   }
 
+  function statLabelFromKey(k){
+    const m = { hp:'体力', aim:'エイム', tech:'技術', mental:'メンタル' };
+    return m[k] || String(k || '');
+  }
+
+  function pushRemain3Lines(lines, afterMem){
+    // ステ99：残り3/2/1
+    for (const s of ['hp','aim','tech','mental']){
+      const av = Number(afterMem?.stats?.[s] || 0);
+      const rem = Math.max(0, 99 - av);
+      if (rem >= 1 && rem <= 3){
+        lines.push(`  ※ ${statLabelFromKey(s)} 上限まで残り${rem}`);
+      }
+    }
+    // スキル+30：残り3/2/1
+    for (const sid in SKILL_BY_ID){
+      const def = SKILL_BY_ID[sid];
+      const ap = Number(afterMem?.skills?.[sid]?.plus || 0);
+      const rem = Math.max(0, 30 - ap);
+      if (rem >= 1 && rem <= 3){
+        lines.push(`  ※ ${def.name} 上限まで残り${rem}`);
+      }
+    }
+  }
+
   function buildApplyResultLines(beforeTeam, afterTeam, title){
     const lines = [];
     lines.push(title || '育成反映');
@@ -1157,7 +1273,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
         const av = Number(a?.stats?.[s] || 0);
         if (av !== bv){
           anyStat = true;
-          lines.push(`  ${s.toUpperCase()}: ${bv} → ${av}（+${av-bv}）`);
+          lines.push(`  ${statLabelFromKey(s)}: ${bv} → ${av}（+${av-bv}）`);
         }
       }
       if (!anyStat) lines.push('  ステ変化：なし');
@@ -1181,6 +1297,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
         lines.push('  スキル変化：なし');
       }
 
+      // ★残り3/2/1 の便利ログ（両方：ステ/スキル）
+      pushRemain3Lines(lines, a);
+
       lines.push('');
     });
 
@@ -1198,6 +1317,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     renderPtsRow(mem);
     renderUpArea(team);
     renderSkillArea(team);
+    renderLogPreview();
   }
 
   // 外部公開（core から呼ぶ）
