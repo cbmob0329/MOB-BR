@@ -4,6 +4,11 @@
   MOB BR - ui_team_training.js v17-split（FULL）
   - 元 ui_team.js v17（フル）から「育成（能力アップ/能力獲得）」部分を分離
   - ui_team_core.js が提供する coreApi に attach して動作
+
+  ★追加（あなたの要望）
+  - ✅ ポップアップで「反映結果」を見せる（1画面完結を避ける）
+  - ✅ スクロールリセット（ポップアップを開くたび先頭へ）
+  - ✅ ログ超強化（育成ログを保存し、後から見返せる）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -137,6 +142,181 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
   const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
+  // =========================================================
+  // ★ログ超強化：保存 / 閲覧 / 反映結果ポップアップ
+  // =========================================================
+
+  const TRAIN_LOG_KEY = 'mobbr:trainingLogs:v1';
+  const TRAIN_LOG_LIMIT = 120; // 重くなりすぎ防止（最新だけ残す）
+
+  function nowISO(){
+    try { return new Date().toISOString(); } catch(e){ return ''; }
+  }
+
+  function safeJsonParse(s, fallback){
+    try{ return JSON.parse(s); }catch(e){ return fallback; }
+  }
+
+  function getTrainingLogs(){
+    const raw = localStorage.getItem(TRAIN_LOG_KEY);
+    const arr = safeJsonParse(raw, []);
+    return Array.isArray(arr) ? arr : [];
+  }
+
+  function pushTrainingLog(entry){
+    const logs = getTrainingLogs();
+    logs.unshift(entry);
+    if (logs.length > TRAIN_LOG_LIMIT) logs.length = TRAIN_LOG_LIMIT;
+    localStorage.setItem(TRAIN_LOG_KEY, JSON.stringify(logs));
+  }
+
+  function clearTrainingLogs(){
+    localStorage.removeItem(TRAIN_LOG_KEY);
+  }
+
+  function buildPopupBase(){
+    let pop = document.getElementById('mobbrTrainingPopup');
+    if (!pop){
+      pop = document.createElement('div');
+      pop.id = 'mobbrTrainingPopup';
+      pop.style.position = 'fixed';
+      pop.style.inset = '0';
+      pop.style.zIndex = '999999';
+      pop.style.background = 'rgba(0,0,0,.86)';
+      pop.style.backdropFilter = 'blur(2px)';
+      pop.style.padding = '16px';
+      pop.style.overflow = 'auto'; // スクロールはここ
+      pop.style.color = '#fff';
+      document.body.appendChild(pop);
+    }
+    pop.innerHTML = '';
+    return pop;
+  }
+
+  function openPopup(title, lines, footerButtons){
+    const pop = buildPopupBase();
+
+    const wrap = document.createElement('div');
+    wrap.style.maxWidth = '560px';
+    wrap.style.margin = '0 auto';
+    wrap.style.border = '1px solid rgba(255,255,255,.16)';
+    wrap.style.borderRadius = '14px';
+    wrap.style.background = 'rgba(255,255,255,.08)';
+    wrap.style.padding = '12px';
+
+    const h = document.createElement('div');
+    h.style.fontWeight = '1000';
+    h.style.fontSize = '15px';
+    h.style.marginBottom = '10px';
+    h.textContent = title || 'ログ';
+    wrap.appendChild(h);
+
+    const body = document.createElement('div');
+    body.style.fontSize = '12px';
+    body.style.lineHeight = '1.45';
+    body.style.whiteSpace = 'pre-wrap';
+    body.style.opacity = '0.96';
+
+    const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
+    body.textContent = text;
+    wrap.appendChild(body);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.marginTop = '12px';
+    btnRow.style.display = 'grid';
+    btnRow.style.gridTemplateColumns = '1fr 1fr';
+    btnRow.style.gap = '10px';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '閉じる';
+    closeBtn.style.border = '1px solid rgba(255,255,255,.18)';
+    closeBtn.style.borderRadius = '14px';
+    closeBtn.style.padding = '12px 12px';
+    closeBtn.style.fontWeight = '1000';
+    closeBtn.style.fontSize = '14px';
+    closeBtn.style.background = 'rgba(255,255,255,.10)';
+    closeBtn.style.color = '#fff';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.touchAction = 'manipulation';
+    closeBtn.addEventListener('click', ()=>{ pop.remove(); });
+
+    const topBtn = document.createElement('button');
+    topBtn.type = 'button';
+    topBtn.textContent = '先頭へ';
+    topBtn.style.border = '1px solid rgba(255,255,255,.18)';
+    topBtn.style.borderRadius = '14px';
+    topBtn.style.padding = '12px 12px';
+    topBtn.style.fontWeight = '1000';
+    topBtn.style.fontSize = '14px';
+    topBtn.style.background = 'rgba(255,255,255,.86)';
+    topBtn.style.color = '#111';
+    topBtn.style.cursor = 'pointer';
+    topBtn.style.touchAction = 'manipulation';
+    topBtn.addEventListener('click', ()=>{ pop.scrollTop = 0; });
+
+    btnRow.appendChild(topBtn);
+    btnRow.appendChild(closeBtn);
+
+    // 追加ボタン（任意）
+    if (Array.isArray(footerButtons) && footerButtons.length){
+      const extraRow = document.createElement('div');
+      extraRow.style.marginTop = '10px';
+      extraRow.style.display = 'grid';
+      extraRow.style.gridTemplateColumns = '1fr 1fr';
+      extraRow.style.gap = '10px';
+
+      footerButtons.slice(0,2).forEach(b=>{
+        extraRow.appendChild(b);
+      });
+
+      wrap.appendChild(extraRow);
+    }
+
+    wrap.appendChild(btnRow);
+    pop.appendChild(wrap);
+
+    // ✅ スクロールリセット（開くたび先頭）
+    pop.scrollTop = 0;
+  }
+
+  function openLogsPopup(){
+    const logs = getTrainingLogs();
+    if (!logs.length){
+      openPopup('育成ログ（0件）', ['まだ育成ログはありません。']);
+      return;
+    }
+
+    const lines = [];
+    lines.push(`育成ログ（最新${Math.min(logs.length, TRAIN_LOG_LIMIT)}件）`);
+    lines.push('────────────────────────');
+
+    logs.slice(0, 40).forEach((e, idx)=>{
+      lines.push(`【${idx+1}】${e.title || '育成'}  (${e.at || ''})`);
+      (e.lines || []).slice(0, 60).forEach(l=>lines.push(`  ${l}`));
+      lines.push('────────────────────────');
+    });
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.textContent = 'ログ全削除';
+    clearBtn.style.border = '1px solid rgba(255,255,255,.18)';
+    clearBtn.style.borderRadius = '14px';
+    clearBtn.style.padding = '12px 12px';
+    clearBtn.style.fontWeight = '1000';
+    clearBtn.style.fontSize = '14px';
+    clearBtn.style.background = 'rgba(255,255,255,.10)';
+    clearBtn.style.color = '#fff';
+    clearBtn.style.cursor = 'pointer';
+    clearBtn.style.touchAction = 'manipulation';
+    clearBtn.addEventListener('click', ()=>{
+      clearTrainingLogs();
+      openLogsPopup();
+    });
+
+    openPopup('育成ログ', lines, [clearBtn]);
+  }
+
   // ===== UI injection =====
   let trainingUI = null;
 
@@ -267,7 +447,8 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
         ptRow: existing.querySelector('.ttPointRow'),
         upArea: existing.querySelector('.ttUpArea'),
         skillArea: existing.querySelector('.ttSkillArea'),
-        msg: existing.querySelector('.ttMsg')
+        msg: existing.querySelector('.ttMsg'),
+        logBtn: existing.querySelector('.ttLogBtn')
       };
       return trainingUI;
     }
@@ -290,6 +471,13 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     ptRow.style.gap = '8px';
     ptRow.style.marginTop = '10px';
     section.appendChild(ptRow);
+
+    // ★ログ閲覧ボタン（ポップアップ）
+    const logBtn = createGhostBtn('育成ログを見る');
+    logBtn.className = 'ttLogBtn';
+    logBtn.style.marginTop = '10px';
+    logBtn.addEventListener('click', ()=>openLogsPopup());
+    section.appendChild(logBtn);
 
     const msg = document.createElement('div');
     msg.className = 'ttMsg';
@@ -318,7 +506,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     panel.appendChild(section);
 
-    trainingUI = { root: section, memberTabs, ptRow, upArea, skillArea, msg };
+    trainingUI = { root: section, memberTabs, ptRow, upArea, skillArea, msg, logBtn };
     return trainingUI;
   }
 
@@ -673,18 +861,27 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       const team2 = T.clone(team);
       T.ensureTeamMeta(team2);
 
+      // ★ログ用：before snapshot
+      const before = T.clone(team);
+
       const res = applyPendingToTeam(team2);
       if (!res.ok){
         showMsg(res.reason || 'ポイントが足りません');
         return;
       }
 
+      // 保存
       T.writePlayerTeam(team2);
       resetPending();
       showMsg('反映しました。');
 
       T.renderTeamPower();
       T.render();
+
+      // ★ログ超強化：反映結果を生成して保存＆ポップアップ
+      const lines = buildApplyResultLines(before, team2, '能力アップ/スキル反映');
+      pushTrainingLog({ at: nowISO(), title:'育成反映', lines });
+      openPopup('育成：反映結果', lines);
     });
 
     const btnClear = createGhostBtn('保留をクリア');
@@ -874,6 +1071,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       const team2 = T.clone(team);
       T.ensureTeamMeta(team2);
 
+      // ★ログ用：before snapshot
+      const before = T.clone(team);
+
       const res = applyPendingToTeam(team2);
       if (!res.ok){
         showMsg(res.reason || 'ポイントが足りません');
@@ -886,6 +1086,11 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
       T.renderTeamPower();
       T.render();
+
+      // ★ログ超強化：反映結果を保存＆ポップアップ
+      const lines = buildApplyResultLines(before, team2, '能力アップ/スキル反映');
+      pushTrainingLog({ at: nowISO(), title:'育成反映', lines });
+      openPopup('育成：反映結果', lines);
     });
 
     const btnClear = createGhostBtn('保留をクリア');
@@ -900,6 +1105,86 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     card.appendChild(btns);
 
     ui.skillArea.appendChild(card);
+  }
+
+  // =========================================================
+  // ★ログ内容（超強化）
+  // =========================================================
+
+  function getPts(mem){
+    return {
+      muscle: Number(mem?.points?.muscle || 0),
+      tech: Number(mem?.points?.tech || 0),
+      mental: Number(mem?.points?.mental || 0)
+    };
+  }
+
+  function diffPts(beforeMem, afterMem){
+    const b = getPts(beforeMem);
+    const a = getPts(afterMem);
+    return {
+      muscle: b.muscle - a.muscle,
+      tech: b.tech - a.tech,
+      mental: b.mental - a.mental
+    };
+  }
+
+  function buildApplyResultLines(beforeTeam, afterTeam, title){
+    const lines = [];
+    lines.push(title || '育成反映');
+    lines.push('────────────────────────');
+
+    const ids = ['A','B','C'];
+
+    ids.forEach(id=>{
+      const b = getMemById(beforeTeam, id);
+      const a = getMemById(afterTeam, id);
+      if (!b || !a) return;
+
+      const name = (T?.getMemberNameById ? T.getMemberNameById(id) : id);
+      const role = (T?.getMemberRole ? T.getMemberRole(a) : (a.role || ''));
+      lines.push(`■ ${name}${role ? `（${role}）` : ''}`);
+
+      // points
+      const spent = diffPts(b, a);
+      lines.push(`  消費：筋力${spent.muscle} / 技術${spent.tech} / 精神${spent.mental}`);
+      lines.push(`  残り：筋力${getPts(a).muscle} / 技術${getPts(a).tech} / 精神${getPts(a).mental}`);
+
+      // stats
+      let anyStat = false;
+      for (const s of ['hp','aim','tech','mental']){
+        const bv = Number(b?.stats?.[s] || 0);
+        const av = Number(a?.stats?.[s] || 0);
+        if (av !== bv){
+          anyStat = true;
+          lines.push(`  ${s.toUpperCase()}: ${bv} → ${av}（+${av-bv}）`);
+        }
+      }
+      if (!anyStat) lines.push('  ステ変化：なし');
+
+      // skills
+      const allSkillIds = Object.keys(SKILL_BY_ID);
+      const changed = [];
+      allSkillIds.forEach(sid=>{
+        const def = SKILL_BY_ID[sid];
+        if (!def) return;
+        const bp = Number(b?.skills?.[sid]?.plus || 0);
+        const ap = Number(a?.skills?.[sid]?.plus || 0);
+        if (ap !== bp){
+          changed.push(`  ${def.name}: +${bp} → +${ap}（発動率 ${formatChance(def, ap)} / 効果 ${formatEffect(def, ap)}）`);
+        }
+      });
+      if (changed.length){
+        lines.push('  スキル：');
+        changed.forEach(x=>lines.push(x));
+      }else{
+        lines.push('  スキル変化：なし');
+      }
+
+      lines.push('');
+    });
+
+    return lines;
   }
 
   function render(){
