@@ -1,16 +1,16 @@
-'use strict';
+　'use strict';
 
-/*
-  MOB BR - ui_team_core.js v18-split（FULL）
-  - 元 ui_team.js を安全に分割運用
-  - core：DOM/名前/TeamPower/移行/描画/open-close/セーブ
-  - training：ui_team_training.js 側へ（育成UI/ログ/成長/パッシブ強化）
-
-  v18 追加：
-  - ✅「メンバー名タップ → パッシブ強化ポップアップ」を優先
-    - training側に openPassivePopup(memberId) があればそれを呼ぶ
-    - 無ければ従来通り「名前変更prompt」へフォールバック（互換）
-*/
+/* =========================================================
+   MOB BR - ui_team_core.js v19.3（FULL）
+   - ✅ チーム画面 “コア” のみ（training注入はしない）
+   - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
+   - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
+   - ✅ 互換維持：
+      - window.MOBBR._uiTeamCore を提供（旧参照の保険）
+      - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
+      - window.MOBBR.initTeamUI() を提供
+      - migrateAndPersistTeam / readPlayerTeam / writePlayerTeam / clone 等
+========================================================= */
 
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.ui = window.MOBBR.ui || {};
@@ -18,75 +18,37 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  const S  = window.MOBBR?.storage;
-  const DP = window.MOBBR?.data?.player;
-  const DC = window.MOBBR?.data?.cards;
+  // =========================================================
+  // storage keys（既存と衝突しない前提で “同じ” を使う）
+  // =========================================================
+  const KEY_PLAYER_TEAM = 'mobbr_playerTeam';
 
-  if (!S || !S.KEYS){
-    console.warn('[ui_team_core] storage.js not found');
-    return;
-  }
-  if (!DP){
-    console.warn('[ui_team_core] data_player.js not found');
-    return;
-  }
+  // 表示ステータス（要望：これ以外は表示しない）
+  const STATS_SHOW = [
+    { key:'hp',     label:'体力'   },
+    { key:'aim',    label:'エイム' },
+    { key:'tech',   label:'技術'   },
+    { key:'mental', label:'メンタル' }
+  ];
 
-  const K = S.KEYS;
-
-  // ===== DOM =====
+  // =========================================================
+  // DOM
+  // =========================================================
   const dom = {
-    teamScreen: $('teamScreen'),
-    btnCloseTeam: $('btnCloseTeam'),
-
-    tCompany: $('tCompany'),
-    tTeam: $('tTeam'),
-
-    tNameA: $('tNameA'),
-    tNameB: $('tNameB'),
-    tNameC: $('tNameC'),
-
-    tTeamPower: $('tTeamPower'),
-    tTeamPowerRow: $('tTeamPowerRow'),
-    tTeamPowerWrap: $('tTeamPowerWrap'),
-
-    tA_hp: $('tA_hp'),
-    tA_mental: $('tA_mental'),
-    tA_aim: $('tA_aim'),
-    tA_agi: $('tA_agi'),
-    tA_tech: $('tA_tech'),
-    tA_support: $('tA_support'),
-    tA_scan: $('tA_scan'),
-    tA_passive: $('tA_passive'),
-    tA_ult: $('tA_ult'),
-
-    tB_hp: $('tB_hp'),
-    tB_mental: $('tB_mental'),
-    tB_aim: $('tB_aim'),
-    tB_agi: $('tB_agi'),
-    tB_tech: $('tB_tech'),
-    tB_support: $('tB_support'),
-    tB_scan: $('tB_scan'),
-    tB_passive: $('tB_passive'),
-    tB_ult: $('tB_ult'),
-
-    tC_hp: $('tC_hp'),
-    tC_mental: $('tC_mental'),
-    tC_aim: $('tC_aim'),
-    tC_agi: $('tC_agi'),
-    tC_tech: $('tC_tech'),
-    tC_support: $('tC_support'),
-    tC_scan: $('tC_scan'),
-    tC_passive: $('tC_passive'),
-    tC_ult: $('tC_ult'),
-
-    btnManualSave: $('btnManualSave'),
-    btnDeleteSave: $('btnDeleteSave')
+    teamScreen: null,
+    teamPanel: null,
+    teamName: null,
+    teamPower: null,
+    membersWrap: null,
+    membersPop: null,
+    modalBack: null
   };
 
-  // ===== utils =====
-  function safeText(el, text){
-    if (!el) return;
-    el.textContent = String(text ?? '');
+  // =========================================================
+  // util
+  // =========================================================
+  function safeJsonParse(s, fallback){
+    try{ return JSON.parse(s); }catch(e){ return fallback; }
   }
 
   function clamp(n, min, max){
@@ -94,654 +56,496 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!Number.isFinite(v)) return min;
     return Math.max(min, Math.min(max, v));
   }
-  function clamp01to100(n){ return clamp(n, 0, 100); }
-  function clamp1to100(n){ return clamp(n, 1, 100); }
   function clamp0to99(n){ return clamp(n, 0, 99); }
-  function clamp0to30(n){ return clamp(n, 0, 30); }
-  function clamp0(n){ return Math.max(0, Number.isFinite(Number(n)) ? Number(n) : 0); }
 
-  function getNameA(){ return S.getStr(K.m1, 'A'); }
-  function getNameB(){ return S.getStr(K.m2, 'B'); }
-  function getNameC(){ return S.getStr(K.m3, 'C'); }
-
-  function setNameA(v){ S.setStr(K.m1, v); }
-  function setNameB(v){ S.setStr(K.m2, v); }
-  function setNameC(v){ S.setStr(K.m3, v); }
-
-  // 4ステ版でもUIが壊れないように安全化（agi/support/scan/armor などは 0 or 100で補完）
-  function normalizeStats(stats){
-    // data_player.js に normalizeStats がある場合はそれを優先
-    if (DP && typeof DP.normalizeStats === 'function'){
-      try{
-        return DP.normalizeStats(stats);
-      }catch(e){}
-    }
-
-    const s = stats && typeof stats === 'object' ? stats : {};
-    return {
-      hp: clamp0to99(s.hp ?? 0),
-      aim: clamp0to99(s.aim ?? 0),
-      tech: clamp0to99(s.tech ?? 0),
-      mental: clamp0to99(s.mental ?? 0),
-
-      // 旧UI互換（表示用）
-      agi: clamp0to99(s.agi ?? 0),
-      support: clamp0to99(s.support ?? 0),
-      scan: clamp0to99(s.scan ?? 0),
-      armor: clamp01to100(Number.isFinite(Number(s.armor)) ? s.armor : 100)
-    };
+  function clone(obj){
+    try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return obj; }
   }
 
-  function getPlayerTeam(){
-    try{
-      const raw = localStorage.getItem(K.playerTeam);
-      if (raw){
-        const t = JSON.parse(raw);
-        if (t && Array.isArray(t.members)) return t;
-      }
-    }catch(e){}
-    return DP.buildDefaultTeam();
+  function getStorage(){
+    return window.MOBBR && window.MOBBR.storage ? window.MOBBR.storage : null;
+  }
+
+  function readPlayerTeam(){
+    const S = getStorage();
+    if (S?.getJSON){
+      return S.getJSON(KEY_PLAYER_TEAM, null);
+    }
+    const raw = localStorage.getItem(KEY_PLAYER_TEAM);
+    if (!raw) return null;
+    return safeJsonParse(raw, null);
   }
 
   function writePlayerTeam(team){
-    try{
-      localStorage.setItem(K.playerTeam, JSON.stringify(team));
-    }catch(e){}
-  }
-
-  function clone(obj){
-    return JSON.parse(JSON.stringify(obj));
-  }
-
-  // ===== reflect names everywhere =====
-  function reflectNamesEverywhere(){
-    safeText(dom.tNameA, getNameA());
-    safeText(dom.tNameB, getNameB());
-    safeText(dom.tNameC, getNameC());
-
-    const uiM1 = $('uiM1');
-    const uiM2 = $('uiM2');
-    const uiM3 = $('uiM3');
-    if (uiM1) uiM1.textContent = getNameA();
-    if (uiM2) uiM2.textContent = getNameB();
-    if (uiM3) uiM3.textContent = getNameC();
+    const S = getStorage();
+    if (S?.setJSON){
+      S.setJSON(KEY_PLAYER_TEAM, team);
+      return;
+    }
+    try{ localStorage.setItem(KEY_PLAYER_TEAM, JSON.stringify(team)); }catch(e){}
   }
 
   // =========================================================
-  // ✅ポイント統一（唯一の正）：points {muscle, tech, mental}
-  // ✅旧セーブ互換：trainPts / spirit
-  // ※ training 側が points を使わない構成でも、ここは互換として保持
+  // team data migration（壊さず整える）
   // =========================================================
-  function ensurePoints(mem){
-    if (!mem || typeof mem !== 'object') return;
+  function ensureMemberBase(mem, id, fallbackRole){
+    if (!mem || typeof mem !== 'object') mem = {};
+    mem.id = String(mem.id || id || 'A');
 
-    if (!mem.points || typeof mem.points !== 'object'){
-      mem.points = { muscle:0, tech:0, mental:0 };
-    }
-    if (!Number.isFinite(Number(mem.points.muscle))) mem.points.muscle = 0;
-    if (!Number.isFinite(Number(mem.points.tech))) mem.points.tech = 0;
-    if (!Number.isFinite(Number(mem.points.mental))) mem.points.mental = 0;
-
-    // old trainPts -> points
-    if (mem.trainPts && typeof mem.trainPts === 'object'){
-      const tm = Number(mem.trainPts.muscle ?? 0);
-      const tt = Number(mem.trainPts.tech ?? 0);
-      const ts = Number(mem.trainPts.spirit ?? 0);
-      const tme = Number(mem.trainPts.mental ?? 0);
-
-      mem.points.muscle = clamp0(mem.points.muscle + (Number.isFinite(tm)?tm:0));
-      mem.points.tech   = clamp0(mem.points.tech   + (Number.isFinite(tt)?tt:0));
-
-      const addMental = (Number.isFinite(tme)?tme:0) + (Number.isFinite(ts)?ts:0);
-      mem.points.mental = clamp0(mem.points.mental + addMental);
-
-      try{ delete mem.trainPts; }catch(e){}
+    // name
+    if (typeof mem.name !== 'string' || !mem.name.trim()){
+      // 既存仕様の「ピーチ」などがあるなら上書きしない
+      mem.name = mem.id;
     }
 
-    // old spirit -> mental
-    if (Number.isFinite(Number(mem.spirit))){
-      mem.points.mental = clamp0(mem.points.mental + Number(mem.spirit));
-      try{ delete mem.spirit; }catch(e){}
+    // role
+    if (typeof mem.role !== 'string' || !mem.role.trim()){
+      mem.role = fallbackRole || '';
     }
 
-    mem.points.muscle = clamp0(mem.points.muscle);
-    mem.points.tech   = clamp0(mem.points.tech);
-    mem.points.mental = clamp0(mem.points.mental);
-  }
-
-  function ensureMemberMeta(mem){
-    if (!mem) return;
-
-    ensurePoints(mem);
-
-    // upgradeCount（累計）
-    if (!mem.upgradeCount || typeof mem.upgradeCount !== 'object'){
-      mem.upgradeCount = { hp:0, aim:0, tech:0, mental:0 };
-    }
-    for (const s of ['hp','aim','tech','mental']){
-      mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] ?? 0), 0, 999999);
-    }
-
-    // skills（+強化）… training側が passives を運用しても、ここは壊さない
-    if (!mem.skills || typeof mem.skills !== 'object'){
-      mem.skills = {};
-    }
-    for (const sid in mem.skills){
-      const ent = mem.skills[sid];
-      if (!ent || typeof ent !== 'object'){
-        mem.skills[sid] = { plus:0 };
-        continue;
+    // stats（表示は4つだけだが、既存が持っている他ステは “消さない”）
+    mem.stats = (mem.stats && typeof mem.stats === 'object') ? mem.stats : {};
+    for (const s of STATS_SHOW){
+      if (!Number.isFinite(Number(mem.stats[s.key]))){
+        // 初期値は既存の流れに合わせて 66 を推奨（スクショに合わせる）
+        mem.stats[s.key] = 66;
+      }else{
+        mem.stats[s.key] = clamp0to99(mem.stats[s.key]);
       }
-      ent.plus = clamp0to30(ent.plus);
     }
+
+    // 画像（あるなら維持、なければ空）
+    if (typeof mem.img !== 'string') mem.img = '';
+
+    return mem;
   }
 
-  function ensureTeamMeta(team){
-    if (!team || !Array.isArray(team.members)) return;
-    team.members.forEach(ensureMemberMeta);
+  function migrateTeam(team){
+    if (!team || typeof team !== 'object') team = {};
+
+    // team name
+    if (typeof team.teamName !== 'string') team.teamName = 'PLAYER TEAM';
+
+    // members
+    if (!Array.isArray(team.members)) team.members = [];
+
+    // id で拾えるように整形
+    const byId = {};
+    team.members.forEach(m=>{
+      const id = String(m?.id || '');
+      if (!id) return;
+      byId[id] = m;
+    });
+
+    // 必ず A/B/C を作る（既存がある場合は優先して保持）
+    const rolesFallback = { A:'IGL', B:'アタッカー', C:'サポーター' };
+
+    const A = ensureMemberBase(byId['A'] || team.members.find(x=>String(x?.id)==='A'), 'A', rolesFallback.A);
+    const B = ensureMemberBase(byId['B'] || team.members.find(x=>String(x?.id)==='B'), 'B', rolesFallback.B);
+    const C = ensureMemberBase(byId['C'] || team.members.find(x=>String(x?.id)==='C'), 'C', rolesFallback.C);
+
+    // 既存の他メンバーは “消さない” が、表示はA/B/Cのみ（要望に合わせる）
+    // データ保持のため members 自体は残すが、先頭に A/B/C を固定で置く
+    const rest = team.members.filter(m=>{
+      const id = String(m?.id || '');
+      return id !== 'A' && id !== 'B' && id !== 'C';
+    });
+
+    team.members = [A, B, C, ...rest];
+
+    return team;
   }
 
   function migrateAndPersistTeam(){
-    const team = getPlayerTeam();
-    ensureTeamMeta(team);
+    const team0 = readPlayerTeam();
+    const team = migrateTeam(team0);
     writePlayerTeam(team);
     return team;
   }
 
-  function getMemberNameById(id){
-    if (id === 'A') return getNameA();
-    if (id === 'B') return getNameB();
-    if (id === 'C') return getNameC();
-    return String(id || '');
-  }
-
-  function getMemberRole(mem){
-    return String(mem?.role || '');
-  }
-
-  // ===== Team Power (base + cards) =====
-  const WEIGHT = {
-    aim: 0.25,
-    mental: 0.15,
-    agi: 0.10,
-    tech: 0.10,
-    support: 0.10,
-    scan: 0.10,
-    armor: 0.10,
-    hp: 0.10
-  };
-
-  function calcCharBasePower(stats){
-    const s = normalizeStats(stats);
-
-    const hp      = clamp01to100(s.hp);
-    const mental  = clamp01to100(s.mental);
-    const aim     = clamp01to100(s.aim);
-    const agi     = clamp01to100(s.agi);
-    const tech    = clamp01to100(s.tech);
-    const support = clamp01to100(s.support);
-    const scan    = clamp01to100(s.scan);
-    const armor   = clamp01to100(s.armor);
-
-    let total = 0;
-    total += aim * WEIGHT.aim;
-    total += mental * WEIGHT.mental;
-    total += agi * WEIGHT.agi;
-    total += tech * WEIGHT.tech;
-    total += support * WEIGHT.support;
-    total += scan * WEIGHT.scan;
-    total += armor * WEIGHT.armor;
-    total += hp * WEIGHT.hp;
-
-    return Math.max(0, Math.min(100, total));
-  }
-
-  function calcTeamBasePercent(team){
-    const members = Array.isArray(team?.members) ? team.members : [];
-    if (members.length === 0) return 0;
-    const vals = members.slice(0,3).map(m => calcCharBasePower(m?.stats || {}));
-    const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-    return Math.round(avg + 3);
-  }
-
-  function getOwnedCardsMap(){
-    try{
-      return JSON.parse(localStorage.getItem('mobbr_cards')) || {};
-    }catch{
-      return {};
-    }
-  }
-
-  function calcCollectionBonusPercent(){
-    if (!DC || !DC.getById || !DC.calcSingleCardPercent) return 0;
-
-    const owned = getOwnedCardsMap();
+  // =========================================================
+  // team power（簡易：4ステ平均。既存powerがあるなら表示はそれ優先）
+  // ※“壊さない”ため、保存値は基本いじらない。表示だけ算出。
+  // =========================================================
+  function calcMemberPower(mem){
+    const st = mem?.stats || {};
     let sum = 0;
-
-    for (const id in owned){
-      const cnt = Number(owned[id]) || 0;
-      if (cnt <= 0) continue;
-
-      const card = DC.getById(id);
-      if (!card) continue;
-
-      const effCnt = Math.max(0, Math.min(10, cnt));
-      sum += DC.calcSingleCardPercent(card.rarity, effCnt);
+    let cnt = 0;
+    for (const s of STATS_SHOW){
+      sum += clamp0to99(st[s.key] || 0);
+      cnt += 1;
     }
-
-    if (!Number.isFinite(sum)) return 0;
-    return Math.max(0, sum);
+    if (!cnt) return 0;
+    return Math.round(sum / cnt);
   }
 
-  function ensureCardPowerUI(){
-    const baseEl = dom.tTeamPower;
-    const rowEl = dom.tTeamPowerRow || dom.tTeamPowerWrap || (baseEl ? baseEl.parentElement : null);
-    if (!rowEl) return { baseEl: null, cardEl: null, labelEl: null };
+  function calcTeamPower(team){
+    const ms = (team?.members || []).filter(m=>{
+      const id = String(m?.id || '');
+      return id === 'A' || id === 'B' || id === 'C';
+    });
+    if (!ms.length) return 0;
 
-    const existingCard = rowEl.querySelector?.('.teamPowerCard');
-    const existingLabel = rowEl.querySelector?.('.teamPowerCardLabel');
-    if (existingCard && existingLabel) return { baseEl, cardEl: existingCard, labelEl: existingLabel };
+    // 既存仕様で team.power があれば、それを最優先で表示（ユーザーが%に関心強い）
+    const p0 = Number(team?.power);
+    if (Number.isFinite(p0) && p0 > 0) return Math.round(p0);
 
-    const cardEl = document.createElement('span');
-    cardEl.className = 'teamPowerCard';
-    cardEl.style.marginLeft = '8px';
-    cardEl.style.color = '#ff3b30';
-    cardEl.style.fontWeight = '1000';
-    cardEl.style.whiteSpace = 'nowrap';
+    // 無ければ算出
+    let sum = 0;
+    ms.forEach(m=>{ sum += calcMemberPower(m); });
+    return Math.round(sum / ms.length);
+  }
 
-    const labelEl = document.createElement('span');
-    labelEl.className = 'teamPowerCardLabel';
-    labelEl.textContent = 'カード効果！';
-    labelEl.style.marginLeft = '6px';
-    labelEl.style.fontSize = '12px';
-    labelEl.style.opacity = '0.95';
-    labelEl.style.color = '#ff3b30';
-    labelEl.style.whiteSpace = 'nowrap';
+  // =========================================================
+  // UI parts
+  // =========================================================
+  function buildTeamDomIfMissing(){
+    // 既存HTMLを前提に “可能な範囲で掴む”。無ければ何もしない。
+    dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
+    dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
+    dom.membersPop = $('membersPop') || document.querySelector('#membersPop') || null;
 
-    if (baseEl && baseEl.parentElement === rowEl){
-      if (baseEl.nextSibling){
-        rowEl.insertBefore(cardEl, baseEl.nextSibling);
-      }else{
-        rowEl.appendChild(cardEl);
-      }
-      rowEl.appendChild(labelEl);
-    }else{
-      rowEl.appendChild(cardEl);
-      rowEl.appendChild(labelEl);
+    if (!dom.teamScreen) return;
+
+    dom.teamPanel =
+      dom.teamScreen.querySelector('.teamPanel') ||
+      dom.teamScreen;
+
+    dom.teamName =
+      dom.teamScreen.querySelector('#teamName') ||
+      dom.teamScreen.querySelector('.teamName') ||
+      null;
+
+    dom.teamPower =
+      dom.teamScreen.querySelector('#teamPower') ||
+      dom.teamScreen.querySelector('.teamPower') ||
+      null;
+
+    dom.membersWrap =
+      dom.teamScreen.querySelector('#teamMembers') ||
+      dom.teamScreen.querySelector('.teamMembers') ||
+      null;
+
+    if (!dom.membersWrap){
+      // 無ければ作る（壊さない範囲）
+      const wrap = document.createElement('div');
+      wrap.id = 'teamMembers';
+      wrap.className = 'teamMembers';
+      wrap.style.marginTop = '10px';
+      wrap.style.display = 'grid';
+      wrap.style.gridTemplateColumns = '1fr';
+      wrap.style.gap = '10px';
+      dom.teamPanel.appendChild(wrap);
+      dom.membersWrap = wrap;
     }
-
-    return { baseEl, cardEl, labelEl };
   }
 
-  function calcTeamPower(){
-    const team = getPlayerTeam();
-    const base = calcTeamBasePercent(team);
-    const bonus = calcCollectionBonusPercent();
-    const total = base + bonus;
-    const totalInt = Math.round(total);
-    return clamp1to100(totalInt);
+  function makeBtn(text){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.style.border = '1px solid rgba(255,255,255,.18)';
+    b.style.borderRadius = '14px';
+    b.style.padding = '10px 12px';
+    b.style.fontWeight = '1000';
+    b.style.fontSize = '13px';
+    b.style.cursor = 'pointer';
+    b.style.touchAction = 'manipulation';
+    b.style.background = 'rgba(255,255,255,.10)';
+    b.style.color = '#fff';
+    b.addEventListener('touchstart', ()=>{}, {passive:true});
+    b.onmousedown = ()=>{};
+    return b;
   }
 
-  function persistTeamPower(teamPowerInt){
-    try{
-      const raw = localStorage.getItem(K.playerTeam);
-      if (!raw) return;
-      const t = JSON.parse(raw);
-      if (!t || typeof t !== 'object') return;
-
-      t.teamPower = clamp1to100(teamPowerInt);
-      localStorage.setItem(K.playerTeam, JSON.stringify(t));
-    }catch(e){}
+  function makePrimaryBtn(text){
+    const b = makeBtn(text);
+    b.style.background = 'rgba(255,255,255,.86)';
+    b.style.color = '#111';
+    return b;
   }
 
-  function renderTeamPower(){
-    const team = getPlayerTeam();
-    const base = calcTeamBasePercent(team);
-
-    if (dom.tTeamPower){
-      dom.tTeamPower.textContent = `${base}%`;
-    }
-
-    const ui = ensureCardPowerUI();
-    const bonus = calcCollectionBonusPercent();
-    const total = base + bonus;
-
-    if (ui.cardEl){
-      ui.cardEl.textContent = `${total.toFixed(2)}%`;
-    }
-
-    const totalInt = clamp1to100(Math.round(total));
-    persistTeamPower(totalInt);
-  }
-
-  // ===== main render =====
-  function render(){
-    safeText(dom.tCompany, S.getStr(K.company, 'CB Memory'));
-    safeText(dom.tTeam, S.getStr(K.team, 'PLAYER TEAM'));
+  function openNameEditPopup(memberId){
+    // 既存の membersPop を使う（あれば）
+    const back = dom.modalBack;
+    const pop = dom.membersPop;
 
     const team = migrateAndPersistTeam();
-    const byId = {};
-    for (const m of (team.members || [])) byId[m.id] = m;
+    const mem = (team.members || []).find(m => String(m?.id) === String(memberId));
+    if (!mem) return;
 
-    const A = byId.A;
-    if (A){
-      const st = normalizeStats(A.stats);
-      safeText(dom.tA_hp, st.hp);
-      safeText(dom.tA_mental, st.mental);
-      safeText(dom.tA_aim, st.aim);
-      safeText(dom.tA_agi, st.agi);
-      safeText(dom.tA_tech, st.tech);
-      safeText(dom.tA_support, st.support);
-      safeText(dom.tA_scan, st.scan);
-      safeText(dom.tA_passive, A.passive || '未定');
-      safeText(dom.tA_ult, A.ult || '未定');
+    if (!back || !pop){
+      // フォールバック：prompt
+      const v = prompt('メンバー名を入力', String(mem.name || ''));
+      if (v === null) return;
+      const name = String(v).trim();
+      if (!name) return;
+      mem.name = name;
+      writePlayerTeam(team);
+      render();
+      return;
     }
 
-    const B = byId.B;
-    if (B){
-      const st = normalizeStats(B.stats);
-      safeText(dom.tB_hp, st.hp);
-      safeText(dom.tB_mental, st.mental);
-      safeText(dom.tB_aim, st.aim);
-      safeText(dom.tB_agi, st.agi);
-      safeText(dom.tB_tech, st.tech);
-      safeText(dom.tB_support, st.support);
-      safeText(dom.tB_scan, st.scan);
-      safeText(dom.tB_passive, B.passive || '未定');
-      safeText(dom.tB_ult, B.ult || '未定');
-    }
+    back.style.display = 'block';
+    back.style.pointerEvents = 'auto';
+    back.setAttribute('aria-hidden', 'false');
 
-    const C = byId.C;
-    if (C){
-      const st = normalizeStats(C.stats);
-      safeText(dom.tC_hp, st.hp);
-      safeText(dom.tC_mental, st.mental);
-      safeText(dom.tC_aim, st.aim);
-      safeText(dom.tC_agi, st.agi);
-      safeText(dom.tC_tech, st.tech);
-      safeText(dom.tC_support, st.support);
-      safeText(dom.tC_scan, st.scan);
-      safeText(dom.tC_passive, C.passive || '未定');
-      safeText(dom.tC_ult, C.ult || '未定');
-    }
+    pop.style.display = 'block';
+    pop.setAttribute('aria-hidden', 'false');
+    pop.innerHTML = '';
 
-    reflectNamesEverywhere();
-    renderTeamPower();
+    pop.style.position = 'fixed';
+    pop.style.left = '50%';
+    pop.style.top = '50%';
+    pop.style.transform = 'translate(-50%, -50%)';
+    pop.style.zIndex = '999999';
+    pop.style.width = 'min(92vw, 520px)';
+    pop.style.maxHeight = '70vh';
+    pop.style.overflow = 'auto';
+    pop.style.padding = '14px';
+    pop.style.borderRadius = '14px';
+    pop.style.border = '1px solid rgba(255,255,255,.16)';
+    pop.style.background = 'rgba(0,0,0,.86)';
+    pop.style.color = '#fff';
 
-    // training側へ描画依頼（存在すれば）
-    if (window.MOBBR?.uiTeamTraining?.render){
-      try{ window.MOBBR.uiTeamTraining.render(); }catch(e){}
-    }
-  }
+    const title = document.createElement('div');
+    title.style.fontWeight = '1000';
+    title.style.fontSize = '15px';
+    title.textContent = `${mem.id}：メンバー名`;
+    pop.appendChild(title);
 
-  function open(){
-    if (!dom.teamScreen) return;
-    dom.teamScreen.classList.add('show');
-    dom.teamScreen.setAttribute('aria-hidden', 'false');
-    render();
-  }
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = String(mem.name || '');
+    input.style.marginTop = '10px';
+    input.style.width = '100%';
+    input.style.boxSizing = 'border-box';
+    input.style.padding = '12px';
+    input.style.borderRadius = '12px';
+    input.style.border = '1px solid rgba(255,255,255,.18)';
+    input.style.background = 'rgba(255,255,255,.10)';
+    input.style.color = '#fff';
+    input.maxLength = 24;
+    pop.appendChild(input);
 
-  function close(){
-    if (!dom.teamScreen) return;
-    dom.teamScreen.classList.remove('show');
-    dom.teamScreen.setAttribute('aria-hidden', 'true');
-  }
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '1fr 1fr';
+    row.style.gap = '10px';
+    row.style.marginTop = '12px';
 
-  // =========================================================
-  // メンバー名タップ挙動
-  // 1) training側が openPassivePopup(memberId) を持っていればそれを呼ぶ
-  // 2) 無ければ従来：prompt で名前変更
-  // =========================================================
-  function openPassivePopupIfAvailable(memberId){
-    const tr = window.MOBBR?.uiTeamTraining;
-    const fn = tr?.openPassivePopup;
-    if (typeof fn === 'function'){
-      try{
-        fn(String(memberId));
-        return true;
-      }catch(e){
-        return false;
-      }
-    }
-    return false;
-  }
+    const ok = makePrimaryBtn('OK');
+    ok.addEventListener('click', ()=>{
+      const name = String(input.value || '').trim();
+      if (!name) return;
+      mem.name = name;
+      writePlayerTeam(team);
+      closePopup();
+      render();
+    });
 
-  function promptRename(memberId){
-    const cur =
-      (memberId === 'A') ? getNameA() :
-      (memberId === 'B') ? getNameB() :
-      (memberId === 'C') ? getNameC() : String(memberId);
+    const close = makeBtn('閉じる');
+    close.addEventListener('click', ()=>closePopup());
 
-    const v = prompt(`メンバー名（${memberId}）を変更`, cur);
-    if (v === null) return;
-    const nv = v.trim();
-    if (!nv) return;
+    row.appendChild(ok);
+    row.appendChild(close);
+    pop.appendChild(row);
 
-    if (memberId === 'A') setNameA(nv);
-    if (memberId === 'B') setNameB(nv);
-    if (memberId === 'C') setNameC(nv);
-
-    try{
-      const raw = localStorage.getItem(K.playerTeam);
-      if (raw){
-        const t = JSON.parse(raw);
-        if (t && Array.isArray(t.members)){
-          const m = t.members.find(x=>x.id===memberId);
-          if (m) m.name = nv;
-          localStorage.setItem(K.playerTeam, JSON.stringify(t));
-        }
-      }
-    }catch(e){}
-
-    reflectNamesEverywhere();
-    if (window.MOBBR?.uiTeamTraining?.render){
-      try{ window.MOBBR.uiTeamTraining.render(); }catch(e){}
-    }
-  }
-
-  let nameTapBound = false;
-  function bindNameTap(){
-    if (nameTapBound) return;
-    nameTapBound = true;
-
-    const bindOne = (el, id)=>{
-      if (!el) return;
-      el.style.cursor = 'pointer';
-      el.style.touchAction = 'manipulation';
-      el.addEventListener('click', ()=>{
-        // まず「パッシブポップアップ」
-        const opened = openPassivePopupIfAvailable(id);
-        if (!opened){
-          // training未実装の時だけ従来 rename
-          promptRename(id);
-        }
-      });
-    };
-
-    bindOne(dom.tNameA, 'A');
-    bindOne(dom.tNameB, 'B');
-    bindOne(dom.tNameC, 'C');
-  }
-
-  // ===== save =====
-  function manualSave(){
-    const snap = {
-      ver: 'v18-split',
-      ts: Date.now(),
-      company: S.getStr(K.company, 'CB Memory'),
-      team: S.getStr(K.team, 'PLAYER TEAM'),
-      m1: getNameA(),
-      m2: getNameB(),
-      m3: getNameC(),
-      year: S.getNum(K.year, 1989),
-      month: S.getNum(K.month, 1),
-      week: S.getNum(K.week, 1),
-      gold: S.getNum(K.gold, 0),
-      rank: S.getNum(K.rank, 10),
-      nextTour: S.getStr(K.nextTour, '未定'),
-      nextTourW: S.getStr(K.nextTourW, '未定'),
-      recent: S.getStr(K.recent, '未定')
-    };
-
-    localStorage.setItem('mobbr_save1', JSON.stringify(snap));
-    alert('セーブしました。');
-  }
-
-  function closeAllOverlays(){
-    const idsHideDisplay = [
-      'membersPop',
-      'weekPop',
-      'trainingResultPop',
-      'trainingWeekPop',
-      'cardPreview',
-      'trainingLockPop',
-      'mobbrTrainingPopup' // training側の全画面ポップ
-    ];
-
-    const idsRemoveShow = [
-      'teamScreen',
-      'trainingScreen',
-      'shopScreen',
-      'cardScreen',
-      'scheduleScreen'
-    ];
-
-    const back = $('modalBack');
-    if (back){
+    function closePopup(){
       back.style.display = 'none';
       back.style.pointerEvents = 'none';
       back.setAttribute('aria-hidden', 'true');
+      pop.style.display = 'none';
+      pop.setAttribute('aria-hidden', 'true');
+      pop.innerHTML = '';
+    }
+  }
+
+  function renderMemberCard(mem){
+    const card = document.createElement('div');
+    card.style.borderRadius = '14px';
+    card.style.padding = '12px';
+    card.style.border = '1px solid rgba(255,255,255,.14)';
+    card.style.background = 'rgba(255,255,255,.08)';
+
+    const head = document.createElement('div');
+    head.style.display = 'grid';
+    head.style.gridTemplateColumns = '1fr auto';
+    head.style.gap = '10px';
+    head.style.alignItems = 'center';
+
+    const left = document.createElement('div');
+
+    const name = document.createElement('div');
+    name.style.fontWeight = '1000';
+    name.style.fontSize = '15px';
+    name.textContent = `${String(mem.name || mem.id)}${mem.role ? `（${mem.role}）` : ''}`;
+
+    const sub = document.createElement('div');
+    sub.style.marginTop = '4px';
+    sub.style.fontSize = '12px';
+    sub.style.opacity = '0.92';
+    sub.textContent = `ID: ${mem.id}`;
+
+    left.appendChild(name);
+    left.appendChild(sub);
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.flexDirection = 'column';
+    right.style.gap = '8px';
+    right.style.minWidth = '160px';
+
+    // ✅ “メンバー名” ボタン（既存要望）
+    const btnName = makePrimaryBtn('メンバー名');
+    btnName.style.padding = '10px 10px';
+    btnName.addEventListener('click', ()=>openNameEditPopup(mem.id));
+    right.appendChild(btnName);
+
+    head.appendChild(left);
+    head.appendChild(right);
+    card.appendChild(head);
+
+    // 画像（あれば）
+    if (mem.img){
+      const img = document.createElement('img');
+      img.src = mem.img;
+      img.alt = mem.id;
+      img.style.width = '100%';
+      img.style.maxHeight = '220px';
+      img.style.objectFit = 'contain';
+      img.style.marginTop = '10px';
+      img.style.borderRadius = '12px';
+      img.style.background = 'rgba(0,0,0,.18)';
+      card.appendChild(img);
     }
 
-    idsHideDisplay.forEach(id=>{
-      const el = $(id);
-      if (el){
-        // mobbrTrainingPopup は display管理じゃなく remove の方が安全
-        if (id === 'mobbrTrainingPopup'){
-          try{ el.remove(); }catch(e){}
-          return;
-        }
-        el.style.display = 'none';
-        el.setAttribute('aria-hidden', 'true');
-      }
+    // ✅ ステ表示：4つのみ
+    const stats = document.createElement('div');
+    stats.style.marginTop = '10px';
+    stats.style.display = 'grid';
+    stats.style.gridTemplateColumns = '1fr 1fr';
+    stats.style.gap = '10px';
+
+    STATS_SHOW.forEach(s=>{
+      const box = document.createElement('div');
+      box.style.borderRadius = '12px';
+      box.style.padding = '10px';
+      box.style.background = 'rgba(0,0,0,.18)';
+      box.style.border = '1px solid rgba(255,255,255,.12)';
+
+      const t = document.createElement('div');
+      t.style.fontWeight = '1000';
+      t.style.fontSize = '13px';
+      t.textContent = s.label;
+
+      const v = document.createElement('div');
+      v.style.marginTop = '4px';
+      v.style.fontWeight = '1000';
+      v.style.fontSize = '18px';
+      v.textContent = String(clamp0to99(mem?.stats?.[s.key] || 0));
+
+      box.appendChild(t);
+      box.appendChild(v);
+      stats.appendChild(box);
     });
 
-    idsRemoveShow.forEach(id=>{
-      const el = $(id);
-      if (el){
-        el.classList.remove('show');
-        el.setAttribute('aria-hidden', 'true');
-      }
+    card.appendChild(stats);
+
+    return card;
+  }
+
+  function renderTeamHeader(team){
+    if (dom.teamName){
+      dom.teamName.textContent = String(team?.teamName || 'PLAYER TEAM');
+    }
+    if (dom.teamPower){
+      const p = calcTeamPower(team);
+      dom.teamPower.textContent = `チーム力：${p}%`;
+    }
+  }
+
+  function renderMembers(team){
+    if (!dom.membersWrap) return;
+    dom.membersWrap.innerHTML = '';
+
+    const list = (team?.members || []).filter(m=>{
+      const id = String(m?.id || '');
+      return id === 'A' || id === 'B' || id === 'C';
     });
 
-    const shopResult = $('shopResult');
-    if (shopResult) shopResult.style.display = 'none';
+    list.forEach(mem=>{
+      dom.membersWrap.appendChild(renderMemberCard(mem));
+    });
 
-    const trainingResultSection = $('trainingResultSection');
-    if (trainingResultSection) trainingResultSection.style.display = 'none';
+    // ✅ 注意書き：チーム画面では修行しない
+    const note = document.createElement('div');
+    note.style.marginTop = '4px';
+    note.style.fontSize = '12px';
+    note.style.opacity = '0.92';
+    note.style.lineHeight = '1.35';
+    note.style.padding = '10px 12px';
+    note.style.borderRadius = '12px';
+    note.style.border = '1px solid rgba(255,255,255,.14)';
+    note.style.background = 'rgba(0,0,0,.18)';
+    note.textContent = '※修行（トレーニング）は「育成（修行）」画面で行います。チーム画面では実行できません。';
+    dom.membersWrap.appendChild(note);
   }
 
-  function deleteSaveAndReset(){
-    if (!confirm('セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？')) return;
+  function render(){
+    buildTeamDomIfMissing();
+    if (!dom.teamScreen) return;
 
-    closeAllOverlays();
-
-    if (window.MOBBR?.storage?.resetAll){
-      window.MOBBR.storage.resetAll();
-    }else{
-      localStorage.clear();
-      location.reload();
-    }
+    const team = migrateAndPersistTeam();
+    renderTeamHeader(team);
+    renderMembers(team);
   }
 
-  let saveBound = false;
-  function bindSave(){
-    if (saveBound) return;
-    saveBound = true;
-
-    if (dom.btnManualSave){
-      dom.btnManualSave.addEventListener('click', manualSave);
-    }
-    if (dom.btnDeleteSave){
-      dom.btnDeleteSave.addEventListener('click', deleteSaveAndReset);
-    }
-  }
-
-  let closeBound = false;
-  function bindClose(){
-    if (closeBound) return;
-    closeBound = true;
-
-    if (dom.btnCloseTeam){
-      dom.btnCloseTeam.addEventListener('click', close);
-    }
-  }
-
-  // ===== core API（training側が参照）=====
-  const coreApi = {
-    $,
-    dom,
-    S,
-    DP,
-    DC,
-    K,
-
-    clamp,
-    clamp01to100,
-    clamp1to100,
-    clamp0to99,
-    clamp0to30,
-    clamp0,
-
-    clone,
-    normalizeStats,
-
-    getPlayerTeam,
-    writePlayerTeam,
-    migrateAndPersistTeam,
-    ensureTeamMeta,
-    ensureMemberMeta,
-    ensurePoints,
-
-    getMemberNameById,
-    getMemberRole,
-
-    renderTeamPower,
-    calcTeamPower,
-
-    render,
-    open,
-    close,
-
-    showMsg: null // training側が差し込む
-  };
-
-  // training側へ coreApi を渡す（読み込み順が逆でも後でattachできるように両対応）
-  function attachTrainingIfReady(){
-    if (window.MOBBR?.uiTeamTraining?.attach){
-      try{ window.MOBBR.uiTeamTraining.attach(coreApi); }catch(e){}
-    }
-  }
-
+  // =========================================================
+  // init
+  // =========================================================
   function initTeamUI(){
-    bindClose();
-    bindNameTap(); // ← v18：ここがrenameではなく“タップ統合”
-    bindSave();
-
-    migrateAndPersistTeam();
-    attachTrainingIfReady();
+    buildTeamDomIfMissing();
     render();
   }
 
-  // 外部公開
-  window.MOBBR.initTeamUI = initTeamUI;
-  window.MOBBR.ui.team = { open, close, render, calcTeamPower };
+  // =========================================================
+  // export core api（他モジュール互換用）
+  // =========================================================
+  const coreApi = {
+    dom,
+    clone,
+    clamp0to99,
+    readPlayerTeam,
+    writePlayerTeam,
+    migrateTeam,
+    migrateAndPersistTeam,
+    calcTeamPower,
+    renderTeamPower: () => {
+      try{
+        const team = migrateAndPersistTeam();
+        renderTeamHeader(team);
+      }catch(e){}
+    },
+    render
+  };
 
-  // training側が後からロードされても attach できるようにフック
+  // ✅ 互換：旧参照
   window.MOBBR._uiTeamCore = coreApi;
 
-  document.addEventListener('DOMContentLoaded', ()=>{
-    initTeamUI();
-  });
+  // ✅ 新参照（app.js のCHECKで見ている）
+  window.MOBBR.ui._teamCore = coreApi;
+
+  // ✅ init
+  window.MOBBR.initTeamUI = initTeamUI;
+
+  // 初回：DOM準備後に呼ばれる想定だが、保険で1回だけ
+  try{
+    if (document.readyState === 'complete' || document.readyState === 'interactive'){
+      setTimeout(()=>{ try{ initTeamUI(); }catch(e){} }, 0);
+    }else{
+      document.addEventListener('DOMContentLoaded', ()=>{ try{ initTeamUI(); }catch(e){} }, { once:true });
+    }
+  }catch(e){}
 
 })();
