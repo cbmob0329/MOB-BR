@@ -5,6 +5,10 @@
   - 元 ui_team.js v17（フル）を安全に2分割
   - core：DOM/名前/TeamPower/移行/描画/open-close/セーブ
   - training：ui_team_training.js 側へ（育成UI/保留/コスト/反映）
+
+  v17-split + hotfix:
+  - PAS(パッシブ表示) は mem.passive ではなく mem.role を表示する（表示だけ）
+  - それ以外のロジックは一切変更しない
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -251,6 +255,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return String(id || '');
   }
 
+  // ✅ここは元からある：role参照関数
   function getMemberRole(mem){
     return String(mem?.role || '');
   }
@@ -430,7 +435,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tA_tech, st.tech);
       safeText(dom.tA_support, st.support);
       safeText(dom.tA_scan, st.scan);
-      safeText(dom.tA_passive, A.passive || '未定');
+
+      // ✅変更点：PASは role を表示（表示だけ）
+      safeText(dom.tA_passive, getMemberRole(A) || '未定');
+
       safeText(dom.tA_ult, A.ult || '未定');
     }
 
@@ -444,7 +452,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tB_tech, st.tech);
       safeText(dom.tB_support, st.support);
       safeText(dom.tB_scan, st.scan);
-      safeText(dom.tB_passive, B.passive || '未定');
+
+      // ✅変更点：PASは role を表示（表示だけ）
+      safeText(dom.tB_passive, getMemberRole(B) || '未定');
+
       safeText(dom.tB_ult, B.ult || '未定');
     }
 
@@ -458,7 +469,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tC_tech, st.tech);
       safeText(dom.tC_support, st.support);
       safeText(dom.tC_scan, st.scan);
-      safeText(dom.tC_passive, C.passive || '未定');
+
+      // ✅変更点：PASは role を表示（表示だけ）
+      safeText(dom.tC_passive, getMemberRole(C) || '未定');
+
       safeText(dom.tC_ult, C.ult || '未定');
     }
 
