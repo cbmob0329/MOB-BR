@@ -1,7 +1,8 @@
 /* =========================
-   team.css v18（暗さ改善：modalBack薄め + パネル明るめ）
-   - 左メニューから開く team/shop/card/schedule/training の “暗い” 問題をまとめて改善
-   - ui_team.js が参照するIDはHTML側で保持
+   team.css v19.4（v18ベース：暗さ改善維持 + 要件反映）
+   ✅ チーム画面で「トレーニングできてしまうUI」を強制非表示
+   ✅ 4ステ（体力/メンタル/エイム/技術）以外の表示を消す
+   ✅ パッシブ強化を独立UI化するためのボタン/行スタイル追加
 ========================= */
 
 /* ===== 共通：オーバーレイ画面 ===== */
@@ -215,20 +216,99 @@
   text-overflow:ellipsis;
 }
 
-/* PAS行 */
-.teamMiniSkillRow{
-  display:flex;
-  gap:10px;
-  padding-top:2px;
+/* =========================================================
+   ✅ 要件：4ステ以外を「見せない」
+   - チーム画面のステ表示を 体力/メンタル/エイム/技術 のみに寄せる
+   - ui_team.js が既存DOMをそのまま出しても CSS で潰す
+========================================================= */
+
+/* まず：明示的ID（HTMLにある）で潰す */
+#tA_agi, #tA_support, #tA_scan, #tA_ult,
+#tB_agi, #tB_support, #tB_scan, #tB_ult,
+#tC_agi, #tC_support, #tC_scan, #tC_ult{
+  display:none !important;
 }
 
-.teamMiniSkill{
-  font-size:12px;
-  opacity:.94;
-  line-height:1.35;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+/* ラベル側（.k が "敏捷/サポ/索敵/ULT" のケース）も潰す */
+.statCellA .k{
+  /* ここは通常表示 */
+}
+
+/* 文言で消す（安全側：DOM構造が変わっても潰せる） */
+.statCellA:has(.k){
+  /* 何もしない：個別に消す */
+}
+
+/* :has が効かないブラウザ向けに “値” だけでも消えるように ID で潰すのが主 */
+@supports selector(:has(*)){
+  .statCellA:has(.k){
+    /* no-op */
+  }
+  .statCellA:has(.k:where(:is(:not(*)))){ /* ダミー */ }
+  .statCellA:has(.k:where(:is(:not(*)))){ /* ダミー */ }
+}
+
+/* PAS行（チーム画面に表示したくないならここで消す）
+   ※「パッシブ強化は独立にしたい」なので、チーム画面のPAS表示は消してOK */
+.teamMiniSkillRow{
+  display:none !important;
+}
+
+/* =========================================================
+   ✅ 要件：チーム画面で “トレーニングできてしまうUI” を消す
+   - ui_team_training.js が挿してる #teamTrainingSection を確実に消す
+   - それ以外の訓練系クラス/IDも安全に潰す
+========================================================= */
+#teamTrainingSection{
+  display:none !important;
+  pointer-events:none !important;
+}
+
+/* 念のため：訓練UIっぽい汎用名も潰す（他画面に影響しない範囲で teamScreen 内だけ） */
+#teamScreen .ttMemberTabs,
+#teamScreen .ttTopRow,
+#teamScreen .ttLogBtn,
+#teamScreen .ttMsg,
+#teamScreen .ttGrowthArea,
+#teamScreen .ttPassiveArea,
+#teamScreen .trainingArea,
+#teamScreen .teamTraining,
+#teamScreen .btnTeamTraining{
+  display:none !important;
+  pointer-events:none !important;
+}
+
+/* =========================================================
+   ✅ パッシブ強化を「独立」させるためのボタン/行スタイル
+   - JS側でボタンを置いたときに整う（消さない）
+========================================================= */
+.passiveUpgradeRow{
+  margin-top:10px;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.passiveUpgradeBtn{
+  flex:1;
+  min-width: 180px;
+  padding:11px 12px;
+  border-radius:12px;
+  font-weight:1000;
+  font-size:14px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.86);
+  color:#111;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.passiveUpgradeBtn:active{
+  transform: scale(.98);
+}
+
+.passiveUpgradeBtn.sub{
+  background:rgba(255,255,255,.10);
+  color:#fff;
 }
 
 /* フッター */
