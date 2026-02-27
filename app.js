@@ -1,14 +1,15 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.2
-   - v19.1 の全機能維持（削除なし）
-   - ✅ CHANGE: ui_team.js を 2分割ロードに変更
-     -> ui_team.core.js / ui_team.training.js
+   app.js（FULL） v19.3
+   - v19.2 の全機能維持（削除なし）
+   - ✅ CHANGE: ui_team_training.js をロードしない
+     -> チーム画面で「トレーニングできてしまう」＝無限強化の根を断つ
    - ✅ KEEP: sim_tournament_core_step_base.js をロード（step 2分割の前提）
+   - ✅ NOTE: トレーニング（修行）は ui_training.js（修行画面）側に一本化していく
 ========================================================= */
 
-const APP_VER = 19.2; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.3; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -156,11 +157,13 @@ async function loadModules(){
     // UI
     `ui_main.js${v}`,
 
-    // ✅ ui_team 分割ロード（順番厳守：core -> training）
+    // ✅ team：coreのみ（training注入を止める）
     `ui_team_core.js${v}`,
-    `ui_team_training.js${v}`,
 
+    // ✅ 修行（トレーニング）は修行画面側で一本化
     `ui_training.js${v}`,
+
+    // card
     `ui_card.js${v}`,
 
     // shop（分割版のみ）
@@ -513,9 +516,9 @@ async function bootAfterNext(){
         entry: !!window.MOBBR?.ui?.tournament
       });
 
-      console.log('[CHECK] ui_team split =', {
+      // ✅ ui_team_training.js は読まない（無限強化の根を断つ）
+      console.log('[CHECK] ui_team =', {
         core: !!window.MOBBR?.ui?._teamCore,
-        training: !!window.MOBBR?.ui?._teamTraining,
         initTeamUI: !!window.MOBBR?.initTeamUI
       });
     }catch(e){}
