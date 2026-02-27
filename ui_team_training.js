@@ -8,6 +8,12 @@
     ✅ メンバー名タップで「パッシブ強化ポップアップ」を開ける API を実装
        window.MOBBR.uiTeamTraining.openPassivePopup(memberId)
     ✅ パッシブは最初から装備済み（ロールに応じて自動付与）
+
+  ✅ FIX（今回）:
+    - core が先にロード済みの場合、attach() が即時実行される
+    - その中で ensureTrainingUI() が呼ばれ、trainingUI を参照
+    - しかし trainingUI が let 宣言より前だと TDZ で落ちる
+    => trainingUI を attach より前に初期化してTDZを防止（機能削除なし）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -16,6 +22,12 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 (function(){
 
   let T = null; // coreApi
+
+  // =========================================================
+  // UI injection state
+  // ✅ FIX: attach が先に走っても安全な位置に置く（TDZ回避）
+  // =========================================================
+  let trainingUI = null;
 
   function attach(coreApi){
     T = coreApi || null;
@@ -429,8 +441,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   // =========================================================
   // UI injection
   // =========================================================
-
-  let trainingUI = null;
 
   function findTeamPanel(){
     if (!T?.dom?.teamScreen) return null;
@@ -1314,5 +1324,12 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   // 外部公開（core から呼ぶ）
   window.MOBBR.uiTeamTraining.render = render;
   window.MOBBR.uiTeamTraining.openPassivePopup = openPassivePopup; // ★追加：メンバー名タップで呼ばれる
+
+  // ✅ 互換alias（壊さない・削らない）
+  // app.js の split check / 将来参照のため、ui配下にも同じ参照を置く
+  window.MOBBR.ui = window.MOBBR.ui || {};
+  if (!window.MOBBR.ui._teamTraining){
+    window.MOBBR.ui._teamTraining = window.MOBBR.uiTeamTraining;
+  }
 
 })();
