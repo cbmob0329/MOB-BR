@@ -1,14 +1,15 @@
 'use strict';
 
 /*
-  MOB BR - ui_team_core.js v17-split（FULL）
-  - 元 ui_team.js v17（フル）を安全に2分割
+  MOB BR - ui_team_core.js v18-split（FULL）
+  - 元 ui_team.js を安全に分割運用
   - core：DOM/名前/TeamPower/移行/描画/open-close/セーブ
-  - training：ui_team_training.js 側へ（育成UI/保留/コスト/反映）
+  - training：ui_team_training.js 側へ（育成UI/ログ/成長/パッシブ強化）
 
-  v17-split + hotfix:
-  - PAS(パッシブ表示) は mem.passive ではなく mem.role を表示する（表示だけ）
-  - それ以外のロジックは一切変更しない
+  v18 追加：
+  - ✅「メンバー名タップ → パッシブ強化ポップアップ」を優先
+    - training側に openPassivePopup(memberId) があればそれを呼ぶ
+    - 無ければ従来通り「名前変更prompt」へフォールバック（互換）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -169,9 +170,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================================================
   // ✅ポイント統一（唯一の正）：points {muscle, tech, mental}
   // ✅旧セーブ互換：trainPts / spirit
+  // ※ training 側が points を使わない構成でも、ここは互換として保持
   // =========================================================
-  const PTS_KEYS = ['muscle','tech','mental'];
-
   function ensurePoints(mem){
     if (!mem || typeof mem !== 'object') return;
 
@@ -214,7 +214,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     ensurePoints(mem);
 
-    // upgradeCount（4ステの累計）
+    // upgradeCount（累計）
     if (!mem.upgradeCount || typeof mem.upgradeCount !== 'object'){
       mem.upgradeCount = { hp:0, aim:0, tech:0, mental:0 };
     }
@@ -222,7 +222,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       mem.upgradeCount[s] = clamp(Number(mem.upgradeCount[s] ?? 0), 0, 999999);
     }
 
-    // skills（+強化）
+    // skills（+強化）… training側が passives を運用しても、ここは壊さない
     if (!mem.skills || typeof mem.skills !== 'object'){
       mem.skills = {};
     }
@@ -255,7 +255,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return String(id || '');
   }
 
-  // ✅ここは元からある：role参照関数
   function getMemberRole(mem){
     return String(mem?.role || '');
   }
@@ -275,7 +274,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function calcCharBasePower(stats){
     const s = normalizeStats(stats);
 
-    // 表示/計算用に 0..100 へ寄せる
     const hp      = clamp01to100(s.hp);
     const mental  = clamp01to100(s.mental);
     const aim     = clamp01to100(s.aim);
@@ -435,10 +433,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tA_tech, st.tech);
       safeText(dom.tA_support, st.support);
       safeText(dom.tA_scan, st.scan);
-
-      // ✅変更点：PASは role を表示（表示だけ）
-      safeText(dom.tA_passive, getMemberRole(A) || '未定');
-
+      safeText(dom.tA_passive, A.passive || '未定');
       safeText(dom.tA_ult, A.ult || '未定');
     }
 
@@ -452,10 +447,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tB_tech, st.tech);
       safeText(dom.tB_support, st.support);
       safeText(dom.tB_scan, st.scan);
-
-      // ✅変更点：PASは role を表示（表示だけ）
-      safeText(dom.tB_passive, getMemberRole(B) || '未定');
-
+      safeText(dom.tB_passive, B.passive || '未定');
       safeText(dom.tB_ult, B.ult || '未定');
     }
 
@@ -469,10 +461,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       safeText(dom.tC_tech, st.tech);
       safeText(dom.tC_support, st.support);
       safeText(dom.tC_scan, st.scan);
-
-      // ✅変更点：PASは role を表示（表示だけ）
-      safeText(dom.tC_passive, getMemberRole(C) || '未定');
-
+      safeText(dom.tC_passive, C.passive || '未定');
       safeText(dom.tC_ult, C.ult || '未定');
     }
 
@@ -498,95 +487,86 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.teamScreen.setAttribute('aria-hidden', 'true');
   }
 
-  // ===== rename handlers =====
-  let renameBound = false;
-  function bindRename(){
-    if (renameBound) return;
-    renameBound = true;
-
-    if (dom.tNameA){
-      dom.tNameA.addEventListener('click', ()=>{
-        const cur = getNameA();
-        const v = prompt('メンバー名（A）を変更', cur);
-        if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameA(nv);
-
-        try{
-          const raw = localStorage.getItem(K.playerTeam);
-          if (raw){
-            const t = JSON.parse(raw);
-            if (t && Array.isArray(t.members)){
-              const m = t.members.find(x=>x.id==='A');
-              if (m) m.name = nv;
-              localStorage.setItem(K.playerTeam, JSON.stringify(t));
-            }
-          }
-        }catch(e){}
-
-        reflectNamesEverywhere();
-        if (window.MOBBR?.uiTeamTraining?.render) window.MOBBR.uiTeamTraining.render();
-      });
+  // =========================================================
+  // メンバー名タップ挙動
+  // 1) training側が openPassivePopup(memberId) を持っていればそれを呼ぶ
+  // 2) 無ければ従来：prompt で名前変更
+  // =========================================================
+  function openPassivePopupIfAvailable(memberId){
+    const tr = window.MOBBR?.uiTeamTraining;
+    const fn = tr?.openPassivePopup;
+    if (typeof fn === 'function'){
+      try{
+        fn(String(memberId));
+        return true;
+      }catch(e){
+        return false;
+      }
     }
+    return false;
+  }
 
-    if (dom.tNameB){
-      dom.tNameB.addEventListener('click', ()=>{
-        const cur = getNameB();
-        const v = prompt('メンバー名（B）を変更', cur);
-        if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameB(nv);
+  function promptRename(memberId){
+    const cur =
+      (memberId === 'A') ? getNameA() :
+      (memberId === 'B') ? getNameB() :
+      (memberId === 'C') ? getNameC() : String(memberId);
 
-        try{
-          const raw = localStorage.getItem(K.playerTeam);
-          if (raw){
-            const t = JSON.parse(raw);
-            if (t && Array.isArray(t.members)){
-              const m = t.members.find(x=>x.id==='B');
-              if (m) m.name = nv;
-              localStorage.setItem(K.playerTeam, JSON.stringify(t));
-            }
-          }
-        }catch(e){}
+    const v = prompt(`メンバー名（${memberId}）を変更`, cur);
+    if (v === null) return;
+    const nv = v.trim();
+    if (!nv) return;
 
-        reflectNamesEverywhere();
-        if (window.MOBBR?.uiTeamTraining?.render) window.MOBBR.uiTeamTraining.render();
-      });
+    if (memberId === 'A') setNameA(nv);
+    if (memberId === 'B') setNameB(nv);
+    if (memberId === 'C') setNameC(nv);
+
+    try{
+      const raw = localStorage.getItem(K.playerTeam);
+      if (raw){
+        const t = JSON.parse(raw);
+        if (t && Array.isArray(t.members)){
+          const m = t.members.find(x=>x.id===memberId);
+          if (m) m.name = nv;
+          localStorage.setItem(K.playerTeam, JSON.stringify(t));
+        }
+      }
+    }catch(e){}
+
+    reflectNamesEverywhere();
+    if (window.MOBBR?.uiTeamTraining?.render){
+      try{ window.MOBBR.uiTeamTraining.render(); }catch(e){}
     }
+  }
 
-    if (dom.tNameC){
-      dom.tNameC.addEventListener('click', ()=>{
-        const cur = getNameC();
-        const v = prompt('メンバー名（C）を変更', cur);
-        if (v === null) return;
-        const nv = v.trim();
-        if (!nv) return;
-        setNameC(nv);
+  let nameTapBound = false;
+  function bindNameTap(){
+    if (nameTapBound) return;
+    nameTapBound = true;
 
-        try{
-          const raw = localStorage.getItem(K.playerTeam);
-          if (raw){
-            const t = JSON.parse(raw);
-            if (t && Array.isArray(t.members)){
-              const m = t.members.find(x=>x.id==='C');
-              if (m) m.name = nv;
-              localStorage.setItem(K.playerTeam, JSON.stringify(t));
-            }
-          }
-        }catch(e){}
-
-        reflectNamesEverywhere();
-        if (window.MOBBR?.uiTeamTraining?.render) window.MOBBR.uiTeamTraining.render();
+    const bindOne = (el, id)=>{
+      if (!el) return;
+      el.style.cursor = 'pointer';
+      el.style.touchAction = 'manipulation';
+      el.addEventListener('click', ()=>{
+        // まず「パッシブポップアップ」
+        const opened = openPassivePopupIfAvailable(id);
+        if (!opened){
+          // training未実装の時だけ従来 rename
+          promptRename(id);
+        }
       });
-    }
+    };
+
+    bindOne(dom.tNameA, 'A');
+    bindOne(dom.tNameB, 'B');
+    bindOne(dom.tNameC, 'C');
   }
 
   // ===== save =====
   function manualSave(){
     const snap = {
-      ver: 'v17-split',
+      ver: 'v18-split',
       ts: Date.now(),
       company: S.getStr(K.company, 'CB Memory'),
       team: S.getStr(K.team, 'PLAYER TEAM'),
@@ -614,7 +594,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       'trainingResultPop',
       'trainingWeekPop',
       'cardPreview',
-      'trainingLockPop'
+      'trainingLockPop',
+      'mobbrTrainingPopup' // training側の全画面ポップ
     ];
 
     const idsRemoveShow = [
@@ -635,6 +616,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     idsHideDisplay.forEach(id=>{
       const el = $(id);
       if (el){
+        // mobbrTrainingPopup は display管理じゃなく remove の方が安全
+        if (id === 'mobbrTrainingPopup'){
+          try{ el.remove(); }catch(e){}
+          return;
+        }
         el.style.display = 'none';
         el.setAttribute('aria-hidden', 'true');
       }
@@ -739,7 +725,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function initTeamUI(){
     bindClose();
-    bindRename();
+    bindNameTap(); // ← v18：ここがrenameではなく“タップ統合”
     bindSave();
 
     migrateAndPersistTeam();
