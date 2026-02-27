@@ -2,24 +2,12 @@
 
 /*
   MOB BR - ui_team_training.js v18-growth（FULL）
-  - 元 ui_team.js の「育成」部分を分離して運用している前提のまま
   - ui_team_core.js が提供する coreApi に attach して動作
-
-  ★今回の修正（あなたのA仕様）
-  ✅ パワプロ風はやめた → 「ポイント（stock）」は廃止（完全に使わない）
-  ✅ ステータスアップは “Gではない” → トレーニング＝成長（ゲージ）方式
-  ✅ スキル取得/強化はやらない → 既存の SKILLS を「パッシブ」としてそのまま使う
-     - 既存の mem.passive（文字列）は廃止（消す）
-     - mem.skills が既にある場合は mem.passives へ移行して維持（互換）
-  ✅ パッシブ強化だけG
-     - +1: 10000G
-     - 以後 +5000Gずつ増加（次の強化コスト = 10000 + 5000*現在plus）
-  ✅ 発動率初期値変更：1.0%→5.0% / 0.5%→2.0%
-  ✅ ポップアップ（反映結果/ログ）
-  ✅ スクロールリセット（ポップアップを開くたび先頭）
-  ✅ ログ超強化（トレーニング/成長/あと少し/レベルアップ/パッシブ強化を保存し見返し可能）
-
-  ※「右下のログ」とは別系統：このファイル内の“育成ログ”のこと。
+  - 育成＝成長（ゲージ） / パッシブ＝Gで強化
+  - ★追加（今回）
+    ✅ メンバー名タップで「パッシブ強化ポップアップ」を開ける API を実装
+       window.MOBBR.uiTeamTraining.openPassivePopup(memberId)
+    ✅ パッシブは最初から装備済み（ロールに応じて自動付与）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -153,7 +141,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       id:'sup_godcover',
       role:'サポーター',
       name:'神カバー',
-      baseChance: 5.0,      // これはそのまま（仕様に出てないので触らない）
+      baseChance: 5.0,      // これはそのまま
       trigger:'接敵時',
       type:'buff_others',
       baseEffect: 5,
@@ -293,6 +281,17 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     body.textContent = text;
     wrap.appendChild(body);
 
+    // 追加ボタン（任意、最大2つ）
+    if (Array.isArray(footerButtons) && footerButtons.length){
+      const extraRow = document.createElement('div');
+      extraRow.style.marginTop = '10px';
+      extraRow.style.display = 'grid';
+      extraRow.style.gridTemplateColumns = '1fr 1fr';
+      extraRow.style.gap = '10px';
+      footerButtons.slice(0,2).forEach(b=>extraRow.appendChild(b));
+      wrap.appendChild(extraRow);
+    }
+
     const btnRow = document.createElement('div');
     btnRow.style.marginTop = '12px';
     btnRow.style.display = 'grid';
@@ -304,17 +303,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     const closeBtn = makeBtn('閉じる', false);
     closeBtn.addEventListener('click', ()=>{ pop.remove(); });
-
-    // 追加ボタン（任意、最大2つ）
-    if (Array.isArray(footerButtons) && footerButtons.length){
-      const extraRow = document.createElement('div');
-      extraRow.style.marginTop = '10px';
-      extraRow.style.display = 'grid';
-      extraRow.style.gridTemplateColumns = '1fr 1fr';
-      extraRow.style.gap = '10px';
-      footerButtons.slice(0,2).forEach(b=>extraRow.appendChild(b));
-      wrap.appendChild(extraRow);
-    }
 
     btnRow.appendChild(topBtn);
     btnRow.appendChild(closeBtn);
@@ -369,8 +357,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   function ensurePassives(mem){
     if (!mem || typeof mem !== 'object') return;
 
-    // 旧: skills を passives に移行（維持）
+    // 正：passives
     if (!mem.passives || typeof mem.passives !== 'object'){
+      // 旧: skills を passives に寄せる（残ってる場合は引き継ぐ）
       if (mem.skills && typeof mem.skills === 'object'){
         mem.passives = mem.skills;
       }else{
@@ -378,13 +367,10 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       }
     }
 
-    // 既存の passive（文字列）は廃止
+    // 既存の passive（文字列）は廃止（UI表示もこちらのpassivesに寄せる）
     if ('passive' in mem) mem.passive = '';
 
-    // skills を残していても害はないが、混乱を避けて空にする（ただし互換保持）
-    // 「既存のpassiveは消して」＝ passiveフィールドを消す/空にするが主目的。
-    // skills は他が参照してる可能性があるので完全削除はしない。
-    // 代わりに passives を正として運用する。
+    // skills は他が参照してる可能性があるので“残して良い”
     if (!mem.skills || typeof mem.skills !== 'object'){
       mem.skills = {};
     }
@@ -403,7 +389,29 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
   function ensureNoPoints(mem){
     if (!mem || typeof mem !== 'object') return;
     // stock/points 系は完全に使わない（残ってても表示/計算に使わない）
-    // 誤挙動を避けるため“見た目上は無い”扱いにするだけ（データは壊さない）
+    // データは壊さない
+  }
+
+  // ✅ パッシブを「最初から装備済み」にする（ロールに応じて自動付与）
+  function ensureDefaultEquippedPassives(mem){
+    if (!mem || typeof mem !== 'object') return;
+    ensurePassives(mem);
+
+    const role = String(mem.role || '');
+    if (!role) return;
+
+    const defs = PASSIVES.filter(p => p.role === role);
+    if (!defs.length) return;
+
+    mem.passives = mem.passives || {};
+    defs.forEach(d=>{
+      if (!mem.passives[d.id] || typeof mem.passives[d.id] !== 'object'){
+        mem.passives[d.id] = { plus:0 };
+      }else{
+        // plusだけ整形
+        mem.passives[d.id].plus = clamp(Number(mem.passives[d.id].plus || 0), 0, PASSIVE_PLUS_MAX);
+      }
+    });
   }
 
   function migrateTeamForTraining(team){
@@ -413,6 +421,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       ensureNoPoints(mem);
       ensureGrowth(mem);
       ensurePassives(mem);
+      ensureDefaultEquippedPassives(mem); // ★追加：装備済み保証
     }
     return team;
   }
@@ -682,8 +691,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     const g = getGold();
     ui.topRow.appendChild(createMiniPill(`所持G：${g}G`));
-
-    // ここに“成長の説明”を軽く出す
     ui.topRow.appendChild(createMiniPill(`成長ゲージ：${GROW_MAX}で+1`));
     ui.topRow.appendChild(createMiniPill(`あと少し：${NEAR_UP_TH}以上`));
   }
@@ -763,7 +770,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     if (T?.writePlayerTeam){
       T.writePlayerTeam(team2);
     }else{
-      // coreが無い事故対策（通常は来ない）
       try{ localStorage.setItem('mobbr_playerTeam', JSON.stringify(team2)); }catch(e){}
     }
 
@@ -952,6 +958,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     const beforeMem = safeJsonParse(JSON.stringify(mem), mem);
 
+    // ★装備済み保証（万一欠けててもここで作る）
+    ensureDefaultEquippedPassives(mem);
+
     const curPlus = passivePlus(mem, passiveId);
     if (curPlus >= PASSIVE_PLUS_MAX){
       return { ok:false, reason:'パッシブ強化上限（+30）です' };
@@ -997,6 +1006,119 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     return { ok:true };
   }
 
+  // ★メンバー名タップ用：パッシブ強化ポップアップを開く
+  // core側が openPassivePopup(memberId) を呼ぶ想定
+  function openPassivePopup(memberId){
+    const id = String(memberId || 'A');
+    ttSelectedId = (id === 'A' || id === 'B' || id === 'C') ? id : 'A';
+    showMsg('');
+
+    // 最新チームを取って整形
+    let team = null;
+    try{
+      team = T?.migrateAndPersistTeam ? T.migrateAndPersistTeam() : null;
+    }catch(e){
+      team = null;
+    }
+    if (!team){
+      try{ team = safeJsonParse(localStorage.getItem('mobbr_playerTeam'), null); }catch(e){}
+    }
+    if (!team) return;
+
+    migrateTeamForTraining(team);
+
+    const mem = getMemById(team, ttSelectedId);
+    if (!mem) return;
+
+    // 装備済み保証＆保存（表示だけじゃなくデータに反映）
+    ensureDefaultEquippedPassives(mem);
+    try{
+      if (T?.writePlayerTeam) T.writePlayerTeam(team);
+      else localStorage.setItem('mobbr_playerTeam', JSON.stringify(team));
+    }catch(e){}
+
+    const role = getRole(mem);
+    const defs = PASSIVES.filter(p => !role || p.role === role);
+
+    const lines = [];
+    lines.push(`${getName(mem.id)}${role?`（${role}）`:''}：パッシブ強化`);
+    lines.push(`所持G：${getGold()}G`);
+    lines.push('────────────────────────');
+
+    if (!defs.length){
+      lines.push('このメンバーのロールに対応するパッシブがありません。');
+      openPopup('パッシブ（Gで強化）', lines);
+      return;
+    }
+
+    defs.forEach(def=>{
+      const curPlus = passivePlus(mem, def.id);
+      const cost = (curPlus >= PASSIVE_PLUS_MAX) ? null : nextPassiveCost(curPlus);
+
+      lines.push(`■ ${def.name}`);
+      lines.push(`  ${def.desc}`);
+      lines.push(`  現在：+${curPlus} / 発動率：${formatChance(def, curPlus)} / 効果：${formatEffect(def, curPlus)}`);
+      if (curPlus >= PASSIVE_PLUS_MAX){
+        lines.push('  強化上限です。');
+      }else{
+        lines.push(`  次の強化コスト：${cost}G`);
+      }
+      lines.push('');
+    });
+
+    // ここで「強化ボタン」を2つまで付ける（スマホの操作性優先）
+    // ロールごとに2つある想定なので、その2つをボタン化
+    const buttons = [];
+    defs.slice(0,2).forEach(def=>{
+      const curPlus = passivePlus(mem, def.id);
+      const cost = (curPlus >= PASSIVE_PLUS_MAX) ? null : nextPassiveCost(curPlus);
+
+      const b = makeBtn(
+        (curPlus >= PASSIVE_PLUS_MAX) ? `${def.name}（上限）` : `${def.name} を強化（${cost}G）`,
+        true
+      );
+      b.style.background = (curPlus >= PASSIVE_PLUS_MAX) ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.86)';
+      b.style.color = (curPlus >= PASSIVE_PLUS_MAX) ? '#fff' : '#111';
+      b.style.opacity = (curPlus >= PASSIVE_PLUS_MAX) ? '0.6' : '1';
+      b.disabled = (curPlus >= PASSIVE_PLUS_MAX);
+
+      b.addEventListener('click', ()=>{
+        // 再取得してから強化（ポップアップ内で数値が古くならない）
+        let team2 = null;
+        try{
+          team2 = T?.migrateAndPersistTeam ? T.migrateAndPersistTeam() : null;
+        }catch(e){
+          team2 = null;
+        }
+        if (!team2){
+          try{ team2 = safeJsonParse(localStorage.getItem('mobbr_playerTeam'), null); }catch(e){}
+        }
+        if (!team2) return;
+
+        migrateTeamForTraining(team2);
+
+        const res = upgradePassive(team2, ttSelectedId, def.id);
+        if (!res.ok){
+          showMsg(res.reason || '失敗しました');
+          return;
+        }
+
+        // もう一回このポップアップを開き直して更新
+        openPassivePopup(ttSelectedId);
+
+        // training UI も更新
+        try{ render(); }catch(e){}
+      });
+
+      buttons.push(b);
+    });
+
+    openPopup('パッシブ（Gで強化）', lines, buttons);
+
+    // ついでに育成UIも “選択中メンバー” を同期して描画
+    try{ render(); }catch(e){}
+  }
+
   function renderPassiveArea(team){
     const ui = ensureTrainingUI();
     if (!ui || !ui.passiveArea) return;
@@ -1007,6 +1129,9 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     if (!mem) return;
 
     migrateTeamForTraining(team);
+
+    // ★装備済み保証（画面表示でも担保）
+    ensureDefaultEquippedPassives(mem);
 
     const card = createCard();
 
@@ -1038,7 +1163,7 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
     note.style.fontSize = '12px';
     note.style.opacity = '0.92';
     note.style.lineHeight = '1.35';
-    note.textContent = 'ここだけGを使います。スキルの取得/強化ではなく、パッシブの強化として扱います。';
+    note.textContent = 'ここだけGを使います。パッシブは最初から装備済みで、強化のみ行えます。';
     card.appendChild(note);
 
     const role = getRole(mem);
@@ -1146,6 +1271,12 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
     card.appendChild(list);
     ui.passiveArea.appendChild(card);
+
+    // ★装備済み保証を保存（表示しただけでなく実データにも反映）
+    try{
+      if (T?.writePlayerTeam) T.writePlayerTeam(team);
+      else localStorage.setItem('mobbr_playerTeam', JSON.stringify(team));
+    }catch(e){}
   }
 
   // =========================================================
@@ -1163,7 +1294,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
       team = null;
     }
     if (!team){
-      // 最低限救済
       try{
         team = safeJsonParse(localStorage.getItem('mobbr_playerTeam'), null);
       }catch(e){}
@@ -1183,5 +1313,6 @@ window.MOBBR.uiTeamTraining = window.MOBBR.uiTeamTraining || {};
 
   // 外部公開（core から呼ぶ）
   window.MOBBR.uiTeamTraining.render = render;
+  window.MOBBR.uiTeamTraining.openPassivePopup = openPassivePopup; // ★追加：メンバー名タップで呼ばれる
 
 })();
