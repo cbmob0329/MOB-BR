@@ -11,6 +11,9 @@
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
       - window.MOBBR.initTeamUI() を提供
       - migrateAndPersistTeam / readPlayerTeam / writePlayerTeam / clone 等
+   - ✅ v19.4 hotfix:
+      - 「セーブ / セーブ削除」が押せない問題を修正（イベント未バインド対策）
+      - btnManualSave / btnDeleteSave がDOMに存在する場合だけバインド
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -23,6 +26,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // storage keys（既存と衝突しない前提で “同じ” を使う）
   // =========================================================
   const KEY_PLAYER_TEAM = 'mobbr_playerTeam';
+
+  // 互換：メイン等が使っている主要キー（スナップショット用）
+  const K = {
+    company: 'mobbr_company',
+    team: 'mobbr_team',
+    m1: 'mobbr_m1',
+    m2: 'mobbr_m2',
+    m3: 'mobbr_m3',
+    gold: 'mobbr_gold',
+    rank: 'mobbr_rank',
+    year: 'mobbr_year',
+    month: 'mobbr_month',
+    week: 'mobbr_week',
+    nextTour: 'mobbr_nextTour',
+    nextTourW: 'mobbr_nextTourW',
+    recent: 'mobbr_recent',
+    tourState: 'mobbr_tour_state'
+  };
 
   // 表示ステータス（要望：これ以外は表示しない）
   const STATS_SHOW = [
@@ -41,8 +62,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     teamName: null,
     teamPower: null,
     membersWrap: null,
-    membersPop: null,  // 互換のため保持（本モジュールでは使わない）
-    modalBack: null    // 互換のため保持（本モジュールでは使わない）
+
+    // 互換のため保持（本モジュールでは使わない）
+    membersPop: null,
+    modalBack: null,
+
+    // ✅ セーブ互換（DOMに存在するなら動かす）
+    btnManualSave: null,
+    btnDeleteSave: null
   };
 
   // =========================================================
@@ -65,6 +92,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function getStorage(){
     return window.MOBBR && window.MOBBR.storage ? window.MOBBR.storage : null;
+  }
+
+  function getStr(key, def){
+    const S = getStorage();
+    if (S?.getStr) return S.getStr(key, def);
+    const v = localStorage.getItem(key);
+    return (v === null || v === undefined || v === '') ? def : v;
+  }
+
+  function getNum(key, def){
+    const S = getStorage();
+    if (S?.getNum) return S.getNum(key, def);
+    const v = Number(localStorage.getItem(key));
+    return Number.isFinite(v) ? v : def;
   }
 
   function readPlayerTeam(){
@@ -201,6 +242,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
     dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
     dom.membersPop = $('membersPop') || document.querySelector('#membersPop') || null;
+
+    // ✅ セーブボタン（HTMLに残っている場合の互換）
+    dom.btnManualSave = $('btnManualSave') || null;
+    dom.btnDeleteSave = $('btnDeleteSave') || null;
 
     if (!dom.teamScreen) return;
 
@@ -363,10 +408,119 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
+  // ✅ セーブ互換（TEAM画面にボタンが残っている場合に動かす）
+  // =========================================================
+  function manualSave(){
+    try{
+      const snap = {
+        ver: 'ui_team_core_v19.4',
+        ts: Date.now(),
+
+        company: getStr(K.company, 'CB Memory'),
+        team: getStr(K.team, 'PLAYER TEAM'),
+        m1: getStr(K.m1, 'A'),
+        m2: getStr(K.m2, 'B'),
+        m3: getStr(K.m3, 'C'),
+
+        year: getNum(K.year, 1989),
+        month: getNum(K.month, 1),
+        week: getNum(K.week, 1),
+
+        gold: getNum(K.gold, 0),
+        rank: getNum(K.rank, 10),
+
+        nextTour: getStr(K.nextTour, '未定'),
+        nextTourW: getStr(K.nextTourW, '未定'),
+        recent: getStr(K.recent, '未定'),
+
+        // 重要：チーム本体
+        playerTeam: readPlayerTeam(),
+
+        // 互換：world phase 等を持っている場合
+        tourState: safeJsonParse(localStorage.getItem(K.tourState) || '', null)
+      };
+
+      localStorage.setItem('mobbr_save1', JSON.stringify(snap));
+      alert('セーブしました。');
+    }catch(e){
+      console.error(e);
+      alert('セーブに失敗しました（コンソール確認）');
+    }
+  }
+
+  function deleteSaveAndReset(){
+    const ok = confirm(
+      'セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？'
+    );
+    if (!ok) return;
+
+    try{
+      // overlayが残ってると操作不能になるケースがあるので最低限閉じる
+      const back = $('modalBack');
+      if (back){
+        back.style.display = 'none';
+        back.style.pointerEvents = 'none';
+        back.setAttribute('aria-hidden', 'true');
+      }
+      const popIds = ['membersPop','weekPop','trainingResultPop','trainingWeekPop','cardPreview','trainingLockPop'];
+      popIds.forEach(id=>{
+        const el = $(id);
+        if (el){
+          el.style.display = 'none';
+          el.setAttribute('aria-hidden', 'true');
+        }
+      });
+
+      // storage.js があるならそれを優先
+      if (window.MOBBR?.storage?.resetAll){
+        window.MOBBR.storage.resetAll();
+        return;
+      }
+
+      // フォールバック
+      localStorage.clear();
+      location.reload();
+    }catch(e){
+      console.error(e);
+      try{
+        localStorage.clear();
+        location.reload();
+      }catch(_){}
+    }
+  }
+
+  let saveBound = false;
+  function bindSaveIfExists(){
+    if (saveBound) return;
+    // DOM取得前でも、呼ばれたタイミングで再収集する
+    buildTeamDomIfMissing();
+
+    // ボタンが無いなら何もしない（TEAM画面によっては存在しない）
+    if (!dom.btnManualSave && !dom.btnDeleteSave) return;
+
+    saveBound = true;
+
+    const bindBtn = (btn, handler)=>{
+      if (!btn) return;
+      // iOS対策：タッチ系最適化（クリックが吸われる事故を減らす）
+      try{ btn.style.touchAction = 'manipulation'; }catch(e){}
+      btn.addEventListener('touchstart', ()=>{}, { passive:true });
+      btn.addEventListener('click', (e)=>{
+        try{ e.preventDefault(); }catch(_){}
+        handler();
+      }, { passive:false });
+    };
+
+    bindBtn(dom.btnManualSave, manualSave);
+    bindBtn(dom.btnDeleteSave, deleteSaveAndReset);
+  }
+
+  // =========================================================
   // init
   // =========================================================
   function initTeamUI(){
     buildTeamDomIfMissing();
+    bindSaveIfExists();
     render();
   }
 
@@ -382,6 +536,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     migrateTeam,
     migrateAndPersistTeam,
     calcTeamPower,
+    manualSave,          // 互換：外部から呼びたい場合
+    deleteSaveAndReset,  // 互換：外部から呼びたい場合
+    bindSaveIfExists,
     renderTeamPower: () => {
       try{
         const team = migrateAndPersistTeam();
