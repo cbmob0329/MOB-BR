@@ -1,15 +1,18 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.3
-   - v19.2 の全機能維持（削除なし）
-   - ✅ CHANGE: ui_team_training.js をロードしない
-     -> チーム画面で「トレーニングできてしまう」＝無限強化の根を断つ
-   - ✅ KEEP: sim_tournament_core_step_base.js をロード（step 2分割の前提）
-   - ✅ NOTE: トレーニング（修行）は ui_training.js（修行画面）側に一本化していく
+   app.js（FULL） v19.4
+   - v19.3 の全機能維持（削除なし）
+   - ✅ v19.4:
+     1) 初回起動 / セーブ削除後、タイトルNEXTで
+        企業名 / チーム名 / メンバー名A,B,C を入力させる（セットアップモーダル追加）
+     2) team画面の表示不整合は ui_team_core.js 側で修正（このファイルは導線のみ）
+   - ✅ KEEP:
+     - ui_team_training.js をロードしない（無限強化の根を断つ）
+     - sim_tournament_core_step_base.js をロード（step 2分割の前提）
 ========================================================= */
 
-const APP_VER = 19.3; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.4; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -470,6 +473,295 @@ function exposeTournamentAPI(){
   }catch(e){}
 }
 
+// =========================================================
+// ✅ v19.4 初回セットアップ（企業名/チーム名/メンバー名ABC）
+// =========================================================
+const SETUP = {
+  needKey: 'mobbr_need_setup',     // "1" のとき強制
+  companyKey: 'mobbr_company',
+  teamKey: 'mobbr_playerTeam'
+};
+
+function getStrLS(key, def){
+  const v = localStorage.getItem(key);
+  if (typeof v === 'string') return v;
+  return def;
+}
+function setStrLS(key, val){ try{ localStorage.setItem(key, String(val)); }catch(e){} }
+function delLS(key){ try{ localStorage.removeItem(key); }catch(e){} }
+
+function readTeamSafe(){
+  try{
+    const raw = localStorage.getItem(SETUP.teamKey);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object') ? obj : null;
+  }catch(e){
+    return null;
+  }
+}
+
+function writeTeamSafe(team){
+  try{ localStorage.setItem(SETUP.teamKey, JSON.stringify(team)); }catch(e){}
+}
+
+function ensureTeamBase(team){
+  if (!team || typeof team !== 'object') team = {};
+  if (typeof team.teamName !== 'string') team.teamName = '';
+
+  if (!Array.isArray(team.members)) team.members = [];
+  const byId = {};
+  team.members.forEach(m=>{
+    const id = String(m?.id || '').trim();
+    if (!id) return;
+    byId[id] = m;
+  });
+
+  const mk = (id) => {
+    let m = byId[id] || team.members.find(x=>String(x?.id)===id) || {};
+    if (!m || typeof m !== 'object') m = {};
+    m.id = id;
+    if (typeof m.name !== 'string') m.name = '';
+    if (typeof m.role !== 'string') m.role = (id==='A'?'IGL':id==='B'?'アタッカー':'サポーター');
+    if (!m.stats || typeof m.stats !== 'object') m.stats = {};
+    if (!Number.isFinite(Number(m.stats.hp))) m.stats.hp = 66;
+    if (!Number.isFinite(Number(m.stats.aim))) m.stats.aim = 66;
+    if (!Number.isFinite(Number(m.stats.tech))) m.stats.tech = 66;
+    if (!Number.isFinite(Number(m.stats.mental))) m.stats.mental = 66;
+    if (typeof m.img !== 'string') m.img = '';
+    return m;
+  };
+
+  const A = mk('A');
+  const B = mk('B');
+  const C = mk('C');
+
+  // 既存の他メンバーは消さない
+  const rest = team.members.filter(m=>{
+    const id = String(m?.id || '');
+    return id !== 'A' && id !== 'B' && id !== 'C';
+  });
+
+  team.members = [A, B, C, ...rest];
+
+  return team;
+}
+
+function needsInitialSetup(){
+  const forced = getStrLS(SETUP.needKey, '') === '1';
+  if (forced) return true;
+
+  const company = String(getStrLS(SETUP.companyKey, '') || '').trim();
+  if (!company) return true;
+
+  const team = ensureTeamBase(readTeamSafe());
+  const teamName = String(team?.teamName || '').trim();
+  if (!teamName) return true;
+
+  const ms = (team.members || []);
+  const a = String(ms.find(m=>String(m?.id)==='A')?.name || '').trim();
+  const b = String(ms.find(m=>String(m?.id)==='B')?.name || '').trim();
+  const c = String(ms.find(m=>String(m?.id)==='C')?.name || '').trim();
+
+  if (!a || !b || !c) return true;
+
+  return false;
+}
+
+// セーブ削除側から呼べるように公開（どのUIに削除ボタンがあってもOK）
+window.MOBBR = window.MOBBR || {};
+window.MOBBR.markNeedSetup = function(){
+  try{ setStrLS(SETUP.needKey, '1'); }catch(e){}
+};
+
+// セットアップモーダル（自前）
+function openInitialSetupModal(onDone){
+  // 既存 modalBack を流用（無ければ作る）
+  let back = $('modalBack');
+  if (!back){
+    back = document.createElement('div');
+    back.id = 'modalBack';
+    back.style.position = 'fixed';
+    back.style.inset = '0';
+    back.style.zIndex = '999990';
+    back.style.background = 'rgba(0,0,0,.55)';
+    back.style.display = 'none';
+    back.style.pointerEvents = 'none';
+    document.body.appendChild(back);
+  }
+
+  const team = ensureTeamBase(readTeamSafe());
+  const company0 = String(getStrLS(SETUP.companyKey, '') || '');
+
+  const getName = (id) => String((team.members||[]).find(m=>String(m?.id)===id)?.name || '');
+  const teamName0 = String(team.teamName || '');
+  const nameA0 = getName('A');
+  const nameB0 = getName('B');
+  const nameC0 = getName('C');
+
+  // pop
+  const pop = document.createElement('div');
+  pop.id = 'mobbrInitialSetupPop';
+  pop.style.position = 'fixed';
+  pop.style.left = '50%';
+  pop.style.top = '50%';
+  pop.style.transform = 'translate(-50%, -50%)';
+  pop.style.zIndex = '1000005';
+  pop.style.width = 'min(92vw, 560px)';
+  pop.style.maxHeight = '80vh';
+  pop.style.overflow = 'auto';
+  pop.style.padding = '14px';
+  pop.style.borderRadius = '14px';
+  pop.style.border = '1px solid rgba(255,255,255,.16)';
+  pop.style.background = 'rgba(0,0,0,.86)';
+  pop.style.color = '#fff';
+
+  const h = document.createElement('div');
+  h.style.fontWeight = '1000';
+  h.style.fontSize = '16px';
+  h.textContent = '初期設定（最初だけ）';
+  pop.appendChild(h);
+
+  const sub = document.createElement('div');
+  sub.style.marginTop = '8px';
+  sub.style.fontSize = '12px';
+  sub.style.opacity = '0.92';
+  sub.style.lineHeight = '1.45';
+  sub.textContent = '企業名 / チーム名 / メンバー名（A,B,C）を入力してください。';
+  pop.appendChild(sub);
+
+  function makeField(label, value){
+    const box = document.createElement('div');
+    box.style.marginTop = '10px';
+
+    const t = document.createElement('div');
+    t.style.fontWeight = '1000';
+    t.style.fontSize = '12px';
+    t.style.opacity = '0.95';
+    t.textContent = label;
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = String(value || '');
+    inp.style.marginTop = '6px';
+    inp.style.width = '100%';
+    inp.style.boxSizing = 'border-box';
+    inp.style.padding = '12px 12px';
+    inp.style.borderRadius = '12px';
+    inp.style.border = '1px solid rgba(255,255,255,.18)';
+    inp.style.background = 'rgba(255,255,255,.10)';
+    inp.style.color = '#fff';
+    inp.style.fontWeight = '800';
+    inp.style.fontSize = '14px';
+    inp.style.outline = 'none';
+
+    box.appendChild(t);
+    box.appendChild(inp);
+
+    return { box, inp };
+  }
+
+  const fCompany = makeField('企業名', company0);
+  const fTeam = makeField('チーム名', teamName0);
+  const fA = makeField('メンバー名 A', nameA0);
+  const fB = makeField('メンバー名 B', nameB0);
+  const fC = makeField('メンバー名 C', nameC0);
+
+  pop.appendChild(fCompany.box);
+  pop.appendChild(fTeam.box);
+  pop.appendChild(fA.box);
+  pop.appendChild(fB.box);
+  pop.appendChild(fC.box);
+
+  const err = document.createElement('div');
+  err.style.marginTop = '10px';
+  err.style.color = '#ff453a';
+  err.style.fontSize = '12px';
+  err.style.fontWeight = '900';
+  err.style.display = 'none';
+  pop.appendChild(err);
+
+  const row = document.createElement('div');
+  row.style.display = 'grid';
+  row.style.gridTemplateColumns = '1fr';
+  row.style.gap = '10px';
+  row.style.marginTop = '12px';
+
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.textContent = 'OK（開始）';
+  ok.style.border = '1px solid rgba(255,255,255,.18)';
+  ok.style.borderRadius = '14px';
+  ok.style.padding = '12px 12px';
+  ok.style.fontWeight = '1000';
+  ok.style.fontSize = '15px';
+  ok.style.background = 'rgba(255,255,255,.86)';
+  ok.style.color = '#111';
+  ok.style.cursor = 'pointer';
+  ok.style.touchAction = 'manipulation';
+
+  ok.addEventListener('click', ()=>{
+    const company = String(fCompany.inp.value || '').trim();
+    const teamName = String(fTeam.inp.value || '').trim();
+    const a = String(fA.inp.value || '').trim();
+    const b = String(fB.inp.value || '').trim();
+    const c = String(fC.inp.value || '').trim();
+
+    if (!company || !teamName || !a || !b || !c){
+      err.textContent = '未入力があります（企業名/チーム名/A,B,C）。';
+      err.style.display = 'block';
+      return;
+    }
+
+    // 保存
+    setStrLS(SETUP.companyKey, company);
+
+    const t = ensureTeamBase(readTeamSafe());
+    t.teamName = teamName;
+
+    const ms = t.members || [];
+    const setName = (id, val) => {
+      const m = ms.find(x=>String(x?.id)===id);
+      if (m){
+        m.name = val;
+      }
+    };
+    setName('A', a);
+    setName('B', b);
+    setName('C', c);
+
+    writeTeamSafe(t);
+
+    // 強制フラグ解除
+    delLS(SETUP.needKey);
+
+    close();
+    try{ onDone && onDone(); }catch(e){}
+  });
+
+  row.appendChild(ok);
+  pop.appendChild(row);
+
+  function close(){
+    try{ pop.remove(); }catch(e){ try{ document.body.removeChild(pop); }catch(_){} }
+    back.style.display = 'none';
+    back.style.pointerEvents = 'none';
+    back.setAttribute('aria-hidden', 'true');
+  }
+
+  // open
+  back.style.display = 'block';
+  back.style.pointerEvents = 'auto';
+  back.setAttribute('aria-hidden', 'false');
+
+  document.body.appendChild(pop);
+
+  // UX: 最初の入力にフォーカス
+  setTimeout(()=>{
+    try{ fCompany.inp.focus(); }catch(e){}
+  }, 0);
+}
+
 async function bootAfterNext(){
   if (!modulesLoaded){
     setTitleHint('読み込み中...');
@@ -570,7 +862,6 @@ function getNumLS(key, def){
   return Number.isFinite(v) ? v : def;
 }
 function setNumLS(key, val){ localStorage.setItem(key, String(Number(val))); }
-function setStrLS(key, val){ localStorage.setItem(key, String(val)); }
 
 // ✅ 週進行の実処理（ストレージ更新）は app.js のみ
 // - setRecent は goMain 側で統一するので、ここでは基本触らない
@@ -722,6 +1013,20 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.disabled = true;
       try{
         await bootAfterNext();
+
+        // ✅ v19.4：初回/削除後はセットアップを挟む
+        if (needsInitialSetup()){
+          openInitialSetupModal(()=>{
+            // セットアップ確定後にUI再描画してからメインへ
+            try{
+              if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
+              if (window.MOBBR?.initTeamUI) window.MOBBR.initTeamUI();
+            }catch(e){}
+            showMain();
+          });
+          return;
+        }
+
         showMain();
       }catch(err){
         console.error(err);
