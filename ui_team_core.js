@@ -1,12 +1,16 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v19.6（FULL）
+   MOB BR - ui_team_core.js v19.7（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
    - ✅ メンバー名ボタンは作らない（TEAMで名前変更は別導線に統一）
    - ✅ 旧UIの「A/B/Cブロック」だけを自動で非表示（ヘッダーの総合/%は残す）
+   - ✅ v19.7:
+      - ✅ チーム総合戦闘力が0になる問題を修正（DOM拾いを強化）
+      - ✅ ヘッダー横に「カード効果（バフ）」表示を追加（無ければ自動生成）
+      - ✅ eventBuffs（aim/mental/agi %）と eventBuff（旧）を吸収して表示
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
@@ -40,7 +44,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     teamScreen: null,
     teamPanel: null,
     teamName: null,
-    teamPower: null,
+    teamPower: null,     // “総合戦闘力/チーム力” 表示先（複数候補）
+    teamEffect: null,    // “カード効果（バフ）” 表示先（無ければ自動生成）
     membersWrap: null,
     membersPop: null,  // 互換のため保持（本モジュールでは使わない）
     modalBack: null    // 互換のため保持（本モジュールでは使わない）
@@ -194,6 +199,64 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
+  // ✅ カード効果（バフ）表示（eventBuffs / eventBuff を吸収）
+  // - eventBuffs: { aim:+10, mental:+5, agi:+8 } など（%加算）
+  // - eventBuff : { multPower:1.1, addAim:5 } など（旧）
+  // - ここは “表示だけ”。削除・上書きはしない。
+  // =========================================================
+  function num(n){ const v = Number(n); return Number.isFinite(v) ? v : 0; }
+
+  function formatBuffText(team){
+    const parts = [];
+
+    // 新：eventBuffs（%）
+    const eb = (team && typeof team === 'object') ? team.eventBuffs : null;
+    if (eb && typeof eb === 'object'){
+      const aim = num(eb.aim);
+      const mental = num(eb.mental);
+      const agi = num(eb.agi);
+
+      if (aim) parts.push(`エイム +${aim}%`);
+      if (mental) parts.push(`メンタル +${mental}%`);
+      if (agi) parts.push(`機動力 +${agi}%`);
+    }
+
+    // 旧：eventBuff（互換）
+    const ob = (team && typeof team === 'object') ? team.eventBuff : null;
+    if (ob && typeof ob === 'object'){
+      const multPower = num(ob.multPower);
+      const addPower = num(ob.addPower);
+      const addAim = num(ob.addAim);
+      const addMental = num(ob.addMental);
+      const addAgi = num(ob.addAgi);
+      const addTech = num(ob.addTech);
+
+      if (multPower && multPower !== 1){
+        const pct = Math.round((multPower - 1) * 100);
+        if (pct) parts.push(`総合 +${pct}%`);
+      }
+      if (addPower) parts.push(`総合 +${addPower}`);
+      if (addAim) parts.push(`エイム +${addAim}`);
+      if (addMental) parts.push(`メンタル +${addMental}`);
+      if (addAgi) parts.push(`機動力 +${addAgi}`);
+      if (addTech) parts.push(`技術 +${addTech}`);
+    }
+
+    // もし cards/cardBuffs 等が将来入っても落ちないように（表示は安全側）
+    // 例：team.cardEffects = ["エイム +5%","総合 +3%"] のような配列を想定
+    const ce = team?.cardEffects;
+    if (Array.isArray(ce)){
+      ce.forEach(x=>{
+        const s = String(x || '').trim();
+        if (s) parts.push(s);
+      });
+    }
+
+    if (!parts.length) return 'なし';
+    return parts.join(' / ');
+  }
+
+  // =========================================================
   // ✅ 旧UIの「A/B/Cブロック」だけ消す（ヘッダーは残す）
   //   - tCompany/tTeam/tTeamPower 等は絶対に触らない
   //   - 消す対象：tNameA/B/C と tA_/tB_/tC_ 系（ステ/スキル欄）
@@ -311,6 +374,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================================================
   // UI parts
   // =========================================================
+  function pickAnySelector(root, selectors){
+    try{
+      for (const sel of selectors){
+        const el = root.querySelector(sel);
+        if (el) return el;
+      }
+    }catch(e){}
+    return null;
+  }
+
   function buildTeamDomIfMissing(){
     dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
     dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
@@ -322,16 +395,36 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.teamScreen.querySelector('.teamPanel') ||
       dom.teamScreen;
 
+    // チーム名
     dom.teamName =
       dom.teamScreen.querySelector('#teamName') ||
       dom.teamScreen.querySelector('.teamName') ||
+      dom.teamScreen.querySelector('#tTeam') ||
+      dom.teamScreen.querySelector('#tTeamName') ||
       null;
 
+    // ✅ 総合戦闘力（拾いを強化）
+    // - 以前は #teamPower / .teamPower だけ → 旧DOMだと取れず “0” 表示が残る
     dom.teamPower =
       dom.teamScreen.querySelector('#teamPower') ||
       dom.teamScreen.querySelector('.teamPower') ||
+      dom.teamScreen.querySelector('#tTeamPower') ||
+      dom.teamScreen.querySelector('#tPower') ||
+      dom.teamScreen.querySelector('.tTeamPower') ||
+      dom.teamScreen.querySelector('[data-team-power]') ||
       null;
 
+    // ✅ カード効果（ヘッダー横）拾い → 無ければ自動生成
+    dom.teamEffect =
+      dom.teamScreen.querySelector('#teamEffect') ||
+      dom.teamScreen.querySelector('.teamEffect') ||
+      dom.teamScreen.querySelector('#tCardEffect') ||
+      dom.teamScreen.querySelector('#tTeamBuff') ||
+      dom.teamScreen.querySelector('.tCardEffect') ||
+      dom.teamScreen.querySelector('[data-team-effect]') ||
+      null;
+
+    // メンバー枠
     dom.membersWrap =
       dom.teamScreen.querySelector('#teamMembers') ||
       dom.teamScreen.querySelector('.teamMembers') ||
@@ -352,6 +445,50 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // ✅ 旧UIの A/B/C ブロックだけ消す（ヘッダーは残す）
     hideLegacyMemberBlocksOnly();
+
+    // ✅ “カード効果”表示が無いなら、総合戦闘力の近くに1つ作る
+    if (!dom.teamEffect){
+      // 置き場所の候補：teamPower の親 / teamPanel の上部
+      let host = null;
+      if (dom.teamPower && dom.teamPower.parentElement){
+        host = dom.teamPower.parentElement;
+      }else{
+        host = dom.teamPanel;
+      }
+
+      // host内に “横並び” が可能なら、そこに追加。無理なら teamPanel の先頭に追加
+      const eff = document.createElement('div');
+      eff.id = 'teamEffect';
+      eff.className = 'teamEffect';
+      eff.setAttribute('data-team-effect','1');
+      eff.style.marginTop = '6px';
+      eff.style.fontSize = '12px';
+      eff.style.opacity = '0.95';
+      eff.style.lineHeight = '1.35';
+      eff.style.padding = '8px 10px';
+      eff.style.borderRadius = '12px';
+      eff.style.border = '1px solid rgba(255,255,255,.14)';
+      eff.style.background = 'rgba(0,0,0,.18)';
+      eff.textContent = 'カード効果：なし';
+
+      // hostが “ヘッダー行” っぽい場合は直下に入れる
+      try{
+        if (host && host !== dom.teamPanel){
+          host.appendChild(eff);
+        }else{
+          // teamPanelの先頭に寄せる
+          if (dom.teamPanel && dom.teamPanel.firstChild){
+            dom.teamPanel.insertBefore(eff, dom.teamPanel.firstChild);
+          }else if (dom.teamPanel){
+            dom.teamPanel.appendChild(eff);
+          }
+        }
+      }catch(e){
+        try{ dom.teamPanel.appendChild(eff); }catch(_){}
+      }
+
+      dom.teamEffect = eff;
+    }
   }
 
   function renderMemberCard(mem){
@@ -437,9 +574,20 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (dom.teamName){
       dom.teamName.textContent = String(team?.teamName || 'PLAYER TEAM');
     }
+
+    // ✅ 総合戦闘力（%）表示
+    const p = calcTeamPower(team);
     if (dom.teamPower){
-      const p = calcTeamPower(team);
+      // 既存DOMの文言形式が違っても破壊しないよう、最低限の形式で上書き
       dom.teamPower.textContent = `チーム力：${p}%`;
+      dom.teamPower.setAttribute('data-team-power','1');
+    }
+
+    // ✅ カード効果（バフ）
+    if (dom.teamEffect){
+      const txt = formatBuffText(team);
+      dom.teamEffect.textContent = `カード効果：${txt}`;
+      dom.teamEffect.setAttribute('data-team-effect','1');
     }
   }
 
