@@ -1,5 +1,5 @@
 /* =========================================================
-   ui_main.js（FULL） v19.6
+   ui_main.js（FULL） v19.7
    - メイン画面の表示/タップ処理
    - ✅ BATTLEボタン：v18.3 の「大会開始ブリッジ」に統一
         → mobbr:startTournament（detail.type/phase）を投げるだけ
@@ -9,13 +9,18 @@
    v19.6 変更点（WORLD整合・WL吸収）
    - ✅ world phase を 'qual'|'losers'|'final' に統一
    - ✅ 旧 “WL” 表記は互換として losers に吸収
+
+   v19.7 変更点（今回）
+   - ✅ メイン画面の「メンバー名」ボタンを非表示＆無効化
+     ※紫のチーム画像（カード表示）は残す
+     ※メンバー名変更は TEAM 画面側で行う前提
 ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.6';
+  const VERSION = 'v19.7';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -98,6 +103,7 @@ window.MOBBR = window.MOBBR || {};
       btnSchedule: $('btnSchedule'),
       btnCard: $('btnCard'),
 
+      // ★メイン画面の「メンバー名」UI（v19.7で非表示＆無効化）
       btnMembers: $('btnMembers'),
       membersPop: $('membersPop'),
       rowM1: $('rowM1'),
@@ -175,6 +181,7 @@ window.MOBBR = window.MOBBR || {};
     if (ui.nextTourW) ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
     if (ui.recent) ui.recent.textContent = getStr(K.recent, '未定');
 
+    // メンバー名UIは v19.7 でメインから使わないが、DOMがある場合は同期だけしておく
     if (ui.uiM1) ui.uiM1.textContent = m1;
     if (ui.uiM2) ui.uiM2.textContent = m2;
     if (ui.uiM3) ui.uiM3.textContent = m3;
@@ -234,7 +241,7 @@ window.MOBBR = window.MOBBR || {};
     });
   }
 
-  // ===== member popup =====
+  // ===== member popup（v19.7：メインからは使わないが互換で残す）=====
   function showMembersPop(){
     showBack();
     if (ui.membersPop) ui.membersPop.style.display = 'block';
@@ -486,6 +493,27 @@ window.MOBBR = window.MOBBR || {};
     }
   }
 
+  // =========================================================
+  // ★ v19.7：メイン画面のメンバー名UIを無効化（ボタン非表示）
+  // =========================================================
+  function disableMainMembersUI(){
+    if (!ui) return;
+
+    // ボタンを完全に見えなくする（紫のチーム画像・カードは触らない）
+    if (ui.btnMembers){
+      ui.btnMembers.style.display = 'none';
+      ui.btnMembers.style.pointerEvents = 'none';
+      ui.btnMembers.setAttribute('aria-hidden', 'true');
+      ui.btnMembers.onclick = null;
+    }
+
+    // ポップアップも念のため閉じておく
+    if (ui.membersPop){
+      ui.membersPop.style.display = 'none';
+      ui.membersPop.setAttribute('aria-hidden', 'true');
+    }
+  }
+
   // ===== bind =====
   let bound = false;
   function bind(){
@@ -503,16 +531,17 @@ window.MOBBR = window.MOBBR || {};
       ui.tapTeamName.addEventListener('click', () => renamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
     }
 
-    if (ui.btnMembers){
-      ui.btnMembers.addEventListener('click', () => { render(); showMembersPop(); });
-    }
-    if (ui.btnCloseMembers){
-      ui.btnCloseMembers.addEventListener('click', hideMembersPop);
-    }
-
-    if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', 'A'));
-    if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', 'B'));
-    if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', 'C'));
+    // ★ v19.7：メイン画面の「メンバー名」ボタンは使わない（TEAM画面で変更する）
+    // 互換のDOM/関数は残すが、ここではバインドしない
+    // if (ui.btnMembers){
+    //   ui.btnMembers.addEventListener('click', () => { render(); showMembersPop(); });
+    // }
+    // if (ui.btnCloseMembers){
+    //   ui.btnCloseMembers.addEventListener('click', hideMembersPop);
+    // }
+    // if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', 'A'));
+    // if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', 'B'));
+    // if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', 'C'));
 
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
@@ -571,6 +600,9 @@ window.MOBBR = window.MOBBR || {};
   function initMainUI(){
     collectDom();
     bind();
+
+    // ★ v19.7：メンバー名UIはメインでは不要
+    disableMainMembersUI();
 
     syncPlayerTeamNamesFromStorage();
 
