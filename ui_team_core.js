@@ -1,19 +1,17 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v19.4（FULL）
+   MOB BR - ui_team_core.js v19.6（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
    - ✅ メンバー名ボタンは作らない（TEAMで名前変更は別導線に統一）
+   - ✅ 旧UIの「A/B/Cブロック」だけを自動で非表示（ヘッダーの総合/%は残す）
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
       - window.MOBBR.initTeamUI() を提供
       - migrateAndPersistTeam / readPlayerTeam / writePlayerTeam / clone 等
-   - ✅ v19.4 hotfix:
-      - 「セーブ / セーブ削除」が押せない問題を修正（イベント未バインド対策）
-      - btnManualSave / btnDeleteSave がDOMに存在する場合だけバインド
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -26,24 +24,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // storage keys（既存と衝突しない前提で “同じ” を使う）
   // =========================================================
   const KEY_PLAYER_TEAM = 'mobbr_playerTeam';
-
-  // 互換：メイン等が使っている主要キー（スナップショット用）
-  const K = {
-    company: 'mobbr_company',
-    team: 'mobbr_team',
-    m1: 'mobbr_m1',
-    m2: 'mobbr_m2',
-    m3: 'mobbr_m3',
-    gold: 'mobbr_gold',
-    rank: 'mobbr_rank',
-    year: 'mobbr_year',
-    month: 'mobbr_month',
-    week: 'mobbr_week',
-    nextTour: 'mobbr_nextTour',
-    nextTourW: 'mobbr_nextTourW',
-    recent: 'mobbr_recent',
-    tourState: 'mobbr_tour_state'
-  };
 
   // 表示ステータス（要望：これ以外は表示しない）
   const STATS_SHOW = [
@@ -62,14 +42,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     teamName: null,
     teamPower: null,
     membersWrap: null,
-
-    // 互換のため保持（本モジュールでは使わない）
-    membersPop: null,
-    modalBack: null,
-
-    // ✅ セーブ互換（DOMに存在するなら動かす）
-    btnManualSave: null,
-    btnDeleteSave: null
+    membersPop: null,  // 互換のため保持（本モジュールでは使わない）
+    modalBack: null    // 互換のため保持（本モジュールでは使わない）
   };
 
   // =========================================================
@@ -92,20 +66,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function getStorage(){
     return window.MOBBR && window.MOBBR.storage ? window.MOBBR.storage : null;
-  }
-
-  function getStr(key, def){
-    const S = getStorage();
-    if (S?.getStr) return S.getStr(key, def);
-    const v = localStorage.getItem(key);
-    return (v === null || v === undefined || v === '') ? def : v;
-  }
-
-  function getNum(key, def){
-    const S = getStorage();
-    if (S?.getNum) return S.getNum(key, def);
-    const v = Number(localStorage.getItem(key));
-    return Number.isFinite(v) ? v : def;
   }
 
   function readPlayerTeam(){
@@ -136,7 +96,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // name
     if (typeof mem.name !== 'string' || !mem.name.trim()){
-      // 既存仕様の「ピーチ」などがあるなら上書きしない
       mem.name = mem.id;
     }
 
@@ -149,7 +108,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     mem.stats = (mem.stats && typeof mem.stats === 'object') ? mem.stats : {};
     for (const s of STATS_SHOW){
       if (!Number.isFinite(Number(mem.stats[s.key]))){
-        // 初期値は既存の流れに合わせて 66 を推奨
         mem.stats[s.key] = 66;
       }else{
         mem.stats[s.key] = clamp0to99(mem.stats[s.key]);
@@ -186,7 +144,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const B = ensureMemberBase(byId['B'] || team.members.find(x=>String(x?.id)==='B'), 'B', rolesFallback.B);
     const C = ensureMemberBase(byId['C'] || team.members.find(x=>String(x?.id)==='C'), 'C', rolesFallback.C);
 
-    // 既存の他メンバーは “消さない” が、表示はA/B/Cのみ（要望に合わせる）
+    // 既存の他メンバーは “消さない”
     const rest = team.members.filter(m=>{
       const id = String(m?.id || '');
       return id !== 'A' && id !== 'B' && id !== 'C';
@@ -236,16 +194,127 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
+  // ✅ 旧UIの「A/B/Cブロック」だけ消す（ヘッダーは残す）
+  //   - tCompany/tTeam/tTeamPower 等は絶対に触らない
+  //   - 消す対象：tNameA/B/C と tA_/tB_/tC_ 系（ステ/スキル欄）
+  // =========================================================
+  const LEGACY_MEMBER_IDS = [
+    // 旧：名前（A/B/C）
+    'tNameA','tNameB','tNameC',
+
+    // 旧：A
+    'tA_hp','tA_mental','tA_aim','tA_agi','tA_tech','tA_support','tA_scan','tA_passive','tA_ult',
+    // 旧：B
+    'tB_hp','tB_mental','tB_aim','tB_agi','tB_tech','tB_support','tB_scan','tB_passive','tB_ult',
+    // 旧：C
+    'tC_hp','tC_mental','tC_aim','tC_agi','tC_tech','tC_support','tC_scan','tC_passive','tC_ult'
+  ];
+
+  function pickExistingId(ids){
+    for (const id of ids){
+      const el = $(id);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function countLegacyIn(node, prefix){
+    try{
+      return node.querySelectorAll(
+        prefix === 'A'
+          ? '#tNameA,[id^="tA_"]'
+          : prefix === 'B'
+            ? '#tNameB,[id^="tB_"]'
+            : '#tNameC,[id^="tC_"]'
+      ).length;
+    }catch(e){
+      return 0;
+    }
+  }
+
+  function hideBlock(el){
+    if (!el) return;
+    el.style.display = 'none';
+    el.style.pointerEvents = 'none';
+    el.setAttribute('aria-hidden','true');
+    el.setAttribute('data-mobbr-hidden','1');
+  }
+
+  function hideLegacyMemberSectionByPrefix(prefix){
+    // そのprefixの代表要素を拾う
+    const anchor =
+      prefix === 'A' ? pickExistingId(['tNameA','tA_hp','tA_aim','tA_tech','tA_mental']) :
+      prefix === 'B' ? pickExistingId(['tNameB','tB_hp','tB_aim','tB_tech','tB_mental']) :
+                       pickExistingId(['tNameC','tC_hp','tC_aim','tC_tech','tC_mental']);
+
+    if (!anchor || !dom.teamPanel) return;
+
+    // anchor から上に辿って「そのprefix要素を十分に含む箱」を探して丸ごと消す
+    let best = null;
+    let cur = anchor;
+
+    // anchor 自体の親から開始
+    cur = anchor.parentElement;
+    while (cur && cur !== dom.teamPanel && cur !== dom.teamScreen){
+      const cnt = countLegacyIn(cur, prefix);
+
+      // A/B/Cブロックの箱なら、最低でも 6 個以上（見出し+複数ステ）が入ってるはず
+      if (cnt >= 6){
+        best = cur;
+      }
+
+      cur = cur.parentElement;
+    }
+
+    if (best){
+      hideBlock(best);
+      return;
+    }
+
+    // 箱特定できない場合：個別に “セル/行” を潰す（ヘッダーに波及しない範囲）
+    const ids = LEGACY_MEMBER_IDS.filter(id=>{
+      if (prefix === 'A') return id === 'tNameA' || id.startsWith('tA_');
+      if (prefix === 'B') return id === 'tNameB' || id.startsWith('tB_');
+      return id === 'tNameC' || id.startsWith('tC_');
+    });
+
+    ids.forEach(id=>{
+      const el = $(id);
+      if (!el) return;
+      const p1 = el.parentElement;
+      const p2 = p1 ? p1.parentElement : null;
+
+      // teamPanel 直下は消さない（レイアウト壊れ回避）
+      if (p2 && p2 !== dom.teamPanel && p2 !== dom.teamScreen){
+        hideBlock(p2);
+      }else if (p1 && p1 !== dom.teamPanel && p1 !== dom.teamScreen){
+        hideBlock(p1);
+      }else{
+        hideBlock(el);
+      }
+    });
+  }
+
+  function hideLegacyMemberBlocksOnly(){
+    try{
+      // そもそも旧IDが1個も無いなら何もしない
+      const any = LEGACY_MEMBER_IDS.some(id=> !!$(id));
+      if (!any) return;
+
+      // A/B/C を順番に “ブロック単位” で消す（ヘッダーは絶対に触らない）
+      hideLegacyMemberSectionByPrefix('A');
+      hideLegacyMemberSectionByPrefix('B');
+      hideLegacyMemberSectionByPrefix('C');
+    }catch(e){}
+  }
+
+  // =========================================================
   // UI parts
   // =========================================================
   function buildTeamDomIfMissing(){
     dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
     dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
     dom.membersPop = $('membersPop') || document.querySelector('#membersPop') || null;
-
-    // ✅ セーブボタン（HTMLに残っている場合の互換）
-    dom.btnManualSave = $('btnManualSave') || null;
-    dom.btnDeleteSave = $('btnDeleteSave') || null;
 
     if (!dom.teamScreen) return;
 
@@ -280,6 +349,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.teamPanel.appendChild(wrap);
       dom.membersWrap = wrap;
     }
+
+    // ✅ 旧UIの A/B/C ブロックだけ消す（ヘッダーは残す）
+    hideLegacyMemberBlocksOnly();
   }
 
   function renderMemberCard(mem){
@@ -405,114 +477,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const team = migrateAndPersistTeam();
     renderTeamHeader(team);
     renderMembers(team);
-  }
 
-  // =========================================================
-  // ✅ セーブ互換（TEAM画面にボタンが残っている場合に動かす）
-  // =========================================================
-  function manualSave(){
-    try{
-      const snap = {
-        ver: 'ui_team_core_v19.4',
-        ts: Date.now(),
-
-        company: getStr(K.company, 'CB Memory'),
-        team: getStr(K.team, 'PLAYER TEAM'),
-        m1: getStr(K.m1, 'A'),
-        m2: getStr(K.m2, 'B'),
-        m3: getStr(K.m3, 'C'),
-
-        year: getNum(K.year, 1989),
-        month: getNum(K.month, 1),
-        week: getNum(K.week, 1),
-
-        gold: getNum(K.gold, 0),
-        rank: getNum(K.rank, 10),
-
-        nextTour: getStr(K.nextTour, '未定'),
-        nextTourW: getStr(K.nextTourW, '未定'),
-        recent: getStr(K.recent, '未定'),
-
-        // 重要：チーム本体
-        playerTeam: readPlayerTeam(),
-
-        // 互換：world phase 等を持っている場合
-        tourState: safeJsonParse(localStorage.getItem(K.tourState) || '', null)
-      };
-
-      localStorage.setItem('mobbr_save1', JSON.stringify(snap));
-      alert('セーブしました。');
-    }catch(e){
-      console.error(e);
-      alert('セーブに失敗しました（コンソール確認）');
-    }
-  }
-
-  function deleteSaveAndReset(){
-    const ok = confirm(
-      'セーブ削除すると、スケジュール／名前／戦績／持ち物／育成など全てリセットされます。\n本当に実行しますか？'
-    );
-    if (!ok) return;
-
-    try{
-      // overlayが残ってると操作不能になるケースがあるので最低限閉じる
-      const back = $('modalBack');
-      if (back){
-        back.style.display = 'none';
-        back.style.pointerEvents = 'none';
-        back.setAttribute('aria-hidden', 'true');
-      }
-      const popIds = ['membersPop','weekPop','trainingResultPop','trainingWeekPop','cardPreview','trainingLockPop'];
-      popIds.forEach(id=>{
-        const el = $(id);
-        if (el){
-          el.style.display = 'none';
-          el.setAttribute('aria-hidden', 'true');
-        }
-      });
-
-      // storage.js があるならそれを優先
-      if (window.MOBBR?.storage?.resetAll){
-        window.MOBBR.storage.resetAll();
-        return;
-      }
-
-      // フォールバック
-      localStorage.clear();
-      location.reload();
-    }catch(e){
-      console.error(e);
-      try{
-        localStorage.clear();
-        location.reload();
-      }catch(_){}
-    }
-  }
-
-  let saveBound = false;
-  function bindSaveIfExists(){
-    if (saveBound) return;
-    // DOM取得前でも、呼ばれたタイミングで再収集する
-    buildTeamDomIfMissing();
-
-    // ボタンが無いなら何もしない（TEAM画面によっては存在しない）
-    if (!dom.btnManualSave && !dom.btnDeleteSave) return;
-
-    saveBound = true;
-
-    const bindBtn = (btn, handler)=>{
-      if (!btn) return;
-      // iOS対策：タッチ系最適化（クリックが吸われる事故を減らす）
-      try{ btn.style.touchAction = 'manipulation'; }catch(e){}
-      btn.addEventListener('touchstart', ()=>{}, { passive:true });
-      btn.addEventListener('click', (e)=>{
-        try{ e.preventDefault(); }catch(_){}
-        handler();
-      }, { passive:false });
-    };
-
-    bindBtn(dom.btnManualSave, manualSave);
-    bindBtn(dom.btnDeleteSave, deleteSaveAndReset);
+    // ✅ 描画の度に、旧A/B/Cブロックが復活してないか潰す
+    hideLegacyMemberBlocksOnly();
   }
 
   // =========================================================
@@ -520,7 +487,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================================================
   function initTeamUI(){
     buildTeamDomIfMissing();
-    bindSaveIfExists();
     render();
   }
 
@@ -536,16 +502,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     migrateTeam,
     migrateAndPersistTeam,
     calcTeamPower,
-    manualSave,          // 互換：外部から呼びたい場合
-    deleteSaveAndReset,  // 互換：外部から呼びたい場合
-    bindSaveIfExists,
     renderTeamPower: () => {
       try{
         const team = migrateAndPersistTeam();
         renderTeamHeader(team);
       }catch(e){}
     },
-    render
+    render,
+    // デバッグ用
+    hideLegacyMemberBlocksOnly
   };
 
   // ✅ 互換：旧参照
