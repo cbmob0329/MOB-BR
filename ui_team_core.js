@@ -1,10 +1,11 @@
-　'use strict';
+'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v19.3（FULL）
+   MOB BR - ui_team_core.js v19.4（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
+   - ✅ メンバー名ボタンは作らない（TEAMで名前変更は別導線に統一）
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
@@ -40,8 +41,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     teamName: null,
     teamPower: null,
     membersWrap: null,
-    membersPop: null,
-    modalBack: null
+    membersPop: null,  // 互換のため保持（本モジュールでは使わない）
+    modalBack: null    // 互換のため保持（本モジュールでは使わない）
   };
 
   // =========================================================
@@ -107,7 +108,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     mem.stats = (mem.stats && typeof mem.stats === 'object') ? mem.stats : {};
     for (const s of STATS_SHOW){
       if (!Number.isFinite(Number(mem.stats[s.key]))){
-        // 初期値は既存の流れに合わせて 66 を推奨（スクショに合わせる）
+        // 初期値は既存の流れに合わせて 66 を推奨
         mem.stats[s.key] = 66;
       }else{
         mem.stats[s.key] = clamp0to99(mem.stats[s.key]);
@@ -145,7 +146,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const C = ensureMemberBase(byId['C'] || team.members.find(x=>String(x?.id)==='C'), 'C', rolesFallback.C);
 
     // 既存の他メンバーは “消さない” が、表示はA/B/Cのみ（要望に合わせる）
-    // データ保持のため members 自体は残すが、先頭に A/B/C を固定で置く
     const rest = team.members.filter(m=>{
       const id = String(m?.id || '');
       return id !== 'A' && id !== 'B' && id !== 'C';
@@ -165,7 +165,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // team power（簡易：4ステ平均。既存powerがあるなら表示はそれ優先）
-  // ※“壊さない”ため、保存値は基本いじらない。表示だけ算出。
   // =========================================================
   function calcMemberPower(mem){
     const st = mem?.stats || {};
@@ -186,11 +185,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
     if (!ms.length) return 0;
 
-    // 既存仕様で team.power があれば、それを最優先で表示（ユーザーが%に関心強い）
+    // 既存仕様で team.power があれば、それを最優先で表示
     const p0 = Number(team?.power);
     if (Number.isFinite(p0) && p0 > 0) return Math.round(p0);
 
-    // 無ければ算出
     let sum = 0;
     ms.forEach(m=>{ sum += calcMemberPower(m); });
     return Math.round(sum / ms.length);
@@ -200,7 +198,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // UI parts
   // =========================================================
   function buildTeamDomIfMissing(){
-    // 既存HTMLを前提に “可能な範囲で掴む”。無ければ何もしない。
     dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
     dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
     dom.membersPop = $('membersPop') || document.querySelector('#membersPop') || null;
@@ -240,127 +237,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function makeBtn(text){
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = text;
-    b.style.border = '1px solid rgba(255,255,255,.18)';
-    b.style.borderRadius = '14px';
-    b.style.padding = '10px 12px';
-    b.style.fontWeight = '1000';
-    b.style.fontSize = '13px';
-    b.style.cursor = 'pointer';
-    b.style.touchAction = 'manipulation';
-    b.style.background = 'rgba(255,255,255,.10)';
-    b.style.color = '#fff';
-    b.addEventListener('touchstart', ()=>{}, {passive:true});
-    b.onmousedown = ()=>{};
-    return b;
-  }
-
-  function makePrimaryBtn(text){
-    const b = makeBtn(text);
-    b.style.background = 'rgba(255,255,255,.86)';
-    b.style.color = '#111';
-    return b;
-  }
-
-  function openNameEditPopup(memberId){
-    // 既存の membersPop を使う（あれば）
-    const back = dom.modalBack;
-    const pop = dom.membersPop;
-
-    const team = migrateAndPersistTeam();
-    const mem = (team.members || []).find(m => String(m?.id) === String(memberId));
-    if (!mem) return;
-
-    if (!back || !pop){
-      // フォールバック：prompt
-      const v = prompt('メンバー名を入力', String(mem.name || ''));
-      if (v === null) return;
-      const name = String(v).trim();
-      if (!name) return;
-      mem.name = name;
-      writePlayerTeam(team);
-      render();
-      return;
-    }
-
-    back.style.display = 'block';
-    back.style.pointerEvents = 'auto';
-    back.setAttribute('aria-hidden', 'false');
-
-    pop.style.display = 'block';
-    pop.setAttribute('aria-hidden', 'false');
-    pop.innerHTML = '';
-
-    pop.style.position = 'fixed';
-    pop.style.left = '50%';
-    pop.style.top = '50%';
-    pop.style.transform = 'translate(-50%, -50%)';
-    pop.style.zIndex = '999999';
-    pop.style.width = 'min(92vw, 520px)';
-    pop.style.maxHeight = '70vh';
-    pop.style.overflow = 'auto';
-    pop.style.padding = '14px';
-    pop.style.borderRadius = '14px';
-    pop.style.border = '1px solid rgba(255,255,255,.16)';
-    pop.style.background = 'rgba(0,0,0,.86)';
-    pop.style.color = '#fff';
-
-    const title = document.createElement('div');
-    title.style.fontWeight = '1000';
-    title.style.fontSize = '15px';
-    title.textContent = `${mem.id}：メンバー名`;
-    pop.appendChild(title);
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = String(mem.name || '');
-    input.style.marginTop = '10px';
-    input.style.width = '100%';
-    input.style.boxSizing = 'border-box';
-    input.style.padding = '12px';
-    input.style.borderRadius = '12px';
-    input.style.border = '1px solid rgba(255,255,255,.18)';
-    input.style.background = 'rgba(255,255,255,.10)';
-    input.style.color = '#fff';
-    input.maxLength = 24;
-    pop.appendChild(input);
-
-    const row = document.createElement('div');
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '1fr 1fr';
-    row.style.gap = '10px';
-    row.style.marginTop = '12px';
-
-    const ok = makePrimaryBtn('OK');
-    ok.addEventListener('click', ()=>{
-      const name = String(input.value || '').trim();
-      if (!name) return;
-      mem.name = name;
-      writePlayerTeam(team);
-      closePopup();
-      render();
-    });
-
-    const close = makeBtn('閉じる');
-    close.addEventListener('click', ()=>closePopup());
-
-    row.appendChild(ok);
-    row.appendChild(close);
-    pop.appendChild(row);
-
-    function closePopup(){
-      back.style.display = 'none';
-      back.style.pointerEvents = 'none';
-      back.setAttribute('aria-hidden', 'true');
-      pop.style.display = 'none';
-      pop.setAttribute('aria-hidden', 'true');
-      pop.innerHTML = '';
-    }
-  }
-
   function renderMemberCard(mem){
     const card = document.createElement('div');
     card.style.borderRadius = '14px';
@@ -368,42 +244,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     card.style.border = '1px solid rgba(255,255,255,.14)';
     card.style.background = 'rgba(255,255,255,.08)';
 
+    // ===== header（メンバー名ボタン無し）=====
     const head = document.createElement('div');
-    head.style.display = 'grid';
-    head.style.gridTemplateColumns = '1fr auto';
-    head.style.gap = '10px';
-    head.style.alignItems = 'center';
-
-    const left = document.createElement('div');
+    head.style.display = 'flex';
+    head.style.flexDirection = 'column';
+    head.style.gap = '4px';
 
     const name = document.createElement('div');
     name.style.fontWeight = '1000';
     name.style.fontSize = '15px';
+    name.style.whiteSpace = 'nowrap';
+    name.style.overflow = 'hidden';
+    name.style.textOverflow = 'ellipsis';
     name.textContent = `${String(mem.name || mem.id)}${mem.role ? `（${mem.role}）` : ''}`;
 
     const sub = document.createElement('div');
-    sub.style.marginTop = '4px';
     sub.style.fontSize = '12px';
     sub.style.opacity = '0.92';
     sub.textContent = `ID: ${mem.id}`;
 
-    left.appendChild(name);
-    left.appendChild(sub);
-
-    const right = document.createElement('div');
-    right.style.display = 'flex';
-    right.style.flexDirection = 'column';
-    right.style.gap = '8px';
-    right.style.minWidth = '160px';
-
-    // ✅ “メンバー名” ボタン（既存要望）
-    const btnName = makePrimaryBtn('メンバー名');
-    btnName.style.padding = '10px 10px';
-    btnName.addEventListener('click', ()=>openNameEditPopup(mem.id));
-    right.appendChild(btnName);
-
-    head.appendChild(left);
-    head.appendChild(right);
+    head.appendChild(name);
+    head.appendChild(sub);
     card.appendChild(head);
 
     // 画像（あれば）
