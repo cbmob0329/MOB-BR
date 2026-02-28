@@ -1,12 +1,13 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_training.js v19.4（FULL）
+   MOB BR - ui_training.js v19.5（FULL）
    ✅ 「育成（修行）」はこの画面だけで実行（チーム画面では不可）
    ✅ 1週につき1回だけ実行（無限強化を根絶）
-   ✅ ✅ v19.4: 「大会週はトレーニング不可」を強制（open / execute 両方でガード）
-      - 参照優先：localStorage 'mobbr_tour_state'
-      - 保険：window.MOBBR.sim._tcore.getState() が取れればそれも参照
+   ✅ ✅ v19.5: 「大会週はトレーニング不可」判定を“誤爆しない”条件に修正
+      - ランタイムで大会進行中なら即ロック（最優先）
+      - それ以外は「今週 == nextTourW（次の大会週）」のときだけロック
+      - tour_state の “証拠っぽいキーがあるだけ” ではロックしない（誤ロック根絶）
    ✅ ルール確定（あなたの指定）
       - 射撃：エイムEXP +50
       - 研究：技術EXP +50
@@ -43,6 +44,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // ✅ 大会週ガード（coreと合わせる）
   const TOUR_STATE_KEY = 'mobbr_tour_state';
+
+  // schedule keys（storage.js と揃ってる前提）
+  const NEXT_TOUR_KEY  = 'mobbr_nextTour';
+  const NEXT_TOURW_KEY = 'mobbr_nextTourW';
 
   // 成長（EXP）ゲージ
   const GROW_MAX = 100;
@@ -152,7 +157,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ------------------------------
-  // ✅ Tournament-week guard (v19.4)
+  // ✅ Tournament-week guard (v19.5)
   // ------------------------------
   function readTourState(){
     const raw = localStorage.getItem(TOUR_STATE_KEY);
@@ -188,58 +193,64 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function isTournamentWeek(){
-    const ts = readTourState();
+  function parseNextTourW(str){
+    // 例： "2-1"（2月第1週）
+    const s = String(str || '').trim();
+    if (!s || s === '未定') return null;
+    const m = Number(s.split('-')[0]);
+    const w = Number(s.split('-')[1]);
+    if (!Number.isFinite(m) || !Number.isFinite(w)) return null;
+    if (m < 1 || m > 12) return null;
+    if (w < 1 || w > 4) return null;
+    return { m, w };
+  }
 
-    // 1) tour_state に明示フラグがある系（最優先）
+  function getNextTourInfo(){
+    // storage.js があるならそれ優先（キー名の確実性が高い）
     try{
-      if (ts){
-        if (ts.inTournamentWeek === true) return true;
-        if (ts.isTournamentWeek === true) return true;
-        if (ts.tournamentWeek === true) return true;
-        if (ts.isTourWeek === true) return true;
-
-        // 2) phase/mode が入っていて、"大会進行中"に寄る値なら true
-        //    （キー名は実装差があるので広く拾う）
-        const mode = String(ts.mode || ts.tournamentMode || ts.currentMode || '').toLowerCase();
-        const phase = String(
-          (ts.phase || ts.tournamentPhase || ts.currentPhase || (ts.world && ts.world.phase) || '')
-        ).toLowerCase();
-
-        const modeLooksTour =
-          (mode === 'local' || mode === 'national' || mode === 'lastchance' || mode === 'world');
-
-        const phaseLooksActive =
-          (phase === 'intro' || phase === 'drop' || phase === 'in' || phase === 'running' || phase === 'progress'
-           || phase === 'qual' || phase === 'wl' || phase === 'final' || phase === 'match' || phase === 'battle');
-
-        // 3) tour_state が存在して「何かしら大会の情報を保持してる」場合も保険で true
-        //    （例: split, localTop10, worldRosterIds などがある＝大会週の可能性が高い）
-        const hasTourEvidence =
-          (Number(ts.split || 0) > 0)
-          || !!ts.localChampionId || !!ts.localWinnerId || !!ts.localPlayerAdvanced
-          || Array.isArray(ts.lastNationalSortedIds)
-          || Array.isArray(ts.worldQualifiedIds)
-          || Array.isArray(ts.worldRosterIds)
-          || (ts.world && typeof ts.world === 'object' && (ts.world.phase || ts.worldGroups || ts.worldRosterIds));
-
-        if ((modeLooksTour && (phaseLooksActive || phase !== '')) || hasTourEvidence){
-          // ただし「完全終了」っぽいなら除外
-          const endish =
-            (phase === 'ended' || phase === 'end' || phase === 'complete' || phase === 'finished' || phase === 'result');
-          if (!endish) return true;
-        }
+      const S = window.MOBBR?.storage;
+      if (S?.getStr && S?.KEYS){
+        const K = S.KEYS;
+        const name = S.getStr(K.nextTour, localStorage.getItem(NEXT_TOUR_KEY) || '未定');
+        const ww = S.getStr(K.nextTourW, localStorage.getItem(NEXT_TOURW_KEY) || '未定');
+        return { name: String(name || '未定'), ww: String(ww || '未定') };
       }
     }catch(e){}
 
-    // 4) ランタイム state から判定（tour_state が無い/壊れてても止める）
+    // fallback：localStorage直読み
+    const name = String(localStorage.getItem(NEXT_TOUR_KEY) || '未定');
+    const ww   = String(localStorage.getItem(NEXT_TOURW_KEY) || '未定');
+    return { name, ww };
+  }
+
+  function isTournamentWeek(){
+    // 0) ランタイムで大会が進行中なら必ずロック（最優先）
     if (runtimeTournamentActive()) return true;
+
+    // 1) tour_state の “明示フラグ”があって、かつ今週が nextTourW と一致するならロック
+    //    ※「tour_state があるだけ」でロックしない（誤爆根絶）
+    const ts = readTourState();
+    const explicit =
+      !!(ts && (ts.inTournamentWeek === true || ts.isTournamentWeek === true || ts.tournamentWeek === true || ts.isTourWeek === true));
+
+    // 2) 基本のロック条件：今週 == nextTourW かつ nextTour が未定じゃない
+    const cur = getNowYMW();
+    const next = getNextTourInfo();
+    const parsed = parseNextTourW(next.ww);
+
+    const matches = !!(parsed && parsed.m === cur.m && parsed.w === cur.w);
+    const hasTourName = (String(next.name || '').trim() && String(next.name || '').trim() !== '未定');
+
+    if (matches && hasTourName) return true;
+
+    // 3) 明示フラグが立ってるなら “一致してなくても” ロックしたいケースがあるが、
+    //    ここは誤爆が怖いので、明示フラグだけでは止めない（必要なら core 側で nextTourW を今週に合わせる運用）
+    if (explicit && matches) return true;
 
     return false;
   }
 
   function denyByTournamentWeek(){
-    // ここは UI だけ。既存デザインを壊さないため alert で確実に伝える。
     try{
       alert('大会週はトレーニングできません。');
     }catch(e){}
