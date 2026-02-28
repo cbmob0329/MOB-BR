@@ -1,9 +1,12 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_training.js v19.3（FULL）
+   MOB BR - ui_training.js v19.4（FULL）
    ✅ 「育成（修行）」はこの画面だけで実行（チーム画面では不可）
    ✅ 1週につき1回だけ実行（無限強化を根絶）
+   ✅ ✅ v19.4: 「大会週はトレーニング不可」を強制（open / execute 両方でガード）
+      - 参照優先：localStorage 'mobbr_tour_state'
+      - 保険：window.MOBBR.sim._tcore.getState() が取れればそれも参照
    ✅ ルール確定（あなたの指定）
       - 射撃：エイムEXP +50
       - 研究：技術EXP +50
@@ -37,6 +40,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // 1週1回ガード
   const TRAIN_DONE_KEY = 'mobbr_training_done_v1';
+
+  // ✅ 大会週ガード（coreと合わせる）
+  const TOUR_STATE_KEY = 'mobbr_tour_state';
 
   // 成長（EXP）ゲージ
   const GROW_MAX = 100;
@@ -143,6 +149,101 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const done = getDoneStamp();
     if (!done) return false;
     return done.y === cur.y && done.m === cur.m && done.w === cur.w;
+  }
+
+  // ------------------------------
+  // ✅ Tournament-week guard (v19.4)
+  // ------------------------------
+  function readTourState(){
+    const raw = localStorage.getItem(TOUR_STATE_KEY);
+    if (!raw) return null;
+    const ts = safeJsonParse(raw, null);
+    return (ts && typeof ts === 'object') ? ts : null;
+  }
+
+  function runtimeTournamentActive(){
+    try{
+      const T = window.MOBBR?.sim?._tcore;
+      if (!T || typeof T.getState !== 'function') return false;
+      const st = T.getState();
+      if (!st || typeof st !== 'object') return false;
+
+      // mode が tournament系なら大会中の可能性が高い
+      const mode = String(st.mode || '').toLowerCase();
+      const isTourMode = (mode === 'local' || mode === 'national' || mode === 'lastchance' || mode === 'world');
+
+      // phase が intro〜進行中なら大会中
+      const phase = String(st.phase || '').toLowerCase();
+      const activePhase =
+        (phase && phase !== 'ended' && phase !== 'end' && phase !== 'result' && phase !== 'complete' && phase !== 'finished');
+
+      // request が openTournament / tournament系なら大会中
+      const reqType = String(st?.request?.type || '').toLowerCase();
+      const reqActive = (reqType.indexOf('tournament') >= 0 || reqType === 'opentournament');
+
+      // UIの都合で phase が空でも、mode が tournament なら大会中扱いに寄せる
+      return (isTourMode && (activePhase || phase === '' || phase === 'intro')) || reqActive;
+    }catch(e){
+      return false;
+    }
+  }
+
+  function isTournamentWeek(){
+    const ts = readTourState();
+
+    // 1) tour_state に明示フラグがある系（最優先）
+    try{
+      if (ts){
+        if (ts.inTournamentWeek === true) return true;
+        if (ts.isTournamentWeek === true) return true;
+        if (ts.tournamentWeek === true) return true;
+        if (ts.isTourWeek === true) return true;
+
+        // 2) phase/mode が入っていて、"大会進行中"に寄る値なら true
+        //    （キー名は実装差があるので広く拾う）
+        const mode = String(ts.mode || ts.tournamentMode || ts.currentMode || '').toLowerCase();
+        const phase = String(
+          (ts.phase || ts.tournamentPhase || ts.currentPhase || (ts.world && ts.world.phase) || '')
+        ).toLowerCase();
+
+        const modeLooksTour =
+          (mode === 'local' || mode === 'national' || mode === 'lastchance' || mode === 'world');
+
+        const phaseLooksActive =
+          (phase === 'intro' || phase === 'drop' || phase === 'in' || phase === 'running' || phase === 'progress'
+           || phase === 'qual' || phase === 'wl' || phase === 'final' || phase === 'match' || phase === 'battle');
+
+        // 3) tour_state が存在して「何かしら大会の情報を保持してる」場合も保険で true
+        //    （例: split, localTop10, worldRosterIds などがある＝大会週の可能性が高い）
+        const hasTourEvidence =
+          (Number(ts.split || 0) > 0)
+          || !!ts.localChampionId || !!ts.localWinnerId || !!ts.localPlayerAdvanced
+          || Array.isArray(ts.lastNationalSortedIds)
+          || Array.isArray(ts.worldQualifiedIds)
+          || Array.isArray(ts.worldRosterIds)
+          || (ts.world && typeof ts.world === 'object' && (ts.world.phase || ts.worldGroups || ts.worldRosterIds));
+
+        if ((modeLooksTour && (phaseLooksActive || phase !== '')) || hasTourEvidence){
+          // ただし「完全終了」っぽいなら除外
+          const endish =
+            (phase === 'ended' || phase === 'end' || phase === 'complete' || phase === 'finished' || phase === 'result');
+          if (!endish) return true;
+        }
+      }
+    }catch(e){}
+
+    // 4) ランタイム state から判定（tour_state が無い/壊れてても止める）
+    if (runtimeTournamentActive()) return true;
+
+    return false;
+  }
+
+  function denyByTournamentWeek(){
+    // ここは UI だけ。既存デザインを壊さないため alert で確実に伝える。
+    try{
+      alert('大会週はトレーニングできません。');
+    }catch(e){}
+    return;
   }
 
   // ------------------------------
@@ -384,6 +485,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function open(){
+    // ✅ 大会週ガード（open段階で止める）
+    if (isTournamentWeek()){
+      denyByTournamentWeek();
+      return;
+    }
+
     const o = buildOverlay();
     o.back.style.display = 'block';
     o.back.style.pointerEvents = 'auto';
@@ -433,6 +540,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     card.appendChild(s);
 
     card.addEventListener('click', ()=>{
+      // ✅ 大会週ガード（カード選択も止める）
+      if (isTournamentWeek()) return;
+
       if (isDoneThisWeek()) return;
       selectedMenuId = menu.id;
       render();
@@ -445,7 +555,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const o = buildOverlay();
 
     const { y, m, w } = getNowYMW();
-    const stamp = `${y}-${m}-${w}-${selectedMenuId}-${isDoneThisWeek() ? 'done' : 'open'}`;
+    const stamp = `${y}-${m}-${w}-${selectedMenuId}-${isDoneThisWeek() ? 'done' : 'open'}-${isTournamentWeek() ? 'tour' : 'free'}`;
     if (stamp === lastRenderStamp) return;
     lastRenderStamp = stamp;
 
@@ -459,6 +569,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // exec button
     const done = isDoneThisWeek();
+    const tour = isTournamentWeek();
+
+    if (tour){
+      o.execBtn.disabled = true;
+      o.execBtn.style.opacity = '0.55';
+      o.execBtn.style.background = 'rgba(255,255,255,.30)';
+      o.execBtn.textContent = '大会週は不可';
+      return;
+    }
+
     if (done){
       o.execBtn.disabled = true;
       o.execBtn.style.opacity = '0.55';
@@ -599,6 +719,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function onExecute(){
+    // ✅ 大会週ガード（実行段階でも止める：二重ロック）
+    if (isTournamentWeek()){
+      denyByTournamentWeek();
+      return;
+    }
+
     if (isDoneThisWeek()) return;
     const menu = MENUS.find(x=>x.id === selectedMenuId);
     if (!menu) return;
@@ -650,6 +776,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // OKでのみ確定
     buildResultPopup(lines, ()=>{
+      // ✅ ここでも最終防衛（ポップ中に大会週になった等）
+      if (isTournamentWeek()){
+        denyByTournamentWeek();
+        return;
+      }
+
       // 実適用
       members.forEach(mem=>applyExpToMember(mem, menu.mainKey));
       writePlayerTeam(team);
