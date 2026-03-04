@@ -1,11 +1,13 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step_base.js（FULL） v5.4b
+   sim_tournament_core_step_base.js（FULL） v5.4c
    - sim_tournament_core_step.js を2分割するための “base(共通/ヘルパー)” 側
    - 既存仕様維持（Local / LastChance / National / WORLD Qual+Losers+Final を壊さない）
    - ✅ resultの件（途中経過の総合RESULT currentOverallRows が空/更新されない問題）を安全に補強
      -> tournamentResult 側の総合テーブル生成関数を自動検出し、存在すれば currentOverallRows を毎回更新
+   - ✅ v5.4c: WORLD FINAL の champId 取得を安定化
+     -> getThisMatchChampionId() 内で lastMatchResultRows が空なら ensureMatchResultRows(state) を試す
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -528,8 +530,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(_){}
   }
 
+  // ✅ v5.4c: champId を取りに行く前に resultRows を確実化
   function getThisMatchChampionId(state){
     try{
+      const rows0 = state?.lastMatchResultRows;
+      if (!Array.isArray(rows0) || rows0.length === 0){
+        // lastMatchResultRows が空の瞬間がある環境向けの保険
+        ensureMatchResultRows(state);
+      }
+
       const rows = state?.lastMatchResultRows;
       if (Array.isArray(rows) && rows.length){
         const top = rows[0];
