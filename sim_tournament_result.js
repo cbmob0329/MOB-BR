@@ -266,14 +266,28 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return rows;
   }
 
+  // ✅ 修正：チャンピオンが '???' になりやすい状況を潰す（他は一切変更しない）
   function getChampionName(state){
     try{
-      const rows = state?.lastMatchResultRows;
+      // 1) まず lastMatchResultRows（通常ルート）
+      let rows = state?.lastMatchResultRows;
+
+      // 2) 無い/空なら currentOverallRows（途中経過でも「総合1位」を出せる）
+      if (!Array.isArray(rows) || !rows.length){
+        rows = state?.currentOverallRows;
+      }
+
+      // 3) それも無い/空なら、その場で試合結果を計算してトップを出す（最終保険）
+      if (!Array.isArray(rows) || !rows.length){
+        rows = computeMatchResultTable(state);
+      }
+
       if (Array.isArray(rows) && rows.length){
         const top = rows[0];
         if (top?.name) return String(top.name);
         if (top?.id) return resolveTeamName(state, top.id);
       }
+
       return '???';
     }catch(e){
       return '???';
