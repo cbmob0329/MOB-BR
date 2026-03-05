@@ -1,10 +1,14 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.4.1 + 戦績保存追加）
+  sim_tournament_result.js（FULL 修正版 v2.4.2 + 戦績保存追加）
 
   ※ v2.4.1 の内容は一切削っていません
-  ※ 末尾に PLAYER 戦績保存処理のみ追加
+  ※ 末尾に PLAYER 戦績保存処理のみ追加（v2.4.1のまま）
+  ※ v2.4.2 追加修正：
+     - マッチチャンピオンの取り違えを修正
+       1) addToTournamentTotal() 内で state.lastMatchResultRows を“その試合結果”で確定保存
+       2) getChampionName() は “マッチ結果” だけを見る（総合(currentOverallRows)にフォールバックしない）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -127,9 +131,48 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return rows;
   }
 
+  // ✅ v2.4.2: rows を “その試合の順位(placement)” で正規化して lastMatchResultRows に保存
+  function _normalizeMatchRows(state, rows){
+    const arr = Array.isArray(rows) ? rows.slice() : [];
+
+    // placement が無い/壊れてる場合は再計算して保険
+    const hasPlacement = arr.length && arr.every(r => Number.isFinite(Number(r?.placement)) && Number(r?.placement) > 0);
+    if (!hasPlacement){
+      return computeMatchResultTable(state);
+    }
+
+    // placement 昇順（#1が先頭）に確定
+    arr.sort((a,b)=>{
+      const ap = Number(a?.placement || 0);
+      const bp = Number(b?.placement || 0);
+      if (ap !== bp) return ap - bp;
+      // 念のため同順位の安定化（無いはずだけど）
+      const at = Number(a?.total || 0);
+      const bt = Number(b?.total || 0);
+      if (bt !== at) return bt - at;
+      return String(a?.name||a?.id).localeCompare(String(b?.name||b?.id));
+    });
+
+    // name が欠けているケースに保険
+    for (let i=0;i<arr.length;i++){
+      const r = arr[i];
+      if (!r) continue;
+      if (!r.name && r.id){
+        r.name = resolveTeamName(state, r.id);
+      }
+    }
+
+    return arr;
+  }
+
   function addToTournamentTotal(state, rows){
     if (!state) return;
     if (!state.tournamentTotal) state.tournamentTotal = {};
+
+    // ✅ v2.4.2: マッチ結果を “この瞬間の試合結果” として state に確定保存（チャンピオン取り違え防止）
+    try{
+      state.lastMatchResultRows = _normalizeMatchRows(state, rows);
+    }catch(_){}
 
     const arr = Array.isArray(rows) ? rows : [];
 
@@ -266,24 +309,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return rows;
   }
 
-  // ✅ 修正：チャンピオンが '???' になりやすい状況を潰す（他は一切変更しない）
+  // ✅ v2.4.2 修正：マッチチャンピオンは “その試合結果の1位” だけを見る
+  // - currentOverallRows（総合）には絶対フォールバックしない（ここが誤表示の原因）
   function getChampionName(state){
     try{
-      // 1) まず lastMatchResultRows（通常ルート）
+      // 1) lastMatchResultRows（試合結果の確定値）
       let rows = state?.lastMatchResultRows;
 
-      // 2) 無い/空なら currentOverallRows（途中経過でも「総合1位」を出せる）
-      if (!Array.isArray(rows) || !rows.length){
-        rows = state?.currentOverallRows;
-      }
-
-      // 3) それも無い/空なら、その場で試合結果を計算してトップを出す（最終保険）
+      // 2) 無い/空なら、その場で “試合結果” を計算してトップを出す（保険）
       if (!Array.isArray(rows) || !rows.length){
         rows = computeMatchResultTable(state);
       }
 
+      // 3) 先頭=マッチ1位
       if (Array.isArray(rows) && rows.length){
-        const top = rows[0];
+        // placement昇順で担保（lastMatchResultRows が外部から壊されても安全）
+        const top = _normalizeMatchRows(state, rows)[0];
         if (top?.name) return String(top.name);
         if (top?.id) return resolveTeamName(state, top.id);
       }
