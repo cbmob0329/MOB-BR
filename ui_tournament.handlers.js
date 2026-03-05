@@ -14,6 +14,11 @@
           Local上位10 / National上位8 / LastChance上位2 / WORLD予選上位10 / Losers上位10
    - ADD: WORLD FINALは「80pt点灯チーム」を色分け（state.worldFinalMP.litAtMatch）
    - 既存: 敵画像候補の生成で “空 → P1.png” に落ちない（coreの guessEnemyImageCandidates）
+
+   ✅ v3.6.12 hotfix（今回の②：週が進まない不具合）
+   - FIX: handleEndTournament / handleEndNationalWeek が UIを閉じるだけで
+          app.js の mobbr:goMain 経由週進行が走らないケースがあるため、
+          ここで mobbr:goMain を必ず投げる（advanceWeeks を payload 優先、無ければ 1）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -53,6 +58,27 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     getMatchTotalFromState
   } = MOD;
+
+  // =========================================================
+  // ✅ app.js 責務（週進行/メイン復帰）へ必ず戻すヘルパ
+  // - 週進行は app.js の mobbr:goMain でのみ行う想定
+  // - UI側は「goMain を投げる」だけに統一
+  // =========================================================
+  function dispatchGoMainFromPayload(payload, fallbackAdvanceWeeks){
+    const p = payload && typeof payload === 'object' ? payload : {};
+    const adv = Number(p.advanceWeeks ?? p.weeks ?? fallbackAdvanceWeeks ?? 1);
+    const advanceWeeks = Math.max(0, Number.isFinite(adv) ? (adv|0) : 1);
+
+    const detail = Object.assign({}, p, { advanceWeeks });
+
+    try{
+      window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail }));
+      return true;
+    }catch(e){
+      console.error('[ui_tournament.handlers] dispatch mobbr:goMain failed:', e);
+      return false;
+    }
+  }
 
   function pickChats(n){
     const a = shuffle(BATTLE_CHAT);
@@ -1056,15 +1082,39 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  async function handleEndTournament(){
+  // =========================================================
+  // ✅ 大会終了
+  // - UIを閉じるだけだと週進行が走らないケースがあるため
+  //   app.js の mobbr:goMain を必ず投げる
+  // =========================================================
+  async function handleEndTournament(payload){
     lockUI();
     try{
       MOD.close();
     }finally{
       unlockUI();
     }
+
+    // ✅ app.js 側で週進行/次大会更新/メイン再描画を完結
+    // - advanceWeeks は payload 優先。無ければ 1。
+    // - tournamentFinished などのフラグも payload からそのまま渡す（recent生成に使える）
+    try{
+      const ok = dispatchGoMainFromPayload(payload, 1);
+      if (!ok){
+        // 最低限のfallback（app.jsが捕まえる前提）
+        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true } }));
+      }
+    }catch(e){
+      console.error('[ui_tournament.handlers] handleEndTournament goMain failed:', e);
+    }
   }
 
+  // =========================================================
+  // ✅ 旧：ナショナル週進行通知
+  // - 直接 ui.main.advanceWeeks / window.MOBBR.advanceWeeks を呼ぶと
+  //   app.js の責務一本化（mobbr:goMain）とズレて事故りやすいので
+  //   ここも mobbr:goMain に統一
+  // =========================================================
   async function handleEndNationalWeek(payload){
     lockUI();
     try{
@@ -1074,20 +1124,19 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
 
     try{
-      const weeks = Number(payload?.weeks ?? 1) || 1;
+      const weeks = Number(payload?.weeks ?? payload?.advanceWeeks ?? 1) || 1;
 
-      if (window.MOBBR?.ui?.main?.advanceWeeks && typeof window.MOBBR.ui.main.advanceWeeks === 'function'){
-        window.MOBBR.ui.main.advanceWeeks(weeks);
-        return;
-      }
-      if (window.MOBBR?.advanceWeeks && typeof window.MOBBR.advanceWeeks === 'function'){
-        window.MOBBR.advanceWeeks(weeks);
-        return;
-      }
-
-      window.dispatchEvent(new CustomEvent('mobbr:endNationalWeek', { detail:{ weeks } }));
+      // ✅ app.js に統一（週進行は app.js でのみ実施）
+      dispatchGoMainFromPayload(Object.assign({}, payload || {}, {
+        nationalFinished: payload?.nationalFinished ?? true,
+        tournamentFinished: payload?.tournamentFinished ?? true,
+        advanceWeeks: weeks
+      }), weeks);
     }catch(e){
       console.error('[ui_tournament] endNationalWeek notify error:', e);
+      try{
+        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true, nationalFinished:true } }));
+      }catch(_){}
     }
   }
 
