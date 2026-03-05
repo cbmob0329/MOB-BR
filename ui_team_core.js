@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v19.7（FULL）
+   MOB BR - ui_team_core.js v19.8（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
@@ -11,6 +11,11 @@
       - ✅ チーム総合戦闘力が0になる問題を修正（DOM拾いを強化）
       - ✅ ヘッダー横に「カード効果（バフ）」表示を追加（無ければ自動生成）
       - ✅ eventBuffs（aim/mental/agi %）と eventBuff（旧）を吸収して表示
+   - ✅ v19.8（今回）:
+      - ✅ TEAM画面の「セーブ」「セーブ削除」が効かない問題を修正
+         1) セーブ/削除ボタンへ確実にイベントをバインド（click + pointerup）
+         2) modalBack が前面に残ってタップを吸うケースを抑止（TEAM表示時は pointer-events:none）
+         3) セーブ削除後は markNeedSetup を立て、必要キーをクリアし、リロードで確実に初期設定へ戻す
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
@@ -28,6 +33,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // storage keys（既存と衝突しない前提で “同じ” を使う）
   // =========================================================
   const KEY_PLAYER_TEAM = 'mobbr_playerTeam';
+
+  // app.js v19.4 setup keys（存在する前提で合わせる）
+  const KEY_NEED_SETUP = 'mobbr_need_setup';
+  const KEY_COMPANY    = 'mobbr_company';
+
+  // app.js / tournament 周りの代表キー（削除時の最小クリア対象）
+  const KEY_YEAR   = 'mobbr_year';
+  const KEY_MONTH  = 'mobbr_month';
+  const KEY_WEEK   = 'mobbr_week';
+  const KEY_GOLD   = 'mobbr_gold';
+  const KEY_RANK   = 'mobbr_rank';
+  const KEY_RECENT = 'mobbr_recent';
+
+  const KEY_TOUR_STATE   = 'mobbr_tour_state';
+  const KEY_NEXT_TOUR    = 'mobbr_nextTour';
+  const KEY_NEXT_TOUR_W  = 'mobbr_nextTourW';
 
   // 表示ステータス（要望：これ以外は表示しない）
   const STATS_SHOW = [
@@ -48,7 +69,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     teamEffect: null,    // “カード効果（バフ）” 表示先（無ければ自動生成）
     membersWrap: null,
     membersPop: null,  // 互換のため保持（本モジュールでは使わない）
-    modalBack: null    // 互換のため保持（本モジュールでは使わない）
+    modalBack: null,   // 互換のため保持（TEAM表示中はタップ吸いを抑止）
+    btnSave: null,
+    btnDelete: null
   };
 
   // =========================================================
@@ -91,6 +114,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
     try{ localStorage.setItem(KEY_PLAYER_TEAM, JSON.stringify(team)); }catch(e){}
   }
+
+  function setStrLS(key, val){ try{ localStorage.setItem(String(key), String(val)); }catch(e){} }
+  function delLS(key){ try{ localStorage.removeItem(String(key)); }catch(e){} }
 
   // =========================================================
   // team data migration（壊さず整える）
@@ -242,8 +268,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (addTech) parts.push(`技術 +${addTech}`);
     }
 
-    // もし cards/cardBuffs 等が将来入っても落ちないように（表示は安全側）
-    // 例：team.cardEffects = ["エイム +5%","総合 +3%"] のような配列を想定
+    // 将来拡張用（表示だけ）
     const ce = team?.cardEffects;
     if (Array.isArray(ce)){
       ce.forEach(x=>{
@@ -259,17 +284,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================================================
   // ✅ 旧UIの「A/B/Cブロック」だけ消す（ヘッダーは残す）
   //   - tCompany/tTeam/tTeamPower 等は絶対に触らない
-  //   - 消す対象：tNameA/B/C と tA_/tB_/tC_ 系（ステ/スキル欄）
   // =========================================================
   const LEGACY_MEMBER_IDS = [
-    // 旧：名前（A/B/C）
     'tNameA','tNameB','tNameC',
-
-    // 旧：A
     'tA_hp','tA_mental','tA_aim','tA_agi','tA_tech','tA_support','tA_scan','tA_passive','tA_ult',
-    // 旧：B
     'tB_hp','tB_mental','tB_aim','tB_agi','tB_tech','tB_support','tB_scan','tB_passive','tB_ult',
-    // 旧：C
     'tC_hp','tC_mental','tC_aim','tC_agi','tC_tech','tC_support','tC_scan','tC_passive','tC_ult'
   ];
 
@@ -304,7 +323,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function hideLegacyMemberSectionByPrefix(prefix){
-    // そのprefixの代表要素を拾う
     const anchor =
       prefix === 'A' ? pickExistingId(['tNameA','tA_hp','tA_aim','tA_tech','tA_mental']) :
       prefix === 'B' ? pickExistingId(['tNameB','tB_hp','tB_aim','tB_tech','tB_mental']) :
@@ -312,20 +330,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     if (!anchor || !dom.teamPanel) return;
 
-    // anchor から上に辿って「そのprefix要素を十分に含む箱」を探して丸ごと消す
     let best = null;
-    let cur = anchor;
+    let cur = anchor.parentElement;
 
-    // anchor 自体の親から開始
-    cur = anchor.parentElement;
     while (cur && cur !== dom.teamPanel && cur !== dom.teamScreen){
       const cnt = countLegacyIn(cur, prefix);
-
-      // A/B/Cブロックの箱なら、最低でも 6 個以上（見出し+複数ステ）が入ってるはず
       if (cnt >= 6){
         best = cur;
       }
-
       cur = cur.parentElement;
     }
 
@@ -334,7 +346,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // 箱特定できない場合：個別に “セル/行” を潰す（ヘッダーに波及しない範囲）
     const ids = LEGACY_MEMBER_IDS.filter(id=>{
       if (prefix === 'A') return id === 'tNameA' || id.startsWith('tA_');
       if (prefix === 'B') return id === 'tNameB' || id.startsWith('tB_');
@@ -347,7 +358,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const p1 = el.parentElement;
       const p2 = p1 ? p1.parentElement : null;
 
-      // teamPanel 直下は消さない（レイアウト壊れ回避）
       if (p2 && p2 !== dom.teamPanel && p2 !== dom.teamScreen){
         hideBlock(p2);
       }else if (p1 && p1 !== dom.teamPanel && p1 !== dom.teamScreen){
@@ -360,11 +370,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function hideLegacyMemberBlocksOnly(){
     try{
-      // そもそも旧IDが1個も無いなら何もしない
       const any = LEGACY_MEMBER_IDS.some(id=> !!$(id));
       if (!any) return;
-
-      // A/B/C を順番に “ブロック単位” で消す（ヘッダーは絶対に触らない）
       hideLegacyMemberSectionByPrefix('A');
       hideLegacyMemberSectionByPrefix('B');
       hideLegacyMemberSectionByPrefix('C');
@@ -372,21 +379,68 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // UI parts
+  // ✅ v19.8: 小さなトースト（通知）
   // =========================================================
-  function pickAnySelector(root, selectors){
+  let toastTimer = null;
+  function showToast(text){
     try{
-      for (const sel of selectors){
-        const el = root.querySelector(sel);
-        if (el) return el;
+      let el = document.getElementById('mobbrTeamToast');
+      if (!el){
+        el = document.createElement('div');
+        el.id = 'mobbrTeamToast';
+        el.style.position = 'fixed';
+        el.style.left = '50%';
+        el.style.bottom = '18px';
+        el.style.transform = 'translateX(-50%)';
+        el.style.zIndex = '1000009';
+        el.style.maxWidth = '92vw';
+        el.style.padding = '10px 12px';
+        el.style.borderRadius = '14px';
+        el.style.border = '1px solid rgba(255,255,255,.16)';
+        el.style.background = 'rgba(0,0,0,.82)';
+        el.style.color = '#fff';
+        el.style.fontSize = '13px';
+        el.style.fontWeight = '900';
+        el.style.opacity = '0';
+        el.style.transition = 'opacity .15s ease';
+        el.style.pointerEvents = 'none';
+        document.body.appendChild(el);
       }
+
+      el.textContent = String(text || '');
+      el.style.opacity = '1';
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(()=>{
+        try{
+          el.style.opacity = '0';
+        }catch(e){}
+      }, 1200);
     }catch(e){}
-    return null;
   }
 
+  // =========================================================
+  // ✅ v19.8: modalBack が TEAM タップを吸わないように抑止
+  // - TEAM画面が表示されている間だけ、安全側で pointer-events:none
+  // =========================================================
+  function suppressModalBackTapIfNeeded(){
+    try{
+      if (!dom.modalBack) return;
+
+      // TEAMが “表示されているっぽい” 時だけ
+      const isTeamVisible = !!(dom.teamScreen && dom.teamScreen.style && dom.teamScreen.style.display !== 'none');
+      if (!isTeamVisible) return;
+
+      dom.modalBack.style.pointerEvents = 'none';
+    }catch(e){}
+  }
+
+  // =========================================================
+  // UI parts
+  // =========================================================
   function buildTeamDomIfMissing(){
     dom.teamScreen = $('teamScreen') || $('team') || document.querySelector('.teamScreen') || null;
-    dom.modalBack = $('modalBack') || document.querySelector('#modalBack') || null;
+    dom.modalBack  = $('modalBack') || document.querySelector('#modalBack') || null;
     dom.membersPop = $('membersPop') || document.querySelector('#membersPop') || null;
 
     if (!dom.teamScreen) return;
@@ -404,7 +458,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       null;
 
     // ✅ 総合戦闘力（拾いを強化）
-    // - 以前は #teamPower / .teamPower だけ → 旧DOMだと取れず “0” 表示が残る
     dom.teamPower =
       dom.teamScreen.querySelector('#teamPower') ||
       dom.teamScreen.querySelector('.teamPower') ||
@@ -431,7 +484,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       null;
 
     if (!dom.membersWrap){
-      // 無ければ作る（壊さない範囲）
       const wrap = document.createElement('div');
       wrap.id = 'teamMembers';
       wrap.className = 'teamMembers';
@@ -448,7 +500,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // ✅ “カード効果”表示が無いなら、総合戦闘力の近くに1つ作る
     if (!dom.teamEffect){
-      // 置き場所の候補：teamPower の親 / teamPanel の上部
       let host = null;
       if (dom.teamPower && dom.teamPower.parentElement){
         host = dom.teamPower.parentElement;
@@ -456,7 +507,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         host = dom.teamPanel;
       }
 
-      // host内に “横並び” が可能なら、そこに追加。無理なら teamPanel の先頭に追加
       const eff = document.createElement('div');
       eff.id = 'teamEffect';
       eff.className = 'teamEffect';
@@ -471,12 +521,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       eff.style.background = 'rgba(0,0,0,.18)';
       eff.textContent = 'カード効果：なし';
 
-      // hostが “ヘッダー行” っぽい場合は直下に入れる
       try{
         if (host && host !== dom.teamPanel){
           host.appendChild(eff);
         }else{
-          // teamPanelの先頭に寄せる
           if (dom.teamPanel && dom.teamPanel.firstChild){
             dom.teamPanel.insertBefore(eff, dom.teamPanel.firstChild);
           }else if (dom.teamPanel){
@@ -489,8 +537,165 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       dom.teamEffect = eff;
     }
+
+    // ✅ v19.8: TEAM表示中の modalBack タップ吸い抑止
+    suppressModalBackTapIfNeeded();
+
+    // ✅ v19.8: セーブ/削除ボタン拾い
+    pickSaveDeleteButtons();
+    bindSaveDeleteButtonsOnce();
   }
 
+  function pickSaveDeleteButtons(){
+    try{
+      if (!dom.teamScreen) return;
+
+      const pickByIds = (ids) => {
+        for (const id of ids){
+          const el = $(id) || dom.teamScreen.querySelector('#'+id);
+          if (el) return el;
+        }
+        return null;
+      };
+
+      // よくあるID候補（既存HTMLに合わせて順に拾う）
+      dom.btnSave = dom.btnSave || pickByIds([
+        'btnTeamSave','teamSaveBtn','btnSave','btnSaveTeam','btnTeamSaveData'
+      ]);
+
+      dom.btnDelete = dom.btnDelete || pickByIds([
+        'btnTeamDelete','teamDeleteBtn','btnDelete','btnDeleteSave','btnTeamDeleteSave'
+      ]);
+
+      // IDが無い環境：テキスト/属性で拾う（壊さない範囲）
+      if (!dom.btnSave){
+        const cands = Array.from(dom.teamScreen.querySelectorAll('button, a, [role="button"]'));
+        dom.btnSave = cands.find(el=>{
+          const t = String(el.textContent || '').trim();
+          return t === 'セーブ' || t === '保存' || t.includes('セーブ');
+        }) || null;
+      }
+
+      if (!dom.btnDelete){
+        const cands = Array.from(dom.teamScreen.querySelectorAll('button, a, [role="button"]'));
+        dom.btnDelete = cands.find(el=>{
+          const t = String(el.textContent || '').trim();
+          return t === 'セーブ削除' || t.includes('セーブ削除') || t.includes('削除');
+        }) || null;
+      }
+    }catch(e){}
+  }
+
+  // =========================================================
+  // ✅ v19.8: セーブ/削除の実処理
+  // =========================================================
+  function doSave(){
+    try{
+      // TEAMデータは “壊さず整える → 保存” だけ
+      const team = migrateAndPersistTeam();
+
+      // 初期セットアップ強制フラグが残ってたら解除（安全側）
+      delLS(KEY_NEED_SETUP);
+
+      // 表示も更新
+      renderTeamHeader(team);
+      showToast('セーブしました');
+    }catch(e){
+      console.error('[TEAM] save failed:', e);
+      showToast('セーブ失敗');
+    }
+  }
+
+  function doDeleteSave(){
+    try{
+      // 1) need setup を強制（app.js v19.4 と導線一致）
+      try{
+        if (window.MOBBR && typeof window.MOBBR.markNeedSetup === 'function'){
+          window.MOBBR.markNeedSetup();
+        }else{
+          setStrLS(KEY_NEED_SETUP, '1');
+        }
+      }catch(_){
+        setStrLS(KEY_NEED_SETUP, '1');
+      }
+
+      // 2) 最小限のキーをクリア（大会状態/チーム/会社など）
+      //    ※ “全部消す” 系の storage API があればそれを優先
+      const S = getStorage();
+
+      // 任意の全消しAPI（存在する場合だけ）
+      if (S && typeof S.clearAllGameData === 'function'){
+        S.clearAllGameData();
+      }else if (S && typeof S.clearAll === 'function'){
+        // clearAll が “本当に全消し” の可能性があるので、
+        // 既存実装がある場合のみ使う（無ければ個別remove）
+        S.clearAll();
+      }else{
+        delLS(KEY_PLAYER_TEAM);
+        delLS(KEY_COMPANY);
+
+        delLS(KEY_YEAR);
+        delLS(KEY_MONTH);
+        delLS(KEY_WEEK);
+        delLS(KEY_GOLD);
+        delLS(KEY_RANK);
+        delLS(KEY_RECENT);
+
+        delLS(KEY_TOUR_STATE);
+        delLS(KEY_NEXT_TOUR);
+        delLS(KEY_NEXT_TOUR_W);
+      }
+
+      showToast('セーブを削除しました');
+
+      // 3) 画面状態を確実にそろえるためリロード（初期設定へ）
+      setTimeout(()=>{
+        try{ location.reload(); }catch(e){}
+      }, 250);
+    }catch(e){
+      console.error('[TEAM] delete failed:', e);
+      showToast('削除失敗');
+    }
+  }
+
+  function bindSaveDeleteButtonsOnce(){
+    try{
+      // バインド済みなら二重付けしない
+      const bindOne = (btn, type) => {
+        if (!btn) return;
+        if (btn.dataset && btn.dataset.mobbrBound === '1') return;
+        if (btn.dataset) btn.dataset.mobbrBound = '1';
+
+        const handler = (ev) => {
+          try{
+            // TEAM上で modalBack が吸ってたら、念のため解除
+            suppressModalBackTapIfNeeded();
+
+            // iOS: pointerup/click の二重発火を抑止
+            if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+          }catch(_){}
+
+          if (type === 'save') doSave();
+          else doDeleteSave();
+        };
+
+        // 安全側で両方
+        btn.addEventListener('click', handler, { passive:false });
+        btn.addEventListener('pointerup', handler, { passive:false });
+
+        // iOS古めの保険
+        btn.addEventListener('touchend', handler, { passive:false });
+      };
+
+      bindOne(dom.btnSave, 'save');
+      bindOne(dom.btnDelete, 'delete');
+    }catch(e){}
+  }
+
+  // =========================================================
+  // レンダリング
+  // =========================================================
   function renderMemberCard(mem){
     const card = document.createElement('div');
     card.style.borderRadius = '14px';
@@ -566,7 +771,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
 
     card.appendChild(stats);
-
     return card;
   }
 
@@ -578,7 +782,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     // ✅ 総合戦闘力（%）表示
     const p = calcTeamPower(team);
     if (dom.teamPower){
-      // 既存DOMの文言形式が違っても破壊しないよう、最低限の形式で上書き
       dom.teamPower.textContent = `チーム力：${p}%`;
       dom.teamPower.setAttribute('data-team-power','1');
     }
@@ -628,6 +831,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     // ✅ 描画の度に、旧A/B/Cブロックが復活してないか潰す
     hideLegacyMemberBlocksOnly();
+
+    // ✅ v19.8: modalBack 吸いの抑止を毎回
+    suppressModalBackTapIfNeeded();
+
+    // ✅ v19.8: ボタン再拾い＆イベント付け直し（ただし二重付けはしない）
+    pickSaveDeleteButtons();
+    bindSaveDeleteButtonsOnce();
   }
 
   // =========================================================
@@ -658,7 +868,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     },
     render,
     // デバッグ用
-    hideLegacyMemberBlocksOnly
+    hideLegacyMemberBlocksOnly,
+    // v19.8 追加（手動検証用）
+    _debug: {
+      pickSaveDeleteButtons,
+      bindSaveDeleteButtonsOnce,
+      doSave,
+      doDeleteSave,
+      suppressModalBackTapIfNeeded
+    }
   };
 
   // ✅ 互換：旧参照
