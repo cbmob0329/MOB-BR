@@ -19,6 +19,9 @@
    - FIX: handleEndTournament / handleEndNationalWeek が UIを閉じるだけで
           app.js の mobbr:goMain 経由週進行が走らないケースがあるため、
           ここで mobbr:goMain を必ず投げる（advanceWeeks を payload 優先、無ければ 1）
+
+   ✅ v3.6.12 hotfix-2（今回の③：2週進む＆大会週誤判定）
+   - FIX: UI側で mobbr:goMain を二重dispatchしないガードを追加
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -63,8 +66,25 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ✅ app.js 責務（週進行/メイン復帰）へ必ず戻すヘルパ
   // - 週進行は app.js の mobbr:goMain でのみ行う想定
   // - UI側は「goMain を投げる」だけに統一
+  //
+  // ✅ hotfix-2: goMain 二重dispatch防止（UI側ガード）
+  // - endTournament / endNationalWeek が連続で来ても 1回に抑える
   // =========================================================
+  let __goMainDispatchedAt = 0;
+  function __canDispatchGoMain(){
+    const now = Date.now();
+    if (__goMainDispatchedAt && (now - __goMainDispatchedAt) < 1000) return false;
+    __goMainDispatchedAt = now;
+    return true;
+  }
+
   function dispatchGoMainFromPayload(payload, fallbackAdvanceWeeks){
+    // ✅ 二重dispatch抑止（最優先）
+    if (!__canDispatchGoMain()){
+      try{ console.warn('[ui_tournament.handlers] goMain suppressed (dup)'); }catch(_){}
+      return false;
+    }
+
     const p = payload && typeof payload === 'object' ? payload : {};
     const adv = Number(p.advanceWeeks ?? p.weeks ?? fallbackAdvanceWeeks ?? 1);
     const advanceWeeks = Math.max(0, Number.isFinite(adv) ? (adv|0) : 1);
@@ -1086,6 +1106,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ✅ 大会終了
   // - UIを閉じるだけだと週進行が走らないケースがあるため
   //   app.js の mobbr:goMain を必ず投げる
+  //
+  // ✅ hotfix-2: 二重dispatchは dispatchGoMainFromPayload で抑止
   // =========================================================
   async function handleEndTournament(payload){
     lockUI();
@@ -1095,14 +1117,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       unlockUI();
     }
 
-    // ✅ app.js 側で週進行/次大会更新/メイン再描画を完結
-    // - advanceWeeks は payload 優先。無ければ 1。
-    // - tournamentFinished などのフラグも payload からそのまま渡す（recent生成に使える）
     try{
       const ok = dispatchGoMainFromPayload(payload, 1);
       if (!ok){
-        // 最低限のfallback（app.jsが捕まえる前提）
-        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true } }));
+        // ここは “二重抑止” の場合もあるので、無理に投げ直さない
+        // それでも ok=false が “dispatch失敗” の場合だけ補助を出したいが、
+        // 失敗と二重抑止の区別が難しいので安全側で何もしない
       }
     }catch(e){
       console.error('[ui_tournament.handlers] handleEndTournament goMain failed:', e);
@@ -1111,9 +1131,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ 旧：ナショナル週進行通知
-  // - 直接 ui.main.advanceWeeks / window.MOBBR.advanceWeeks を呼ぶと
-  //   app.js の責務一本化（mobbr:goMain）とズレて事故りやすいので
-  //   ここも mobbr:goMain に統一
+  // - 週進行は app.js でのみ実施
+  //
+  // ✅ hotfix-2: 二重dispatchは dispatchGoMainFromPayload で抑止
   // =========================================================
   async function handleEndNationalWeek(payload){
     lockUI();
@@ -1126,7 +1146,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       const weeks = Number(payload?.weeks ?? payload?.advanceWeeks ?? 1) || 1;
 
-      // ✅ app.js に統一（週進行は app.js でのみ実施）
       dispatchGoMainFromPayload(Object.assign({}, payload || {}, {
         nationalFinished: payload?.nationalFinished ?? true,
         tournamentFinished: payload?.tournamentFinished ?? true,
@@ -1135,7 +1154,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(e){
       console.error('[ui_tournament] endNationalWeek notify error:', e);
       try{
-        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true, nationalFinished:true } }));
+        // ここも “二重抑止” の可能性があるので、投げ直しは最小限
+        dispatchGoMainFromPayload({ advanceWeeks:1, tournamentFinished:true, nationalFinished:true }, 1);
       }catch(_){}
     }
   }
