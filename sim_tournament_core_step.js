@@ -5,6 +5,7 @@
    - 2分割：base（sim_tournament_core_step_base.js）を先に読み込む前提
    - v5.4 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
    - ✅ resultの件：showMatchResult に渡す currentOverall を毎回更新（base側の safe helper）
+   - ✅ 追加修正: PLAYER の power を「試合開始のたびに」localStorageの値で必ず再注入（55化防止）
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -79,6 +80,58 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   const getNewlyLitIdsThisMatch = B.getNewlyLitIdsThisMatch;
   const markLitAnnounced = B.markLitAnnounced;
   const buildLitNamesLine = B.buildLitNamesLine;
+
+  // =========================================================
+  // ✅ 追加: PLAYER power を localStorage から再注入（試合で55になるのを防ぐ）
+  // - 「部分差し替えできない」前提なので、このファイル内で完結させる
+  // =========================================================
+  function _readPlayerPowerFromStorage(){
+    try{
+      // まずは既存で使っているキー（base側でも使っている）
+      let v = Number(localStorage.getItem('mobbr_team_power'));
+      if (Number.isFinite(v) && v > 0) return v;
+
+      // 予備（環境差吸収）
+      v = Number(localStorage.getItem('mobbr_teamPower'));
+      if (Number.isFinite(v) && v > 0) return v;
+
+      // それでも無ければ null
+      return null;
+    }catch(_){
+      return null;
+    }
+  }
+
+  function _syncPlayerPower(state){
+    try{
+      if (!state) return false;
+
+      const p = getPlayer();
+      if (!p) return false;
+
+      ensureTeamRuntimeShape(p);
+
+      const v = _readPlayerPowerFromStorage();
+      if (v == null) return false;
+
+      // PLAYERだけ確実に上書き（CPUには触らない）
+      p.power = v;
+
+      // 念のため teams内のPLAYER参照も合わせる（参照ズレ対策）
+      try{
+        if (Array.isArray(state.teams)){
+          const idx = state.teams.findIndex(t => String(t?.id) === String(p.id));
+          if (idx >= 0){
+            state.teams[idx].power = v;
+          }
+        }
+      }catch(_){}
+
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
 
   // =========================================================
   // ✅ 追加: MATCH SKIP（外部から呼ぶAPI）
@@ -614,7 +667,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ===== match start =====
     if (state.phase === 'coach_done'){
+
+      // ✅ 追加修正: 試合開始前に必ず PLAYER power をメインの値で注入（55化防止）
+      _syncPlayerPower(state);
+
       initMatchDrop();
+
+      // ✅ 追加修正: initMatchDrop 内で上書きされても、直後にもう一度注入して戻す
+      _syncPlayerPower(state);
 
       if (state.mode === 'national'){
         _setNationalBanners();
