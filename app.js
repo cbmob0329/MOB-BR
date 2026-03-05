@@ -10,6 +10,9 @@
    - ✅ KEEP:
      - ui_team_training.js をロードしない（無限強化の根を断つ）
      - sim_tournament_core_step_base.js をロード（step 2分割の前提）
+
+   ✅ v19.4 hotfix（今回の③：2週進む＆大会週誤判定）
+   - FIX: mobbr:goMain の二重実行を app.js 側でもガード（最終防波堤）
 ========================================================= */
 
 const APP_VER = 19.4; // ★ここを上げる（キャッシュ強制更新の核）
@@ -956,8 +959,31 @@ function bindGlobalEvents(){
     }
   });
 
+  // =========================================================
   // ✅ 大会post：メイン復帰（週進行もここでのみ実処理）
+  //
+  // ✅ hotfix: goMain 二重実行ガード（最終防波堤）
+  // - UIが二重dispatchしても、ここで二重週進行を止める
+  // =========================================================
+  let __goMainHandling = false;
+  let __goMainHandledAt = 0;
+
   window.addEventListener('mobbr:goMain', (e) => {
+    const now = Date.now();
+
+    // ✅ re-entrant / dup guard
+    if (__goMainHandling){
+      try{ console.warn('[app] goMain ignored (reentrant)'); }catch(_){}
+      return;
+    }
+    if (__goMainHandledAt && (now - __goMainHandledAt) < 800){
+      try{ console.warn('[app] goMain ignored (dup within 800ms)'); }catch(_){}
+      return;
+    }
+
+    __goMainHandling = true;
+    __goMainHandledAt = now;
+
     try{
       const detail = e?.detail || {};
       const weeks = Math.max(0, Number(detail.advanceWeeks || 0) | 0);
@@ -997,6 +1023,8 @@ function bindGlobalEvents(){
       if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
     }catch(err){
       console.error(err);
+    }finally{
+      __goMainHandling = false;
     }
   });
 }
