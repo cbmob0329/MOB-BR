@@ -6,6 +6,7 @@
    - v5.4 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
    - ✅ resultの件：showMatchResult に渡す currentOverall を毎回更新（base側の safe helper）
    - ✅ 追加修正: PLAYER の power を「試合開始のたびに」localStorageの値で必ず再注入（55化防止）
+   - ✅ 追加修正: 試合result → NEXT で必ず総合RESULTを1回挟む
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -279,6 +280,238 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (state.phase === 'world_eliminated_wait_end'){
       state.phase = 'done';
       setRequest('endTournament', {});
+      return;
+    }
+
+    // ✅ LOCAL: 各試合の総合RESULT表示後 → 次試合 or 大会終了
+    if (state.phase === 'local_match_total_result_wait_next'){
+      if (state.matchIndex >= state.matchCount){
+        state.phase = 'local_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      startNextMatch();
+
+      state.ui.bg = 'tent.png';
+      state.ui.squareBg = 'tent.png';
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+      setRequest('nextMatch', { matchIndex: state.matchIndex });
+      state.phase = 'coach_done';
+      return;
+    }
+
+    // ✅ LASTCHANCE: 各試合の総合RESULT表示後 → 次試合 or 大会終了
+    if (state.phase === 'lastchance_match_total_result_wait_next'){
+      if (state.matchIndex >= state.matchCount){
+        state.phase = 'lastchance_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      startNextMatch();
+
+      state.ui.bg = 'tent.png';
+      state.ui.squareBg = 'tent.png';
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+      setRequest('nextMatch', { matchIndex: state.matchIndex });
+      state.phase = 'coach_done';
+      return;
+    }
+
+    // ✅ NATIONAL: 各試合の総合RESULT表示後 → 次試合 or セッション分岐
+    if (state.phase === 'national_match_total_result_wait_next'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+
+      if (state.matchIndex < state.matchCount){
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        _setNationalBanners();
+        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      const isLastSession = (si >= sc - 1);
+
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      state.phase = 'national_session_total_result_wait_notice';
+      setRequest('noop', {});
+      return;
+    }
+
+    // ✅ WORLD FINAL: 各試合の総合RESULT表示後 → 点灯/優勝判定/次試合
+    if (state.phase === 'world_final_match_total_result_wait_next'){
+      ensureWorldFinalMP(state);
+
+      updateWorldFinalLitByTotals(state);
+
+      const newlyLit = getNewlyLitIdsThisMatch(state);
+      if (Array.isArray(newlyLit) && newlyLit.length){
+        markLitAnnounced(state, newlyLit);
+
+        const lineNames = buildLitNamesLine(state, newlyLit);
+        const oneName = resolveTeamNameById(state, newlyLit[0]);
+
+        const line1 = (newlyLit.length === 1)
+          ? `${oneName}チームが点灯！`
+          : '複数チームが点灯！';
+
+        const line2 = (newlyLit.length === 1)
+          ? `${oneName}が80ptに到達！`
+          : `点灯：${lineNames}`;
+
+        setRequest('showNationalNotice', {
+          qualified: true,
+          line1,
+          line2,
+          line3: 'NEXTで進行'
+        });
+
+        state.phase = 'world_final_lit_notice_wait';
+        return;
+      }
+
+      const winnerId = checkWorldFinalWinnerByRule(state);
+
+      if (winnerId){
+        state.worldFinalMP.winnerId = winnerId;
+
+        const wName = resolveTeamNameById(state, winnerId);
+
+        setRequest('showNationalNotice', {
+          qualified: true,
+          line1: `${wName}チームが`,
+          line2: '点灯状態でチャンピオンを獲得！',
+          line3: 'NEXTで世界一発表！'
+        });
+
+        state._worldFinalWinnerName = wName;
+        state.phase = 'world_final_winner_notice_wait';
+        return;
+      }
+
+      if (state.matchIndex < state.matchCount){
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setWorldBanners(state, '');
+
+        setCenter3('次の試合へ', `FINAL  MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      const topId = getOverallTopId(state);
+      if (topId){
+        state.worldFinalMP.winnerId = topId;
+      }
+
+      const topName = resolveTeamNameById(state, state.worldFinalMP.winnerId || topId || '');
+
+      setRequest('showNationalNotice', {
+        qualified: true,
+        line1: 'WORLD FINAL 終了！',
+        line2: `世界一候補：${topName}`,
+        line3: 'NEXTで世界一発表！'
+      });
+
+      state._worldFinalWinnerName = topName;
+      state.phase = 'world_final_winner_notice_wait';
+      return;
+    }
+
+    // ✅ WORLD LOSERS: 各試合の総合RESULT表示後 → 次試合 or Losers終了分岐
+    if (state.phase === 'world_losers_match_total_result_wait_next'){
+      if (state.matchIndex < state.matchCount){
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setWorldBanners(state, '');
+
+        setCenter3('次の試合へ', `LOSERS  MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      state.phase = 'world_losers_total_result_wait_branch';
+      setRequest('noop', {});
+      return;
+    }
+
+    // ✅ WORLD QUAL: 各試合の総合RESULT表示後 → 次試合 or WORLD予選分岐
+    if (state.phase === 'world_qual_match_total_result_wait_next'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+
+      if (state.matchIndex < state.matchCount){
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        setWorldBanners(state, '');
+
+        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      const isLastSession = (si >= sc - 1);
+
+      if (isLastSession){
+        state.phase = 'world_qual_total_result_wait_branch';
+        setRequest('noop', {});
+        return;
+      }
+
+      state.phase = 'national_session_total_result_wait_notice';
+      setRequest('noop', {});
       return;
     }
 
@@ -1016,47 +1249,25 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       // LOCAL
       if (state.mode === 'local'){
+        setRequest('showTournamentResult', { total: state.tournamentTotal });
+
         if (state.matchIndex >= state.matchCount){
-          setRequest('showTournamentResult', { total: state.tournamentTotal });
           state.phase = 'local_total_result_wait_post';
-          return;
+        }else{
+          state.phase = 'local_match_total_result_wait_next';
         }
-
-        startNextMatch();
-
-        state.ui.bg = 'tent.png';
-        state.ui.squareBg = 'tent.png';
-        state.ui.leftImg = getPlayerSkin();
-        state.ui.rightImg = '';
-        state.ui.topLeftName = '';
-        state.ui.topRightName = '';
-
-        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-        setRequest('nextMatch', { matchIndex: state.matchIndex });
-        state.phase = 'coach_done';
         return;
       }
 
       // LAST CHANCE
       if (state.mode === 'lastchance'){
+        setRequest('showTournamentResult', { total: state.tournamentTotal });
+
         if (state.matchIndex >= state.matchCount){
-          setRequest('showTournamentResult', { total: state.tournamentTotal });
           state.phase = 'lastchance_total_result_wait_post';
-          return;
+        }else{
+          state.phase = 'lastchance_match_total_result_wait_next';
         }
-
-        startNextMatch();
-
-        state.ui.bg = 'tent.png';
-        state.ui.squareBg = 'tent.png';
-        state.ui.leftImg = getPlayerSkin();
-        state.ui.rightImg = '';
-        state.ui.topLeftName = '';
-        state.ui.topRightName = '';
-
-        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-        setRequest('nextMatch', { matchIndex: state.matchIndex });
-        state.phase = 'coach_done';
         return;
       }
 
@@ -1065,27 +1276,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         const nat = state.national || {};
         const si = Number(nat.sessionIndex||0);
         const sc = Number(nat.sessionCount||6);
-
-        if (state.matchIndex < state.matchCount){
-          startNextMatch();
-
-          state.ui.bg = 'tent.png';
-          state.ui.squareBg = 'tent.png';
-          state.ui.leftImg = getPlayerSkin();
-          state.ui.rightImg = '';
-          state.ui.topLeftName = '';
-          state.ui.topRightName = '';
-
-          _setNationalBanners();
-          setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-          setRequest('nextMatch', { matchIndex: state.matchIndex });
-          state.phase = 'coach_done';
-          return;
-        }
-
         const isLastSession = (si >= sc - 1);
 
         setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+        if (state.matchIndex < state.matchCount){
+          state.phase = 'national_match_total_result_wait_next';
+          return;
+        }
 
         if (isLastSession){
           state.phase = 'national_total_result_wait_post';
@@ -1102,114 +1300,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         // FINAL（マッチポイント制）
         if (wp === 'final'){
-          ensureWorldFinalMP(state);
-
-          updateWorldFinalLitByTotals(state);
-
-          const newlyLit = getNewlyLitIdsThisMatch(state);
-          if (Array.isArray(newlyLit) && newlyLit.length){
-            markLitAnnounced(state, newlyLit);
-
-            const lineNames = buildLitNamesLine(state, newlyLit);
-            const oneName = resolveTeamNameById(state, newlyLit[0]);
-
-            const line1 = (newlyLit.length === 1)
-              ? `${oneName}チームが点灯！`
-              : '複数チームが点灯！';
-
-            const line2 = (newlyLit.length === 1)
-              ? `${oneName}が80ptに到達！`
-              : `点灯：${lineNames}`;
-
-            setRequest('showNationalNotice', {
-              qualified: true,
-              line1,
-              line2,
-              line3: 'NEXTで進行'
-            });
-
-            state.phase = 'world_final_lit_notice_wait';
-            return;
-          }
-
-          const winnerId = checkWorldFinalWinnerByRule(state);
-
-          if (winnerId){
-            state.worldFinalMP.winnerId = winnerId;
-
-            const wName = resolveTeamNameById(state, winnerId);
-
-            setRequest('showNationalNotice', {
-              qualified: true,
-              line1: `${wName}チームが`,
-              line2: '点灯状態でチャンピオンを獲得！',
-              line3: 'NEXTで世界一発表！'
-            });
-
-            state._worldFinalWinnerName = wName;
-            state.phase = 'world_final_winner_notice_wait';
-            return;
-          }
-
-          if (state.matchIndex < state.matchCount){
-            startNextMatch();
-
-            state.ui.bg = 'tent.png';
-            state.ui.squareBg = 'tent.png';
-            state.ui.leftImg = getPlayerSkin();
-            state.ui.rightImg = '';
-            state.ui.topLeftName = '';
-            state.ui.topRightName = '';
-
-            setWorldBanners(state, '');
-
-            setCenter3('次の試合へ', `FINAL  MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-            setRequest('nextMatch', { matchIndex: state.matchIndex });
-            state.phase = 'coach_done';
-            return;
-          }
-
-          const topId = getOverallTopId(state);
-          if (topId){
-            state.worldFinalMP.winnerId = topId;
-          }
-
-          const topName = resolveTeamNameById(state, state.worldFinalMP.winnerId || topId || '');
-
-          setRequest('showNationalNotice', {
-            qualified: true,
-            line1: 'WORLD FINAL 終了！',
-            line2: `世界一候補：${topName}`,
-            line3: 'NEXTで世界一発表！'
-          });
-
-          state._worldFinalWinnerName = topName;
-          state.phase = 'world_final_winner_notice_wait';
+          setRequest('showTournamentResult', { total: state.tournamentTotal });
+          state.phase = 'world_final_match_total_result_wait_next';
           return;
         }
 
         // Losers（5試合固定）
         if (wp === 'losers'){
-          if (state.matchIndex < state.matchCount){
-            startNextMatch();
-
-            state.ui.bg = 'tent.png';
-            state.ui.squareBg = 'tent.png';
-            state.ui.leftImg = getPlayerSkin();
-            state.ui.rightImg = '';
-            state.ui.topLeftName = '';
-            state.ui.topRightName = '';
-
-            setWorldBanners(state, '');
-
-            setCenter3('次の試合へ', `LOSERS  MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-            setRequest('nextMatch', { matchIndex: state.matchIndex });
-            state.phase = 'coach_done';
-            return;
-          }
-
           setRequest('showTournamentResult', { total: state.tournamentTotal });
-          state.phase = 'world_losers_total_result_wait_branch';
+
+          if (state.matchIndex < state.matchCount){
+            state.phase = 'world_losers_match_total_result_wait_next';
+          }else{
+            state.phase = 'world_losers_total_result_wait_branch';
+          }
           return;
         }
 
@@ -1218,28 +1322,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
           const nat = state.national || {};
           const si = Number(nat.sessionIndex||0);
           const sc = Number(nat.sessionCount||6);
-
-          if (state.matchIndex < state.matchCount){
-            startNextMatch();
-
-            state.ui.bg = 'tent.png';
-            state.ui.squareBg = 'tent.png';
-            state.ui.leftImg = getPlayerSkin();
-            state.ui.rightImg = '';
-            state.ui.topLeftName = '';
-            state.ui.topRightName = '';
-
-            setWorldBanners(state, '');
-
-            setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '');
-            setRequest('nextMatch', { matchIndex: state.matchIndex });
-            state.phase = 'coach_done';
-            return;
-          }
-
           const isLastSession = (si >= sc - 1);
 
           setRequest('showTournamentResult', { total: state.tournamentTotal });
+
+          if (state.matchIndex < state.matchCount){
+            state.phase = 'world_qual_match_total_result_wait_next';
+            return;
+          }
 
           if (isLastSession){
             state.phase = 'world_qual_total_result_wait_branch';
