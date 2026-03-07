@@ -1,21 +1,18 @@
-　'use strict';
+'use strict';
 
 /*
-  MOB BR - ui_card.js v16（所持だけで効果有効版 / SSR最高レア版 / 補正%表示 / ID順 / プレビュー小さめ）
+  MOB BR - ui_card.js v17（所持だけで効果有効版 / 正式レア補正対応 / フル）
 
-  修正（今回）：
-  - ガチャ側とキー統一：mobbr_cards を正として扱う
-  - 旧キー mobbr_cardsOwned しか残っていない人を救済（自動で mobbr_cards に移行）
-  - 補正%表示が 0.05% になっていたので、実際の仕様（0.05=5%）として×100して表示
-  - ✅ 装備概念なし：
-      「所持しているだけで効果あり」に統一
-  - ✅ 所持カードを全部集計して mobbr_playerTeam に反映
-  - ✅ チーム戦闘力も再計算して保存
-      -> mobbr_playerTeam.power
-      -> mobbr_playerTeam.teamPower
-      -> mobbr_team_power
-      -> mobbr_teamPower
+  今回の修正：
+  - ✅ カード効果仕様を正式値に修正
+      R   : 初期 0.01% / 同カードごとに +0.005% / +50まで
+      SR  : 初期 0.05% / 同カードごとに +0.02%  / +30まで
+      SSR : 初期 0.1%  / 同カードごとに +0.05%  / +15まで
+  - ✅ 装備概念なし（所持しているだけで効果あり）
+  - ✅ ui_card.js 内で独自計算する（data_cards.js の旧計算に依存しない）
+  - ✅ mobbr_playerTeam / mobbr_team_power / mobbr_teamPower に正しい値を保存
   - ✅ TEAM画面表示用の cardEffects / eventBuff / eventBuffs も保存
+  - ✅ 旧キー mobbr_cardsOwned → mobbr_cards へ自動移行
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -33,13 +30,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ===== storage key =====
-  const K_CARDS = 'mobbr_cards';       // 正：所持カード {id: count}
-  const K_OLD   = 'mobbr_cardsOwned';  // 旧：ガチャ側が使っていたキー（救済用）
+  const K_CARDS = 'mobbr_cards';
+  const K_OLD   = 'mobbr_cardsOwned';
 
   const K_PLAYER_TEAM      = 'mobbr_playerTeam';
   const K_TEAM_POWER       = 'mobbr_team_power';
   const K_TEAM_POWER_ALT   = 'mobbr_teamPower';
   const K_CARD_TOTAL_CACHE = 'mobbr_card_effect_total';
+
+  // ===== 正式カード補正仕様 =====
+  // pct は「%そのもの」。0.01 = 0.01%
+  const CARD_SPEC = {
+    R:   { basePct: 0.01, stepPct: 0.005, maxPlus: 50 },
+    SR:  { basePct: 0.05, stepPct: 0.02,  maxPlus: 30 },
+    SSR: { basePct: 0.10, stepPct: 0.05,  maxPlus: 15 }
+  };
 
   // ===== DOM =====
   const dom = {
@@ -82,8 +87,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Number.isFinite(v) ? v : 0;
   }
 
-  function round2(n){
-    return Math.round(num(n) * 100) / 100;
+  function round3(n){
+    return Math.round(num(n) * 1000) / 1000;
   }
 
   function clone(obj){
@@ -92,16 +97,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function migrateIfNeeded(){
     const cur = readJSON(K_CARDS) || {};
-    const hasCur = Object.keys(cur).length > 0;
-
-    if (hasCur) return;
+    if (Object.keys(cur).length > 0) return;
 
     const old = readJSON(K_OLD) || {};
-    const hasOld = Object.keys(old).length > 0;
+    if (Object.keys(old).length <= 0) return;
 
-    if (!hasOld) return;
-
-    // 旧→新へ移行
     writeJSON(K_CARDS, old);
   }
 
@@ -115,9 +115,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function fmtPercent(p){
-    // data_cards.js は 0.05 = 5% のような「小数」で持っている
-    const v = Number(p) || 0;
-    return `${(v * 100).toFixed(2)}%`;
+    const v = num(p);
+    if (Math.abs(v) >= 1) return `${v.toFixed(2)}%`;
+    if (Math.abs(v) >= 0.1) return `${v.toFixed(3)}%`;
+    return `${v.toFixed(3)}%`;
   }
 
   function readPlayerTeam(){
@@ -133,7 +134,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     mem.id = String(mem.id || id || 'A');
 
-    if (typeof mem.name !== 'string') mem.name = mem.id;
+    if (typeof mem.name !== 'string' || !mem.name.trim()){
+      mem.name = mem.id;
+    }
     if (typeof mem.role !== 'string' || !mem.role){
       mem.role = fallbackRole || '';
     }
@@ -178,7 +181,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     });
 
     team.members = [A, B, C, ...rest];
-
     return team;
   }
 
@@ -207,8 +209,52 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // 所持カード補正の判定
-  // - data_cards.js 側の定義差に耐えるように、複数プロパティ＋名前ヒューリスティックで吸収
+  // カード1枚ごとの正式効果
+  // count = 所持枚数
+  // plus = 追加分（初回1枚目は +0）
+  // effectiveCount = 1 + cappedPlus
+  // pct = base + step * plus
+  // =========================================================
+  function getCardSpecByRarity(rarity){
+    const r = String(rarity || '').toUpperCase();
+    return CARD_SPEC[r] || CARD_SPEC.R;
+  }
+
+  function calcOwnedCardPercentInfo(rarity, count){
+    const spec = getCardSpecByRarity(rarity);
+    const owned = Math.max(0, Math.floor(num(count)));
+
+    if (owned <= 0){
+      return {
+        rarity: String(rarity || '').toUpperCase(),
+        owned: 0,
+        plus: 0,
+        cappedPlus: 0,
+        overCap: 0,
+        effectiveCount: 0,
+        pct: 0
+      };
+    }
+
+    const plus = Math.max(0, owned - 1);
+    const cappedPlus = Math.min(plus, spec.maxPlus);
+    const overCap = Math.max(0, plus - spec.maxPlus);
+    const effectiveCount = 1 + cappedPlus;
+    const pct = round3(spec.basePct + (spec.stepPct * cappedPlus));
+
+    return {
+      rarity: String(rarity || '').toUpperCase(),
+      owned,
+      plus,
+      cappedPlus,
+      overCap,
+      effectiveCount,
+      pct
+    };
+  }
+
+  // =========================================================
+  // 所持カード補正の対象判定
   // =========================================================
   function normalizeTargetText(card){
     const parts = [
@@ -236,50 +282,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function detectBucket(card){
     const s = normalizeTargetText(card);
 
-    // 個別優先
-    if (
-      s.includes('aim') ||
-      s.includes('エイム') ||
-      s.includes('命中')
-    ){
-      return 'aim';
-    }
+    if (s.includes('aim') || s.includes('エイム') || s.includes('命中')) return 'aim';
+    if (s.includes('mental') || s.includes('メンタル') || s.includes('精神')) return 'mental';
+    if (s.includes('tech') || s.includes('技術') || s.includes('テック')) return 'tech';
+    if (s.includes('agi') || s.includes('agility') || s.includes('機動') || s.includes('俊敏') || s.includes('スピード')) return 'agi';
+    if (s.includes('hp') || s.includes('体力') || s.includes('health')) return 'hp';
 
-    if (
-      s.includes('mental') ||
-      s.includes('メンタル') ||
-      s.includes('精神')
-    ){
-      return 'mental';
-    }
-
-    if (
-      s.includes('tech') ||
-      s.includes('技術') ||
-      s.includes('テック')
-    ){
-      return 'tech';
-    }
-
-    if (
-      s.includes('agi') ||
-      s.includes('agility') ||
-      s.includes('機動') ||
-      s.includes('俊敏') ||
-      s.includes('スピード')
-    ){
-      return 'agi';
-    }
-
-    if (
-      s.includes('hp') ||
-      s.includes('体力') ||
-      s.includes('health')
-    ){
-      return 'hp';
-    }
-
-    // 総合系
     if (
       s.includes('power') ||
       s.includes('team') ||
@@ -291,31 +299,29 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return 'power';
     }
 
-    // 情報不足時は「総合」に寄せる
     return 'power';
   }
 
   function getOwnedCardRows(){
     const owned = getCards();
     const all = (DC.getAll ? DC.getAll() : []) || [];
-
     const rows = [];
 
     for (const card of all){
-      const count = Number(owned[card.id] || 0);
+      const count = Math.max(0, Math.floor(num(owned[card.id] || 0)));
       if (count <= 0) continue;
 
-      const bonusP = DC.calcSingleCardPercent
-        ? Number(DC.calcSingleCardPercent(card.rarity, count) || 0)
-        : 0;
+      const info = calcOwnedCardPercentInfo(card.rarity, count);
 
       rows.push({
         id: card.id,
         name: card.name,
-        rarity: card.rarity,
+        rarity: String(card.rarity || '').toUpperCase(),
         imagePath: card.imagePath,
         count,
-        bonusP,
+        bonusP: info.pct,
+        plus: info.cappedPlus,
+        overCap: info.overCap,
         bucket: detectBucket(card),
         raw: card
       });
@@ -328,7 +334,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const rows = getOwnedCardRows();
 
     const total = {
-      powerPct: 0,   // 0.05 = 5%
+      powerPct: 0,
       hpPct: 0,
       aimPct: 0,
       techPct: 0,
@@ -350,12 +356,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       else total.powerPct += p;
     }
 
-    total.powerPct = round2(total.powerPct);
-    total.hpPct = round2(total.hpPct);
-    total.aimPct = round2(total.aimPct);
-    total.techPct = round2(total.techPct);
-    total.mentalPct = round2(total.mentalPct);
-    total.agiPct = round2(total.agiPct);
+    total.powerPct = round3(total.powerPct);
+    total.hpPct = round3(total.hpPct);
+    total.aimPct = round3(total.aimPct);
+    total.techPct = round3(total.techPct);
+    total.mentalPct = round3(total.mentalPct);
+    total.agiPct = round3(total.agiPct);
 
     if (total.powerPct) total.lines.push(`総合 +${fmtPercent(total.powerPct)}`);
     if (total.hpPct) total.lines.push(`体力 +${fmtPercent(total.hpPct)}`);
@@ -368,9 +374,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // ✅ 所持カード補正を PLAYER TEAM に反映
-  // - TEAM画面表示用
-  // - 試合側で読む teamPower / power / mobbr_team_power も更新
+  // 所持だけで PLAYER TEAM に反映
+  // powerPct は「%」なので倍率化は /100
+  // 例：0.05 => 0.05%
   // =========================================================
   function applyOwnedCardEffectsToPlayerTeam(){
     try{
@@ -380,65 +386,59 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const team = ensureTeamBase(clone(team0) || {});
 
       const basePower = calcBaseTeamPower(team);
-
-      const powerMult = 1 + num(summary.powerPct);
+      const powerMult = 1 + (num(summary.powerPct) / 100);
       const buffedPower = clamp(Math.round(basePower * powerMult), 1, 100);
 
-      // TEAM画面の表示用
       team.cardEffects = Array.isArray(summary.lines) ? summary.lines.slice() : [];
 
-      // ui_team_core.js が読む表示キー
+      // TEAM画面表示用
       team.eventBuffs = {
-        aim: Math.round(num(summary.aimPct) * 100),
-        mental: Math.round(num(summary.mentalPct) * 100),
-        agi: Math.round(num(summary.agiPct) * 100)
+        aim: round3(summary.aimPct),
+        mental: round3(summary.mentalPct),
+        agi: round3(summary.agiPct)
       };
 
       team.eventBuff = {
-        multPower: round2(powerMult),
+        multPower: round3(powerMult),
         addPower: 0,
-        addAim: Math.round(num(summary.aimPct) * 100),
-        addMental: Math.round(num(summary.mentalPct) * 100),
-        addAgi: Math.round(num(summary.agiPct) * 100),
-        addTech: Math.round(num(summary.techPct) * 100)
+        addAim: round3(summary.aimPct),
+        addMental: round3(summary.mentalPct),
+        addAgi: round3(summary.agiPct),
+        addTech: round3(summary.techPct)
       };
 
-      // デバッグ/参照用
       team.cardOwnedBonus = {
         basePower,
         finalPower: buffedPower,
-        powerPct: summary.powerPct,
-        hpPct: summary.hpPct,
-        aimPct: summary.aimPct,
-        techPct: summary.techPct,
-        mentalPct: summary.mentalPct,
-        agiPct: summary.agiPct
+        powerPct: round3(summary.powerPct),
+        hpPct: round3(summary.hpPct),
+        aimPct: round3(summary.aimPct),
+        techPct: round3(summary.techPct),
+        mentalPct: round3(summary.mentalPct),
+        agiPct: round3(summary.agiPct),
+        lines: Array.isArray(summary.lines) ? summary.lines.slice() : []
       };
 
-      // 試合側で読む戦闘力
       team.teamPower = buffedPower;
       team.power = buffedPower;
 
       writePlayerTeam(team);
 
-      // sim_tournament_logic / sim_tournament_core_step 側の互換キー
       try{ localStorage.setItem(K_TEAM_POWER, String(buffedPower)); }catch(e){}
       try{ localStorage.setItem(K_TEAM_POWER_ALT, String(buffedPower)); }catch(e){}
 
-      // キャッシュ
       writeJSON(K_CARD_TOTAL_CACHE, {
         basePower,
         finalPower: buffedPower,
-        powerPct: summary.powerPct,
-        hpPct: summary.hpPct,
-        aimPct: summary.aimPct,
-        techPct: summary.techPct,
-        mentalPct: summary.mentalPct,
-        agiPct: summary.agiPct,
-        lines: summary.lines || []
+        powerPct: round3(summary.powerPct),
+        hpPct: round3(summary.hpPct),
+        aimPct: round3(summary.aimPct),
+        techPct: round3(summary.techPct),
+        mentalPct: round3(summary.mentalPct),
+        agiPct: round3(summary.agiPct),
+        lines: Array.isArray(summary.lines) ? summary.lines.slice() : []
       });
 
-      // TEAM UI が既にあれば再描画
       try{
         if (window.MOBBR?.initTeamUI){
           window.MOBBR.initTeamUI();
@@ -464,7 +464,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     clearList();
 
-    // 所持カードを開くたびに補正を再集計
     applyOwnedCardEffectsToPlayerTeam();
 
     const rows = getOwnedCardRows();
@@ -500,13 +499,26 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const bonus = document.createElement('div');
       bonus.className = 'cardRowBonus';
-      bonus.textContent = `+${fmtPercent(c.bonusP)}`;
 
-      right.appendChild(cnt);
-      right.appendChild(bonus);
+      const plusText = `+${c.plus}`;
+      const pctText = fmtPercent(c.bonusP);
+      bonus.textContent = `${plusText} / ${pctText}`;
 
       row.appendChild(left);
-      row.appendChild(right);
+
+      const rightWrap = document.createElement('div');
+      rightWrap.className = 'cardRowRight';
+      rightWrap.appendChild(cnt);
+      rightWrap.appendChild(bonus);
+
+      if (c.overCap > 0){
+        const over = document.createElement('div');
+        over.className = 'cardRowBonus';
+        over.textContent = `上限超過 ${c.overCap}`;
+        rightWrap.appendChild(over);
+      }
+
+      row.appendChild(rightWrap);
 
       row.addEventListener('click', ()=>{
         showPreview(c);
@@ -541,13 +553,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ===== open / close =====
   function open(){
     if (dom.screen){
-      // 開いたときに毎回反映
       applyOwnedCardEffectsToPlayerTeam();
       renderList();
       dom.screen.classList.add('show');
       dom.screen.setAttribute('aria-hidden', 'false');
     }else{
-      // 画面が無くても補正だけは更新
       applyOwnedCardEffectsToPlayerTeam();
       S.setStr(S.KEYS.recent, 'カードコレクションを確認した');
       if (window.MOBBR.initMainUI) window.MOBBR.initMainUI();
@@ -571,8 +581,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function initCardUI(){
     bind();
-
-    // 起動時にも1回反映
     applyOwnedCardEffectsToPlayerTeam();
   }
 
@@ -582,7 +590,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     close,
     render: renderList,
     applyOwnedCardEffectsToPlayerTeam,
-    aggregateOwnedCardEffects
+    aggregateOwnedCardEffects,
+    calcOwnedCardPercentInfo
   };
 
   document.addEventListener('DOMContentLoaded', initCardUI);
