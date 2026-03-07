@@ -13,6 +13,11 @@
   ✅追加（2026-02-xx）
   - UI側で参照できる「大会ごとの総マッチ数」推定関数を追加（安全側の補助）
     ※ core が totalMatches 等を持っていればそちらが優先される前提
+
+  ✅今回修正
+  - カード効果込みの TEAM総合戦闘力を PLAYER power として必ず使用
+  - ui_team_core.js / localStorage / mobbr_playerTeam の順で安全に取得
+  - 55固定へ落ちにくいように補強
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -120,20 +125,91 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== プレイヤー戦闘力 =====
   function calcPlayerTeamPower(){
+    // 1) ui_team_core.js の確定計算を最優先
     try{
-      const fn = window.MOBBR?.ui?.team?.calcTeamPower;
+      const fn =
+        window.MOBBR?.ui?.team?.calcTeamPower ||
+        window.MOBBR?._uiTeamCore?.calcTeamPower ||
+        window.MOBBR?.ui?._teamCore?.calcTeamPower;
+
       if (typeof fn === 'function'){
-        const v = fn();
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
+        const v = Number(fn());
+        if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
       }
     }catch(e){}
 
+    // 2) ui_team_core が保存した最終チーム力
+    try{
+      let v = Number(localStorage.getItem('mobbr_team_power'));
+      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
+
+      v = Number(localStorage.getItem('mobbr_teamPower'));
+      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
+    }catch(e){}
+
+    // 3) mobbr_playerTeam から再計算
     try{
       const raw = localStorage.getItem(K.playerTeam);
       if (raw){
         const t = JSON.parse(raw);
-        const v = Number(t?.teamPower);
-        if (Number.isFinite(v)) return clamp(v, 1, 100);
+
+        const v1 = Number(t?.teamPower);
+        if (Number.isFinite(v1) && v1 > 0) return clamp(v1, 1, 100);
+
+        const v2 = Number(t?.power);
+        if (Number.isFinite(v2) && v2 > 0) return clamp(v2, 1, 100);
+
+        const members = Array.isArray(t?.members) ? t.members : [];
+        const abc = members.filter(m=>{
+          const id = String(m?.id || '');
+          return id === 'A' || id === 'B' || id === 'C';
+        });
+
+        if (abc.length){
+          const calcMember = (m)=>{
+            const st = m?.stats || {};
+            const hp = clamp(Number(st.hp || 0), 0, 99);
+            const aim = clamp(Number(st.aim || 0), 0, 99);
+            const tech = clamp(Number(st.tech || 0), 0, 99);
+            const mental = clamp(Number(st.mental || 0), 0, 99);
+            return (hp + aim + tech + mental) / 4;
+          };
+
+          let base = abc.reduce((sum, m)=> sum + calcMember(m), 0) / abc.length;
+
+          const eb = t?.eventBuffs || {};
+          const ob = t?.eventBuff || {};
+
+          const ebPct = (
+            Number(eb.aim || 0) +
+            Number(eb.mental || 0) +
+            Number(eb.agi || 0)
+          ) / 3;
+
+          const multPower = Number(ob.multPower || 0);
+          const addPower = Number(ob.addPower || 0);
+          const legacyStatAdd = (
+            Number(ob.addAim || 0) +
+            Number(ob.addMental || 0) +
+            Number(ob.addAgi || 0) +
+            Number(ob.addTech || 0)
+          ) / 4;
+
+          if (multPower && multPower !== 1){
+            base *= multPower;
+          }
+          if (ebPct){
+            base *= (1 + (ebPct / 100));
+          }
+          if (addPower){
+            base += addPower;
+          }
+          if (legacyStatAdd){
+            base += legacyStatAdd;
+          }
+
+          return clamp(Math.round(base), 1, 100);
+        }
       }
     }catch(e){}
 
@@ -204,7 +280,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== round settings =====
   function battleSlots(round){
-    // ✅ ユーザー確定：R1-4=4 / R5=2 / R6=1
     if (round <= 4) return 4;
     if (round === 5) return 2;
     return 1;
@@ -224,19 +299,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ===== tournament totals (helper) =====
-  // ※ coreが totalMatches を持っていればそちらが正。これは「UI矯正用の保険」。
   function guessTotalMatchesByModePhase(mode, phase){
     const m = String(mode || '').toLowerCase();
     const p = String(phase || '').toLowerCase();
 
     if (m === 'world'){
-      if (p === 'final') return 12;   // ✅ ユーザー報告：決勝は12マッチ
-      if (p === 'wl') return 6;       // 想定（必要なら core 側が上書き）
-      return 6;                       // qual想定（必要なら core 側が上書き）
+      if (p === 'final') return 12;
+      if (p === 'wl') return 6;
+      return 6;
     }
     if (m === 'national') return 5;
     if (m === 'lastchance') return 5;
-    return 5; // local他
+    return 5;
   }
 
   // ===== drop =====
@@ -250,7 +324,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.kills_total = 0;
       t.assists_total = 0;
       t.downs_total = 0;
-      // members個人は試合単位で集計したいならここで0へ
       if (Array.isArray(t.members)){
         for (const m of t.members){
           if (m){ m.kills = 0; m.assists = 0; }
@@ -288,7 +361,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       t.areaId = areaId;
     }
 
-    // R1の「被りエリアの4戦」を確定させるため保持
     state._dropAssigned = {};
     for (const [a, list] of assigned.entries()){
       state._dropAssigned[a] = list.slice();
@@ -336,7 +408,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return true;
     }
 
-    // ✅ R1は「降下の被り4箇所＝4戦」を最優先で確定（仕様）
     if (round === 1 && state && state._dropAssigned){
       const areaKeys = Object.keys(state._dropAssigned)
         .map(n=>Number(n))
@@ -351,17 +422,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
         const A = teamById(ids[0]);
         const B = teamById(ids[1]);
-        addPair(A,B); // 足りない場合は後段で必ず埋める
+        addPair(A,B);
         if (matches.length >= slots) break;
       }
     }
 
-    // ✅ player確率戦（R1は被り時100%＝上で入ってる想定／それ以外は確率）
     const player = getPlayer();
     if (matches.length < slots && player && !player.eliminated && round !== 1){
       const prob = playerBattleProb(round, !!state.playerContestedAtDrop);
       if (Math.random() < prob){
-        // プレイヤーが既に使われていないなら、相手を確保
         if (canUse(player)){
           const candidatesAll = alive.filter(t => t && !t.eliminated && t.id !== player.id && !used.has(t.id));
 
@@ -377,7 +446,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }
 
-    // ✅ 残りは「必ず slots 本作る」ために、未使用の生存チームをシャッフルして先頭からペア化
     if (matches.length < slots){
       const pool = shuffle(alive.filter(t => t && !t.eliminated && !used.has(t.id)));
       let i = 0;
@@ -454,7 +522,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     eventCount,
     playerBattleProb,
 
-    // ✅ helper
     guessTotalMatchesByModePhase,
 
     resetForNewMatch,
