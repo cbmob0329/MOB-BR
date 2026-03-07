@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v19.8（FULL）
+   MOB BR - ui_team_core.js v19.9（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
@@ -11,11 +11,15 @@
       - ✅ チーム総合戦闘力が0になる問題を修正（DOM拾いを強化）
       - ✅ ヘッダー横に「カード効果（バフ）」表示を追加（無ければ自動生成）
       - ✅ eventBuffs（aim/mental/agi %）と eventBuff（旧）を吸収して表示
-   - ✅ v19.8（今回）:
+   - ✅ v19.8:
       - ✅ TEAM画面の「セーブ」「セーブ削除」が効かない問題を修正
          1) セーブ/削除ボタンへ確実にイベントをバインド（click + pointerup）
          2) modalBack が前面に残ってタップを吸うケースを抑止（TEAM表示時は pointer-events:none）
          3) セーブ削除後は markNeedSetup を立て、必要キーをクリアし、リロードで確実に初期設定へ戻す
+   - ✅ v19.9（今回）:
+      - ✅ カード効果を「総合チーム力」に反映
+      - ✅ 総合チーム力を localStorage / team.power / team.teamPower に保存
+      - ✅ tournamentLogic 側が拾えるよう window.MOBBR.ui.team.calcTeamPower を提供
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
@@ -49,6 +53,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const KEY_TOUR_STATE   = 'mobbr_tour_state';
   const KEY_NEXT_TOUR    = 'mobbr_nextTour';
   const KEY_NEXT_TOUR_W  = 'mobbr_nextTourW';
+
+  // ✅ 試合側が参照している戦闘力キー
+  const KEY_TEAM_POWER_A = 'mobbr_team_power';
+  const KEY_TEAM_POWER_B = 'mobbr_teamPower';
 
   // 表示ステータス（要望：これ以外は表示しない）
   const STATS_SHOW = [
@@ -87,6 +95,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Math.max(min, Math.min(max, v));
   }
   function clamp0to99(n){ return clamp(n, 0, 99); }
+  function clamp1to100(n){ return clamp(n, 1, 100); }
 
   function clone(obj){
     try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return obj; }
@@ -117,6 +126,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function setStrLS(key, val){ try{ localStorage.setItem(String(key), String(val)); }catch(e){} }
   function delLS(key){ try{ localStorage.removeItem(String(key)); }catch(e){} }
+
+  function setNumLS(key, val){
+    try{ localStorage.setItem(String(key), String(Math.round(Number(val) || 0))); }catch(e){}
+  }
 
   // =========================================================
   // team data migration（壊さず整える）
@@ -183,6 +196,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     team.members = [A, B, C, ...rest];
 
+    if (!team.eventBuffs || typeof team.eventBuffs !== 'object') team.eventBuffs = {};
+    if (!team.eventBuff || typeof team.eventBuff !== 'object') team.eventBuff = {};
+
     return team;
   }
 
@@ -194,7 +210,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // team power（簡易：4ステ平均。既存powerがあるなら表示はそれ優先）
+  // team power
   // =========================================================
   function calcMemberPower(mem){
     const st = mem?.stats || {};
@@ -208,16 +224,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return Math.round(sum / cnt);
   }
 
-  function calcTeamPower(team){
+  function calcBaseTeamPower(team){
     const ms = (team?.members || []).filter(m=>{
       const id = String(m?.id || '');
       return id === 'A' || id === 'B' || id === 'C';
     });
     if (!ms.length) return 0;
-
-    // 既存仕様で team.power があれば、それを最優先で表示
-    const p0 = Number(team?.power);
-    if (Number.isFinite(p0) && p0 > 0) return Math.round(p0);
 
     let sum = 0;
     ms.forEach(m=>{ sum += calcMemberPower(m); });
@@ -228,7 +240,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ✅ カード効果（バフ）表示（eventBuffs / eventBuff を吸収）
   // - eventBuffs: { aim:+10, mental:+5, agi:+8 } など（%加算）
   // - eventBuff : { multPower:1.1, addAim:5 } など（旧）
-  // - ここは “表示だけ”。削除・上書きはしない。
   // =========================================================
   function num(n){ const v = Number(n); return Number.isFinite(v) ? v : 0; }
 
@@ -279,6 +290,82 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     if (!parts.length) return 'なし';
     return parts.join(' / ');
+  }
+
+  // =========================================================
+  // ✅ カード効果を “総合チーム力” に反映
+  // - 表示だけでなく、保存値にも反映する
+  // - eventBuffs は %系、eventBuff は % / 固定加算を吸収
+  // =========================================================
+  function calcTeamPower(team){
+    const base = calcBaseTeamPower(team);
+    if (!base) return 0;
+
+    const eb = (team && typeof team === 'object') ? team.eventBuffs : null;
+    const ob = (team && typeof team === 'object') ? team.eventBuff : null;
+
+    // 新eventBuffs（%）
+    const ebAim = num(eb?.aim);
+    const ebMental = num(eb?.mental);
+    const ebAgi = num(eb?.agi);
+
+    // aim/mental/agi はそのまま全部乗せすると強すぎるので、
+    // 総合チーム力には「平均寄せ」で反映
+    const ebPct = (ebAim + ebMental + ebAgi) / 3;
+
+    // 旧eventBuff
+    const multPower = num(ob?.multPower);
+    const addPower = num(ob?.addPower);
+    const addAim = num(ob?.addAim);
+    const addMental = num(ob?.addMental);
+    const addAgi = num(ob?.addAgi);
+    const addTech = num(ob?.addTech);
+
+    // 旧固定加算群も総合へ平均寄せ
+    const legacyStatAdd = (addAim + addMental + addAgi + addTech) / 4;
+
+    let total = Number(base);
+
+    // 旧：総合倍率
+    if (multPower && multPower !== 1){
+      total *= multPower;
+    }
+
+    // 新：eventBuffs % を総合へ反映
+    if (ebPct){
+      total *= (1 + (ebPct / 100));
+    }
+
+    // 旧：総合固定加算
+    if (addPower){
+      total += addPower;
+    }
+
+    // 旧：各能力固定加算を総合へ反映
+    if (legacyStatAdd){
+      total += legacyStatAdd;
+    }
+
+    return clamp1to100(Math.round(total));
+  }
+
+  function persistComputedTeamPower(team){
+    try{
+      if (!team || typeof team !== 'object') return 0;
+
+      const p = calcTeamPower(team);
+
+      team.power = p;
+      team.teamPower = p;
+
+      setNumLS(KEY_TEAM_POWER_A, p);
+      setNumLS(KEY_TEAM_POWER_B, p);
+
+      writePlayerTeam(team);
+      return p;
+    }catch(e){
+      return 0;
+    }
   }
 
   // =========================================================
@@ -427,7 +514,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       if (!dom.modalBack) return;
 
-      // TEAMが “表示されているっぽい” 時だけ
       const isTeamVisible = !!(dom.teamScreen && dom.teamScreen.style && dom.teamScreen.style.display !== 'none');
       if (!isTeamVisible) return;
 
@@ -594,12 +680,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       // TEAMデータは “壊さず整える → 保存” だけ
       const team = migrateAndPersistTeam();
 
+      // ✅ 今回追加：カード効果込みの最終チーム力を確定保存
+      const p = persistComputedTeamPower(team);
+
       // 初期セットアップ強制フラグが残ってたら解除（安全側）
       delLS(KEY_NEED_SETUP);
 
       // 表示も更新
       renderTeamHeader(team);
-      showToast('セーブしました');
+      showToast(`セーブしました（${p}%）`);
     }catch(e){
       console.error('[TEAM] save failed:', e);
       showToast('セーブ失敗');
@@ -620,15 +709,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
 
       // 2) 最小限のキーをクリア（大会状態/チーム/会社など）
-      //    ※ “全部消す” 系の storage API があればそれを優先
       const S = getStorage();
 
-      // 任意の全消しAPI（存在する場合だけ）
       if (S && typeof S.clearAllGameData === 'function'){
         S.clearAllGameData();
       }else if (S && typeof S.clearAll === 'function'){
-        // clearAll が “本当に全消し” の可能性があるので、
-        // 既存実装がある場合のみ使う（無ければ個別remove）
         S.clearAll();
       }else{
         delLS(KEY_PLAYER_TEAM);
@@ -644,6 +729,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         delLS(KEY_TOUR_STATE);
         delLS(KEY_NEXT_TOUR);
         delLS(KEY_NEXT_TOUR_W);
+
+        delLS(KEY_TEAM_POWER_A);
+        delLS(KEY_TEAM_POWER_B);
       }
 
       showToast('セーブを削除しました');
@@ -660,7 +748,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function bindSaveDeleteButtonsOnce(){
     try{
-      // バインド済みなら二重付けしない
       const bindOne = (btn, type) => {
         if (!btn) return;
         if (btn.dataset && btn.dataset.mobbrBound === '1') return;
@@ -668,10 +755,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
         const handler = (ev) => {
           try{
-            // TEAM上で modalBack が吸ってたら、念のため解除
             suppressModalBackTapIfNeeded();
 
-            // iOS: pointerup/click の二重発火を抑止
             if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
             if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
           }catch(_){}
@@ -680,11 +765,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           else doDeleteSave();
         };
 
-        // 安全側で両方
         btn.addEventListener('click', handler, { passive:false });
         btn.addEventListener('pointerup', handler, { passive:false });
-
-        // iOS古めの保険
         btn.addEventListener('touchend', handler, { passive:false });
       };
 
@@ -779,8 +861,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.teamName.textContent = String(team?.teamName || 'PLAYER TEAM');
     }
 
-    // ✅ 総合戦闘力（%）表示
-    const p = calcTeamPower(team);
+    // ✅ 総合戦闘力（カード効果込み）
+    const p = persistComputedTeamPower(team);
     if (dom.teamPower){
       dom.teamPower.textContent = `チーム力：${p}%`;
       dom.teamPower.setAttribute('data-team-power','1');
@@ -807,7 +889,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       dom.membersWrap.appendChild(renderMemberCard(mem));
     });
 
-    // ✅ 注意書き：チーム画面では修行しない
     const note = document.createElement('div');
     note.style.marginTop = '4px';
     note.style.fontSize = '12px';
@@ -829,13 +910,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     renderTeamHeader(team);
     renderMembers(team);
 
-    // ✅ 描画の度に、旧A/B/Cブロックが復活してないか潰す
     hideLegacyMemberBlocksOnly();
-
-    // ✅ v19.8: modalBack 吸いの抑止を毎回
     suppressModalBackTapIfNeeded();
-
-    // ✅ v19.8: ボタン再拾い＆イベント付け直し（ただし二重付けはしない）
     pickSaveDeleteButtons();
     bindSaveDeleteButtonsOnce();
   }
@@ -860,6 +936,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     migrateTeam,
     migrateAndPersistTeam,
     calcTeamPower,
+    calcBaseTeamPower,
+    persistComputedTeamPower,
     renderTeamPower: () => {
       try{
         const team = migrateAndPersistTeam();
@@ -867,9 +945,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }catch(e){}
     },
     render,
-    // デバッグ用
     hideLegacyMemberBlocksOnly,
-    // v19.8 追加（手動検証用）
     _debug: {
       pickSaveDeleteButtons,
       bindSaveDeleteButtonsOnce,
@@ -885,10 +961,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ✅ 新参照（app.js のCHECKで見ている）
   window.MOBBR.ui._teamCore = coreApi;
 
+  // ✅ tournamentLogic 側が拾える参照を追加
+  window.MOBBR.ui.team = window.MOBBR.ui.team || {};
+  Object.assign(window.MOBBR.ui.team, {
+    calcTeamPower: function(){
+      try{
+        const team = migrateAndPersistTeam();
+        return persistComputedTeamPower(team);
+      }catch(e){
+        return 66;
+      }
+    }
+  });
+
   // ✅ init
   window.MOBBR.initTeamUI = initTeamUI;
 
-  // 初回：DOM準備後に呼ばれる想定だが、保険で1回だけ
   try{
     if (document.readyState === 'complete' || document.readyState === 'interactive'){
       setTimeout(()=>{ try{ initTeamUI(); }catch(e){} }, 0);
