@@ -16,6 +16,7 @@
 
   ✅今回修正
   - カード効果込みの TEAM総合戦闘力を PLAYER power として必ず使用
+  - ui_card.js が保存した最終値を最優先で参照
   - ui_team_core.js / localStorage / mobbr_playerTeam の順で安全に取得
   - 55固定へ落ちにくいように補強
 */
@@ -29,7 +30,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     teamName: 'mobbr_team',
     playerTeam: 'mobbr_playerTeam',
     equippedSkin: 'mobbr_equippedSkin',
-    equippedCoachSkills: 'mobbr_equippedCoachSkills'
+    equippedCoachSkills: 'mobbr_equippedCoachSkills',
+
+    // ✅ 今回追加：ui_card.js が保存するキー
+    teamPower: 'mobbr_team_power',
+    teamPowerAlt: 'mobbr_teamPower',
+    cardEffectTotal: 'mobbr_card_effect_total'
   };
 
   // ===== Map Master（固定）=====
@@ -125,7 +131,58 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== プレイヤー戦闘力 =====
   function calcPlayerTeamPower(){
-    // 1) ui_team_core.js の確定計算を最優先
+
+    // 0) ui_card.js が保存した “最終値” を最優先
+    try{
+      let v = Number(localStorage.getItem(K.teamPower));
+      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
+
+      v = Number(localStorage.getItem(K.teamPowerAlt));
+      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
+    }catch(e){}
+
+    // 0.5) カード補正キャッシュ
+    try{
+      const raw = localStorage.getItem(K.cardEffectTotal);
+      if (raw){
+        const c = JSON.parse(raw);
+
+        const v1 = Number(c?.finalPower);
+        if (Number.isFinite(v1) && v1 > 0) return clamp(v1, 1, 100);
+
+        const v2 = Number(c?.teamPower);
+        if (Number.isFinite(v2) && v2 > 0) return clamp(v2, 1, 100);
+      }
+    }catch(e){}
+
+    // 1) mobbr_playerTeam から “カード込みの確定値” を優先
+    try{
+      const raw = localStorage.getItem(K.playerTeam);
+      if (raw){
+        const t = JSON.parse(raw);
+
+        const v0 = Number(t?.cardOwnedBonus?.finalPower);
+        if (Number.isFinite(v0) && v0 > 0) return clamp(v0, 1, 100);
+
+        const v1 = Number(t?.teamPower);
+        if (Number.isFinite(v1) && v1 > 0) return clamp(v1, 1, 100);
+
+        const v2 = Number(t?.power);
+        if (Number.isFinite(v2) && v2 > 0) return clamp(v2, 1, 100);
+      }
+    }catch(e){}
+
+    // 2) ui_card.js の再集計関数があれば実行して取得
+    try{
+      const fn = window.MOBBR?.ui?.card?.applyOwnedCardEffectsToPlayerTeam;
+      if (typeof fn === 'function'){
+        const res = fn();
+        const v = Number(res?.finalPower);
+        if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
+      }
+    }catch(e){}
+
+    // 3) ui_team_core.js の計算値（これは素の値の可能性があるので後順位）
     try{
       const fn =
         window.MOBBR?.ui?.team?.calcTeamPower ||
@@ -138,26 +195,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }catch(e){}
 
-    // 2) ui_team_core が保存した最終チーム力
-    try{
-      let v = Number(localStorage.getItem('mobbr_team_power'));
-      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
-
-      v = Number(localStorage.getItem('mobbr_teamPower'));
-      if (Number.isFinite(v) && v > 0) return clamp(v, 1, 100);
-    }catch(e){}
-
-    // 3) mobbr_playerTeam から再計算
+    // 4) mobbr_playerTeam から最終保険で手計算
     try{
       const raw = localStorage.getItem(K.playerTeam);
       if (raw){
         const t = JSON.parse(raw);
-
-        const v1 = Number(t?.teamPower);
-        if (Number.isFinite(v1) && v1 > 0) return clamp(v1, 1, 100);
-
-        const v2 = Number(t?.power);
-        if (Number.isFinite(v2) && v2 > 0) return clamp(v2, 1, 100);
 
         const members = Array.isArray(t?.members) ? t.members : [];
         const abc = members.filter(m=>{
@@ -177,6 +219,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
           let base = abc.reduce((sum, m)=> sum + calcMember(m), 0) / abc.length;
 
+          const cardOwnedBonus = t?.cardOwnedBonus || {};
+          const powerPct = Number(cardOwnedBonus.powerPct || 0);
+
           const eb = t?.eventBuffs || {};
           const ob = t?.eventBuff || {};
 
@@ -195,15 +240,22 @@ window.MOBBR.sim = window.MOBBR.sim || {};
             Number(ob.addTech || 0)
           ) / 4;
 
+          if (powerPct){
+            base *= (1 + powerPct);
+          }
+
           if (multPower && multPower !== 1){
             base *= multPower;
           }
+
           if (ebPct){
             base *= (1 + (ebPct / 100));
           }
+
           if (addPower){
             base += addPower;
           }
+
           if (legacyStatAdd){
             base += legacyStatAdd;
           }
