@@ -1,14 +1,12 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.4.2 + 戦績保存追加）
+  sim_tournament_result.js（FULL 修正版 v2.5.0 + 戦績保存 + 賞金/企業ランク追加）
 
-  ※ v2.4.1 の内容は一切削っていません
-  ※ 末尾に PLAYER 戦績保存処理のみ追加（v2.4.1のまま）
-  ※ v2.4.2 追加修正：
-     - マッチチャンピオンの取り違えを修正
-       1) addToTournamentTotal() 内で state.lastMatchResultRows を“その試合結果”で確定保存
-       2) getChampionName() は “マッチ結果” だけを見る（総合(currentOverallRows)にフォールバックしない）
+  ※ v2.4.2 の内容は削っていません
+  ※ 追加修正：
+     - 大会終了時、PLAYER順位に応じて賞金Gと企業ランクUPを付与
+     - 二重付与防止ガードを追加
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -17,6 +15,41 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 (function(){
 
   const HISTORY_KEY = 'mobbr_teamHistory_v1';
+
+  // 賞金/企業ランク
+  const GOLD_KEY = 'mobbr_gold';
+  const COMPANY_RANK_KEY = 'mobbr_company_rank';
+
+  const PRIZE_TABLE = {
+    local: {
+      1:  { g: 50000,   rankUp: 3 },
+      2:  { g: 30000,   rankUp: 2 },
+      3:  { g: 10000,   rankUp: 1 },
+      4:  { g: 3000,    rankUp: 0 },
+      5:  { g: 3000,    rankUp: 0 },
+      6:  { g: 3000,    rankUp: 0 }
+    },
+    national: {
+      1:  { g: 300000,  rankUp: 5 },
+      2:  { g: 150000,  rankUp: 3 },
+      3:  { g: 50000,   rankUp: 2 },
+      4:  { g: 10000,   rankUp: 1 },
+      5:  { g: 10000,   rankUp: 1 },
+      6:  { g: 10000,   rankUp: 1 }
+    },
+    world: {
+      1:  { g: 1000000, rankUp: 30 },
+      2:  { g: 500000,  rankUp: 15 },
+      3:  { g: 300000,  rankUp: 10 },
+      4:  { g: 100000,  rankUp: 3 },
+      5:  { g: 100000,  rankUp: 3 },
+      6:  { g: 100000,  rankUp: 3 },
+      7:  { g: 50000,   rankUp: 1 },
+      8:  { g: 50000,   rankUp: 1 },
+      9:  { g: 50000,   rankUp: 1 },
+      10: { g: 50000,   rankUp: 1 }
+    }
+  };
 
   // ==========================================
   // 名前解決（完全版）
@@ -165,11 +198,165 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return arr;
   }
 
+  function buildCurrentOverall(state){
+    if (!state) return;
+
+    const ids = Array.isArray(state.teams) ? state.teams.map(t=>String(t?.id)) : [];
+
+    const arr = ids.map(id=>{
+      const t = state.tournamentTotal ? state.tournamentTotal[id] : null;
+      if (!t) return null;
+
+      return {
+        id,
+        name: resolveTeamName(state, id),
+        total: Number(t.sumTotal || 0),
+        placementP: Number(t.sumPlacementP || 0),
+        kp: Number(t.sumKP || 0),
+        ap: Number(t.sumAP || 0),
+        treasure: Number(t.sumTreasure || 0),
+        flag: Number(t.sumFlag || 0)
+      };
+    }).filter(Boolean);
+
+    arr.sort((a,b)=>{
+      if (a.total !== b.total) return b.total - a.total;
+      if (a.placementP !== b.placementP) return b.placementP - a.placementP;
+      if (a.kp !== b.kp) return b.kp - a.kp;
+      if (a.ap !== b.ap) return b.ap - a.ap;
+      if (a.treasure !== b.treasure) return b.treasure - a.treasure;
+      if (a.flag !== b.flag) return b.flag - a.flag;
+      return String(a.name||a.id).localeCompare(String(b.name||b.id));
+    });
+
+    state.currentOverallRows = arr;
+  }
+
+  function computeTournamentResultTable(state){
+    if (!state) return [];
+    const total = state.tournamentTotal || {};
+    const ids = Object.keys(total);
+
+    const rows = ids.map(id=>{
+      const t = total[id] || {};
+      return {
+        id,
+        name: resolveTeamName(state, id),
+        total: Number(t.sumTotal || 0),
+        placementP: Number(t.sumPlacementP || 0),
+        kp: Number(t.sumKP || 0),
+        ap: Number(t.sumAP || 0),
+        treasure: Number(t.sumTreasure || 0),
+        flag: Number(t.sumFlag || 0)
+      };
+    });
+
+    rows.sort((a,b)=>{
+      if (a.total !== b.total) return b.total - a.total;
+      if (a.placementP !== b.placementP) return b.placementP - a.placementP;
+      if (a.kp !== b.kp) return b.kp - a.kp;
+      if (a.ap !== b.ap) return b.ap - a.ap;
+      if (a.treasure !== b.treasure) return b.treasure - a.treasure;
+      if (a.flag !== b.flag) return b.flag - a.flag;
+      return String(a.name||a.id).localeCompare(String(b.name||b.id));
+    });
+
+    return rows;
+  }
+
+  // ✅ v2.4.2 修正：マッチチャンピオンは “その試合結果の1位” だけを見る
+  // - currentOverallRows（総合）には絶対フォールバックしない
+  function getChampionName(state){
+    try{
+      // 1) lastMatchResultRows（試合結果の確定値）
+      let rows = state?.lastMatchResultRows;
+
+      // 2) 無い/空なら、その場で “試合結果” を計算してトップを出す（保険）
+      if (!Array.isArray(rows) || !rows.length){
+        rows = computeMatchResultTable(state);
+      }
+
+      // 3) 先頭=マッチ1位
+      if (Array.isArray(rows) && rows.length){
+        const top = _normalizeMatchRows(state, rows)[0];
+        if (top?.name) return String(top.name);
+        if (top?.id) return resolveTeamName(state, top.id);
+      }
+
+      return '???';
+    }catch(e){
+      return '???';
+    }
+  }
+
+  // ==========================================
+  // ✅ 大会終了時の賞金/企業ランク付与
+  // ==========================================
+  function _getPlayerTournamentPlacement(state){
+    const overall = Array.isArray(state?.currentOverallRows) ? state.currentOverallRows : [];
+    if (!overall.length) return 0;
+    return overall.findIndex(r => String(r?.id) === 'PLAYER') + 1;
+  }
+
+  function _getPrizeMode(state){
+    const mode = String(state?.mode || '').toLowerCase();
+    if (mode === 'local') return 'local';
+    if (mode === 'national') return 'national';
+    if (mode === 'world') return 'world';
+    return '';
+  }
+
+  function applyTournamentPrize(state){
+    try{
+      if (!state) return null;
+
+      // 二重付与防止
+      if (state._tournamentPrizeApplied === true){
+        return state._tournamentPrizeResult || null;
+      }
+
+      const mode = _getPrizeMode(state);
+      if (!mode) return null;
+
+      const placement = _getPlayerTournamentPlacement(state);
+      if (!(placement > 0)) return null;
+
+      const prize = PRIZE_TABLE?.[mode]?.[placement];
+      if (!prize) return null;
+
+      const curGold = Number(localStorage.getItem(GOLD_KEY) || 0);
+      const curRank = Number(localStorage.getItem(COMPANY_RANK_KEY) || 0);
+
+      const nextGold = curGold + Number(prize.g || 0);
+      const nextRank = curRank + Number(prize.rankUp || 0);
+
+      localStorage.setItem(GOLD_KEY, String(nextGold));
+      localStorage.setItem(COMPANY_RANK_KEY, String(nextRank));
+
+      const result = {
+        mode,
+        placement,
+        gold: Number(prize.g || 0),
+        rankUp: Number(prize.rankUp || 0),
+        nextGold,
+        nextRank
+      };
+
+      state._tournamentPrizeApplied = true;
+      state._tournamentPrizeResult = result;
+
+      return result;
+    }catch(e){
+      console.warn('賞金付与失敗', e);
+      return null;
+    }
+  }
+
   function addToTournamentTotal(state, rows){
     if (!state) return;
     if (!state.tournamentTotal) state.tournamentTotal = {};
 
-    // ✅ v2.4.2: マッチ結果を “この瞬間の試合結果” として state に確定保存（チャンピオン取り違え防止）
+    // ✅ v2.4.2: マッチ結果を “この瞬間の試合結果” として state に確定保存
     try{
       state.lastMatchResultRows = _normalizeMatchRows(state, rows);
     }catch(_){}
@@ -241,97 +428,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(e){
       console.warn('戦績保存失敗', e);
     }
-  }
 
-  function buildCurrentOverall(state){
-    if (!state) return;
-
-    const ids = Array.isArray(state.teams) ? state.teams.map(t=>String(t?.id)) : [];
-
-    const arr = ids.map(id=>{
-      const t = state.tournamentTotal ? state.tournamentTotal[id] : null;
-      if (!t) return null;
-
-      return {
-        id,
-        name: resolveTeamName(state, id),
-        total: Number(t.sumTotal || 0),
-        placementP: Number(t.sumPlacementP || 0),
-        kp: Number(t.sumKP || 0),
-        ap: Number(t.sumAP || 0),
-        treasure: Number(t.sumTreasure || 0),
-        flag: Number(t.sumFlag || 0)
-      };
-    }).filter(Boolean);
-
-    arr.sort((a,b)=>{
-      if (a.total !== b.total) return b.total - a.total;
-      if (a.placementP !== b.placementP) return b.placementP - a.placementP;
-      if (a.kp !== b.kp) return b.kp - a.kp;
-      if (a.ap !== b.ap) return b.ap - a.ap;
-      if (a.treasure !== b.treasure) return b.treasure - a.treasure;
-      if (a.flag !== b.flag) return b.flag - a.flag;
-      return String(a.name||a.id).localeCompare(String(b.name||b.id));
-    });
-
-    state.currentOverallRows = arr;
-  }
-
-  function computeTournamentResultTable(state){
-    if (!state) return [];
-    const total = state.tournamentTotal || {};
-    const ids = Object.keys(total);
-
-    const rows = ids.map(id=>{
-      const t = total[id] || {};
-      return {
-        id,
-        name: resolveTeamName(state, id),
-        total: Number(t.sumTotal || 0),
-        placementP: Number(t.sumPlacementP || 0),
-        kp: Number(t.sumKP || 0),
-        ap: Number(t.sumAP || 0),
-        treasure: Number(t.sumTreasure || 0),
-        flag: Number(t.sumFlag || 0)
-      };
-    });
-
-    rows.sort((a,b)=>{
-      if (a.total !== b.total) return b.total - a.total;
-      if (a.placementP !== b.placementP) return b.placementP - a.placementP;
-      if (a.kp !== b.kp) return b.kp - a.kp;
-      if (a.ap !== b.ap) return b.ap - a.ap;
-      if (a.treasure !== b.treasure) return b.treasure - a.treasure;
-      if (a.flag !== b.flag) return b.flag - a.flag;
-      return String(a.name||a.id).localeCompare(String(b.name||b.id));
-    });
-
-    return rows;
-  }
-
-  // ✅ v2.4.2 修正：マッチチャンピオンは “その試合結果の1位” だけを見る
-  // - currentOverallRows（総合）には絶対フォールバックしない（ここが誤表示の原因）
-  function getChampionName(state){
+    // ===== 賞金 & 企業ランク付与（大会終了時のみ）=====
     try{
-      // 1) lastMatchResultRows（試合結果の確定値）
-      let rows = state?.lastMatchResultRows;
-
-      // 2) 無い/空なら、その場で “試合結果” を計算してトップを出す（保険）
-      if (!Array.isArray(rows) || !rows.length){
-        rows = computeMatchResultTable(state);
+      if (state.matchIndex === state.matchCount){
+        applyTournamentPrize(state);
       }
-
-      // 3) 先頭=マッチ1位
-      if (Array.isArray(rows) && rows.length){
-        // placement昇順で担保（lastMatchResultRows が外部から壊されても安全）
-        const top = _normalizeMatchRows(state, rows)[0];
-        if (top?.name) return String(top.name);
-        if (top?.id) return resolveTeamName(state, top.id);
-      }
-
-      return '???';
     }catch(e){
-      return '???';
+      console.warn('賞金/企業ランク付与失敗', e);
     }
   }
 
@@ -342,6 +446,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     addToTournamentTotal,
     computeTournamentResultTable,
     getChampionName,
+    applyTournamentPrize,
     buildMatchResultTable: computeMatchResultTable,
     buildMatchResultRows: computeMatchResultTable,
     addMatchToTotal: addToTournamentTotal,
