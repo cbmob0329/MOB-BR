@@ -1,5 +1,7 @@
+'use strict';
+
 /* =========================================================
-   ui_main.js（FULL） v19.7
+   ui_main.js（FULL） v19.8
    - メイン画面の表示/タップ処理
    - ✅ BATTLEボタン：v18.3 の「大会開始ブリッジ」に統一
         → mobbr:startTournament（detail.type/phase）を投げるだけ
@@ -10,17 +12,22 @@
    - ✅ world phase を 'qual'|'losers'|'final' に統一
    - ✅ 旧 “WL” 表記は互換として losers に吸収
 
-   v19.7 変更点（今回）
+   v19.7 変更点
    - ✅ メイン画面の「メンバー名」ボタンを非表示＆無効化
      ※紫のチーム画像（カード表示）は残す
      ※メンバー名変更は TEAM 画面側で行う前提
+
+   v19.8 変更点（今回）
+   - ✅ 企業ランク初期値を 1 に修正
+   - ✅ 毎週支給額を「企業ランク1=3000G、以後1ランクごと+100G」に修正
+   - ✅ 週進行ポップの表示も同仕様に統一
 ========================================================= */
 'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.7';
+  const VERSION = 'v19.8';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -59,13 +66,12 @@ window.MOBBR = window.MOBBR || {};
   function setStr(key, val){ localStorage.setItem(key, String(val)); }
   function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
 
+  // ✅ 企業ランク1=3000G、以後1ランクごと+100G
   function weeklyGoldByRank(rank){
-    if (rank >= 1 && rank <= 5) return 500;
-    if (rank >= 6 && rank <= 10) return 8000000;
-    if (rank >= 11 && rank <= 20) return 1000;
-    if (rank >= 21 && rank <= 30) return 2000;
-    return 3000;
+    const r = Math.max(1, Number(rank || 1) | 0);
+    return 3000 + ((r - 1) * 100);
   }
+
   function formatRank(rank){ return `RANK ${rank}`; }
 
   // ===== DOM cache =====
@@ -171,7 +177,7 @@ window.MOBBR = window.MOBBR || {};
     if (ui.team) ui.team.textContent = team;
 
     if (ui.gold) ui.gold.textContent = String(getNum(K.gold, 0));
-    if (ui.rank) ui.rank.textContent = formatRank(getNum(K.rank, 10));
+    if (ui.rank) ui.rank.textContent = formatRank(getNum(K.rank, 1));
 
     if (ui.y) ui.y.textContent = String(getNum(K.year, 1989));
     if (ui.m) ui.m.textContent = String(getNum(K.month, 1));
@@ -229,7 +235,7 @@ window.MOBBR = window.MOBBR || {};
     const m = Number(info?.m || getNum(K.month, 1));
     const w = Number(info?.w || getNum(K.week, 1));
     const weeks = Number(info?.weeks || 1);
-    const gainPer = Number(info?.gainPer || weeklyGoldByRank(getNum(K.rank, 10)));
+    const gainPer = Number(info?.gainPer || weeklyGoldByRank(getNum(K.rank, 1)));
     const totalGain = Number(info?.totalGain || gainPer * weeks);
 
     const msg = (weeks === 1)
@@ -363,7 +369,7 @@ window.MOBBR = window.MOBBR || {};
       // ✅ v19.6: losers を正式化。互換として WL 文字列も losers 扱い
       if (name.includes('予選')) return { type:'world', phase:'qual' };
       if (name.includes('Losers') || name.includes('LOSERS') || name.includes('敗者')) return { type:'world', phase:'losers' };
-      if (name.includes('WL') || name.includes('winners') || name.includes('losers')) return { type:'world', phase:'losers' }; // 互換吸収
+      if (name.includes('WL') || name.includes('winners') || name.includes('losers')) return { type:'world', phase:'losers' };
       if (name.includes('決勝')) return { type:'world', phase:'final' };
       return { type:'world', phase:'qual' };
     }
@@ -378,7 +384,6 @@ window.MOBBR = window.MOBBR || {};
   // =========================================================
   function saveWorldPhaseToTourState(phase){
     const ph0 = String(phase || '').trim().toLowerCase();
-    // ✅ v19.6: losers を許可、wl は losers に吸収
     const ph = (ph0 === 'wl') ? 'losers' : ph0;
     const ok = (ph === 'qual' || ph === 'losers' || ph === 'final');
     if (!ok) return false;
@@ -499,7 +504,6 @@ window.MOBBR = window.MOBBR || {};
   function disableMainMembersUI(){
     if (!ui) return;
 
-    // ボタンを完全に見えなくする（紫のチーム画像・カードは触らない）
     if (ui.btnMembers){
       ui.btnMembers.style.display = 'none';
       ui.btnMembers.style.pointerEvents = 'none';
@@ -507,7 +511,6 @@ window.MOBBR = window.MOBBR || {};
       ui.btnMembers.onclick = null;
     }
 
-    // ポップアップも念のため閉じておく
     if (ui.membersPop){
       ui.membersPop.style.display = 'none';
       ui.membersPop.setAttribute('aria-hidden', 'true');
@@ -531,8 +534,7 @@ window.MOBBR = window.MOBBR || {};
       ui.tapTeamName.addEventListener('click', () => renamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
     }
 
-    // ★ v19.7：メイン画面の「メンバー名」ボタンは使わない（TEAM画面で変更する）
-    // 互換のDOM/関数は残すが、ここではバインドしない
+    // ★ v19.7：メイン画面の「メンバー名」ボタンは使わない
     // if (ui.btnMembers){
     //   ui.btnMembers.addEventListener('click', () => { render(); showMembersPop(); });
     // }
@@ -574,12 +576,10 @@ window.MOBBR = window.MOBBR || {};
       if (!safeOpenByUI('schedule')) setRecent('スケジュール：画面DOMが見つかりません（index.html / ui_schedule.js を確認）');
     });
 
-    // ★★★ BATTLE（大会） ★★★
     if (ui.btnBattle) ui.btnBattle.addEventListener('click', () => {
       startTournamentByNextTour();
     });
 
-    // DOM直開き保険の閉じる
     if (ui.btnCloseTeam && ui.teamScreen){
       ui.btnCloseTeam.addEventListener('click', () => closeScreenEl(ui.teamScreen));
     }
@@ -601,7 +601,6 @@ window.MOBBR = window.MOBBR || {};
     collectDom();
     bind();
 
-    // ★ v19.7：メンバー名UIはメインでは不要
     disableMainMembersUI();
 
     syncPlayerTeamNamesFromStorage();
