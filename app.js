@@ -1,8 +1,8 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.4
-   - v19.3 の全機能維持（削除なし）
+   app.js（FULL） v19.5
+   - v19.4 の全機能維持（削除なし）
    - ✅ v19.4:
      1) 初回起動 / セーブ削除後、タイトルNEXTで
         企業名 / チーム名 / メンバー名A,B,C を入力させる（セットアップモーダル追加）
@@ -13,9 +13,14 @@
 
    ✅ v19.4 hotfix（今回の③：2週進む＆大会週誤判定）
    - FIX: mobbr:goMain の二重実行を app.js 側でもガード（最終防波堤）
+
+   ✅ v19.5（今回）
+   - 企業ランク初期値を 1 に修正
+   - 毎週の収入を「3000 + (rank-1)*100」に修正
+   - rank未保存の既存セーブにも 1 を自動補完
 ========================================================= */
 
-const APP_VER = 19.4; // ★ここを上げる（キャッシュ強制更新の核）
+const APP_VER = 19.5; // ★ここを上げる（キャッシュ強制更新の核）
 
 const $ = (id) => document.getElementById(id);
 
@@ -361,12 +366,10 @@ function startTournamentPipeline(simStartFn, uiOpenArg){
 
 function startLocalTournament(){
   const flow = window.MOBBR?.sim?.tournamentFlow;
-  // 新API（sim_tournament_core.js v4.3+）
   if (flow && typeof flow.startLocalTournament === 'function'){
     startTournamentPipeline(() => flow.startLocalTournament(), { mode:'local' });
     return;
   }
-  // 旧fallback
   if (flow && typeof flow.start === 'function'){
     startTournamentPipeline(() => flow.start({ mode:'local' }), { mode:'local' });
     return;
@@ -404,7 +407,6 @@ function startWorldTournament(phase){
   const flow = window.MOBBR?.sim?.tournamentFlow;
   const p = normalizeWorldPhase(phase);
 
-  // ✅ v18.8：UIへ渡す openArg.phase も最新へ統一（qual/losers/final）
   if (flow && typeof flow.startWorldTournament === 'function'){
     startTournamentPipeline(() => flow.startWorldTournament(p), { mode:'world', phase:p });
     return;
@@ -417,7 +419,6 @@ function startWorldTournament(phase){
 }
 
 function startTournamentByState(detail){
-  // detail 優先：UIから明示指定できる
   const d = detail || {};
   const explicitType = String(d.type || d.mode || '').trim().toLowerCase();
   const explicitPhase = d.phase;
@@ -430,8 +431,8 @@ function startTournamentByState(detail){
   }
 
   const ts = getTourState();
-  const stage = String(ts?.stage || '').trim().toLowerCase(); // 'local'|'national'|'lastchance'|'world'|'done'
-  const wphaseRaw = String(ts?.world?.phase || '').trim().toLowerCase(); // 保存値（旧: wl / 新: losers など）
+  const stage = String(ts?.stage || '').trim().toLowerCase();
+  const wphaseRaw = String(ts?.world?.phase || '').trim().toLowerCase();
   const wphase = normalizeWorldPhase(wphaseRaw);
 
   if (stage === 'local' || !stage){
@@ -463,11 +464,6 @@ function exposeTournamentAPI(){
     byState: startTournamentByState
   };
 
-  // =====================================================
-  // ✅ 追加（壊さないalias）
-  // - 旧UI/呼び出し側が window.MOBBR.ui.startTournament.local() を呼んでも落ちないように
-  // - hard-guard により ui を破壊せず「マージ」される
-  // =====================================================
   window.MOBBR.ui = window.MOBBR.ui || {};
   window.MOBBR.ui.startTournament = window.MOBBR.startTournament;
 
@@ -480,7 +476,7 @@ function exposeTournamentAPI(){
 // ✅ v19.4 初回セットアップ（企業名/チーム名/メンバー名ABC）
 // =========================================================
 const SETUP = {
-  needKey: 'mobbr_need_setup',     // "1" のとき強制
+  needKey: 'mobbr_need_setup',
   companyKey: 'mobbr_company',
   teamKey: 'mobbr_playerTeam'
 };
@@ -539,7 +535,6 @@ function ensureTeamBase(team){
   const B = mk('B');
   const C = mk('C');
 
-  // 既存の他メンバーは消さない
   const rest = team.members.filter(m=>{
     const id = String(m?.id || '');
     return id !== 'A' && id !== 'B' && id !== 'C';
@@ -571,15 +566,32 @@ function needsInitialSetup(){
   return false;
 }
 
-// セーブ削除側から呼べるように公開（どのUIに削除ボタンがあってもOK）
+// セーブ削除側から呼べるように公開
 window.MOBBR = window.MOBBR || {};
 window.MOBBR.markNeedSetup = function(){
   try{ setStrLS(SETUP.needKey, '1'); }catch(e){}
 };
 
+// =========================================================
+// ✅ 企業ランク初期値補完
+// =========================================================
+const COMPANY_RANK_KEY = 'mobbr_rank';
+
+function ensureInitialCompanyRank(){
+  try{
+    const raw = localStorage.getItem(COMPANY_RANK_KEY);
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= 1) return v;
+
+    localStorage.setItem(COMPANY_RANK_KEY, '1');
+    return 1;
+  }catch(e){
+    return 1;
+  }
+}
+
 // セットアップモーダル（自前）
 function openInitialSetupModal(onDone){
-  // 既存 modalBack を流用（無ければ作る）
   let back = $('modalBack');
   if (!back){
     back = document.createElement('div');
@@ -602,7 +614,6 @@ function openInitialSetupModal(onDone){
   const nameB0 = getName('B');
   const nameC0 = getName('C');
 
-  // pop
   const pop = document.createElement('div');
   pop.id = 'mobbrInitialSetupPop';
   pop.style.position = 'fixed';
@@ -716,7 +727,6 @@ function openInitialSetupModal(onDone){
       return;
     }
 
-    // 保存
     setStrLS(SETUP.companyKey, company);
 
     const t = ensureTeamBase(readTeamSafe());
@@ -735,7 +745,9 @@ function openInitialSetupModal(onDone){
 
     writeTeamSafe(t);
 
-    // 強制フラグ解除
+    // ✅ 初回セットアップ時、企業ランク初期値を 1 に確実化
+    ensureInitialCompanyRank();
+
     delLS(SETUP.needKey);
 
     close();
@@ -752,14 +764,12 @@ function openInitialSetupModal(onDone){
     back.setAttribute('aria-hidden', 'true');
   }
 
-  // open
   back.style.display = 'block';
   back.style.pointerEvents = 'auto';
   back.setAttribute('aria-hidden', 'false');
 
   document.body.appendChild(pop);
 
-  // UX: 最初の入力にフォーカス
   setTimeout(()=>{
     try{ fCompany.inp.focus(); }catch(e){}
   }, 0);
@@ -770,7 +780,6 @@ async function bootAfterNext(){
     setTitleHint('読み込み中...');
     logLoaded('app.js boot start');
 
-    // ★ServiceWorkerが居ると古いJSを配ることがあるので存在だけログ出す
     try{
       if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
         const regs = await navigator.serviceWorker.getRegistrations();
@@ -783,7 +792,6 @@ async function bootAfterNext(){
     await loadModules();
     modulesLoaded = true;
 
-    // ★分割側が読めてるかチェック（最低限）
     try{
       const ok = !!(window.MOBBR && window.MOBBR.sim &&
         window.MOBBR.sim.tournamentFlow &&
@@ -811,16 +819,17 @@ async function bootAfterNext(){
         entry: !!window.MOBBR?.ui?.tournament
       });
 
-      // ✅ ui_team_training.js は読まない（無限強化の根を断つ）
       console.log('[CHECK] ui_team =', {
         core: !!window.MOBBR?.ui?._teamCore,
         initTeamUI: !!window.MOBBR?.initTeamUI
       });
     }catch(e){}
 
-    // ✅ 大会開始APIを公開
     try{ exposeTournamentAPI(); }catch(e){}
   }
+
+  // ✅ 既存セーブにも企業ランク初期値を補完
+  ensureInitialCompanyRank();
 
   if (window.MOBBR?.initStorage) window.MOBBR.initStorage();
   if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
@@ -830,7 +839,6 @@ async function bootAfterNext(){
   if (window.MOBBR?.initShopUI) window.MOBBR.initShopUI();
   if (window.MOBBR?.initScheduleUI) window.MOBBR.initScheduleUI();
 
-  // tournament
   if (window.MOBBR?.initTournamentUI) window.MOBBR.initTournamentUI();
 
   setTitleHint('');
@@ -852,12 +860,10 @@ const KLS = {
   recent:'mobbr_recent'
 };
 
+// ✅ 企業ランク1=3000G、以後100Gずつ増加
 function weeklyGoldByRank(rank){
-  if (rank >= 1 && rank <= 5) return 500;
-  if (rank >= 6 && rank <= 10) return 800;
-  if (rank >= 11 && rank <= 20) return 1000;
-  if (rank >= 21 && rank <= 30) return 2000;
-  return 3000;
+  const r = Math.max(1, Number(rank || 1) | 0);
+  return 3000 + ((r - 1) * 100);
 }
 
 function getNumLS(key, def){
@@ -867,7 +873,6 @@ function getNumLS(key, def){
 function setNumLS(key, val){ localStorage.setItem(key, String(Number(val))); }
 
 // ✅ 週進行の実処理（ストレージ更新）は app.js のみ
-// - setRecent は goMain 側で統一するので、ここでは基本触らない
 function advanceWeekBy(weeks){
   const add = Math.max(1, Number(weeks || 1) | 0);
 
@@ -887,7 +892,11 @@ function advanceWeekBy(weeks){
     }
   }
 
-  const rank = getNumLS(KLS.rank, 10);
+  // ✅ rank未保存でも 1
+  let rank = getNumLS(KLS.rank, 1);
+  if (!Number.isFinite(rank) || rank < 1) rank = 1;
+  setNumLS(KLS.rank, rank);
+
   const gainPer = weeklyGoldByRank(rank);
   const totalGain = gainPer * add;
   const gold = getNumLS(KLS.gold, 0);
@@ -940,7 +949,7 @@ function buildTournamentRecent(detail, weekInfo){
     return gainText;
   }
 
-  return base || getNumLS(KLS.week, 1) ? '' : '';
+  return (base || getNumLS(KLS.week, 1)) ? '' : '';
 }
 
 function bindGlobalEvents(){
@@ -948,7 +957,6 @@ function bindGlobalEvents(){
     showTitle();
   });
 
-  // ✅ 大会開始（UI→appの疎結合）
   window.addEventListener('mobbr:startTournament', (e) => {
     try{
       const detail = e?.detail || {};
@@ -959,19 +967,12 @@ function bindGlobalEvents(){
     }
   });
 
-  // =========================================================
-  // ✅ 大会post：メイン復帰（週進行もここでのみ実処理）
-  //
-  // ✅ hotfix: goMain 二重実行ガード（最終防波堤）
-  // - UIが二重dispatchしても、ここで二重週進行を止める
-  // =========================================================
   let __goMainHandling = false;
   let __goMainHandledAt = 0;
 
   window.addEventListener('mobbr:goMain', (e) => {
     const now = Date.now();
 
-    // ✅ re-entrant / dup guard
     if (__goMainHandling){
       try{ console.warn('[app] goMain ignored (reentrant)'); }catch(_){}
       return;
@@ -988,24 +989,20 @@ function bindGlobalEvents(){
       const detail = e?.detail || {};
       const weeks = Math.max(0, Number(detail.advanceWeeks || 0) | 0);
 
-      // 1) 大会オーバーレイ閉じる（見た目の確実化）
       showMain();
       hardResetOverlays();
       closeTournamentOverlayHard();
 
-      // 2) 週進行（必要な時だけ）＋ gold 加算
       let weekInfo = null;
       if (weeks > 0){
         weekInfo = advanceWeekBy(weeks);
 
-        // ✅ 次大会更新（週進行後に必ず計算）
         try{
           if (window.MOBBR?.sim?.tournamentCorePost?.setNextTourFromState){
             window.MOBBR.sim.tournamentCorePost.setNextTourFromState();
           }
         }catch(_){}
 
-        // ✅ UIに「週進行ポップ」を出したい（表示のみ）
         try{
           if (window.MOBBR?.ui?.main?.showWeekAdvancePop){
             window.MOBBR.ui.main.showWeekAdvancePop(weekInfo);
@@ -1013,13 +1010,11 @@ function bindGlobalEvents(){
         }catch(_){}
       }
 
-      // 3) recent を1回だけ決める（ここが最終責務）
       const recent = buildTournamentRecent(detail, weekInfo);
       if (recent && recent.trim()){
         setStrLS(KLS.recent, recent);
       }
 
-      // 4) メインUI再描画
       if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
     }catch(err){
       console.error(err);
@@ -1042,10 +1037,8 @@ document.addEventListener('DOMContentLoaded', () => {
       try{
         await bootAfterNext();
 
-        // ✅ v19.4：初回/削除後はセットアップを挟む
         if (needsInitialSetup()){
           openInitialSetupModal(()=>{
-            // セットアップ確定後にUI再描画してからメインへ
             try{
               if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI();
               if (window.MOBBR?.initTeamUI) window.MOBBR.initTeamUI();
