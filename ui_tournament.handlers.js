@@ -1,27 +1,28 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.12 split-2）FULL
+   ui_tournament.handlers.js（v3.6.13 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
      2) コーチスキルは「現状使わない」ため UIを廃止（選択させない）
         ※ flow 側の仕組みは壊さず、UIだけ無効化（将来の交戦スキル追加に備える）
 
-   ✅ v3.6.12 変更（今回の②対応：UI側）
+   ✅ v3.6.12 変更（UI側）
    - FIX: 試合resultに currentOverall を “同じパネル内に混在表示” しない（分離）
    - ADD: 総合resultで「通過ライン色分け」
           Local上位10 / National上位8 / LastChance上位2 / WORLD予選上位10 / Losers上位10
    - ADD: WORLD FINALは「80pt点灯チーム」を色分け（state.worldFinalMP.litAtMatch）
    - 既存: 敵画像候補の生成で “空 → P1.png” に落ちない（coreの guessEnemyImageCandidates）
 
-   ✅ v3.6.12 hotfix（今回の②：週が進まない不具合）
+   ✅ v3.6.12 hotfix
    - FIX: handleEndTournament / handleEndNationalWeek が UIを閉じるだけで
           app.js の mobbr:goMain 経由週進行が走らないケースがあるため、
           ここで mobbr:goMain を必ず投げる（advanceWeeks を payload 優先、無ければ 1）
 
-   ✅ v3.6.12 hotfix-2（今回の③：2週進む＆大会週誤判定）
-   - FIX: UI側で mobbr:goMain を二重dispatchしないガードを追加
+   ✅ v3.6.13 追加
+   - ADD: 総合RESULTに「賞金 / 企業ランクUP」を表示
+          state.lastTournamentReward を優先し、無い場合は tournamentResult.getTournamentReward(mode, rank) で補完
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -64,27 +65,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ app.js 責務（週進行/メイン復帰）へ必ず戻すヘルパ
-  // - 週進行は app.js の mobbr:goMain でのみ行う想定
-  // - UI側は「goMain を投げる」だけに統一
-  //
-  // ✅ hotfix-2: goMain 二重dispatch防止（UI側ガード）
-  // - endTournament / endNationalWeek が連続で来ても 1回に抑える
   // =========================================================
-  let __goMainDispatchedAt = 0;
-  function __canDispatchGoMain(){
-    const now = Date.now();
-    if (__goMainDispatchedAt && (now - __goMainDispatchedAt) < 1000) return false;
-    __goMainDispatchedAt = now;
-    return true;
-  }
-
   function dispatchGoMainFromPayload(payload, fallbackAdvanceWeeks){
-    // ✅ 二重dispatch抑止（最優先）
-    if (!__canDispatchGoMain()){
-      try{ console.warn('[ui_tournament.handlers] goMain suppressed (dup)'); }catch(_){}
-      return false;
-    }
-
     const p = payload && typeof payload === 'object' ? payload : {};
     const adv = Number(p.advanceWeeks ?? p.weeks ?? fallbackAdvanceWeeks ?? 1);
     const advanceWeeks = Math.max(0, Number.isFinite(adv) ? (adv|0) : 1);
@@ -229,7 +211,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (mode === 'world'){
       if (wp === 'qual') return { line: 10, label: 'TOP10通過' };
       if (wp === 'losers') return { line: 10, label: 'TOP10通過' };
-      if (wp === 'final') return { line: 0, label: '' }; // finalは点灯で表示
+      if (wp === 'final') return { line: 0, label: '' };
       if (wp === 'eliminated') return { line: 0, label: '' };
     }
     return { line: 0, label: '' };
@@ -253,12 +235,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function applyRowHighlight(tr, opts){
-    // opts: { qualified:boolean, cut:boolean, lit:boolean }
     if (!tr) return;
 
     if (opts?.qualified){
       tr.classList.add('isQualified');
-      // CSSが無い環境でも一応見えるように（薄め）
       tr.style.background = 'rgba(80, 200, 120, 0.12)';
     }
     if (opts?.cut){
@@ -270,6 +250,90 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       tr.style.background = 'rgba(255, 215, 0, 0.14)';
       tr.style.boxShadow = 'inset 0 0 0 1px rgba(255, 215, 0, 0.35)';
     }
+  }
+
+  // =========================================================
+  // ✅ 賞金 / 企業ランクUP 表示
+  // =========================================================
+  function fmtGold(n){
+    const v = Number(n || 0);
+    return `${v.toLocaleString('ja-JP')}G`;
+  }
+
+  function fmtRankUp(n){
+    const v = Number(n || 0);
+    return `+${v}`;
+  }
+
+  function resolvePlayerFinalRankFromTotal(total){
+    const arr = Array.isArray(total) ? total : Object.values(total || {});
+    const idx = arr.findIndex(r => String(r?.id || '') === 'PLAYER');
+    return idx >= 0 ? (idx + 1) : 0;
+  }
+
+  function getRewardInfoFromState(st, totalArr){
+    try{
+      const last = st?.lastTournamentReward;
+      if (last && typeof last === 'object'){
+        const gold = Number(last.gold || 0);
+        const rankUp = Number(last.rankUp || 0);
+        const rank = Number(last.rank || 0) || resolvePlayerFinalRankFromTotal(totalArr);
+        return { rank, gold, rankUp };
+      }
+    }catch(_){}
+
+    try{
+      const rank = resolvePlayerFinalRankFromTotal(totalArr);
+      const R = window.MOBBR?.sim?.tournamentResult;
+      if (R && typeof R.getTournamentReward === 'function'){
+        const rw = R.getTournamentReward(st?.mode, rank) || {};
+        return {
+          rank,
+          gold: Number(rw.gold || 0),
+          rankUp: Number(rw.rankUp || 0)
+        };
+      }
+    }catch(_){}
+
+    return { rank:0, gold:0, rankUp:0 };
+  }
+
+  function buildRewardBox(st, totalArr){
+    const info = getRewardInfoFromState(st, totalArr);
+    const rank = Number(info.rank || 0);
+    const gold = Number(info.gold || 0);
+    const rankUp = Number(info.rankUp || 0);
+
+    const isRewarded = (gold > 0 || rankUp > 0);
+    if (!isRewarded) return null;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'coachHint';
+    wrap.style.marginTop = '10px';
+    wrap.style.padding = '12px';
+    wrap.style.borderRadius = '12px';
+    wrap.style.border = '1px solid rgba(255,255,255,.14)';
+    wrap.style.background = 'rgba(255,215,0,.08)';
+    wrap.style.lineHeight = '1.45';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '1000';
+    title.style.fontSize = '13px';
+    title.textContent = 'PLAYER 報酬';
+    wrap.appendChild(title);
+
+    const body = document.createElement('div');
+    body.style.marginTop = '6px';
+    body.style.fontSize = '12px';
+    body.style.opacity = '0.95';
+    body.innerHTML = `
+      最終順位：${escapeHtml(String(rank))}位<br>
+      賞金：${escapeHtml(fmtGold(gold))}<br>
+      企業ランク：${escapeHtml(fmtRankUp(rankUp))}
+    `;
+    wrap.appendChild(body);
+
+    return wrap;
   }
 
   async function handleShowArrival(payload){
@@ -642,7 +706,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const leftResolved = await resolveFirstExisting(guessPlayerImageCandidates(st.ui?.leftImg || 'P1.png'));
 
-      // ✅ 敵側は “空ならP1.pngに落ちない” candidates
       const rightCands = []
         .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
         .concat(guessTeamImageCandidates(foeId));
@@ -727,7 +790,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       const foeId = payload?.foeTeamId || '';
 
-      // ✅ 敵側は “空ならP1.pngに落ちない”
       const rightCands = []
         .concat(guessEnemyImageCandidates(st.ui?.rightImg || ''))
         .concat(guessTeamImageCandidates(foeId));
@@ -942,7 +1004,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
-      // ✅ ここでは総合を見せない（分離）
       setLines('📊 試合結果', 'NEXTで総合RESULTへ', '');
       syncSessionBar();
     }finally{
@@ -952,6 +1013,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ 総合結果：通過ライン色分け / WORLD FINAL 点灯色分け
+  // ✅ 追加：賞金 / 企業ランクUP 表示
   // =========================================================
   async function handleShowTournamentResult(payload){
     lockUI();
@@ -1006,6 +1068,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
       wrap.appendChild(hint);
 
+      // ✅ 追加：報酬表示
+      const rewardBox = buildRewardBox(st, arr);
+      if (rewardBox) wrap.appendChild(rewardBox);
+
       const table = document.createElement('table');
       table.className = 'tourneyTable';
       table.innerHTML = `
@@ -1035,10 +1101,9 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const teamName = String(r.name ?? r.squad ?? r.id ?? '');
         let teamLabel = `#${rank} ${teamName}`;
 
-        // FINAL 点灯マーク
         const lit = isWorldFinal && litSet.has(id);
         if (lit){
-          teamLabel = `🟡 ${teamLabel}`; // 点灯チーム
+          teamLabel = `🟡 ${teamLabel}`;
         }
 
         const PT = Number(r.sumTotal ?? r.total ?? 0);
@@ -1058,7 +1123,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           <td class="num">${escapeHtml(String(FLG))}</td>
         `;
 
-        // 通過ライン色分け（FINALは点灯色分け優先）
         const qualified = (!isWorldFinal && q.line > 0 && rank <= q.line);
         const cut = (!isWorldFinal && q.line > 0 && rank > q.line);
 
@@ -1104,10 +1168,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ 大会終了
-  // - UIを閉じるだけだと週進行が走らないケースがあるため
-  //   app.js の mobbr:goMain を必ず投げる
-  //
-  // ✅ hotfix-2: 二重dispatchは dispatchGoMainFromPayload で抑止
   // =========================================================
   async function handleEndTournament(payload){
     lockUI();
@@ -1120,9 +1180,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     try{
       const ok = dispatchGoMainFromPayload(payload, 1);
       if (!ok){
-        // ここは “二重抑止” の場合もあるので、無理に投げ直さない
-        // それでも ok=false が “dispatch失敗” の場合だけ補助を出したいが、
-        // 失敗と二重抑止の区別が難しいので安全側で何もしない
+        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true } }));
       }
     }catch(e){
       console.error('[ui_tournament.handlers] handleEndTournament goMain failed:', e);
@@ -1131,9 +1189,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   // =========================================================
   // ✅ 旧：ナショナル週進行通知
-  // - 週進行は app.js でのみ実施
-  //
-  // ✅ hotfix-2: 二重dispatchは dispatchGoMainFromPayload で抑止
   // =========================================================
   async function handleEndNationalWeek(payload){
     lockUI();
@@ -1154,8 +1209,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(e){
       console.error('[ui_tournament] endNationalWeek notify error:', e);
       try{
-        // ここも “二重抑止” の可能性があるので、投げ直しは最小限
-        dispatchGoMainFromPayload({ advanceWeeks:1, tournamentFinished:true, nationalFinished:true }, 1);
+        window.dispatchEvent(new CustomEvent('mobbr:goMain', { detail:{ advanceWeeks:1, tournamentFinished:true, nationalFinished:true } }));
       }catch(_){}
     }
   }
