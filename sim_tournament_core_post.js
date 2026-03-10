@@ -1,5 +1,5 @@
 /* =========================================================
-   sim_tournament_core_post.js（FULL） v4.5
+   sim_tournament_core_post.js（FULL） v4.6
    - ローカル/ナショナル/ラストチャンス/ワールド終了処理：
      権利付与 + tourState更新 + 次大会算出API
    - ✅ 週進行（year/month/week/gold/recent）は一切しない（app.jsに一本化）
@@ -11,6 +11,13 @@
    - ✅ SCHEDULE の world_wl を廃止運用し、互換として losers に吸収
    - ✅ tourState.world.phase を 'qual'|'losers'|'final'|'done' に統一（WLはlosersへ）
    - ✅ Losers終了時点で tourState.world.phase='final' を立てる前提に対応
+
+   v4.6 変更点（賞金 / 企業ランク）
+   - ✅ 大会結果に応じた賞金(G)を付与
+   - ✅ 大会結果に応じた企業ランク(mobbr_rank)を加算
+   - ✅ ローカル / ナショナル / ワールドで反映
+   - ✅ ラストチャンスは現時点では賞金・企業ランク加算なし
+   - ✅ recent用の文言に使えるよう reward 情報も detail に載せる
 ========================================================= */
 'use strict';
 
@@ -24,6 +31,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     year: 'mobbr_year',
     month: 'mobbr_month',
     week: 'mobbr_week',
+    gold: 'mobbr_gold',
+    rank: 'mobbr_rank',
     nextTour: 'mobbr_nextTour',
     nextTourW: 'mobbr_nextTourW',
     recent: 'mobbr_recent',
@@ -46,6 +55,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }catch(e){
       return def;
     }
+  }
+  function setNum(key, val){
+    try{ localStorage.setItem(key, String(Number(val))); }catch(e){}
   }
   function getStr(key, def){
     try{
@@ -89,7 +101,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // ✅ v4.5: 4月4週＝WORLD予選+Losers（同週内で確定）
     { split:1, m:4,  w:4, name:'SP1 ワールドファイナル 予選リーグ', phase:'world_qual' },
-    // ✅ v4.5: WLはLosers扱いへ（互換維持のため name/phase を変更）
     { split:1, m:4,  w:4, name:'SP1 ワールドファイナル Losersリーグ', phase:'world_losers' },
     // ✅ v4.5: 5月1週＝決勝戦
     { split:1, m:5,  w:1, name:'SP1 ワールドファイナル 決勝戦', phase:'world_final' },
@@ -109,6 +120,74 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     { split:0, m:12, w:4, name:'チャンピオンシップ', phase:'championship' }
   ];
 
+  // =========================================================
+  // 賞金 / 企業ランク
+  // =========================================================
+  const REWARD_TABLE = {
+    local: [
+      { min:1, max:1, gold:50000,  rankUp:3 },
+      { min:2, max:2, gold:30000,  rankUp:2 },
+      { min:3, max:3, gold:10000,  rankUp:1 },
+      { min:4, max:6, gold:3000,   rankUp:0 }
+    ],
+    national: [
+      { min:1, max:1, gold:300000, rankUp:5 },
+      { min:2, max:2, gold:150000, rankUp:3 },
+      { min:3, max:3, gold:50000,  rankUp:2 },
+      { min:4, max:6, gold:10000,  rankUp:1 }
+    ],
+    world: [
+      { min:1, max:1, gold:1000000, rankUp:30 },
+      { min:2, max:2, gold:500000,  rankUp:15 },
+      { min:3, max:3, gold:300000,  rankUp:10 },
+      { min:4, max:6, gold:100000,  rankUp:3 },
+      { min:7, max:10, gold:50000,  rankUp:1 }
+    ],
+    championship: [
+      { min:1, max:1, gold:3000000, rankUp:50 },
+      { min:2, max:2, gold:1000000, rankUp:30 },
+      { min:3, max:3, gold:500000,  rankUp:15 },
+      { min:4, max:6, gold:250000,  rankUp:5 }
+    ],
+    lastchance: []
+  };
+
+  function getRewardByRank(type, rank){
+    const r = Number(rank || 0);
+    const list = REWARD_TABLE[String(type || '').toLowerCase()] || [];
+    for (const row of list){
+      if (r >= Number(row.min || 0) && r <= Number(row.max || 0)){
+        return {
+          gold: Number(row.gold || 0),
+          rankUp: Number(row.rankUp || 0)
+        };
+      }
+    }
+    return { gold:0, rankUp:0 };
+  }
+
+  function applyTournamentReward(type, rank){
+    const reward = getRewardByRank(type, rank);
+
+    const nowGold = getNum(K.gold, 0);
+    const nowRank = getNum(K.rank, 0);
+
+    const nextGold = nowGold + Number(reward.gold || 0);
+    const nextRank = nowRank + Number(reward.rankUp || 0);
+
+    setNum(K.gold, nextGold);
+    setNum(K.rank, nextRank);
+
+    return {
+      type: String(type || ''),
+      rank: Number(rank || 0),
+      gold: Number(reward.gold || 0),
+      rankUp: Number(reward.rankUp || 0),
+      goldAfter: nextGold,
+      companyRankAfter: nextRank
+    };
+  }
+
   // ===== 誤ロック防止の出場判定 =====
   function isEligible(item, tourState){
     const phase = String(item?.phase || '');
@@ -121,12 +200,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const clearedN = !!tourState.clearedNational;
     const lastChanceUnlocked = !!tourState.lastChanceUnlocked;
 
-    const worldPhaseRaw = String(tourState?.world?.phase || '').trim(); // 'qual'|'losers'|'final'|'done' or ''
-    // ✅ 互換：'wl' は 'losers' として扱う
+    const worldPhaseRaw = String(tourState?.world?.phase || '').trim();
     const worldPhase = (worldPhaseRaw === 'wl') ? 'losers' : worldPhaseRaw;
 
     const qChamp = !!tourState.qualifiedChampionship;
-    const companyRank = Number(tourState.playerCompanyRank ?? tourState.companyRank ?? 0);
+    const companyRank = Number(tourState.playerCompanyRank ?? tourState.companyRank ?? getNum(K.rank, 0));
 
     if (phase === 'national'){
       return qN;
@@ -148,7 +226,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         return false;
       }
 
-      // worldPhase 未保存なら誤ロック防止で予選だけ候補
       return phase === 'world_qual';
     }
 
@@ -255,7 +332,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       tourState.world = { phase: 'qual' };
     }
     if (!tourState.world.phase) tourState.world.phase = 'qual';
-    // ✅ 互換：wlはlosersへ
     if (tourState.world.phase === 'wl') tourState.world.phase = 'losers';
   }
 
@@ -268,6 +344,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const { rank, list } = getRankFromTotal(total);
     const qualifiedNational = (rank > 0 && rank <= 10);
     const split = Number(getJSON(K.tourState, {})?.split) || inferSplitFromMonth();
+
+    const reward = applyTournamentReward('local', rank);
 
     const top10Ids = list.slice(0,10).map(x => String(x.id || '')).filter(Boolean);
 
@@ -288,7 +366,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     tourState.clearedNational = false;
     tourState.lastChanceUnlocked = false;
 
-    // Split単位：ローカル開始でWorld権利はリセット
     tourState.qualifiedWorld = false;
     tourState.worldQualifiedIds = [];
     tourState.lastNationalSortedIds = [];
@@ -299,6 +376,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     tourState.lastLocalRank = rank;
     tourState.lastLocalTop10 = top10Ids;
+    tourState.playerCompanyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
+    tourState.companyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
 
     setJSON(K.tourState, tourState);
     setNationalQualifiedLegacy(qualifiedNational);
@@ -308,6 +387,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       split,
       rank,
       qualifiedNational,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       at: Date.now()
     });
 
@@ -317,6 +399,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       split,
       rank,
       qualified: qualifiedNational,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       advanceWeeks: 1
     });
   }
@@ -326,6 +411,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   // ============================================
   function onNationalTournamentFinished(state, total){
     const { rank, list } = getRankFromTotal(total);
+
+    const reward = applyTournamentReward('national', rank);
 
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
@@ -339,6 +426,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const lastChanceUnlocked = (rank >= 9 && rank <= 28);
 
     tourState.lastNationalRank = rank;
+    tourState.playerCompanyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
+    tourState.companyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
 
     if (qualifiedWorld){
       tourState.qualifiedWorld = true;
@@ -376,6 +465,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       rank,
       qualifiedWorld,
       lastChanceUnlocked,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       at: Date.now()
     });
 
@@ -385,6 +477,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       rank,
       qualifiedWorld,
       lastChanceUnlocked,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       advanceWeeks: 1
     });
   }
@@ -395,10 +490,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function onLastChanceTournamentFinished(state, total){
     const { rank, list } = getRankFromTotal(total);
 
+    const reward = applyTournamentReward('lastchance', rank);
+
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
 
     tourState.lastLastChanceRank = rank;
+    tourState.playerCompanyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
+    tourState.companyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
 
     const sortedIds20 = list.map(x => String(x?.id||'')).filter(Boolean);
     tourState.lastChanceSortedIds = sortedIds20;
@@ -445,6 +544,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       split: tourState.split || 0,
       rank,
       qualifiedWorld,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       at: Date.now()
     });
 
@@ -453,6 +555,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       tournamentFinished: true,
       rank,
       qualifiedWorld,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       advanceWeeks: 1
     });
   }
@@ -473,7 +578,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
-    // ✅ v4.5: 予選は“同週でLosersに続く”ので phase は losers へ
     tourState.stage = 'world';
     tourState.world.phase = 'losers';
     tourState.world.qualDoneAt = Date.now();
@@ -486,10 +590,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       at: Date.now()
     });
 
-    // ここではメインへ戻す責務は持たない（step側が続行する）
+    // 続行
   }
 
-  // ✅ v4.5: 互換名 “WL” は losers と同義（Losers終了時のハンドラ）
+  // ✅ v4.5: 互換名 “WL” は losers と同義
   function onWorldWLFinished(state, total){
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
@@ -502,12 +606,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
-    // ✅ Losers終了＝Finalは「来週開始」なので phase を final にする
     tourState.stage = 'world';
     tourState.world.phase = 'final';
     tourState.world.losersDoneAt = Date.now();
 
-    // ✅ step側が finalIds を tour_state.world.finalIds に保存する前提（壊さない）
     setJSON(K.tourState, tourState);
 
     setJSON(K.lastResult, {
@@ -523,13 +625,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     });
   }
 
-  // ✅ v4.5: 明示名（stepがこちらを呼べるように追加）
   function onWorldLosersFinished(state, total){
     return onWorldWLFinished(state, total);
   }
 
   function onWorldFinalFinished(state, total){
     const { rank } = getRankFromTotal(total);
+
+    const reward = applyTournamentReward('world', rank);
 
     const tourState = getJSON(K.tourState, null) || {};
     if (!Number.isFinite(Number(tourState.split))) tourState.split = inferSplitFromMonth();
@@ -553,12 +656,18 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     tourState.worldRosterIds = [];
     tourState.worldGroups = null;
 
+    tourState.playerCompanyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
+    tourState.companyRank = Number(reward.companyRankAfter || getNum(K.rank, 0));
+
     setJSON(K.tourState, tourState);
 
     setJSON(K.lastResult, {
       type: 'world_final',
       split: tourState.split || 0,
       rank,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       at: Date.now()
     });
 
@@ -566,6 +675,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       worldFinalFinished: true,
       tournamentFinished: true,
       rank,
+      rewardGold: reward.gold,
+      rewardRankUp: reward.rankUp,
+      companyRankAfter: reward.companyRankAfter,
       advanceWeeks: 1
     });
   }
@@ -576,8 +688,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     onLastChanceTournamentFinished,
 
     onWorldQualFinished,
-    onWorldWLFinished,        // 互換（=Losers終了）
-    onWorldLosersFinished,    // ✅ 追加（明示）
+    onWorldWLFinished,
+    onWorldLosersFinished,
     onWorldFinalFinished,
 
     setNextTourFromState
