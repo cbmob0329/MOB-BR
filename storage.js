@@ -1,7 +1,8 @@
 'use strict';
 
 /*
-  MOB BR - storage.js v17（フル・tour_state正式対応版）
+  MOB BR - storage.js v18（フル・tour_state正式対応版）
+  - ✅ 初期企業ランクを 1 に修正
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -103,7 +104,7 @@ function setDefaults(){
   setStr(KEYS.m3, 'C');
 
   setNum(KEYS.gold, 0);
-  setNum(KEYS.rank, 10);
+  setNum(KEYS.rank, 1); // ✅ 初期企業ランクは1
 
   setNum(KEYS.year, 1989);
   setNum(KEYS.month, 1);
