@@ -1,13 +1,18 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_training.js v19.5（FULL）
+   MOB BR - ui_training.js v19.6（FULL）
    ✅ 「育成（修行）」はこの画面だけで実行（チーム画面では不可）
    ✅ 1週につき1回だけ実行（無限強化を根絶）
    ✅ ✅ v19.5: 「大会週はトレーニング不可」判定を“誤爆しない”条件に修正
       - ランタイムで大会進行中なら即ロック（最優先）
       - それ以外は「今週 == nextTourW（次の大会週）」のときだけロック
       - tour_state の “証拠っぽいキーがあるだけ” ではロックしない（誤ロック根絶）
+   ✅ v19.6（今回）
+      - ✅ 毎週支給額を新仕様へ修正
+        企業ランク1=3000G、以後1ランクごと+100G
+      - ✅ rank既定値を 10 → 1 に修正
+      - ✅ 修行で週進行した時も app.js / ui_main.js と同じ収入ルールに統一
    ✅ ルール確定（あなたの指定）
       - 射撃：エイムEXP +50
       - 研究：技術EXP +50
@@ -69,13 +74,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     { id:'dash',   title:'ダッシュ', sub:'体力経験値 +50（全能力 +10）',   mainKey:'hp'     }
   ];
 
-  // 週収入（app.js と同じ）
+  // ✅ 週収入（app.js / ui_main.js と同じ）
   function weeklyGoldByRank(rank){
-    if (rank >= 1 && rank <= 5) return 500;
-    if (rank >= 6 && rank <= 10) return 800;
-    if (rank >= 11 && rank <= 20) return 1000;
-    if (rank >= 21 && rank <= 30) return 2000;
-    return 3000;
+    const r = Math.max(1, Number(rank || 1) | 0);
+    return 3000 + ((r - 1) * 100);
   }
 
   // ------------------------------
@@ -124,7 +126,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }
 
-    const rank = getNumLS(KLS.rank, 10);
+    // ✅ 既定値 1
+    let rank = getNumLS(KLS.rank, 1);
+    if (!Number.isFinite(rank) || rank < 1) rank = 1;
+    setNumLS(KLS.rank, rank);
+
     const gain = weeklyGoldByRank(rank);
     const gold = getNumLS(KLS.gold, 0);
     setNumLS(KLS.gold, gold + gain);
@@ -173,20 +179,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       const st = T.getState();
       if (!st || typeof st !== 'object') return false;
 
-      // mode が tournament系なら大会中の可能性が高い
       const mode = String(st.mode || '').toLowerCase();
       const isTourMode = (mode === 'local' || mode === 'national' || mode === 'lastchance' || mode === 'world');
 
-      // phase が intro〜進行中なら大会中
       const phase = String(st.phase || '').toLowerCase();
       const activePhase =
         (phase && phase !== 'ended' && phase !== 'end' && phase !== 'result' && phase !== 'complete' && phase !== 'finished');
 
-      // request が openTournament / tournament系なら大会中
       const reqType = String(st?.request?.type || '').toLowerCase();
       const reqActive = (reqType.indexOf('tournament') >= 0 || reqType === 'opentournament');
 
-      // UIの都合で phase が空でも、mode が tournament なら大会中扱いに寄せる
       return (isTourMode && (activePhase || phase === '' || phase === 'intro')) || reqActive;
     }catch(e){
       return false;
@@ -194,7 +196,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function parseNextTourW(str){
-    // 例： "2-1"（2月第1週）
     const s = String(str || '').trim();
     if (!s || s === '未定') return null;
     const m = Number(s.split('-')[0]);
@@ -206,7 +207,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function getNextTourInfo(){
-    // storage.js があるならそれ優先（キー名の確実性が高い）
     try{
       const S = window.MOBBR?.storage;
       if (S?.getStr && S?.KEYS){
@@ -217,23 +217,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(e){}
 
-    // fallback：localStorage直読み
     const name = String(localStorage.getItem(NEXT_TOUR_KEY) || '未定');
     const ww   = String(localStorage.getItem(NEXT_TOURW_KEY) || '未定');
     return { name, ww };
   }
 
   function isTournamentWeek(){
-    // 0) ランタイムで大会が進行中なら必ずロック（最優先）
     if (runtimeTournamentActive()) return true;
 
-    // 1) tour_state の “明示フラグ”があって、かつ今週が nextTourW と一致するならロック
-    //    ※「tour_state があるだけ」でロックしない（誤爆根絶）
     const ts = readTourState();
     const explicit =
       !!(ts && (ts.inTournamentWeek === true || ts.isTournamentWeek === true || ts.tournamentWeek === true || ts.isTourWeek === true));
 
-    // 2) 基本のロック条件：今週 == nextTourW かつ nextTour が未定じゃない
     const cur = getNowYMW();
     const next = getNextTourInfo();
     const parsed = parseNextTourW(next.ww);
@@ -242,9 +237,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const hasTourName = (String(next.name || '').trim() && String(next.name || '').trim() !== '未定');
 
     if (matches && hasTourName) return true;
-
-    // 3) 明示フラグが立ってるなら “一致してなくても” ロックしたいケースがあるが、
-    //    ここは誤爆が怖いので、明示フラグだけでは止めない（必要なら core 側で nextTourW を今週に合わせる運用）
     if (explicit && matches) return true;
 
     return false;
@@ -305,7 +297,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!team || typeof team !== 'object') team = {};
     if (!Array.isArray(team.members)) team.members = [];
 
-    // A/B/Cは必ずいる前提（いなければ作る）
     const rolesFallback = { A:'IGL', B:'アタッカー', C:'サポーター' };
     const getById = (id) => team.members.find(m => String(m?.id) === String(id));
 
@@ -322,7 +313,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       ensureGrowth(mem);
     });
 
-    // 既存の他メンバーは消さない（ただし修行はA/B/Cのみ実行）
     team.members.forEach(mem=>{
       if (!mem || typeof mem !== 'object') return;
       ensureStats(mem);
@@ -375,7 +365,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     panel.style.backdropFilter = 'blur(3px)';
     panel.style.padding = '14px';
 
-    // header
     const headerRow = document.createElement('div');
     headerRow.style.display = 'grid';
     headerRow.style.gridTemplateColumns = '1fr auto';
@@ -496,7 +485,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function open(){
-    // ✅ 大会週ガード（open段階で止める）
     if (isTournamentWeek()){
       denyByTournamentWeek();
       return;
@@ -510,7 +498,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     o.root.style.display = 'block';
     o.root.style.pointerEvents = 'auto';
 
-    // 初期選択リセット（毎回）
     selectedMenuId = '';
     render();
   }
@@ -551,9 +538,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     card.appendChild(s);
 
     card.addEventListener('click', ()=>{
-      // ✅ 大会週ガード（カード選択も止める）
       if (isTournamentWeek()) return;
-
       if (isDoneThisWeek()) return;
       selectedMenuId = menu.id;
       render();
@@ -572,13 +557,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     o.ymw.textContent = `${y}年 ${m}月 第${w}週`;
 
-    // grid
     o.grid.innerHTML = '';
     MENUS.forEach(menu=>{
       o.grid.appendChild(menuCard(menu, selectedMenuId === menu.id));
     });
 
-    // exec button
     const done = isDoneThisWeek();
     const tour = isTournamentWeek();
 
@@ -608,7 +591,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // execute flow（結果OKで確定）
   // ------------------------------
   function buildResultPopup(lines, onOk){
-    // 既存の membersPop があるなら使う（なければ自前）
     const back = $('modalBack') || buildOverlay().back;
 
     let pop = $('mobbrTrainingResultPop');
@@ -698,7 +680,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     function closePop(){
       try{ pop.remove(); }catch(e){ pop.style.display = 'none'; pop.innerHTML=''; }
-      // overlay側が開いているので back は消さない（close()で管理）
     }
   }
 
@@ -706,15 +687,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     ensureStats(mem);
     ensureGrowth(mem);
 
-    // 共通 +10（全能力）
     STATS.forEach(s=>{
       mem.growth[s.key] = clamp(Number(mem.growth[s.key] || 0) + 10, 0, 999999);
     });
 
-    // 専門 +50（対象能力）
     mem.growth[mainKey] = clamp(Number(mem.growth[mainKey] || 0) + 50, 0, 999999);
 
-    // 100到達ごとにステ+1（繰り越し）
     STATS.forEach(s=>{
       let g = Number(mem.growth[s.key] || 0);
       let st = clamp(Number(mem.stats[s.key] || 0), 0, STAT_MAX);
@@ -730,7 +708,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function onExecute(){
-    // ✅ 大会週ガード（実行段階でも止める：二重ロック）
     if (isTournamentWeek()){
       denyByTournamentWeek();
       return;
@@ -749,7 +726,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     if (!members.length) return;
 
-    // プレビュー（OKで確定）
     const lines = [];
     lines.push(`選択：${menu.title}`);
     lines.push('ルール：全能力 +10 / 専門 +50（= 専門は合計 +60）');
@@ -763,7 +739,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         growth: { ...(mem.growth || {}) }
       };
 
-      // 仮適用（クローンで）
       const tmp = safeJsonParse(JSON.stringify(mem), mem);
       applyExpToMember(tmp, menu.mainKey);
 
@@ -776,7 +751,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         const aS = Number(tmp.stats?.[s.key] || 0);
 
         const deltaS = aS - bS;
-        const growAdd = aG - bG; // 大体 +10 or +60 から 100繰越分減る場合あり
+        const growAdd = aG - bG;
         const label = s.label;
 
         const statText = deltaS > 0 ? ` / ${label} ${bS}→${aS}(+${deltaS})` : '';
@@ -785,31 +760,24 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       lines.push('');
     });
 
-    // OKでのみ確定
     buildResultPopup(lines, ()=>{
-      // ✅ ここでも最終防衛（ポップ中に大会週になった等）
       if (isTournamentWeek()){
         denyByTournamentWeek();
         return;
       }
 
-      // 実適用
       members.forEach(mem=>applyExpToMember(mem, menu.mainKey));
       writePlayerTeam(team);
 
-      // 週進行＋週収入
       const cur = getNowYMW();
       setDoneStamp(cur.y, cur.m, cur.w);
       const weekInfo = advanceWeekBy1();
 
-      // recent
       setStrLS(KLS.recent, `修行：${menu.title} 実行 / 週が進んだ（+${weekInfo.gain}G）`);
 
-      // UI更新
       try{ if (window.MOBBR?.initMainUI) window.MOBBR.initMainUI(); }catch(e){}
       try{ if (window.MOBBR?.initTeamUI) window.MOBBR.initTeamUI(); }catch(e){}
 
-      // 閉じる
       close();
     });
   }
@@ -818,18 +786,15 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // public API
   // ------------------------------
   function initTrainingUI(){
-    // 画面は必要時に生成
     buildOverlay();
   }
 
   window.MOBBR.initTrainingUI = initTrainingUI;
 
-  // UI公開（任意で呼べる）
   window.MOBBR.ui.training = window.MOBBR.ui.training || {};
   window.MOBBR.ui.training.open = open;
   window.MOBBR.ui.training.close = close;
 
-  // 既存UIから呼ばれがち：openTraining / showTraining の互換
   window.MOBBR.openTraining = open;
 
 })();
