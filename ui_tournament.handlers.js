@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.16 split-2）FULL
+   ui_tournament.handlers.js（v3.6.17 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
@@ -29,6 +29,12 @@
           の到着演出・結果演出メッセージを強化
    - ADD: 総合RESULT下に大会ごとの結果メッセージBOXを追加
    - ADD: WORLD FINAL優勝時はメンバー名も表示
+
+   ✅ v3.6.17 追加（今回）
+   - FIX: MATCH1終了直後など「途中の総合RESULT」で
+          報酬BOX / 大会結果コメントBOX が出てしまう問題を修正
+   - ADD: 報酬BOX / 大会結果コメントBOX は
+          “その大会 or フェーズの区切り結果画面” のときだけ表示
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -413,6 +419,38 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     };
   }
 
+  // =========================================================
+  // ✅ 「この総合RESULTが途中経過か / 区切り結果か」を判定
+  // =========================================================
+  function isStageEndTournamentResult(st){
+    const phase = String(st?.phase || '').trim().toLowerCase();
+    const mode = normMode(st);
+    const wp = normWorldPhase(st);
+
+    // Local / LastChance / National の最終
+    if (phase === 'local_total_result_wait_post') return true;
+    if (phase === 'lastchance_total_result_wait_post') return true;
+    if (phase === 'national_total_result_wait_post') return true;
+
+    // World のフェーズ終了結果
+    if (phase === 'world_qual_total_result_wait_branch') return true;
+    if (phase === 'world_losers_total_result_wait_branch') return true;
+    if (phase === 'world_total_result_wait_post') return true;
+
+    // 予備判定
+    if (mode === 'world' && wp === 'qual' && phase === 'world_eliminated_wait_end') return true;
+
+    return false;
+  }
+
+  function shouldShowRewardBox(st){
+    return isStageEndTournamentResult(st);
+  }
+
+  function shouldShowTournamentMessageBox(st){
+    return isStageEndTournamentResult(st);
+  }
+
   function buildTournamentResultMessage(st, totalArr){
     const mode = normMode(st);
     const wp = normWorldPhase(st);
@@ -617,6 +655,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function buildTournamentMessageBox(st, totalArr){
+    if (!shouldShowTournamentMessageBox(st)) return null;
+
     const info = buildTournamentResultMessage(st, totalArr);
     if (!info) return null;
 
@@ -780,6 +820,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function buildRewardBox(st, totalArr){
+    if (!shouldShowRewardBox(st)) return null;
+
     const info = getRewardInfoFromState(st, totalArr);
     const rank = Number(info.rank || 0);
     const gold = Number(info.gold || 0);
@@ -977,9 +1019,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // =========================================================
-  // ✅ コーチスキル UI 廃止（現状使わない）
-  // =========================================================
   async function handleShowCoachSelect(payload){
     lockUI();
     try{
@@ -1431,9 +1470,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // =========================================================
-  // ✅ 試合結果：ここでは “試合resultのみ” を表示（総合は分離）
-  // =========================================================
   async function handleShowMatchResult(payload){
     lockUI();
     try{
@@ -1501,7 +1537,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       wrap.appendChild(table);
 
-      const st = getState() || {};
       const playerPlace = getPlayerRankFromPayloadRows(srcRows);
       if (playerPlace > 0){
         const note = document.createElement('div');
@@ -1520,11 +1555,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // =========================================================
-  // ✅ 総合結果：通過ライン色分け / WORLD FINAL 点灯色分け
-  // ✅ 追加：賞金 / 企業ランクUP 表示
-  // ✅ 追加：大会ごとの結果メッセージ
-  // =========================================================
   async function handleShowTournamentResult(payload){
     lockUI();
     try{
@@ -1681,9 +1711,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // =========================================================
-  // ✅ 大会終了
-  // =========================================================
   async function handleEndTournament(payload){
     lockUI();
     try{
@@ -1702,9 +1729,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // =========================================================
-  // ✅ 旧：ナショナル週進行通知
-  // =========================================================
   async function handleEndNationalWeek(payload){
     lockUI();
     try{
