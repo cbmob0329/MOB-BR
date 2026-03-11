@@ -1,18 +1,23 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_training.js v19.6（FULL）
+   MOB BR - ui_training.js v19.7（FULL）
    ✅ 「育成（修行）」はこの画面だけで実行（チーム画面では不可）
    ✅ 1週につき1回だけ実行（無限強化を根絶）
    ✅ ✅ v19.5: 「大会週はトレーニング不可」判定を“誤爆しない”条件に修正
       - ランタイムで大会進行中なら即ロック（最優先）
       - それ以外は「今週 == nextTourW（次の大会週）」のときだけロック
       - tour_state の “証拠っぽいキーがあるだけ” ではロックしない（誤ロック根絶）
-   ✅ v19.6（今回）
+   ✅ v19.6
       - ✅ 毎週支給額を新仕様へ修正
         企業ランク1=3000G、以後1ランクごと+100G
       - ✅ rank既定値を 10 → 1 に修正
       - ✅ 修行で週進行した時も app.js / ui_main.js と同じ収入ルールに統一
+   ✅ v19.7（今回）
+      - FIX: 大会終了後、_tcore の state が残っていても
+             「大会週じゃないのにトレーニングがロックされる」誤判定を修正
+      - ランタイム大会中判定は “大会UIオーバーレイが実際に開いている時” を最優先にし、
+        overlay が閉じている時は stale state だけではロックしない
    ✅ ルール確定（あなたの指定）
       - 射撃：エイムEXP +50
       - 研究：技術EXP +50
@@ -163,7 +168,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // ------------------------------
-  // ✅ Tournament-week guard (v19.5)
+  // ✅ Tournament-week guard (v19.5 / v19.7)
   // ------------------------------
   function readTourState(){
     const raw = localStorage.getItem(TOUR_STATE_KEY);
@@ -172,24 +177,39 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return (ts && typeof ts === 'object') ? ts : null;
   }
 
+  function isTournamentOverlayActuallyOpen(){
+    try{
+      const ov = document.getElementById('mobbrTournamentOverlay');
+      if (!ov) return false;
+
+      if (ov.classList && ov.classList.contains('isOpen')) return true;
+
+      const style = window.getComputedStyle ? window.getComputedStyle(ov) : null;
+      if (style){
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none'){
+          return true;
+        }
+      }
+
+      if (ov.style){
+        if (ov.style.display && ov.style.display !== 'none') return true;
+      }
+
+      return false;
+    }catch(e){
+      return false;
+    }
+  }
+
   function runtimeTournamentActive(){
     try{
-      const T = window.MOBBR?.sim?._tcore;
-      if (!T || typeof T.getState !== 'function') return false;
-      const st = T.getState();
-      if (!st || typeof st !== 'object') return false;
+      // ✅ 最優先：実際に大会UIが開いているなら大会中
+      if (isTournamentOverlayActuallyOpen()) return true;
 
-      const mode = String(st.mode || '').toLowerCase();
-      const isTourMode = (mode === 'local' || mode === 'national' || mode === 'lastchance' || mode === 'world');
-
-      const phase = String(st.phase || '').toLowerCase();
-      const activePhase =
-        (phase && phase !== 'ended' && phase !== 'end' && phase !== 'result' && phase !== 'complete' && phase !== 'finished');
-
-      const reqType = String(st?.request?.type || '').toLowerCase();
-      const reqActive = (reqType.indexOf('tournament') >= 0 || reqType === 'opentournament');
-
-      return (isTourMode && (activePhase || phase === '' || phase === 'intro')) || reqActive;
+      // ✅ v19.7:
+      // 大会UIが閉じている時は stale な _tcore.state ではロックしない
+      // （大会終了後に state が残っていてもトレーニング可能にする）
+      return false;
     }catch(e){
       return false;
     }
