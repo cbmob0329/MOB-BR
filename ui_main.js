@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_main.js（FULL） v19.8
+   ui_main.js（FULL） v19.9
    - メイン画面の表示/タップ処理
    - ✅ BATTLEボタン：v18.3 の「大会開始ブリッジ」に統一
         → mobbr:startTournament（detail.type/phase）を投げるだけ
@@ -17,17 +17,21 @@
      ※紫のチーム画像（カード表示）は残す
      ※メンバー名変更は TEAM 画面側で行う前提
 
-   v19.8 変更点（今回）
+   v19.8 変更点
    - ✅ 企業ランク初期値を 1 に修正
    - ✅ 毎週支給額を「企業ランク1=3000G、以後1ランクごと+100G」に修正
    - ✅ 週進行ポップの表示も同仕様に統一
+
+   v19.9（今回）
+   - ✅ メイン画面のチーム名/メンバー名を mobbr_playerTeam 優先に修正
+   - ✅ playerTeam の内容を旧キー mobbr_team / mobbr_m1 / mobbr_m2 / mobbr_m3 に同期
+   - ✅ 旧キーしか無い既存セーブも壊さず fallback 表示
 ========================================================= */
-'use strict';
 
 window.MOBBR = window.MOBBR || {};
 
 (function(){
-  const VERSION = 'v19.8';
+  const VERSION = 'v19.9';
 
   // ===== Storage Keys（storage.js と揃える）=====
   const K = {
@@ -65,6 +69,68 @@ window.MOBBR = window.MOBBR || {};
   }
   function setStr(key, val){ localStorage.setItem(key, String(val)); }
   function setNum(key, val){ localStorage.setItem(key, String(Number(val))); }
+
+  function readPlayerTeam(){
+    try{
+      const raw = localStorage.getItem(K.playerTeam);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      return (obj && typeof obj === 'object') ? obj : null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function ensureTeamBase(team){
+    if (!team || typeof team !== 'object') team = {};
+    if (typeof team.teamName !== 'string') team.teamName = '';
+
+    if (!Array.isArray(team.members)) team.members = [];
+
+    const byId = {};
+    team.members.forEach(m=>{
+      const id = String(m?.id || '').trim();
+      if (!id) return;
+      byId[id] = m;
+    });
+
+    const mk = (id, role) => {
+      let m = byId[id] || team.members.find(x => String(x?.id) === id) || {};
+      if (!m || typeof m !== 'object') m = {};
+      m.id = id;
+      if (typeof m.name !== 'string') m.name = '';
+      if (typeof m.role !== 'string') m.role = role || '';
+      return m;
+    };
+
+    const A = mk('A', 'IGL');
+    const B = mk('B', 'アタッカー');
+    const C = mk('C', 'サポーター');
+
+    const rest = team.members.filter(m=>{
+      const id = String(m?.id || '');
+      return id !== 'A' && id !== 'B' && id !== 'C';
+    });
+
+    team.members = [A, B, C, ...rest];
+    return team;
+  }
+
+  function getDisplayNames(){
+    const teamObj = ensureTeamBase(readPlayerTeam());
+
+    const playerTeamName = String(teamObj?.teamName || '').trim();
+    const aName = String((teamObj.members || []).find(m=>String(m?.id)==='A')?.name || '').trim();
+    const bName = String((teamObj.members || []).find(m=>String(m?.id)==='B')?.name || '').trim();
+    const cName = String((teamObj.members || []).find(m=>String(m?.id)==='C')?.name || '').trim();
+
+    return {
+      team: playerTeamName || getStr(K.team, 'PLAYER TEAM'),
+      m1: aName || getStr(K.m1, 'A'),
+      m2: bName || getStr(K.m2, 'B'),
+      m3: cName || getStr(K.m3, 'C')
+    };
+  }
 
   // ✅ 企業ランク1=3000G、以後1ランクごと+100G
   function weeklyGoldByRank(rank){
@@ -137,7 +203,18 @@ window.MOBBR = window.MOBBR || {};
     };
   }
 
-  // ===== 全画面の名前同期（mobbr_playerTeam を更新）=====
+  // ===== playerTeam -> 旧キー 同期 =====
+  function syncLegacyNameKeysFromPlayerTeam(){
+    try{
+      const names = getDisplayNames();
+      setStr(K.team, names.team);
+      setStr(K.m1, names.m1);
+      setStr(K.m2, names.m2);
+      setStr(K.m3, names.m3);
+    }catch(e){}
+  }
+
+  // ===== 旧キー -> playerTeam 同期（互換）=====
   function syncPlayerTeamNamesFromStorage(){
     try{
       const raw = localStorage.getItem(K.playerTeam);
@@ -149,11 +226,19 @@ window.MOBBR = window.MOBBR || {};
       const nm1 = getStr(K.m1, 'A');
       const nm2 = getStr(K.m2, 'B');
       const nm3 = getStr(K.m3, 'C');
+      const tm  = getStr(K.team, 'PLAYER TEAM');
 
-      const bySlot = [...team.members].sort((a,b)=> (a.slot||0)-(b.slot||0));
-      if (bySlot[0]) bySlot[0].name = nm1;
-      if (bySlot[1]) bySlot[1].name = nm2;
-      if (bySlot[2]) bySlot[2].name = nm3;
+      if (typeof team.teamName !== 'string' || !team.teamName.trim()){
+        team.teamName = tm;
+      }
+
+      const mA = team.members.find(m=>String(m?.id)==='A');
+      const mB = team.members.find(m=>String(m?.id)==='B');
+      const mC = team.members.find(m=>String(m?.id)==='C');
+
+      if (mA && (!String(mA.name || '').trim())) mA.name = nm1;
+      if (mB && (!String(mB.name || '').trim())) mB.name = nm2;
+      if (mC && (!String(mC.name || '').trim())) mC.name = nm3;
 
       localStorage.setItem(K.playerTeam, JSON.stringify(team));
     }catch(e){}
@@ -168,13 +253,10 @@ window.MOBBR = window.MOBBR || {};
     if (!ui) collectDom();
 
     const company = getStr(K.company, 'CB Memory');
-    const team = getStr(K.team, 'PLAYER TEAM');
-    const m1 = getStr(K.m1, 'A');
-    const m2 = getStr(K.m2, 'B');
-    const m3 = getStr(K.m3, 'C');
+    const names = getDisplayNames();
 
     if (ui.company) ui.company.textContent = company;
-    if (ui.team) ui.team.textContent = team;
+    if (ui.team) ui.team.textContent = names.team;
 
     if (ui.gold) ui.gold.textContent = String(getNum(K.gold, 0));
     if (ui.rank) ui.rank.textContent = formatRank(getNum(K.rank, 1));
@@ -187,10 +269,9 @@ window.MOBBR = window.MOBBR || {};
     if (ui.nextTourW) ui.nextTourW.textContent = getStr(K.nextTourW, '未定');
     if (ui.recent) ui.recent.textContent = getStr(K.recent, '未定');
 
-    // メンバー名UIは v19.7 でメインから使わないが、DOMがある場合は同期だけしておく
-    if (ui.uiM1) ui.uiM1.textContent = m1;
-    if (ui.uiM2) ui.uiM2.textContent = m2;
-    if (ui.uiM3) ui.uiM3.textContent = m3;
+    if (ui.uiM1) ui.uiM1.textContent = names.m1;
+    if (ui.uiM2) ui.uiM2.textContent = names.m2;
+    if (ui.uiM3) ui.uiM3.textContent = names.m3;
 
     if (ui.btnWeekNext) ui.btnWeekNext.classList.remove('show');
   }
@@ -268,6 +349,16 @@ window.MOBBR = window.MOBBR || {};
 
     if (key === K.m1 || key === K.m2 || key === K.m3){
       syncPlayerTeamNamesFromStorage();
+    }
+
+    if (key === K.team){
+      try{
+        const team = ensureTeamBase(readPlayerTeam());
+        if (team){
+          team.teamName = nv;
+          localStorage.setItem(K.playerTeam, JSON.stringify(team));
+        }
+      }catch(e){}
     }
 
     render();
@@ -366,7 +457,6 @@ window.MOBBR = window.MOBBR || {};
     if (name.includes('チャンピオンシップ')) return { type:'championship' };
 
     if (name.includes('ワールドファイナル') || name.includes('ワールド')){
-      // ✅ v19.6: losers を正式化。互換として WL 文字列も losers 扱い
       if (name.includes('予選')) return { type:'world', phase:'qual' };
       if (name.includes('Losers') || name.includes('LOSERS') || name.includes('敗者')) return { type:'world', phase:'losers' };
       if (name.includes('WL') || name.includes('winners') || name.includes('losers')) return { type:'world', phase:'losers' };
@@ -440,7 +530,6 @@ window.MOBBR = window.MOBBR || {};
       hideBack();
       render();
 
-      // ===== Championship =====
       if (det.type === 'championship'){
         const Flow = window.MOBBR?.sim?.tournamentFlow || window.MOBBR?.tournamentFlow;
         if (Flow && typeof Flow.startChampionshipTournament === 'function'){
@@ -452,7 +541,6 @@ window.MOBBR = window.MOBBR || {};
         return;
       }
 
-      // ===== World =====
       if (det.type === 'world'){
         const ph = (det.phase === 'losers' || det.phase === 'final') ? det.phase : 'qual';
 
@@ -468,7 +556,6 @@ window.MOBBR = window.MOBBR || {};
         return;
       }
 
-      // ===== LastChance =====
       if (det.type === 'lastchance'){
         setRecent('大会：ラストチャンスを開始！');
         if (!dispatchStartTournament({ type:'lastchance' })){
@@ -477,7 +564,6 @@ window.MOBBR = window.MOBBR || {};
         return;
       }
 
-      // ===== National =====
       if (det.type === 'national'){
         setRecent('大会：ナショナル大会を開始！');
         if (!dispatchStartTournament({ type:'national' })){
@@ -486,7 +572,6 @@ window.MOBBR = window.MOBBR || {};
         return;
       }
 
-      // ===== Local（default）=====
       setRecent('大会：ローカル大会を開始！');
       if (!dispatchStartTournament({ type:'local' })){
         setRecent('大会：開始に失敗（イベント送信失敗）');
@@ -533,17 +618,6 @@ window.MOBBR = window.MOBBR || {};
     if (ui.tapTeamName){
       ui.tapTeamName.addEventListener('click', () => renamePrompt(K.team, 'チーム名', 'PLAYER TEAM'));
     }
-
-    // ★ v19.7：メイン画面の「メンバー名」ボタンは使わない
-    // if (ui.btnMembers){
-    //   ui.btnMembers.addEventListener('click', () => { render(); showMembersPop(); });
-    // }
-    // if (ui.btnCloseMembers){
-    //   ui.btnCloseMembers.addEventListener('click', hideMembersPop);
-    // }
-    // if (ui.rowM1) ui.rowM1.addEventListener('click', () => renamePrompt(K.m1, 'メンバー名（1人目）', 'A'));
-    // if (ui.rowM2) ui.rowM2.addEventListener('click', () => renamePrompt(K.m2, 'メンバー名（2人目）', 'B'));
-    // if (ui.rowM3) ui.rowM3.addEventListener('click', () => renamePrompt(K.m3, 'メンバー名（3人目）', 'C'));
 
     if (ui.btnWeekNext){
       ui.btnWeekNext.onclick = null;
@@ -601,9 +675,13 @@ window.MOBBR = window.MOBBR || {};
     collectDom();
     bind();
 
-    disableMainMembersUI();
-
+    // まず旧キーしかない人を playerTeam に補完
     syncPlayerTeamNamesFromStorage();
+
+    // その後、playerTeam 側を正として旧キーへ戻す
+    syncLegacyNameKeysFromPlayerTeam();
+
+    disableMainMembersUI();
 
     hideBack();
     render();
@@ -639,8 +717,10 @@ window.MOBBR = window.MOBBR || {};
 
       const d = e?.detail || {};
       if (d.localFinished || d.nationalFinished || d.lastChanceFinished || d.worldFinished || d.tournamentFinished){
+        syncLegacyNameKeysFromPlayerTeam();
         render();
       }else{
+        syncLegacyNameKeysFromPlayerTeam();
         render();
       }
     });
