@@ -1,8 +1,8 @@
 'use strict';
 
 /* =========================================================
-   app.js（FULL） v19.6
-   - v19.5 の全機能維持（削除なし）
+   app.js（FULL） v19.7
+   - v19.6 の全機能維持（削除なし）
    - ✅ v19.4:
      1) 初回起動 / セーブ削除後、タイトルNEXTで
         企業名 / チーム名 / メンバー名A,B,C を入力させる（セットアップモーダル追加）
@@ -16,12 +16,16 @@
      - 企業ランク初期値を 1 に修正
      - 毎週の収入を「3000 + (rank-1)*100」に修正
      - rank未保存の既存セーブにも 1 を自動補完
-   - ✅ v19.6（今回）:
+   - ✅ v19.6:
      - セーブ削除後に rank が残っていても boot 時に必ず 1 を補完
      - rank<=0 / NaN を強制的に 1 に矯正
+   - ✅ v19.7（今回）:
+     - 初期設定確定時に旧キーも同時保存
+       mobbr_team / mobbr_m1 / mobbr_m2 / mobbr_m3
+     - 既存の旧参照UI/大会側でも名前ズレしにくくする
 ========================================================= */
 
-const APP_VER = 19.6;
+const APP_VER = 19.7;
 
 const $ = (id) => document.getElementById(id);
 
@@ -428,7 +432,13 @@ function exposeTournamentAPI(){
 const SETUP = {
   needKey: 'mobbr_need_setup',
   companyKey: 'mobbr_company',
-  teamKey: 'mobbr_playerTeam'
+  teamKey: 'mobbr_playerTeam',
+
+  // 旧互換キー
+  legacyTeamKey: 'mobbr_team',
+  legacyM1Key: 'mobbr_m1',
+  legacyM2Key: 'mobbr_m2',
+  legacyM3Key: 'mobbr_m3'
 };
 
 function getStrLS(key, def){
@@ -693,6 +703,12 @@ function openInitialSetupModal(onDone){
     setName('C', c);
 
     writeTeamSafe(t);
+
+    // ✅ 旧互換キーも同時保存
+    setStrLS(SETUP.legacyTeamKey, teamName);
+    setStrLS(SETUP.legacyM1Key, a);
+    setStrLS(SETUP.legacyM2Key, b);
+    setStrLS(SETUP.legacyM3Key, c);
 
     ensureInitialCompanyRank();
 
