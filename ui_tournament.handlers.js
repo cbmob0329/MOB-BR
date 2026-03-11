@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.js（v3.6.13 split-2）FULL
+   ui_tournament.handlers.js（v3.6.16 split-2）FULL
    - 各 handleShow*** / buildTable 系
    - ✅変更:
      1) SKIPボタン/スキップ確認ロジックを完全廃止
@@ -23,6 +23,12 @@
    ✅ v3.6.13 追加
    - ADD: 総合RESULTに「賞金 / 企業ランクUP」を表示
           state.lastTournamentReward を優先し、無い場合は tournamentResult.getTournamentReward(mode, rank) で補完
+
+   ✅ v3.6.16 追加
+   - ADD: ローカル / ナショナル / ラストチャンス / WORLD（予選 / losers / final）
+          の到着演出・結果演出メッセージを強化
+   - ADD: 総合RESULT下に大会ごとの結果メッセージBOXを追加
+   - ADD: WORLD FINAL優勝時はメンバー名も表示
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -198,6 +204,481 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
+  // 共通 helper
+  // =========================================================
+  function normMode(st){
+    return String(st?.mode || '').trim().toLowerCase();
+  }
+
+  function normWorldPhase(st){
+    return String(st?.worldPhase || st?.world?.phase || st?.phase || '').trim().toLowerCase();
+  }
+
+  function getPlayerRankFromTotalRows(totalArr){
+    const arr = Array.isArray(totalArr) ? totalArr : [];
+    const idx = arr.findIndex(r => String(r?.id || '') === 'PLAYER');
+    return idx >= 0 ? (idx + 1) : 0;
+  }
+
+  function getPlayerRankFromPayloadRows(rows){
+    const arr = Array.isArray(rows) ? rows : [];
+    const row = arr.find(r => String(r?.id || '') === 'PLAYER');
+    if (!row) return 0;
+    const p = Number(row.placement ?? row.Placement ?? 0);
+    return Number.isFinite(p) ? p : 0;
+  }
+
+  function getPlayerTeamName(st){
+    try{
+      const p = (st?.teams || []).find(x => String(x?.id || '') === 'PLAYER');
+      if (p?.name) return String(p.name);
+    }catch(_){}
+    try{
+      const defs = st?.national?.allTeamDefs;
+      if (defs?.PLAYER?.name) return String(defs.PLAYER.name);
+    }catch(_){}
+    try{
+      const raw = localStorage.getItem('mobbr_playerTeam');
+      if (raw){
+        const obj = JSON.parse(raw);
+        const n = String(obj?.teamName || '').trim();
+        if (n) return n;
+      }
+    }catch(_){}
+    try{
+      const n = String(localStorage.getItem('mobbr_team') || '').trim();
+      if (n) return n;
+    }catch(_){}
+    return 'PLAYER TEAM';
+  }
+
+  function getPlayerMemberNames(st){
+    const fallback = ['A','B','C'];
+
+    try{
+      const p = (st?.teams || []).find(x => String(x?.id || '') === 'PLAYER');
+      if (Array.isArray(p?.members) && p.members.length >= 3){
+        return [
+          String(p.members[0]?.name || fallback[0]),
+          String(p.members[1]?.name || fallback[1]),
+          String(p.members[2]?.name || fallback[2]),
+        ];
+      }
+    }catch(_){}
+
+    try{
+      const defs = st?.national?.allTeamDefs;
+      const p = defs?.PLAYER;
+      if (Array.isArray(p?.members) && p.members.length >= 3){
+        return [
+          String(p.members[0]?.name || fallback[0]),
+          String(p.members[1]?.name || fallback[1]),
+          String(p.members[2]?.name || fallback[2]),
+        ];
+      }
+    }catch(_){}
+
+    try{
+      const raw = localStorage.getItem('mobbr_playerTeam');
+      if (raw){
+        const obj = JSON.parse(raw);
+        const members = Array.isArray(obj?.members) ? obj.members : [];
+        const a = members.find(x => String(x?.id || '') === 'A');
+        const b = members.find(x => String(x?.id || '') === 'B');
+        const c = members.find(x => String(x?.id || '') === 'C');
+        return [
+          String(a?.name || fallback[0]),
+          String(b?.name || fallback[1]),
+          String(c?.name || fallback[2]),
+        ];
+      }
+    }catch(_){}
+
+    return fallback.slice();
+  }
+
+  function buildArrivalLinesByState(st){
+    const mode = normMode(st);
+    const wp = normWorldPhase(st);
+
+    if (mode === 'local'){
+      return {
+        line1: 'いよいよ今シーズンのローカル大会が開幕！',
+        line2: '10位までに入ればナショナル大会へ！',
+        line3: '1戦1戦大事にしよう！'
+      };
+    }
+
+    if (mode === 'national'){
+      return {
+        line1: 'ナショナル大会が開幕！',
+        line2: '上位8チームがワールドファイナルへ！',
+        line3: '全国の猛者と決戦だ！'
+      };
+    }
+
+    if (mode === 'lastchance'){
+      return {
+        line1: 'ラストチャンスが開幕！',
+        line2: 'ナショナル9位〜28位が闘志を燃やす！',
+        line3: '1位か2位でワールドファイナルへ進出出来る！ 全部出し切るぞ！'
+      };
+    }
+
+    if (mode === 'world'){
+      if (wp === 'losers'){
+        return {
+          line1: 'ワールドファイナル losers 開幕！',
+          line2: 'ここで負ければ終わり、上位10だけが決勝へ！',
+          line3: 'まだまだ諦めないで！'
+        };
+      }
+      if (wp === 'final'){
+        return {
+          line1: 'いよいよワールドファイナル決勝！',
+          line2: '80ポイントで点灯し、点灯状態のチャンピオンで優勝！',
+          line3: '試合は最大12試合続きます！'
+        };
+      }
+      return {
+        line1: 'ワールドファイナル開幕！',
+        line2: 'とうとう来たね世界大会。まずは予選リーグ突破を目指して頑張ろう！',
+        line3: '予選リーグは上位10チームが決勝確定！ 11〜30位はlosersへ / 31位以下は敗退！'
+      };
+    }
+
+    return {
+      line1: '大会会場へ到着！',
+      line2: '観客の熱気が一気に押し寄せる…！',
+      line3: 'NEXTで開幕演出へ'
+    };
+  }
+
+  function buildIntroLinesByState(st){
+    const mode = normMode(st);
+    const wp = normWorldPhase(st);
+
+    if (mode === 'local'){
+      return {
+        line1: 'ローカル大会開幕！',
+        line2: 'ここからシーズンの第一歩！',
+        line3: 'NEXTでチーム紹介'
+      };
+    }
+
+    if (mode === 'national'){
+      return {
+        line1: 'ナショナル大会開幕！',
+        line2: '上位8チームが世界へ！',
+        line3: 'NEXTでチーム紹介'
+      };
+    }
+
+    if (mode === 'lastchance'){
+      return {
+        line1: 'ラストチャンス開幕！',
+        line2: '狙うはたった2枠！',
+        line3: 'NEXTでチーム紹介'
+      };
+    }
+
+    if (mode === 'world'){
+      if (wp === 'qual'){
+        return {
+          line1: 'ワールドファイナル予選 開幕！',
+          line2: '上位10チームが決勝確定！',
+          line3: 'NEXTでチーム紹介'
+        };
+      }
+      if (wp === 'losers'){
+        return {
+          line1: 'losers 開幕！',
+          line2: '上位10が決勝へ進出！',
+          line3: 'NEXTでチーム紹介'
+        };
+      }
+      if (wp === 'final'){
+        return {
+          line1: 'FINAL ROUND 開始！',
+          line2: '点灯状態のチャンピオンで世界一！',
+          line3: 'NEXTでチーム紹介'
+        };
+      }
+    }
+
+    return {
+      line1: 'ローカル大会開幕！',
+      line2: '本日の戦場へ——',
+      line3: 'NEXTでチーム紹介'
+    };
+  }
+
+  function buildTournamentResultMessage(st, totalArr){
+    const mode = normMode(st);
+    const wp = normWorldPhase(st);
+    const rank = getPlayerRankFromTotalRows(totalArr);
+
+    if (!rank) return null;
+
+    if (mode === 'local'){
+      if (rank === 1){
+        return {
+          title: 'ローカル大会結果',
+          lines: [
+            'やったね！1位でナショナル大会へ進出を決めたよ！',
+            '自信を持って次へ備えよう！'
+          ]
+        };
+      }
+      if (rank >= 2 && rank <= 5){
+        return {
+          title: 'ローカル大会結果',
+          lines: [
+            '上位で突破！',
+            '次はナショナル大会！',
+            'しっかり準備しよう！'
+          ]
+        };
+      }
+      if (rank >= 6 && rank <= 9){
+        return {
+          title: 'ローカル大会結果',
+          lines: [
+            'なんとかナショナル出場権を獲得！',
+            '頑張るぞ！'
+          ]
+        };
+      }
+      if (rank === 10){
+        return {
+          title: 'ローカル大会結果',
+          lines: [
+            'ボーダーでナショナル出場権を獲得！',
+            '危なかった..'
+          ]
+        };
+      }
+      return {
+        title: 'ローカル大会結果',
+        lines: [
+          `今回のローカル大会は${rank}位で終了。`,
+          '次のシーズンに備えよう！'
+        ]
+      };
+    }
+
+    if (mode === 'national'){
+      if (rank === 1){
+        return {
+          title: 'ナショナル大会結果',
+          lines: [
+            'やったー！1位でワールドファイナル進出を決めたよ！',
+            '最高の形で世界へ！'
+          ]
+        };
+      }
+      if (rank >= 2 && rank <= 8){
+        return {
+          title: 'ナショナル大会結果',
+          lines: [
+            '世界大会決定！',
+            'やったね！'
+          ]
+        };
+      }
+      if (rank >= 9 && rank <= 28){
+        return {
+          title: 'ナショナル大会結果',
+          lines: [
+            '突破ならず。',
+            'でもラストチャンスの権利を手に入れた！',
+            '最後まで諦めないで！'
+          ]
+        };
+      }
+      return {
+        title: 'ナショナル大会結果',
+        lines: [
+          `今回のナショナル大会は${rank}位で終了。`,
+          '次のシーズンに備えよう！'
+        ]
+      };
+    }
+
+    if (mode === 'lastchance'){
+      if (rank === 1){
+        return {
+          title: 'ラストチャンス結果',
+          lines: [
+            'やったー！1位でワールドファイナル進出を決めたよ！',
+            '世界一が見えて来た！'
+          ]
+        };
+      }
+      if (rank === 2){
+        return {
+          title: 'ラストチャンス結果',
+          lines: [
+            '2位で突破！',
+            'やったね！',
+            '帰ってトレーニングだ！'
+          ]
+        };
+      }
+      return {
+        title: 'ラストチャンス結果',
+        lines: [
+          `${rank}位で終了。`,
+          'また次のシーズンで頑張ろう！'
+        ]
+      };
+    }
+
+    if (mode === 'world' && wp === 'qual'){
+      if (rank >= 1 && rank <= 10){
+        return {
+          title: 'ワールドファイナル予選結果',
+          lines: [
+            '決勝確定！',
+            '世界一が見えて来た！'
+          ]
+        };
+      }
+      if (rank >= 11 && rank <= 30){
+        return {
+          title: 'ワールドファイナル予選結果',
+          lines: [
+            'losersへ！',
+            'まだまだ諦めないで！'
+          ]
+        };
+      }
+      return {
+        title: 'ワールドファイナル予選結果',
+        lines: [
+          `${rank}位で終了！`,
+          `世界${rank}位！自信を持って！`
+        ]
+      };
+    }
+
+    if (mode === 'world' && wp === 'losers'){
+      if (rank >= 1 && rank <= 10){
+        return {
+          title: 'WORLD losers 結果',
+          lines: [
+            '決勝へ！',
+            'これが最後の戦いだよ！'
+          ]
+        };
+      }
+      return {
+        title: 'WORLD losers 結果',
+        lines: [
+          '惜しくもここで敗退！',
+          '世界の壁は厚いね。',
+          'また頑張ろう！'
+        ]
+      };
+    }
+
+    if (mode === 'world' && wp === 'final'){
+      if (rank === 1){
+        return {
+          title: 'WORLD FINAL 結果',
+          lines: [
+            'やったね！世界一だよ！世界一！',
+            '賞金何に使うのかな？',
+            'とにかくおめでとう！',
+            '世界王者！'
+          ]
+        };
+      }
+      if (rank >= 2 && rank <= 9){
+        return {
+          title: 'WORLD FINAL 結果',
+          lines: [
+            `今回は${rank}位でフィニッシュ！`,
+            `世界${rank}位。`,
+            'よく頑張ったね！'
+          ]
+        };
+      }
+      return {
+        title: 'WORLD FINAL 結果',
+        lines: [
+          `${rank}位で世界大会終了！`,
+          '本当にお疲れ様！'
+        ]
+      };
+    }
+
+    return null;
+  }
+
+  function buildTournamentMessageBox(st, totalArr){
+    const info = buildTournamentResultMessage(st, totalArr);
+    if (!info) return null;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'coachHint';
+    wrap.style.marginTop = '10px';
+    wrap.style.padding = '12px';
+    wrap.style.borderRadius = '12px';
+    wrap.style.border = '1px solid rgba(255,255,255,.14)';
+    wrap.style.background = 'rgba(255,255,255,.07)';
+    wrap.style.lineHeight = '1.55';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '1000';
+    title.style.fontSize = '13px';
+    title.style.marginBottom = '6px';
+    title.textContent = String(info.title || '大会結果');
+    wrap.appendChild(title);
+
+    const body = document.createElement('div');
+    body.style.fontSize = '12px';
+    body.style.opacity = '0.97';
+    body.innerHTML = (Array.isArray(info.lines) ? info.lines : [])
+      .map(x => escapeHtml(String(x || '')))
+      .join('<br>');
+    wrap.appendChild(body);
+
+    return wrap;
+  }
+
+  function getNoticeLines(payload, st){
+    const p1 = String(payload?.line1 || '').trim();
+    const p2 = String(payload?.line2 || '').trim();
+    const p3 = String(payload?.line3 || '').trim();
+
+    if (p1 || p2 || p3){
+      return {
+        line1: p1,
+        line2: p2,
+        line3: p3 || 'NEXTで進行'
+      };
+    }
+
+    const mode = normMode(st);
+    const wp = normWorldPhase(st);
+
+    if (mode === 'world' && wp === 'final'){
+      return {
+        line1: 'WORLD FINAL',
+        line2: '決戦の時だ！',
+        line3: 'NEXTで進行'
+      };
+    }
+
+    return {
+      line1: '',
+      line2: '',
+      line3: 'NEXTで進行'
+    };
+  }
+
+  // =========================================================
   // ✅ 通過ライン / 点灯ライン（色分け用）
   // =========================================================
   function getQualLineByState(st){
@@ -348,18 +829,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      const st = getState() || {};
+      const auto = buildArrivalLinesByState(st);
+
+      const line1 = String(payload?.line1 || '').trim() || auto.line1;
+      const line2 = String(payload?.line2 || '').trim() || auto.line2;
+      const line3 = String(payload?.line3 || '').trim() || auto.line3;
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
       setChars('', '');
       setNames('', '');
       hideSplash();
 
-      showSplash(payload?.line1 || '大会会場へ到着！', payload?.line2 || '観客の熱気が一気に押し寄せる…！');
-      setLines(
-        payload?.line1 || '🏟️ 大会会場へ到着！',
-        payload?.line2 || '🔥 観客が沸いている…！',
-        payload?.line3 || 'NEXTで開幕演出へ'
-      );
+      showSplash(line1, line2);
+      setLines(line1, line2, line3);
       syncSessionBar();
     }finally{
       unlockUI();
@@ -389,9 +873,10 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       setBanners(st.bannerLeft, st.bannerRight);
 
-      const l1 = st.ui?.center3?.[0] || 'ローカル大会開幕！';
-      const l2 = st.ui?.center3?.[1] || '本日の戦場へ——';
-      const l3 = st.ui?.center3?.[2] || 'NEXTでチーム紹介';
+      const auto = buildIntroLinesByState(st);
+      const l1 = st.ui?.center3?.[0] || auto.line1;
+      const l2 = st.ui?.center3?.[1] || auto.line2;
+      const l3 = st.ui?.center3?.[2] || auto.line3;
       setLines(l1, l2, l3);
 
       MOD.preloadEventIcons();
@@ -920,11 +1405,25 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       setChars(leftResolved, champImg || '');
       setNames('', champName || '');
 
-      setLines(
-        payload?.line1 || '🏆 この試合のチャンピオンは…',
-        champName || '',
-        payload?.line3 || '‼︎'
-      );
+      const isWorldChampion = !!payload?.worldChampion || !!payload?.isWorldFinal;
+      if (isWorldChampion){
+        const members = champTeam?.members && Array.isArray(champTeam.members)
+          ? champTeam.members.slice(0,3).map(m=>String(m?.name || '')).filter(Boolean)
+          : [];
+        const memberLine = members.length ? `メンバーは ${members.join('、')}！` : 'おめでとう！';
+
+        setLines(
+          `${champName}が点灯状態でチャンピオンを獲得！`,
+          `世界王者は ${champName}！`,
+          memberLine
+        );
+      }else{
+        setLines(
+          payload?.line1 || '🏆 この試合のチャンピオンは…',
+          champName || '',
+          payload?.line3 || '‼︎'
+        );
+      }
 
       syncSessionBar();
     }finally{
@@ -1002,6 +1501,16 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       wrap.appendChild(table);
 
+      const st = getState() || {};
+      const playerPlace = getPlayerRankFromPayloadRows(srcRows);
+      if (playerPlace > 0){
+        const note = document.createElement('div');
+        note.className = 'coachHint';
+        note.style.marginTop = '10px';
+        note.textContent = `PLAYER 今回の順位：${playerPlace}位`;
+        wrap.appendChild(note);
+      }
+
       showPanel(`MATCH ${payload?.matchIndex || ''} RESULT`, wrap);
 
       setLines('📊 試合結果', 'NEXTで総合RESULTへ', '');
@@ -1014,6 +1523,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // =========================================================
   // ✅ 総合結果：通過ライン色分け / WORLD FINAL 点灯色分け
   // ✅ 追加：賞金 / 企業ランクUP 表示
+  // ✅ 追加：大会ごとの結果メッセージ
   // =========================================================
   async function handleShowTournamentResult(payload){
     lockUI();
@@ -1068,9 +1578,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
       wrap.appendChild(hint);
 
-      // ✅ 追加：報酬表示
       const rewardBox = buildRewardBox(st, arr);
       if (rewardBox) wrap.appendChild(rewardBox);
+
+      const messageBox = buildTournamentMessageBox(st, arr);
+      if (messageBox) wrap.appendChild(messageBox);
 
       const table = document.createElement('table');
       table.className = 'tourneyTable';
@@ -1151,15 +1663,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       clearHold();
       setBattleMode(false);
 
+      const st = getState() || {};
+      const lines = getNoticeLines(payload, st);
+
       setBackdrop(TOURNEY_BACKDROP);
       setSquareBg('');
 
       setChars('', '');
       setNames('', '');
       showCenterStamp('');
-      showSplash(payload?.line1 || '', payload?.line2 || '');
+      showSplash(lines.line1 || '', lines.line2 || '');
 
-      setLines(payload?.line1 || '', payload?.line2 || '', payload?.line3 || 'NEXTで進行');
+      setLines(lines.line1 || '', lines.line2 || '', lines.line3 || 'NEXTで進行');
       syncSessionBar();
     }finally{
       unlockUI();
