@@ -1,7 +1,7 @@
 'use strict';
 
 /*
-  sim_tournament_core_shared.js（FULL） v4.9
+  sim_tournament_core_shared.js（FULL） v5.0
   - sim_tournament_core.js を 3分割するための「共通土台」
   - state/共通関数/内部ユーティリティを集約（削除ゼロで移植）
   - step本体は sim_tournament_core_step.js に置く
@@ -21,6 +21,10 @@
   - tournamentResult(R) を “固定参照” しない（ロード順/差し替えで総合0になるのを防止）
   - NATIONAL / WORLD の左上表示で「MATCH」を必ず表記できるように、
     _setNationalBanners() で bannerLeft に MATCH を常時含める（bannerRight は ROUND/降下 等の上書き用）
+
+  ✅v5.0（今回）:
+  - PLAYER TEAM / メンバー名A,B,C を localStorage から正しく読むよう修正
+  - 大会中の PLAYER メンバー名が PLAYER_IGL / PLAYER_ATTACKER / PLAYER_SUPPORT にならない
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -43,6 +47,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ---- Local TOP10 key（post側と合わせる）----
   const K_LOCAL_TOP10 = 'mobbr_split1_local_top10';
+
+  // ===== player/team storage keys =====
+  const PLAYER_KEYS = {
+    teamName: 'mobbr_team',
+    playerTeam: 'mobbr_playerTeam',
+    m1: 'mobbr_m1',
+    m2: 'mobbr_m2',
+    m3: 'mobbr_m3'
+  };
 
   // ===== State =====
   let state = null;
@@ -120,7 +133,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // =========================================================
   // ✅ UI Request helper（新旧両対応の核）
-  //  - UIがどこを見ていても request を拾えるようにする
   // =========================================================
 
   function _ensureUiObj(){
@@ -129,13 +141,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return state.ui;
   }
 
-  // ✅FIX: requestの形を「新旧両対応」で保持
-  //
-  // 新: state.requestObj = { type, payload }
-  // 旧: state.request = 'openTournament'（文字列）
-  // 互換: state.request（オブジェクト）を見ている実装にも耐えるため
-  //      state.requestObj のコピーを state.requestObjFlat に持つ
-  //      さらに state.ui.req / state.ui.request / state.ui.reqObj / state.ui.requestObj も同期
   function setRequest(type, payload){
     if (!state) return;
 
@@ -146,7 +151,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     state.requestObj = { type: t, payload: p };
 
     // --- also keep a flat copy for legacy "req.icon" style reads ---
-    // (ui_tournament 側が req.payload ではなく req.icon を見ても壊れない)
     state.requestObjFlat = { type: t, payload: p };
     try{
       for (const k of Object.keys(p)){
@@ -154,25 +158,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }catch(_){}
 
-    // --- LEGACY string mode (most common old pattern) ---
-    // old UI might do: if (state.request === 'openTournament') ...
+    // --- LEGACY string mode ---
     state.request = t;
 
-    // --- LEGACY object mode (some old implementations) ---
-    // old UI might do: st.request.type / st.request.payload
-    // ただし上の文字列と衝突するので、別名で置く方が安全。
-    // それでも "state.request" をオブジェクトとして参照している場合に備えて
-    // state.ui.req を必ずオブジェクトで持つ。
     const ui = _ensureUiObj();
     if (ui){
       ui.reqObj = { type: t, payload: p };
       ui.requestObj = ui.reqObj;
 
-      // よくある旧キー
       ui.req = ui.reqObj;
       ui.request = ui.reqObj;
 
-      // 旧UIが ui.req.icon を直接読むケースにも耐える
       try{
         for (const k of Object.keys(p)){
           ui.reqObj[k] = p[k];
@@ -181,12 +177,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // UI（ui_tournament側）から「次の描画要求」を取得するための共通API
   function peekUiRequest(){
     const st = state;
     if (!st) return null;
 
-    // 1) ui.req / ui.request（最優先：今回ここに必ず入れる）
     try{
       const u = st.ui;
       if (u && u.req && typeof u.req === 'object' && u.req.type) return u.req;
@@ -195,17 +189,14 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (u && u.requestObj && typeof u.requestObj === 'object' && u.requestObj.type) return u.requestObj;
     }catch(_){}
 
-    // 2) requestObj（新）
     try{
       if (st.requestObj && typeof st.requestObj === 'object' && st.requestObj.type) return st.requestObj;
     }catch(_){}
 
-    // 3) requestObjFlat（新・flat）
     try{
       if (st.requestObjFlat && typeof st.requestObjFlat === 'object' && st.requestObjFlat.type) return st.requestObjFlat;
     }catch(_){}
 
-    // 4) request（旧：文字列）
     try{
       if (typeof st.request === 'string' && st.request){
         return { type: st.request, payload: {} };
@@ -219,7 +210,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const st = state;
     if (!st) return;
 
-    // ui側
     try{
       if (st.ui){
         if ('req' in st.ui) st.ui.req = null;
@@ -229,22 +219,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }
     }catch(_){}
 
-    // core側
     try{
       if ('requestObj' in st) st.requestObj = null;
       if ('requestObjFlat' in st) st.requestObjFlat = null;
     }catch(_){}
 
-    // 旧文字列は noop に戻す（null だと旧UIが詰まる実装があるため）
     try{
       st.request = 'noop';
     }catch(_){}
   }
 
   // ===== UI helper =====
-  // ✅FIX: centerの形を core(entry) と揃える
-  //  - state.center = {a,b,c}
-  //  - 互換のため state.ui.center3 = [a,b,c] も同時保持
   function setCenter3(a,b,c){
     if (!state) return;
     const A = String(a||'');
@@ -370,7 +355,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   function finishMatchAndBuildResult(){
-    // ✅ R を都度取得（固定参照禁止）
     const R2 = getR();
     if (!R2 || typeof R2.computeMatchResultTable !== 'function' || typeof R2.addToTournamentTotal !== 'function'){
       console.error('[tournament_core_shared] tournamentResult not ready / missing methods', {
@@ -502,15 +486,54 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     };
   }
 
+  function _readPlayerTeamStorage(){
+    try{
+      const raw = localStorage.getItem(PLAYER_KEYS.playerTeam);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      return (obj && typeof obj === 'object') ? obj : null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function _readPlayerMemberNames(){
+    const fallback = {
+      m1: localStorage.getItem(PLAYER_KEYS.m1) || 'A',
+      m2: localStorage.getItem(PLAYER_KEYS.m2) || 'B',
+      m3: localStorage.getItem(PLAYER_KEYS.m3) || 'C'
+    };
+
+    const pt = _readPlayerTeamStorage();
+    if (!pt || !Array.isArray(pt.members)){
+      return fallback;
+    }
+
+    const findName = (id, fb) => {
+      const m = pt.members.find(x => String(x?.id || '') === String(id));
+      const nm = String(m?.name || '').trim();
+      return nm || fb;
+    };
+
+    return {
+      m1: findName('A', fallback.m1),
+      m2: findName('B', fallback.m2),
+      m3: findName('C', fallback.m3)
+    };
+  }
+
   function _makePlayerRuntime(){
     if (N?.makePlayerRuntime) return N.makePlayerRuntime();
 
     const pPowRaw = (L && typeof L.calcPlayerTeamPower === 'function') ? Number(L.calcPlayerTeamPower()) : NaN;
     const pPow = Number.isFinite(pPowRaw) ? pPowRaw : 55;
 
+    const teamName = localStorage.getItem(PLAYER_KEYS.teamName) || 'PLAYER TEAM';
+    const names = _readPlayerMemberNames();
+
     return {
       id: 'PLAYER',
-      name: localStorage.getItem(L.K.teamName) || 'PLAYER TEAM',
+      name: teamName,
       isPlayer: true,
 
       power: pPow,
@@ -525,9 +548,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       downs_total: 0,
 
       members: [
-        { role:'IGL',      name:'PLAYER_IGL',      kills:0, assists:0 },
-        { role:'ATTACKER', name:'PLAYER_ATTACKER', kills:0, assists:0 },
-        { role:'SUPPORT',  name:'PLAYER_SUPPORT',  kills:0, assists:0 }
+        { role:'IGL',      name:names.m1, kills:0, assists:0 },
+        { role:'ATTACKER', name:names.m2, kills:0, assists:0 },
+        { role:'SUPPORT',  name:names.m3, kills:0, assists:0 }
       ],
 
       treasure: 0,
@@ -541,13 +564,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const local = L.shuffle((localIds9||[]).map(String).filter(Boolean));
     const nat = L.shuffle((nationalIds30||[]).map(String).filter(Boolean));
 
-    // groups（PLAYERは別枠で入れるのでここには入れない）
     const A = [];
     const B = [];
     const C = [];
     const D = [];
 
-    // local 9: A1 / B3 / C2 / D3 ＝ 合計9
     const aLocal = local.slice(0, 1);
     const bLocal = local.slice(1, 4);
     const cLocal = local.slice(4, 6);
@@ -558,7 +579,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     C.push(...cLocal);
     D.push(...dLocal);
 
-    // 目標：A=9 / B=10 / C=10 / D=10（合計39）
     const target = { A:9, B:10, C:10, D:10 };
 
     function fillTo(arr, want){
@@ -575,7 +595,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     fillTo(C, target.C);
     fillTo(D, target.D);
 
-    // セッション順固定
     const sessions = [
       { key:'AB', groups:['A','B'] },
       { key:'CD', groups:['C','D'] },
@@ -611,7 +630,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       if (def) out.push(_cloneDeep(def));
     }
 
-    // 念のため不足埋め（通常は20になる）
     if (out.length < 20){
       const allIds = []
         .concat(g.A||[], g.B||[], g.C||[], g.D||[])
@@ -634,9 +652,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const sc = Number(s.sessionCount||6);
     const key = String(s.sessions?.[si]?.key || `S${si+1}`);
 
-    // ✅ MATCHを必ず常時表示（bannerRightはROUND/降下など上書き用）
     state.bannerLeft  = `NATIONAL ${key} (${si+1}/${sc})  MATCH ${state.matchIndex} / ${state.matchCount}`;
-    state.bannerRight = ''; // ROUND/降下/AUTO 等で上書きされる前提
+    state.bannerRight = '';
   }
 
   function _getSessionKey(idx){
@@ -657,12 +674,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     const nat = state?.national || {};
     const s = nat.sessions?.[sessionIndex];
     const groups = s?.groups || [];
-    return groups.includes('A'); // Aを含むセッションだけPLAYERが出る
+    return groups.includes('A');
   }
 
-  // ✅ A無しセッションを「完全オート高速処理」：5 match
   function _autoRunNationalSession(){
-    // 5 match
     for (let mi=1; mi<=state.matchCount; mi++){
       state.matchIndex = mi;
       state.round = 1;
@@ -670,17 +685,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.selectedCoachQuote = '';
 
       initMatchDrop();
-      // 全ラウンド高速
       fastForwardToMatchEnd();
       finishMatchAndBuildResult();
     }
   }
 
-  // =========================================================
-  // LastChance / World 用のユーティリティ（元ファイルから移植）
-  // =========================================================
   function _getCpuTeamsByPrefixStrict(prefix){
-    // 互換：World/LastChance は prefix で引くので、上の _getCpuTeamsByPrefix を使う
     return _getCpuTeamsByPrefix(prefix);
   }
 
@@ -691,35 +701,28 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   const T = window.MOBBR.sim._tcore;
 
-  // deps
   T.L = L;
-  T.R = getR();          // 初期値（※固定参照ではない。実利用は getR() を推奨）
-  T.getR = getR;         // ✅ 外からも最新Rを取れるように
+  T.R = getR();
+  T.getR = getR;
   T.N = N;
   T.P = P;
 
-  // constants
   T.K_LOCAL_TOP10 = K_LOCAL_TOP10;
 
-  // state
   T.getState = getState;
   T.setState = setState;
   T.getPlayer = getPlayer;
   T.aliveTeams = aliveTeams;
 
-  // shared funcs
   T.ensureTeamRuntimeShape = ensureTeamRuntimeShape;
   T.computeCtx = computeCtx;
 
-  // ✅ request (new+legacy)
   T.setRequest = setRequest;
   T.peekUiRequest = peekUiRequest;
   T.consumeUiRequest = consumeUiRequest;
 
-  // center
   T.setCenter3 = setCenter3;
 
-  // UI-facing helpers
   T.getCoachMaster = getCoachMaster;
   T.getEquippedCoachList = getEquippedCoachList;
   T.setCoachSkill = setCoachSkill;
@@ -729,7 +732,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   T.applyEventForTeam = applyEventForTeam;
   T.initMatchDrop = initMatchDrop;
 
-  // sim
   T.simulateRound = simulateRound;
   T.fastForwardToMatchEnd = fastForwardToMatchEnd;
   T.finishMatchAndBuildResult = finishMatchAndBuildResult;
@@ -737,7 +739,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   T.isTournamentFinished = isTournamentFinished;
   T.resolveOneBattle = resolveOneBattle;
 
-  // national internals
   T._cloneDeep = _cloneDeep;
   T._getAllCpuTeams = _getAllCpuTeams;
   T._getCpuTeamsByPrefix = _getCpuTeamsByPrefix;
@@ -753,7 +754,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   T._sessionHasPlayer = _sessionHasPlayer;
   T._autoRunNationalSession = _autoRunNationalSession;
 
-  // misc
   T._getCpuTeamsByPrefixStrict = _getCpuTeamsByPrefixStrict;
 
 })();
