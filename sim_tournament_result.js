@@ -1,17 +1,14 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.5.0 + 報酬/企業ランク追加 + 戦績保存追加）
+  sim_tournament_result.js（FULL 修正版 v2.5.1 + 報酬/企業ランク追加 + 戦績保存追加 + PLAYER名修正）
 
-  ※ v2.4.2 の内容は削っていません
-  ※ v2.5.0 追加修正：
-     - 大会終了時、PLAYERの最終順位に応じて賞金を付与
-     - 大会終了時、PLAYERの最終順位に応じて企業ランクを加算
-     - 二重付与防止（同じ大会結果で何度も加算されない）
-     - 保存先：
-         mobbr_gold
-         mobbr_company_rank
-         mobbr_last_reward_signature
+  ※ v2.5.0 の内容は削っていません
+  ※ v2.5.1 追加修正：
+     - PLAYER のチーム名が PLAYER TEAM 固定になる問題を修正
+     - 大会結果/総合結果でも localStorage の最新チーム名を優先して解決
+     - 企業ランク保存先を mobbr_company_rank ではなく mobbr_rank に修正
+       （現在の他ファイルと統一）
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -23,14 +20,44 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   // ===== 追加：報酬保存キー =====
   const GOLD_KEY = 'mobbr_gold';
-  const COMPANY_RANK_KEY = 'mobbr_company_rank';
+
+  // ✅ 修正：企業ランクは mobbr_rank が正
+  const COMPANY_RANK_KEY = 'mobbr_rank';
+
   const LAST_REWARD_SIGNATURE_KEY = 'mobbr_last_reward_signature';
+
+  // ===== PLAYER名系キー =====
+  const PLAYER_TEAM_KEY = 'mobbr_team';
+  const PLAYER_TEAM_OBJ_KEY = 'mobbr_playerTeam';
+
+  function readPlayerTeamName(){
+    try{
+      const direct = String(localStorage.getItem(PLAYER_TEAM_KEY) || '').trim();
+      if (direct) return direct;
+    }catch(_){}
+
+    try{
+      const raw = localStorage.getItem(PLAYER_TEAM_OBJ_KEY);
+      if (!raw) return 'PLAYER TEAM';
+      const obj = JSON.parse(raw);
+      const nm = String(obj?.teamName || '').trim();
+      if (nm) return nm;
+    }catch(_){}
+
+    return 'PLAYER TEAM';
+  }
 
   // ==========================================
   // 名前解決（完全版）
   // ==========================================
   function resolveTeamName(state, id){
     const sid = String(id);
+
+    // ✅ PLAYER は常に最新の保存名を最優先
+    if (sid === 'PLAYER'){
+      const liveName = readPlayerTeamName();
+      if (liveName) return liveName;
+    }
 
     try{
       if (state?.teams){
@@ -67,6 +94,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }
       }
     }catch(_){}
+
+    // 最後の保険
+    if (sid === 'PLAYER') return readPlayerTeamName();
 
     return sid;
   }
@@ -143,28 +173,32 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function _normalizeMatchRows(state, rows){
     const arr = Array.isArray(rows) ? rows.slice() : [];
 
-    // placement が無い/壊れてる場合は再計算して保険
     const hasPlacement = arr.length && arr.every(r => Number.isFinite(Number(r?.placement)) && Number(r?.placement) > 0);
     if (!hasPlacement){
       return computeMatchResultTable(state);
     }
 
-    // placement 昇順（#1が先頭）に確定
     arr.sort((a,b)=>{
       const ap = Number(a?.placement || 0);
       const bp = Number(b?.placement || 0);
       if (ap !== bp) return ap - bp;
-      // 念のため同順位の安定化（無いはずだけど）
+
       const at = Number(a?.total || 0);
       const bt = Number(b?.total || 0);
       if (bt !== at) return bt - at;
+
       return String(a?.name||a?.id).localeCompare(String(b?.name||b?.id));
     });
 
-    // name が欠けているケースに保険
     for (let i=0;i<arr.length;i++){
       const r = arr[i];
       if (!r) continue;
+
+      if (r.id === 'PLAYER'){
+        r.name = readPlayerTeamName();
+        continue;
+      }
+
       if (!r.name && r.id){
         r.name = resolveTeamName(state, r.id);
       }
@@ -274,7 +308,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return { gold: 0, rankUp: 0 };
     }
 
-    // Championship（まだ未実装だが先に対応）
+    // Championship
     if (m === 'championship'){
       if (r === 1) return { gold: 3000000, rankUp: 50 };
       if (r === 2) return { gold: 1000000, rankUp: 30 };
@@ -341,13 +375,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
       if (addRank > 0){
         const curRank = Number(localStorage.getItem(COMPANY_RANK_KEY) || 0);
-        const nextRank = (Number.isFinite(curRank) ? curRank : 0) + addRank;
+        const safeCurRank = Number.isFinite(curRank) ? curRank : 0;
+        const nextRank = safeCurRank + addRank;
         localStorage.setItem(COMPANY_RANK_KEY, String(nextRank));
       }
 
       localStorage.setItem(LAST_REWARD_SIGNATURE_KEY, sig);
 
-      // UIや後段で使えるよう state にも残す
       state.lastTournamentReward = {
         mode: String(state.mode || ''),
         rank: playerRank,
@@ -374,7 +408,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!state) return;
     if (!state.tournamentTotal) state.tournamentTotal = {};
 
-    // ✅ v2.4.2: マッチ結果を “この瞬間の試合結果” として state に確定保存（チャンピオン取り違え防止）
     try{
       state.lastMatchResultRows = _normalizeMatchRows(state, rows);
     }catch(_){}
@@ -420,7 +453,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         }
       }catch(_){}
 
-      t.name = String(r?.name || t.name || id);
+      // ✅ PLAYER は保存中も最新名を優先
+      if (id === 'PLAYER'){
+        t.name = readPlayerTeamName();
+      }else{
+        t.name = String(r?.name || t.name || id);
+      }
     });
 
     buildCurrentOverall(state);
@@ -458,21 +496,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   }
 
   // ✅ v2.4.2 修正：マッチチャンピオンは “その試合結果の1位” だけを見る
-  // - currentOverallRows（総合）には絶対フォールバックしない（ここが誤表示の原因）
   function getChampionName(state){
     try{
-      // 1) lastMatchResultRows（試合結果の確定値）
       let rows = state?.lastMatchResultRows;
 
-      // 2) 無い/空なら、その場で “試合結果” を計算してトップを出す（保険）
       if (!Array.isArray(rows) || !rows.length){
         rows = computeMatchResultTable(state);
       }
 
-      // 3) 先頭=マッチ1位
       if (Array.isArray(rows) && rows.length){
-        // placement昇順で担保（lastMatchResultRows が外部から壊されても安全）
         const top = _normalizeMatchRows(state, rows)[0];
+        if (top?.id === 'PLAYER') return readPlayerTeamName();
         if (top?.name) return String(top.name);
         if (top?.id) return resolveTeamName(state, top.id);
       }
