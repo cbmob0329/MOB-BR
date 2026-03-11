@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   MOB BR - ui_team_core.js v20.0（FULL）
+   MOB BR - ui_team_core.js v20.1（FULL）
    - ✅ チーム画面 “コア” のみ（training注入はしない）
    - ✅ チーム画面でトレーニング/修行が出来ないようにする（無限強化根絶）
    - ✅ 表示ステータスは「体力 / エイム / 技術 / メンタル」だけ
@@ -20,9 +20,12 @@
       - ✅ カード効果を「総合チーム力」に反映
       - ✅ 総合チーム力を localStorage / team.power / team.teamPower に保存
       - ✅ tournamentLogic 側が拾えるよう window.MOBBR.ui.team.calcTeamPower を提供
-   - ✅ v20.0（今回）:
+   - ✅ v20.0:
       - ✅ セーブ削除でカード/企業ランク/CDP/カード補正キャッシュも確実に削除
       - ✅ storage.clearAllGameData / clearAll があっても、最後に明示removeで取りこぼしを潰す
+   - ✅ v20.1（今回）:
+      - ✅ セーブ削除前に confirm で「はい / いいえ」確認を必須化
+      - ✅ 誤タップで即削除されないように修正
    - ✅ 互換維持：
       - window.MOBBR._uiTeamCore を提供（旧参照の保険）
       - window.MOBBR.ui._teamCore を提供（app.js の CHECK 用）
@@ -58,7 +61,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   const KEY_TEAM_POWER_A = 'mobbr_team_power';
   const KEY_TEAM_POWER_B = 'mobbr_teamPower';
 
-  // ✅ 今回追加：カード/ガチャ/補正キャッシュ系
+  // ✅ カード/ガチャ/補正キャッシュ系
   const KEY_CARDS            = 'mobbr_cards';
   const KEY_CARDS_OLD        = 'mobbr_cardsOwned';
   const KEY_CDP              = 'mobbr_cdp';
@@ -655,7 +658,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  function doDeleteSave(){
+  function doDeleteSaveConfirmed(){
     try{
       try{
         if (window.MOBBR && typeof window.MOBBR.markNeedSetup === 'function'){
@@ -716,6 +719,17 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  function confirmDeleteSave(){
+    try{
+      const ok = window.confirm('セーブデータを削除しますか？\nカード・企業ランク・所持G・大会進行も削除されます。');
+      if (!ok) return;
+      doDeleteSaveConfirmed();
+    }catch(e){
+      console.error('[TEAM] delete confirm failed:', e);
+      showToast('削除確認に失敗');
+    }
+  }
+
   function bindSaveDeleteButtonsOnce(){
     try{
       const bindOne = (btn, type) => {
@@ -731,7 +745,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
           }catch(_){}
 
           if (type === 'save') doSave();
-          else doDeleteSave();
+          else confirmDeleteSave();
         };
 
         btn.addEventListener('click', handler, { passive:false });
@@ -914,7 +928,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       pickSaveDeleteButtons,
       bindSaveDeleteButtonsOnce,
       doSave,
-      doDeleteSave,
+      doDeleteSaveConfirmed,
+      confirmDeleteSave,
       suppressModalBackTapIfNeeded
     }
   };
