@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.15 split-3 FULL）
+   ui_tournament.js（v3.6.16 split-3 FULL）
    - entry / bind / dispatcher / render
    - core: ui_tournament.core.js（split-1）FULL 前提
    - handlers: ui_tournament.handlers.js（split-2）FULL 前提
@@ -12,12 +12,16 @@
    - ✅ lastReqKey は「描画成功後」に更新（途中returnで固定化しない）
    - ✅ 同一reqが残留しても “UI側で進行不能にならない” 防止策を追加
 
-   ✅ v3.6.15（今回）
+   ✅ v3.6.15
    - ✅ 初期設定で決めたチーム名 / メンバー名を大会UIへ反映
    - ✅ PLAYER TEAM / PLAYER_IGL / PLAYER_ATTACKER / PLAYER_SUPPORT を
       localStorage の最新名に同期
    - ✅ render前に state 側を補正
    - ✅ render後に DOM 側も保険で補正
+
+   ✅ v3.6.16
+   - ✅ 表示補正セレクタを少し強化
+   - ✅ テーブル内テキストも PLAYER名同期の保険対象に追加
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -31,7 +35,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return;
   }
 
-  // split-2 が後から注入される想定でも動くようにする
   const HANDLER_NAMES = [
     'handleShowArrival',
     'handleShowIntroText',
@@ -68,7 +71,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     setNextEnabled,
     onNextCore,
 
-    // 以下は split-1 に存在（render中の補助）
     syncSessionBar,
     setBattleMode,
     setChampionMode,
@@ -168,7 +170,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const names = readPlayerNames();
 
-    // teams
     try{
       if (Array.isArray(st.teams)){
         for (const t of st.teams){
@@ -190,7 +191,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(_){}
 
-    // national/world all defs
     try{
       const defs = st?.national?.allTeamDefs;
       if (defs && typeof defs === 'object' && defs.PLAYER){
@@ -207,7 +207,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(_){}
 
-    // center stamp / name fields
     try{
       if (st.center && typeof st.center === 'object'){
         st.center.a = replacePlayerText(st.center.a, names);
@@ -229,7 +228,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(_){}
 
-    // req payload 内の表示テキストも保険で補正
     try{
       const reqs = [];
       if (st.requestObj && typeof st.requestObj === 'object') reqs.push(st.requestObj);
@@ -297,7 +295,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }catch(_){}
   }
 
-  // ===== 表示の後処理（v3.6.11相当を保持）=====
+  // ===== 表示の後処理 =====
   function escapeHtml(str){
     return String(str)
       .replaceAll('&', '&amp;')
@@ -366,7 +364,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
-  // ✅ render後のDOM保険補正
   function applyPlayerNameDomFix(){
     const overlay = getOverlayEl();
     if (!overlay) return;
@@ -394,7 +391,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }
 
-    // よくある name 系要素は textContent でも補正
     const selectors = [
       '.teamName',
       '.name',
@@ -408,7 +404,14 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       '.centerStamp',
       '.stamp',
       '.center',
-      '.center3'
+      '.center3',
+      '.teamTable',
+      '.resultTable',
+      '.tourneyTable',
+      '.coachHint',
+      '.teamListWrap',
+      '.resultWrap',
+      '.tourneyWrap'
     ];
 
     for (const sel of selectors){
@@ -454,7 +457,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       MOD.close();
     });
 
-    // キーボード（PCデバッグ）
     window.addEventListener('keydown', (e)=>{
       if (!dom.overlay.classList.contains('isOpen')) return;
       if (e.key === 'Enter' || e.key === ' '){
@@ -539,7 +541,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return true;
   }
 
-  // ✅ v3.6.14: hold解除後は pending を最優先で描画
   function popPendingIfReady(){
     const holdType = MOD._getHoldScreenType ? MOD._getHoldScreenType() : null;
     if (holdType) return null;
@@ -602,7 +603,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // ✅ render前に state 側へ最新名を流し込む
     syncPlayerNamesIntoState();
 
     try{ if (typeof syncSessionBar === 'function') syncSessionBar(); }catch(e){}
@@ -639,14 +639,12 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     postRenderFixups();
   }
 
-  // ✅ v3.6.14: lastReqKey の更新は「描画成功後」
   async function renderOne(flow, req, opt){
     if (MOD._setRendering) MOD._setRendering(true);
 
     setNextEnabled(false);
 
     try{
-      // ✅ dispatch直前にも最新名で補正
       syncPlayerNamesIntoState();
 
       const key = mkReqKey(req);
@@ -701,7 +699,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     closeCore();
   }
 
-  // ===== expose =====
   Object.assign(MOD, { open, close, render });
 
   window.MOBBR.ui.tournament = window.MOBBR.ui.tournament || {};
