@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.14 split-3 FULL）
+   ui_tournament.js（v3.6.15 split-3 FULL）
    - entry / bind / dispatcher / render
    - core: ui_tournament.core.js（split-1）FULL 前提
    - handlers: ui_tournament.handlers.js（split-2）FULL 前提
@@ -11,6 +11,13 @@
    - ✅ hold中 pendingReq を “必ず復帰して描画” する（止まり根絶）
    - ✅ lastReqKey は「描画成功後」に更新（途中returnで固定化しない）
    - ✅ 同一reqが残留しても “UI側で進行不能にならない” 防止策を追加
+
+   ✅ v3.6.15（今回）
+   - ✅ 初期設定で決めたチーム名 / メンバー名を大会UIへ反映
+   - ✅ PLAYER TEAM / PLAYER_IGL / PLAYER_ATTACKER / PLAYER_SUPPORT を
+      localStorage の最新名に同期
+   - ✅ render前に state 側を補正
+   - ✅ render後に DOM 側も保険で補正
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -75,6 +82,219 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function hasHandlers(){
     return HANDLER_NAMES.every(k => typeof MOD[k] === 'function');
+  }
+
+  // =========================================================
+  // PLAYER名同期
+  // =========================================================
+  const LS = {
+    team: 'mobbr_team',
+    playerTeam: 'mobbr_playerTeam',
+    m1: 'mobbr_m1',
+    m2: 'mobbr_m2',
+    m3: 'mobbr_m3'
+  };
+
+  function readPlayerNames(){
+    let teamName = '';
+    let a = '';
+    let b = '';
+    let c = '';
+
+    try{
+      teamName = String(localStorage.getItem(LS.team) || '').trim();
+    }catch(_){}
+
+    try{
+      a = String(localStorage.getItem(LS.m1) || '').trim();
+      b = String(localStorage.getItem(LS.m2) || '').trim();
+      c = String(localStorage.getItem(LS.m3) || '').trim();
+    }catch(_){}
+
+    try{
+      const raw = localStorage.getItem(LS.playerTeam);
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (!teamName){
+          const tn = String(obj?.teamName || '').trim();
+          if (tn) teamName = tn;
+        }
+
+        const members = Array.isArray(obj?.members) ? obj.members : [];
+        const ma = members.find(x => String(x?.id || '') === 'A');
+        const mb = members.find(x => String(x?.id || '') === 'B');
+        const mc = members.find(x => String(x?.id || '') === 'C');
+
+        if (!a){
+          const v = String(ma?.name || '').trim();
+          if (v) a = v;
+        }
+        if (!b){
+          const v = String(mb?.name || '').trim();
+          if (v) b = v;
+        }
+        if (!c){
+          const v = String(mc?.name || '').trim();
+          if (v) c = v;
+        }
+      }
+    }catch(_){}
+
+    return {
+      teamName: teamName || 'PLAYER TEAM',
+      a: a || 'A',
+      b: b || 'B',
+      c: c || 'C'
+    };
+  }
+
+  function replacePlayerText(v, names){
+    const s = String(v ?? '');
+    if (!s) return s;
+
+    if (s === 'PLAYER TEAM') return names.teamName;
+    if (s === 'PLAYER') return names.teamName;
+
+    if (s === 'PLAYER_IGL') return names.a;
+    if (s === 'PLAYER_ATTACKER') return names.b;
+    if (s === 'PLAYER_SUPPORT') return names.c;
+
+    return s;
+  }
+
+  function syncPlayerNamesIntoState(){
+    const st = getState();
+    if (!st) return;
+
+    const names = readPlayerNames();
+
+    // teams
+    try{
+      if (Array.isArray(st.teams)){
+        for (const t of st.teams){
+          if (!t) continue;
+          if (String(t.id || '') !== 'PLAYER') continue;
+
+          t.name = names.teamName;
+
+          if (Array.isArray(t.members)){
+            const m0 = t.members[0];
+            const m1 = t.members[1];
+            const m2 = t.members[2];
+
+            if (m0) m0.name = names.a;
+            if (m1) m1.name = names.b;
+            if (m2) m2.name = names.c;
+          }
+        }
+      }
+    }catch(_){}
+
+    // national/world all defs
+    try{
+      const defs = st?.national?.allTeamDefs;
+      if (defs && typeof defs === 'object' && defs.PLAYER){
+        defs.PLAYER.name = names.teamName;
+        if (Array.isArray(defs.PLAYER.members)){
+          const m0 = defs.PLAYER.members[0];
+          const m1 = defs.PLAYER.members[1];
+          const m2 = defs.PLAYER.members[2];
+
+          if (m0) m0.name = names.a;
+          if (m1) m1.name = names.b;
+          if (m2) m2.name = names.c;
+        }
+      }
+    }catch(_){}
+
+    // center stamp / name fields
+    try{
+      if (st.center && typeof st.center === 'object'){
+        st.center.a = replacePlayerText(st.center.a, names);
+        st.center.b = replacePlayerText(st.center.b, names);
+        st.center.c = replacePlayerText(st.center.c, names);
+      }
+    }catch(_){}
+
+    try{
+      if (st.ui && typeof st.ui === 'object'){
+        st.ui.topLeftName = replacePlayerText(st.ui.topLeftName, names);
+        st.ui.topRightName = replacePlayerText(st.ui.topRightName, names);
+
+        if (Array.isArray(st.ui.center3)){
+          st.ui.center3 = st.ui.center3.map(x => replacePlayerText(x, names));
+        }
+
+        st.ui.playerName = names.teamName;
+      }
+    }catch(_){}
+
+    // req payload 内の表示テキストも保険で補正
+    try{
+      const reqs = [];
+      if (st.requestObj && typeof st.requestObj === 'object') reqs.push(st.requestObj);
+      if (st.requestObjFlat && typeof st.requestObjFlat === 'object') reqs.push(st.requestObjFlat);
+      if (st.ui && st.ui.req && typeof st.ui.req === 'object') reqs.push(st.ui.req);
+      if (st.ui && st.ui.request && typeof st.ui.request === 'object') reqs.push(st.ui.request);
+      if (st.ui && st.ui.reqObj && typeof st.ui.reqObj === 'object') reqs.push(st.ui.reqObj);
+      if (st.ui && st.ui.requestObj && typeof st.ui.requestObj === 'object') reqs.push(st.ui.requestObj);
+
+      for (const req of reqs){
+        if (!req) continue;
+
+        if (typeof req.leftName === 'string') req.leftName = replacePlayerText(req.leftName, names);
+        if (typeof req.rightName === 'string') req.rightName = replacePlayerText(req.rightName, names);
+        if (typeof req.title === 'string') req.title = replacePlayerText(req.title, names);
+        if (typeof req.text === 'string') req.text = replacePlayerText(req.text, names);
+
+        if (Array.isArray(req.center3)){
+          req.center3 = req.center3.map(x => replacePlayerText(x, names));
+        }
+
+        const p = req.payload;
+        if (p && typeof p === 'object'){
+          if (typeof p.leftName === 'string') p.leftName = replacePlayerText(p.leftName, names);
+          if (typeof p.rightName === 'string') p.rightName = replacePlayerText(p.rightName, names);
+          if (typeof p.title === 'string') p.title = replacePlayerText(p.title, names);
+          if (typeof p.text === 'string') p.text = replacePlayerText(p.text, names);
+
+          if (Array.isArray(p.center3)){
+            p.center3 = p.center3.map(x => replacePlayerText(x, names));
+          }
+
+          if (Array.isArray(p.lines)){
+            p.lines = p.lines.map(x => replacePlayerText(x, names));
+          }
+
+          if (Array.isArray(p.teams)){
+            p.teams.forEach(team=>{
+              if (!team || typeof team !== 'object') return;
+              if (String(team.id || '') === 'PLAYER' || String(team.name || '') === 'PLAYER TEAM'){
+                team.name = names.teamName;
+              }
+            });
+          }
+
+          if (p.team && typeof p.team === 'object'){
+            if (String(p.team.id || '') === 'PLAYER' || String(p.team.name || '') === 'PLAYER TEAM'){
+              p.team.name = names.teamName;
+            }
+          }
+
+          if (p.player && typeof p.player === 'object'){
+            p.player.name = names.teamName;
+            if (Array.isArray(p.player.members)){
+              const m0 = p.player.members[0];
+              const m1 = p.player.members[1];
+              const m2 = p.player.members[2];
+              if (m0) m0.name = names.a;
+              if (m1) m1.name = names.b;
+              if (m2) m2.name = names.c;
+            }
+          }
+        }
+      }
+    }catch(_){}
   }
 
   // ===== 表示の後処理（v3.6.11相当を保持）=====
@@ -146,9 +366,74 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     }
   }
 
+  // ✅ render後のDOM保険補正
+  function applyPlayerNameDomFix(){
+    const overlay = getOverlayEl();
+    if (!overlay) return;
+
+    const names = readPlayerNames();
+
+    const walker = document.createTreeWalker(overlay, NodeFilter.SHOW_TEXT, null);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())){
+      textNodes.push(node);
+    }
+
+    for (const n of textNodes){
+      const before = String(n.nodeValue || '');
+      let after = before;
+
+      after = after.replaceAll('PLAYER TEAM', names.teamName);
+      after = after.replaceAll('PLAYER_IGL', names.a);
+      after = after.replaceAll('PLAYER_ATTACKER', names.b);
+      after = after.replaceAll('PLAYER_SUPPORT', names.c);
+
+      if (after !== before){
+        n.nodeValue = after;
+      }
+    }
+
+    // よくある name 系要素は textContent でも補正
+    const selectors = [
+      '.teamName',
+      '.name',
+      '.leftName',
+      '.rightName',
+      '.vsName',
+      '.resultName',
+      '.teamListName',
+      '.championName',
+      '.logBox',
+      '.centerStamp',
+      '.stamp',
+      '.center',
+      '.center3'
+    ];
+
+    for (const sel of selectors){
+      const els = overlay.querySelectorAll(sel);
+      for (const el of els){
+        if (!el) continue;
+        const before = String(el.textContent || '');
+        let after = before;
+
+        after = after.replaceAll('PLAYER TEAM', names.teamName);
+        after = after.replaceAll('PLAYER_IGL', names.a);
+        after = after.replaceAll('PLAYER_ATTACKER', names.b);
+        after = after.replaceAll('PLAYER_SUPPORT', names.c);
+
+        if (after !== before){
+          el.textContent = after;
+        }
+      }
+    }
+  }
+
   function postRenderFixups(){
     applyBannerFix();
     applyNameBoxFix();
+    applyPlayerNameDomFix();
   }
 
   // ===== bind =====
@@ -188,7 +473,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   function peekReq(flow){
     if (!flow) return null;
 
-    // “参照だけ”
     try{
       if (typeof flow.peekUiRequest === 'function') return flow.peekUiRequest() || null;
     }catch(e){}
@@ -197,7 +481,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (typeof flow.peekRequest === 'function') return flow.peekRequest() || null;
     }catch(e){}
 
-    // state.ui.req などに載せている実装もある
     try{
       const st = getState();
       if (st && st.ui && st.ui.req) return st.ui.req;
@@ -224,7 +507,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (typeof flow.consumeRequest === 'function'){ flow.consumeRequest(); return; }
     }catch(e){}
 
-    // state.ui.req を使う実装
     try{
       const st = getState();
       if (st && st.ui){
@@ -233,7 +515,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       }
     }catch(e){}
 
-    // 最終手段
     try{
       if ('uiReq' in flow) flow.uiReq = null;
       if ('uiRequest' in flow) flow.uiRequest = null;
@@ -247,15 +528,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (!holdType) return false;
 
     const pending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
-    if (pending) return true; // すでに待ちがある → 何もしない
+    if (pending) return true;
 
     const t = String(req?.type || '');
     if (!t) return false;
 
-    // hold中に “同じ種別” が来た場合は上書きしない（そのまま表示維持）
     if (t === holdType) return true;
 
-    // hold中に別reqが来た → 保管して、NEXTで解除→描画へ
     if (MOD._setPendingReqAfterHold) MOD._setPendingReqAfterHold(req);
     return true;
   }
@@ -263,12 +542,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   // ✅ v3.6.14: hold解除後は pending を最優先で描画
   function popPendingIfReady(){
     const holdType = MOD._getHoldScreenType ? MOD._getHoldScreenType() : null;
-    if (holdType) return null; // まだhold中
+    if (holdType) return null;
 
     const pending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
     if (!pending) return null;
 
-    // pending取り出し
     if (MOD._setPendingReqAfterHold) MOD._setPendingReqAfterHold(null);
     return pending;
   }
@@ -300,7 +578,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       case 'endTournament':          return MOD.handleEndTournament(req);
       case 'endNationalWeek':        return MOD.handleEndNationalWeek(req);
       default:
-        // unknown/unused は握りつぶし（止まり要因にしない）
         console.warn('[ui_tournament] unknown req.type:', t, req);
         return;
     }
@@ -311,7 +588,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     bindOnce();
     ensureDom();
 
-    // rendering中の多重呼び出しガード
     if (MOD._getRendering && MOD._getRendering()) return;
 
     const flow = getFlow();
@@ -326,10 +602,11 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // UI側でも最新化（存在すれば）
+    // ✅ render前に state 側へ最新名を流し込む
+    syncPlayerNamesIntoState();
+
     try{ if (typeof syncSessionBar === 'function') syncSessionBar(); }catch(e){}
 
-    // ✅ pending（hold解除後）は最優先で描画する
     const pend = popPendingIfReady();
     if (pend){
       await renderOne(flow, pend, { fromPending:true });
@@ -339,7 +616,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     const req = peekReq(flow);
 
-    // ✅ noop は即消化（詰まり防止）
     if (req && String(req.type || '') === 'noop'){
       consumeReq(flow);
       setNextEnabled(true);
@@ -353,7 +629,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       return;
     }
 
-    // hold中なら “別req” は保管して、現画面維持
     if (stashPendingIfHolding(req)){
       setNextEnabled(true);
       postRenderFixups();
@@ -368,25 +643,21 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   async function renderOne(flow, req, opt){
     if (MOD._setRendering) MOD._setRendering(true);
 
-    // 描画中はNEXT無効（handlers内の lock/unlock と二重でもOK）
     setNextEnabled(false);
 
     try{
-      // “同一req二重描画防止” は保つが、詰まりを防ぐため扱いを慎重にする
+      // ✅ dispatch直前にも最新名で補正
+      syncPlayerNamesIntoState();
+
       const key = mkReqKey(req);
       const last = MOD._getLastReqKey ? MOD._getLastReqKey() : '';
 
-      // ただし「同一keyが残り続ける」場合に、ここでreturnすると永遠に止まるので
-      // fromPending のときはブロックしない（hold復帰で同一keyになりやすい）
       if (!opt?.fromPending && key && key === last){
-        // もし同一keyなのにreqが残っている＝flow側がconsumeできてない可能性があるので
-        // UI側で消して先へ進める（詰まり根絶）
         consumeReq(flow);
         setNextEnabled(true);
         return;
       }
 
-      // 画面状態の最低限整合（存在すれば）
       try{
         const t = String(req?.type||'');
         if (!t || t === 'noop'){
@@ -403,10 +674,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
       await dispatch(req);
 
-      // 基本は描画後にconsume（ここが最重要）
       consumeReq(flow);
 
-      // ✅ 描画成功後に lastReqKey 更新（途中return/例外で固定化しない）
       if (MOD._setLastReqKey){
         const key2 = mkReqKey(req);
         MOD._setLastReqKey(key2);
@@ -414,8 +683,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
     }catch(e){
       console.error('[ui_tournament] render error:', e);
-
-      // 例外でも “reqが残って止まる” のを防ぐため、一旦consumeして進行可能にする
       try{ consumeReq(flow); }catch(_){}
 
     }finally{
