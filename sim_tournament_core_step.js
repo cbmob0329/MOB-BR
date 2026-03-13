@@ -1,12 +1,12 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.6
+   sim_tournament_core_step.js（FULL） v5.7
    - 2分割：base（sim_tournament_core_step_base.js）を先に読み込む前提
    - 親ファイル名はそのまま維持
    - world系は sim_tournament_core_step.world.js へ分離
    - ✅ app.js を触らずに済むよう、world側はこのファイルから自動読込
-   - v5.5 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
+   - v5.6 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
    - ✅ resultの件：showMatchResult に渡す currentOverall を毎回更新（base側の safe helper）
    - ✅ PLAYER の power を「試合開始のたびに」localStorageの値で必ず再注入（55化防止）
    - ✅ 試合result → NEXT で必ず総合RESULTを1回挟む
@@ -15,6 +15,11 @@
       - 各大会の終了後メッセージを順位別に強化
       - WORLD予選 / LOSERS / FINAL の専用通知を追加
       - 点灯通知 / 世界一決定通知を強化
+   - ✅ v5.7（今回）
+      - FIX: 到着時ログがマッチごとに「大会到着演出」っぽく見える問題を修正
+        → 大会開幕文言は intro だけ、drop_land は純粋な着地/初動文言だけに整理
+      - FIX: ナショナルで通過していないのに通過メッセージが出る問題を修正
+        → 順位判定を currentOverallRows 依存だけでなく tournamentTotal からも厳密算出
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -224,10 +229,44 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return Array.isArray(state?.currentOverallRows) ? state.currentOverallRows : [];
   }
 
+  function _rankRowsFromTournamentTotal(state){
+    try{
+      const total = state?.tournamentTotal || {};
+      const arr = Object.values(total || {});
+      if (!arr.length) return [];
+
+      arr.sort((a,b)=>{
+        const pa = Number(a.sumTotal ?? a.total ?? 0);
+        const pb = Number(b.sumTotal ?? b.total ?? 0);
+        if (pb !== pa) return pb - pa;
+
+        const ka = Number(a.sumKP ?? a.KP ?? a.kp ?? 0);
+        const kb = Number(b.sumKP ?? b.KP ?? b.kp ?? 0);
+        if (kb !== ka) return kb - ka;
+
+        const ppa = Number(a.sumPlacementP ?? a.PP ?? a.placementP ?? 0);
+        const ppb = Number(b.sumPlacementP ?? b.PP ?? b.placementP ?? 0);
+        if (ppb !== ppa) return ppb - ppa;
+
+        return String(a.name || a.squad || a.id || '').localeCompare(String(b.name || b.squad || b.id || ''));
+      });
+
+      return arr;
+    }catch(_){
+      return [];
+    }
+  }
+
   function _getPlayerOverallRank(state){
     const rows = _getOverallRowsSafe(state);
     const idx = rows.findIndex(r => String(r?.id) === 'PLAYER');
-    return idx >= 0 ? (idx + 1) : 999;
+    if (idx >= 0) return idx + 1;
+
+    const ranked = _rankRowsFromTournamentTotal(state);
+    const idx2 = ranked.findIndex(r => String(r?.id) === 'PLAYER');
+    if (idx2 >= 0) return idx2 + 1;
+
+    return 999;
   }
 
   function _buildLocalArrivalLines(){
@@ -358,7 +397,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     setCenter3(a, b, c);
     setRequest('showNationalNotice', Object.assign({
-      qualified: true,
+      qualified: false,
       line1: a,
       line2: b,
       line3: c
@@ -456,8 +495,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       return;
     }
 
-    // world split 아직未読込でも、最初の大会開始前に読み込みは走る
-    // 念のため world中で未ロードなら no-op ではなくログだけ出す
     if (state.mode === 'world' && !worldHandlersReady()){
       console.warn('[tournament_core_step] world split not ready yet');
     }
@@ -500,7 +537,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ✅ Local 終了通知 → post → close
     // =========================================================
     if (state.phase === 'local_total_result_wait_post'){
-      _showThreeLineNotice(state, _buildLocalFinishNotice(state), { qualified: _getPlayerOverallRank(state) <= 10 });
+      _showThreeLineNotice(
+        state,
+        _buildLocalFinishNotice(state),
+        { qualified: (_getPlayerOverallRank(state) <= 10) }
+      );
       state.phase = 'local_finish_notice_wait_end';
       return;
     }
@@ -524,7 +565,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ✅ LastChance 終了通知 → post → close
     // =========================================================
     if (state.phase === 'lastchance_total_result_wait_post'){
-      _showThreeLineNotice(state, _buildLastChanceFinishNotice(state), { qualified: _getPlayerOverallRank(state) <= 2 });
+      _showThreeLineNotice(
+        state,
+        _buildLastChanceFinishNotice(state),
+        { qualified: (_getPlayerOverallRank(state) <= 2) }
+      );
       state.phase = 'lastchance_finish_notice_wait_end';
       return;
     }
@@ -548,7 +593,12 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     // ✅ NATIONAL 最終終了通知 → post
     // =========================================================
     if (state.phase === 'national_total_result_wait_post'){
-      _showThreeLineNotice(state, _buildNationalFinishNotice(state), { qualified: _getPlayerOverallRank(state) <= 8 });
+      const rank = _getPlayerOverallRank(state);
+      _showThreeLineNotice(
+        state,
+        _buildNationalFinishNotice(state),
+        { qualified: (rank >= 1 && rank <= 8) }
+      );
       state.phase = 'national_finish_notice_wait_end';
       return;
     }
@@ -839,14 +889,31 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       state.ui.bg = info.img;
 
       const contested = !!state.playerContestedAtDrop;
+
       if (state.mode === 'local'){
-        setCenter3(`${info.name}に到着！`, 'いよいよ今シーズンのローカル大会が開幕！', '10位までに入ればナショナル大会へ！');
+        setCenter3(
+          `${info.name}に到着！`,
+          contested ? '初動から敵影あり！' : 'まずは周囲を確認しよう！',
+          contested ? '落ち着いて最初の接敵に備えよう！' : '安全に装備を整えよう！'
+        );
       }else if (state.mode === 'national'){
-        setCenter3(`${info.name}に到着！`, 'ナショナル大会が開幕！', '上位8チームがワールドファイナルへ！');
+        setCenter3(
+          `${info.name}に到着！`,
+          contested ? '全国の猛者と初動から接触！' : 'ここから試合開始だ！',
+          contested ? '序盤から油断するな！' : '上位8を目指して動こう！'
+        );
       }else if (state.mode === 'lastchance'){
-        setCenter3(`${info.name}に到着！`, 'ラストチャンスが開幕！', '1位か2位でワールドファイナルへ進出！');
+        setCenter3(
+          `${info.name}に到着！`,
+          contested ? 'いきなり接敵の気配！' : '最後の切符を懸けた戦いが始まる！',
+          contested ? 'ここで負けられない！' : '1位か2位を目指そう！'
+        );
       }else if (state.mode === 'world'){
         if (worldHandlersReady() && callWorldHandler('handleWorldDropLand', state)){
+          state.ui.rightImg = '';
+          state.ui.topLeftName = '';
+          state.ui.topRightName = '';
+
           setRequest('showDropLanded', { areaId: info.id, areaName: info.name, bg: info.img, contested });
           state.phase = 'round_start';
           state.round = 1;
