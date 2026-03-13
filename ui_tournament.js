@@ -1,10 +1,11 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.16 split-3 FULL）
+   ui_tournament.js（v3.6.17 split-3 FULL）
    - entry / bind / dispatcher / render
    - core: ui_tournament.core.js（split-1）FULL 前提
-   - handlers: ui_tournament.handlers.js（split-2）FULL 前提
+   - handlers: ui_tournament.handlers.js（split-2a）FULL 前提
+   - handlers.result: ui_tournament.handlers.result.js（split-2b）FULL 前提
 
    ✅ v3.6.14（FIX）
    - ✅ noop req は即 consume（v3.6.13踏襲）
@@ -22,6 +23,12 @@
    ✅ v3.6.16
    - ✅ 表示補正セレクタを少し強化
    - ✅ テーブル内テキストも PLAYER名同期の保険対象に追加
+
+   ✅ v3.6.17（今回）
+   - FIX: MATCH1総合RESULT後など、hold画面でNEXTを押しても
+          次reqが pending に積まれたまま進まない問題を修正
+   - 対応: NEXT押下時に “現在のhold” を先に clear してから
+          onNextCore() → render() を実行
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -70,6 +77,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     mkReqKey,
     setNextEnabled,
     onNextCore,
+    clearHold,
 
     syncSessionBar,
     setBattleMode,
@@ -439,6 +447,22 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     applyPlayerNameDomFix();
   }
 
+  // =========================================================
+  // hold解除つき NEXT
+  // =========================================================
+  function runNextAndRender(){
+    try{
+      if (typeof clearHold === 'function') clearHold();
+    }catch(e){
+      console.warn('[ui_tournament] clearHold failed before next:', e);
+    }
+
+    const r = onNextCore();
+    if (r && r.shouldRender){
+      MOD.render();
+    }
+  }
+
   // ===== bind =====
   function bindOnce(){
     if (bound) return;
@@ -447,10 +471,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     const dom = ensureDom();
 
     dom.nextBtn.addEventListener('click', ()=>{
-      const r = onNextCore();
-      if (r && r.shouldRender){
-        MOD.render();
-      }
+      runNextAndRender();
     });
 
     dom.closeBtn.addEventListener('click', ()=>{
@@ -461,8 +482,7 @@ window.MOBBR.ui = window.MOBBR.ui || {};
       if (!dom.overlay.classList.contains('isOpen')) return;
       if (e.key === 'Enter' || e.key === ' '){
         e.preventDefault();
-        const r = onNextCore();
-        if (r && r.shouldRender) MOD.render();
+        runNextAndRender();
       }
       if (e.key === 'Escape'){
         e.preventDefault();
