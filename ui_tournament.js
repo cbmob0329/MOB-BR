@@ -1,8 +1,3 @@
-これです。
-原因に対する修正は ui_tournament.js だけで足ります。
-NEXT を押した瞬間に、現在の hold を先に解除してから onNextCore() を呼ぶように直しています。
-これで showTournamentResult 後の nextMatch が pending に積まれたまま止まる状態を解消します。
-
 'use strict';
 
 /* =========================================================
