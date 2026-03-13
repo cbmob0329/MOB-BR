@@ -1,12 +1,12 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.7
+   sim_tournament_core_step.js（FULL） v5.8
    - 2分割：base（sim_tournament_core_step_base.js）を先に読み込む前提
    - 親ファイル名はそのまま維持
    - world系は sim_tournament_core_step.world.js へ分離
    - ✅ app.js を触らずに済むよう、world側はこのファイルから自動読込
-   - v5.6 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
+   - v5.7 の全機能維持（Local / LastChance / National / WORLD Qual+Losers+Final は壊さない）
    - ✅ resultの件：showMatchResult に渡す currentOverall を毎回更新（base側の safe helper）
    - ✅ PLAYER の power を「試合開始のたびに」localStorageの値で必ず再注入（55化防止）
    - ✅ 試合result → NEXT で必ず総合RESULTを1回挟む
@@ -15,11 +15,17 @@
       - 各大会の終了後メッセージを順位別に強化
       - WORLD予選 / LOSERS / FINAL の専用通知を追加
       - 点灯通知 / 世界一決定通知を強化
-   - ✅ v5.7（今回）
+   - ✅ v5.7
       - FIX: 到着時ログがマッチごとに「大会到着演出」っぽく見える問題を修正
         → 大会開幕文言は intro だけ、drop_land は純粋な着地/初動文言だけに整理
       - FIX: ナショナルで通過していないのに通過メッセージが出る問題を修正
         → 順位判定を currentOverallRows 依存だけでなく tournamentTotal からも厳密算出
+   - ✅ v5.8（今回）
+      - FIX: MATCH1総合RESULT後に NEXT で進行しない問題を修正
+        → local_match_total_result_wait_next
+        → lastchance_match_total_result_wait_next
+        → national_match_total_result_wait_next
+        を復元
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -625,6 +631,94 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }else{
         setRequest('endNationalWeek', { weeks: 1 });
       }
+      return;
+    }
+
+    // =========================================================
+    // ✅ LOCAL: 各試合の総合RESULT表示後 → 次試合 or 大会終了
+    // =========================================================
+    if (state.phase === 'local_match_total_result_wait_next'){
+      if (state.matchIndex >= state.matchCount){
+        state.phase = 'local_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      startNextMatch();
+
+      state.ui.bg = 'tent.png';
+      state.ui.squareBg = 'tent.png';
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '1戦1戦大事にしよう！');
+      setRequest('nextMatch', { matchIndex: state.matchIndex });
+      state.phase = 'coach_done';
+      return;
+    }
+
+    // =========================================================
+    // ✅ LASTCHANCE: 各試合の総合RESULT表示後 → 次試合 or 大会終了
+    // =========================================================
+    if (state.phase === 'lastchance_match_total_result_wait_next'){
+      if (state.matchIndex >= state.matchCount){
+        state.phase = 'lastchance_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      startNextMatch();
+
+      state.ui.bg = 'tent.png';
+      state.ui.squareBg = 'tent.png';
+      state.ui.leftImg = getPlayerSkin();
+      state.ui.rightImg = '';
+      state.ui.topLeftName = '';
+      state.ui.topRightName = '';
+
+      setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '全部出し切るぞ！');
+      setRequest('nextMatch', { matchIndex: state.matchIndex });
+      state.phase = 'coach_done';
+      return;
+    }
+
+    // =========================================================
+    // ✅ NATIONAL: 各試合の総合RESULT表示後 → 次試合 or セッション分岐
+    // =========================================================
+    if (state.phase === 'national_match_total_result_wait_next'){
+      const nat = state.national || {};
+      const si = Number(nat.sessionIndex||0);
+      const sc = Number(nat.sessionCount||6);
+
+      if (state.matchIndex < state.matchCount){
+        startNextMatch();
+
+        state.ui.bg = 'tent.png';
+        state.ui.squareBg = 'tent.png';
+        state.ui.leftImg = getPlayerSkin();
+        state.ui.rightImg = '';
+        state.ui.topLeftName = '';
+        state.ui.topRightName = '';
+
+        _setNationalBanners();
+        setCenter3('次の試合へ', `MATCH ${state.matchIndex} / ${state.matchCount}`, '全国の猛者と決戦だ！');
+        setRequest('nextMatch', { matchIndex: state.matchIndex });
+        state.phase = 'coach_done';
+        return;
+      }
+
+      const isLastSession = (si >= sc - 1);
+
+      if (isLastSession){
+        state.phase = 'national_total_result_wait_post';
+        setRequest('noop', {});
+        return;
+      }
+
+      state.phase = 'national_session_total_result_wait_notice';
+      setRequest('noop', {});
       return;
     }
 
