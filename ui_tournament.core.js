@@ -1,15 +1,22 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.core.js（v3.6.12 split-1 FULL）
+   ui_tournament.core.js（v3.6.13 split-1 FULL）
    - DOM生成 / 共通ユーティリティ / 状態 / 共通UI操作
    - ✅ SKIPボタン廃止（DOMにもロジックにも存在しない）
 
-   ✅ v3.6.12 変更（今回の②対応：UI側）
+   ✅ v3.6.12 変更
    - ADD: showPanel() 時にスクロール位置を必ず先頭へ（scrollTop=0）
           → 総合result / 試合result のスクロール残り問題を解消
    - 既存: WORLD FINAL 表記ズレ矯正、result後NEXT停止フェイルセーフ維持
    - 既存: 敵画像候補生成で “空→P1.png” 事故回避（敵専用 candidates）
+
+   ✅ v3.6.13（今回）
+   - FIX: hold画面（showMatchResult / showTournamentResult 等）で
+          NEXT押下時に pendingReqAfterHold を onNextCore() 内で消してしまい、
+          render側が次reqを拾えず停止する問題を修正
+   - 対応: hold解除時は pendingReqAfterHold を消さず、render側の
+          popPendingIfReady() に回収を委ねる
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -655,7 +662,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     if (holdScreenType){
       if (pendingReqAfterHold){
         holdScreenType = null;
-        pendingReqAfterHold = null;
         lastReqKey = '';
         return { consumed:false, shouldRender:true };
       }
