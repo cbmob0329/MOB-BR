@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.js（v3.6.17 split-3 FULL）
+   ui_tournament.js（v3.6.18 split-3 FULL）
    - entry / bind / dispatcher / render
    - core: ui_tournament.core.js（split-1）FULL 前提
    - handlers: ui_tournament.handlers.js（split-2a）FULL 前提
@@ -24,11 +24,17 @@
    - ✅ 表示補正セレクタを少し強化
    - ✅ テーブル内テキストも PLAYER名同期の保険対象に追加
 
-   ✅ v3.6.17（今回）
-   - FIX: MATCH1総合RESULT後など、hold画面でNEXTを押しても
-          次reqが pending に積まれたまま進まない問題を修正
-   - 対応: NEXT押下時に “現在のhold” を先に clear してから
-          onNextCore() → render() を実行
+   ✅ v3.6.17
+   - hold画面→NEXT の進行不能対策を追加
+
+   ✅ v3.6.18（今回）
+   - FIX: MATCH1総合RESULT後など、NEXTで hold は外れても
+          render が走らず次の req（nextMatch / notice / end など）が
+          pending のまま残るケースを修正
+   - FIX: clearHold() を先に叩く方式を撤回
+          （core 側の onNextCore() に任せる）
+   - ADD: NEXT後、hold変化 / pending存在 / req存在 を見て
+          render を強制再実行するセーフティを追加
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -77,7 +83,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     mkReqKey,
     setNextEnabled,
     onNextCore,
-    clearHold,
 
     syncSessionBar,
     setBattleMode,
@@ -448,50 +453,8 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   // =========================================================
-  // hold解除つき NEXT
+  // req helper
   // =========================================================
-  function runNextAndRender(){
-    try{
-      if (typeof clearHold === 'function') clearHold();
-    }catch(e){
-      console.warn('[ui_tournament] clearHold failed before next:', e);
-    }
-
-    const r = onNextCore();
-    if (r && r.shouldRender){
-      MOD.render();
-    }
-  }
-
-  // ===== bind =====
-  function bindOnce(){
-    if (bound) return;
-    bound = true;
-
-    const dom = ensureDom();
-
-    dom.nextBtn.addEventListener('click', ()=>{
-      runNextAndRender();
-    });
-
-    dom.closeBtn.addEventListener('click', ()=>{
-      MOD.close();
-    });
-
-    window.addEventListener('keydown', (e)=>{
-      if (!dom.overlay.classList.contains('isOpen')) return;
-      if (e.key === 'Enter' || e.key === ' '){
-        e.preventDefault();
-        runNextAndRender();
-      }
-      if (e.key === 'Escape'){
-        e.preventDefault();
-        MOD.close();
-      }
-    });
-  }
-
-  // =============== Request pickup (robust) ===============
   function peekReq(flow){
     if (!flow) return null;
 
@@ -572,6 +535,50 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     return pending;
   }
 
+  function hasRenderableWork(flow){
+    try{
+      const pending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
+      if (pending && String(pending.type || '') !== 'noop') return true;
+    }catch(_){}
+
+    const req = peekReq(flow);
+    if (req && String(req.type || '') !== 'noop') return true;
+
+    return false;
+  }
+
+  // =========================================================
+  // NEXT後の強制再描画セーフティ
+  // =========================================================
+  function runNextAndRender(){
+    const flow = getFlow();
+
+    const beforeHold = MOD._getHoldScreenType ? MOD._getHoldScreenType() : null;
+    const beforePending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
+
+    let r = null;
+    try{
+      r = onNextCore();
+    }catch(e){
+      console.error('[ui_tournament] onNextCore failed:', e);
+    }
+
+    const afterHold = MOD._getHoldScreenType ? MOD._getHoldScreenType() : null;
+    const afterPending = MOD._getPendingReqAfterHold ? MOD._getPendingReqAfterHold() : null;
+
+    const holdChanged = String(beforeHold || '') !== String(afterHold || '');
+    const pendingAppeared = (!beforePending && !!afterPending);
+    const hasWork = hasRenderableWork(flow);
+
+    const shouldRender = !!(r && r.shouldRender) || holdChanged || pendingAppeared || hasWork;
+
+    if (shouldRender){
+      Promise.resolve().then(()=>{
+        MOD.render();
+      });
+    }
+  }
+
   // =============== Dispatcher ===============
   async function dispatch(req){
     const t = String(req?.type || '');
@@ -602,6 +609,34 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         console.warn('[ui_tournament] unknown req.type:', t, req);
         return;
     }
+  }
+
+  // ===== bind =====
+  function bindOnce(){
+    if (bound) return;
+    bound = true;
+
+    const dom = ensureDom();
+
+    dom.nextBtn.addEventListener('click', ()=>{
+      runNextAndRender();
+    });
+
+    dom.closeBtn.addEventListener('click', ()=>{
+      MOD.close();
+    });
+
+    window.addEventListener('keydown', (e)=>{
+      if (!dom.overlay.classList.contains('isOpen')) return;
+      if (e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        runNextAndRender();
+      }
+      if (e.key === 'Escape'){
+        e.preventDefault();
+        MOD.close();
+      }
+    });
   }
 
   // =============== Public API ===============
