@@ -1,14 +1,18 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.result.js（v3.7.1 split-2b）FULL
+   ui_tournament.handlers.result.js（v3.7.2 split-2b）FULL
    - result / notice / end / nextMatch 専用
    - ui_tournament.handlers.js から自動読込される前提
    - ✅ v3.6.17 の「途中総合RESULTで報酬/結果コメントが出ない」修正を維持
-   - ✅ v3.7.1（今回）
+   - ✅ v3.7.1
       - FIX: ワールドファイナル予選リーグ / losers で賞金が表示されるバグを修正
       - 対応: 賞金・最終大会結果コメントは「大会終了時のみ」表示
       - WORLD予選 / losers の途中分岐 result では報酬表示しない
+   - ✅ v3.7.2（今回）
+      - FIX: ラストチャンスで賞金が表示されるバグを修正
+      - 対応: 賞金表示は Local / National / WORLD FINAL の大会終了時のみ
+      - LastChance は順位コメントのみ表示、報酬表示なし
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -114,9 +118,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
     // ナショナル大会終了
     if (phase === 'national_total_result_wait_post') return true;
 
-    // ラストチャンス終了
-    if (phase === 'lastchance_total_result_wait_post') return true;
-
     // WORLD FINAL のみ大会終了扱い
     if (phase === 'world_total_result_wait_post') return true;
 
@@ -124,7 +125,13 @@ window.MOBBR.ui = window.MOBBR.ui || {};
   }
 
   function shouldShowRewardBox(st){
-    return isStageEndTournamentResult(st);
+    const phase = String(st?.phase || '').trim().toLowerCase();
+
+    if (phase === 'local_total_result_wait_post') return true;
+    if (phase === 'national_total_result_wait_post') return true;
+    if (phase === 'world_total_result_wait_post') return true;
+
+    return false;
   }
 
   function shouldShowTournamentMessageBox(st){
