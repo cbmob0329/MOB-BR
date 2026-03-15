@@ -1,10 +1,14 @@
 'use strict';
 
 /* =========================================================
-   ui_tournament.handlers.result.js（v3.7.0 split-2b）FULL
+   ui_tournament.handlers.result.js（v3.7.1 split-2b）FULL
    - result / notice / end / nextMatch 専用
    - ui_tournament.handlers.js から自動読込される前提
    - ✅ v3.6.17 の「途中総合RESULTで報酬/結果コメントが出ない」修正を維持
+   - ✅ v3.7.1（今回）
+      - FIX: ワールドファイナル予選リーグ / losers で賞金が表示されるバグを修正
+      - 対応: 賞金・最終大会結果コメントは「大会終了時のみ」表示
+      - WORLD予選 / losers の途中分岐 result では報酬表示しない
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -103,18 +107,18 @@ window.MOBBR.ui = window.MOBBR.ui || {};
 
   function isStageEndTournamentResult(st){
     const phase = String(st?.phase || '').trim().toLowerCase();
-    const mode = normMode(st);
-    const wp = normWorldPhase(st);
 
+    // ローカル大会終了
     if (phase === 'local_total_result_wait_post') return true;
-    if (phase === 'lastchance_total_result_wait_post') return true;
+
+    // ナショナル大会終了
     if (phase === 'national_total_result_wait_post') return true;
 
-    if (phase === 'world_qual_total_result_wait_branch') return true;
-    if (phase === 'world_losers_total_result_wait_branch') return true;
-    if (phase === 'world_total_result_wait_post') return true;
+    // ラストチャンス終了
+    if (phase === 'lastchance_total_result_wait_post') return true;
 
-    if (mode === 'world' && wp === 'qual' && phase === 'world_eliminated_wait_end') return true;
+    // WORLD FINAL のみ大会終了扱い
+    if (phase === 'world_total_result_wait_post') return true;
 
     return false;
   }
@@ -379,54 +383,6 @@ window.MOBBR.ui = window.MOBBR.ui || {};
         lines: [
           `${rank}位で終了。`,
           'また次のシーズンで頑張ろう！'
-        ]
-      };
-    }
-
-    if (mode === 'world' && wp === 'qual'){
-      if (rank >= 1 && rank <= 10){
-        return {
-          title: 'ワールドファイナル予選結果',
-          lines: [
-            '決勝確定！',
-            '世界一が見えて来た！'
-          ]
-        };
-      }
-      if (rank >= 11 && rank <= 30){
-        return {
-          title: 'ワールドファイナル予選結果',
-          lines: [
-            'losersへ！',
-            'まだまだ諦めないで！'
-          ]
-        };
-      }
-      return {
-        title: 'ワールドファイナル予選結果',
-        lines: [
-          `${rank}位で終了！`,
-          `世界${rank}位！自信を持って！`
-        ]
-      };
-    }
-
-    if (mode === 'world' && wp === 'losers'){
-      if (rank >= 1 && rank <= 10){
-        return {
-          title: 'WORLD losers 結果',
-          lines: [
-            '決勝へ！',
-            'これが最後の戦いだよ！'
-          ]
-        };
-      }
-      return {
-        title: 'WORLD losers 結果',
-        lines: [
-          '惜しくもここで敗退！',
-          '世界の壁は厚いね。',
-          'また頑張ろう！'
         ]
       };
     }
