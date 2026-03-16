@@ -1,17 +1,25 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.world.js（FULL） v1.2
+   sim_tournament_core_step.world.js（FULL） v1.3
    - sim_tournament_core_step.js から自動読込される world専用 step 分離
    - 親ファイル名は変更しない
 
-   ✅ v1.2（今回）
+   ✅ v1.2
       - FIX: WORLD FINAL の総合RESULT後、NEXTで停止しやすい問題を修正
       - FIX: 点灯通知（world_final_lit_notice_wait）後に
              match_result_done へ戻さず、そのまま次試合 or 最終処理へ進める
       - FIX: WORLD FINAL の post-result 分岐を一本化して
              同じRESULT/NOTICEループに入りにくくする
-      - 既存の WORLD Qual / Losers / Final の大枠仕様は維持
+
+   ✅ v1.3（今回）
+      - FIX: WORLD予選TOP10通過後、losers自動進行の結果で
+             「ここで敗退」ログが出る問題を修正
+      - 対応: losersAuto=true または PLAYER が seedTop10 に含まれる場合、
+             losers順位通知を出さず、そのまま FINAL確定処理へ進む
+      - 実データ上は決勝進出していたが、通知だけ誤っていた問題を解消
+
+   - 既存の WORLD Qual / Losers / Final の大枠仕様は維持
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -309,6 +317,15 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
 
     return _goWorldFinalTopCandidateNotice(state);
+  }
+
+  function _playerSeededToFinalFromQual(state){
+    try{
+      const seedTop10 = Array.isArray(state?.worldMeta?.seedTop10) ? state.worldMeta.seedTop10 : [];
+      return seedTop10.includes('PLAYER');
+    }catch(_){
+      return false;
+    }
   }
 
   // =========================================================
@@ -667,6 +684,17 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       for (const id of top10) pushU(id);
 
       state.worldMeta.finalIds = finalIds.slice(0,20);
+
+      const playerSeeded = _playerSeededToFinalFromQual(state);
+      const losersAuto = !!state.worldMeta.losersAuto;
+
+      // ✅ 予選TOP10通過者が losers を自動進行しただけのケースでは
+      //    losers敗退/通過通知を出さず、そのまま FINAL 確定処理へ進む
+      if (losersAuto || playerSeeded){
+        state.phase = 'world_losers_finish_notice_wait_branch';
+        setRequest('noop', {});
+        return true;
+      }
 
       const playerRank = ranked.indexOf('PLAYER') + 1;
       state._worldLosersPlayerRank = playerRank > 0 ? playerRank : 999;
