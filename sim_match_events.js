@@ -1,15 +1,16 @@
 'use strict';
 
 /*
-  sim_match_events.js v2.1.0（フル）
+  sim_match_events.js v2.2.0（フル）
   ✅「試合最新版.txt」運用向け（大会側から呼ばれる “イベント抽選エンジン” ）
   - rollForTeam(team, round, ctx) を提供（3段ログ / アイコン / 効果反映）
   - resetTeamMatchState(team) を提供（試合中バフ・イベント履歴のリセット）
-  - eventBuffs（aim/mental/agi の%加算）を更新（試合中は継続）
+  - ✅ 既存イベントの戦闘力影響を eventBuffs.power に一本化
   - Treasure / Flag を更新（勝敗に直結させない）
   - ✅ downs_total は「A運用」：内部だけで常に数値として保持（UIに出さない）
   - 同ラウンド重複なし（同チーム内）：R2〜R5で2回呼ばれても別イベントになる
   - ✅ A方式：effectText（今回の増減）を返す（UIはこれを表示するだけでOK）
+  - ✅ 互換対応：古い eventBuffs.aim / mental / agi が残っていても power へ吸収
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -33,12 +34,24 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(team.treasure))) team.treasure = 0;
     if (!Number.isFinite(Number(team.flag))) team.flag = 0;
 
+    // ★今回：power一本化
     if (!team.eventBuffs || typeof team.eventBuffs !== 'object'){
-      team.eventBuffs = { aim:0, mental:0, agi:0 };
+      team.eventBuffs = { power:0 };
     }else{
-      if (!Number.isFinite(Number(team.eventBuffs.aim))) team.eventBuffs.aim = 0;
-      if (!Number.isFinite(Number(team.eventBuffs.mental))) team.eventBuffs.mental = 0;
-      if (!Number.isFinite(Number(team.eventBuffs.agi))) team.eventBuffs.agi = 0;
+      // 古い形の互換吸収
+      const oldAim = Number(team.eventBuffs.aim);
+      const oldMental = Number(team.eventBuffs.mental);
+      const oldAgi = Number(team.eventBuffs.agi);
+      const oldPower = Number(team.eventBuffs.power);
+
+      let mergedPower = Number.isFinite(oldPower) ? oldPower : 0;
+      if (Number.isFinite(oldAim)) mergedPower += oldAim;
+      if (Number.isFinite(oldMental)) mergedPower += oldMental;
+      if (Number.isFinite(oldAgi)) mergedPower += oldAgi;
+
+      team.eventBuffs = {
+        power: Number.isFinite(mergedPower) ? mergedPower : 0
+      };
     }
 
     // 同ラウンド重複防止用の履歴（試合中のみ）
@@ -93,15 +106,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
   function buildEffectText(delta){
     const parts = [];
-    const a = Number(delta?.aim||0);
-    const m = Number(delta?.mental||0);
-    const g = Number(delta?.agi||0);
-    const tr = Number(delta?.treasure||0);
-    const fl = Number(delta?.flag||0);
+    const p = Number(delta?.power || 0);
+    const tr = Number(delta?.treasure || 0);
+    const fl = Number(delta?.flag || 0);
 
-    if (a)  parts.push(`AIM ${a>0?'+':''}${a}`);
-    if (m)  parts.push(`MENTAL ${m>0?'+':''}${m}`);
-    if (g)  parts.push(`AGI ${g>0?'+':''}${g}`);
+    if (p)  parts.push(`戦闘力 ${p > 0 ? '+' : ''}${p}`);
     if (tr) parts.push(`TREASURE +${tr}`);
     if (fl) parts.push(`FLAG +${fl}`);
 
@@ -121,7 +130,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '作戦会議',
       w: 35,
       icon: ICON_UP,
-      eff: { agi:+1 },
+      eff: { power:+1 },
       lines: [
         '次の戦闘に向けて作戦会議！連携力がアップした！',
         'ここで作戦会議！連携力アップ！',
@@ -133,7 +142,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '物資交換',
       w: 35,
       icon: ICON_UP,
-      eff: { agi:+1 },
+      eff: { power:+1 },
       lines: [
         '物資をお互いに交換！連携力がアップした！',
         '物資を交換した！連携力アップ！',
@@ -145,7 +154,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '円陣',
       w: 35,
       icon: ICON_UP,
-      eff: { aim:+1 },
+      eff: { power:+1 },
       lines: [
         '円陣を組んだ！ファイト力アップ！',
         '絶対勝つぞ！円陣で気合い注入！',
@@ -157,7 +166,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '冷静な索敵',
       w: 35,
       icon: ICON_UP,
-      eff: { mental:+1 },
+      eff: { power:+1 },
       lines: [
         '落ち着いて索敵！次の戦闘は先手を取れそうだ！',
         'それぞれが索敵！戦闘に備える！',
@@ -169,7 +178,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: 'レア武器ゲット',
       w: 10,
       icon: ICON_UP,
-      eff: { aim:+2 },
+      eff: { power:+2 },
       lines: [
         'レア武器をゲット！戦闘が有利に！',
         'これは..レア武器発見！やったね！',
@@ -181,7 +190,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '判断ミス',
       w: 15,
       icon: ICON_DEBA,
-      eff: { agi:-1 },
+      eff: { power:-1 },
       lines: [
         '痛恨の判断ミス！',
         '移動で迷ってしまった..'
@@ -192,7 +201,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: '喧嘩',
       w: 10,
       icon: ICON_DEBA,
-      eff: { mental:-1 },
+      eff: { power:-1 },
       lines: [
         'ムーブが噛み合わない！争ってしまった..',
         'ピンを見ていなかった..一時の言い争いだ'
@@ -203,7 +212,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: 'リロードミス',
       w: 5,
       icon: ICON_DEBA,
-      eff: { aim:-2 },
+      eff: { power:-2 },
       lines: [
         'リロードしていなかった！これはまずい'
       ]
@@ -213,7 +222,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: 'ゾーンに入る',
       w: 5,
       icon: ICON_UP,
-      eff: { aim:+3, mental:+3 },
+      eff: { power:+6 },
       lines: [
         '全員がゾーンに入った!!優勝するぞ！',
         '全員が集中モード！終わらせよう！'
@@ -224,7 +233,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       name: 'チャンピオンムーブ',
       w: 3,
       icon: ICON_UP,
-      eff: { aim:+5, mental:+5 },
+      eff: { power:+10 },
       lines: [
         'チャンピオンムーブが発動！全員覚醒モードだ！'
       ]
@@ -257,17 +266,20 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     // このイベントの“差分”だけ取り出す（A方式表示用）
     const delta = {
-      aim:     Number.isFinite(Number(eff.aim)) ? (Number(eff.aim)|0) : 0,
-      mental:  Number.isFinite(Number(eff.mental)) ? (Number(eff.mental)|0) : 0,
-      agi:     Number.isFinite(Number(eff.agi)) ? (Number(eff.agi)|0) : 0,
-      treasure:Number.isFinite(Number(eff.treasure)) ? (Number(eff.treasure)|0) : 0,
-      flag:    Number.isFinite(Number(eff.flag)) ? (Number(eff.flag)|0) : 0
+      power:    Number.isFinite(Number(eff.power)) ? (Number(eff.power)|0) : 0,
+      treasure: Number.isFinite(Number(eff.treasure)) ? (Number(eff.treasure)|0) : 0,
+      flag:     Number.isFinite(Number(eff.flag)) ? (Number(eff.flag)|0) : 0,
+
+      // 互換維持用（既存参照があっても壊れにくくする）
+      aim: 0,
+      mental: 0,
+      agi: 0
     };
 
-    // %バフ（試合中のみ）
-    if (delta.aim)    team.eventBuffs.aim    = clamp(team.eventBuffs.aim    + delta.aim,    -99, 99);
-    if (delta.mental) team.eventBuffs.mental = clamp(team.eventBuffs.mental + delta.mental, -99, 99);
-    if (delta.agi)    team.eventBuffs.agi    = clamp(team.eventBuffs.agi    + delta.agi,    -99, 99);
+    // 総合戦闘力バフ（試合中のみ）
+    if (delta.power){
+      team.eventBuffs.power = clamp((team.eventBuffs.power|0) + delta.power, -99, 99);
+    }
 
     // スコア系（勝敗に直結させない）
     if (delta.treasure){
@@ -309,7 +321,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     markUsed(team, r, ev.id);
 
-    const delta = applyEffect(team, ev, ctx) || { aim:0, mental:0, agi:0, treasure:0, flag:0 };
+    const delta = applyEffect(team, ev, ctx) || {
+      power:0, treasure:0, flag:0, aim:0, mental:0, agi:0
+    };
     const effectText = buildEffectText(delta);
 
     return {
@@ -320,8 +334,8 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       log1: 'イベント発生！',
       log2: String(ev.name || ''),
       log3: pickOne(ev.lines) || '',
-      delta,        // ← UIで必要なら使える
-      effectText    // ← UIはこれをそのまま表示すればOK
+      delta,
+      effectText
     };
   }
 
@@ -332,7 +346,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     team.downs_total = 0;
 
     // 試合中のみのバフをリセット
-    team.eventBuffs = { aim:0, mental:0, agi:0 };
+    team.eventBuffs = { power:0 };
 
     // 同ラウンド重複防止の履歴をリセット
     team._evUsedByRound = Object.create(null);
