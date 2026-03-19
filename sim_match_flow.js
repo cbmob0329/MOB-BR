@@ -1,8 +1,12 @@
 'use strict';
 
 /*
-  sim_match_flow.js v3.1（フル）
-  v3完全維持 + 宝/旗抽選追加
+  sim_match_flow.js v3.2（フル）
+  v3.1完全維持 + 宝/旗抽選追加
+  ✅ 今回
+  - eventBuffs を power 一本化
+  - 戦闘力計算は team.power + eventBuffs.power
+  - 互換対応：古い aim / mental / agi が残っていても power へ吸収
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -102,8 +106,23 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (!Number.isFinite(Number(t.flag))) t.flag = 0;
     if (!Number.isFinite(Number(t.eliminatedRound))) t.eliminatedRound = 0;
 
+    // ★今回：power一本化
     if (!t.eventBuffs || typeof t.eventBuffs !== 'object'){
-      t.eventBuffs = { aim:0, mental:0, agi:0 };
+      t.eventBuffs = { power:0 };
+    }else{
+      const oldAim = Number(t.eventBuffs.aim);
+      const oldMental = Number(t.eventBuffs.mental);
+      const oldAgi = Number(t.eventBuffs.agi);
+      const oldPower = Number(t.eventBuffs.power);
+
+      let mergedPower = Number.isFinite(oldPower) ? oldPower : 0;
+      if (Number.isFinite(oldAim)) mergedPower += oldAim;
+      if (Number.isFinite(oldMental)) mergedPower += oldMental;
+      if (Number.isFinite(oldAgi)) mergedPower += oldAgi;
+
+      t.eventBuffs = {
+        power: Number.isFinite(mergedPower) ? mergedPower : 0
+      };
     }
 
     if (!Array.isArray(t.members)) t.members = [];
@@ -124,16 +143,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     if (t.eliminated !== true) t.eliminated = false;
   }
 
-  function buffMultiplierFromEventBuffs(t){
-    const aim = clamp(t.eventBuffs?.aim ?? 0, -99, 99);
-    const mental = clamp(t.eventBuffs?.mental ?? 0, -99, 99);
-    const agi = clamp(t.eventBuffs?.agi ?? 0, -99, 99);
-
-    const mAim = 1 + (aim / 100);
-    const mMental = 1 + (mental / 120);
-    const mAgi = 1 + (agi / 140);
-
-    return clamp(mAim * mMental * mAgi, 0.70, 1.35);
+  function eventPowerBonus(t){
+    ensureTeamShape(t);
+    const power = clamp(t.eventBuffs?.power ?? 0, -99, 99);
+    return power;
   }
 
   function roundVariance(round){
@@ -146,10 +159,10 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   function computeFightPower(t, round){
     ensureTeamShape(t);
     const base = clamp(t.power, 1, 100);
-    const evMult = buffMultiplierFromEventBuffs(t);
+    const bonus = eventPowerBonus(t);
     const v = roundVariance(round);
     const rng = 1 + ((Math.random() * 2 - 1) * v);
-    return base * evMult * rng;
+    return clamp(base + bonus, 1, 200) * rng;
   }
 
   function computeWinRateA(powerA, powerB){
