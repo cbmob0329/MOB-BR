@@ -1,14 +1,13 @@
 'use strict';
 
 /*
-  sim_tournament_result.js（FULL 修正版 v2.5.1 + 報酬/企業ランク追加 + 戦績保存追加 + PLAYER名修正）
+  sim_tournament_result.js（FULL 修正版 v2.5.2 + 報酬/企業ランク追加 + 戦績保存追加 + PLAYER名修正 + H2H順位修正）
 
-  ※ v2.5.0 の内容は削っていません
-  ※ v2.5.1 追加修正：
-     - PLAYER のチーム名が PLAYER TEAM 固定になる問題を修正
-     - 大会結果/総合結果でも localStorage の最新チーム名を優先して解決
-     - 企業ランク保存先を mobbr_company_rank ではなく mobbr_rank に修正
-       （現在の他ファイルと統一）
+  ※ v2.5.1 の内容は削っていません
+  ※ v2.5.2 追加修正：
+     - 同ラウンド脱落時の順位決定で 直接対戦(H2H) を参照
+     - 「Aチームに負けたのにAチームより上」を防止
+     - H2H は state.h2h[winnerId][loserId] = 1 / state.h2h[loserId][winnerId] = -1 を想定
 */
 
 window.MOBBR = window.MOBBR || {};
@@ -111,6 +110,30 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return 0;
   }
 
+  // ==========================================
+  // H2H helper
+  // ==========================================
+  function getH2HValue(state, aId, bId){
+    try{
+      const aid = String(aId || '');
+      const bid = String(bId || '');
+      if (!aid || !bid || aid === bid) return 0;
+
+      const h2h = state?.h2h;
+      if (!h2h || typeof h2h !== 'object') return 0;
+
+      const direct = Number(h2h?.[aid]?.[bid]);
+      if (Number.isFinite(direct) && direct !== 0) return direct;
+
+      const reverse = Number(h2h?.[bid]?.[aid]);
+      if (Number.isFinite(reverse) && reverse !== 0) return -reverse;
+
+      return 0;
+    }catch(_){
+      return 0;
+    }
+  }
+
   function computeMatchResultTable(state){
     const teams = (state?.teams ? state.teams.slice() : []);
 
@@ -120,6 +143,11 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       const ar = Number(a?.eliminatedRound || 0);
       const br = Number(b?.eliminatedRound || 0);
       if (ar !== br) return br - ar;
+
+      // ✅ 同ラウンド内は直接対戦を優先
+      const h2h = getH2HValue(state, a?.id, b?.id);
+      if (h2h > 0) return -1; // a が b に勝っている
+      if (h2h < 0) return 1;  // b が a に勝っている
 
       const ak = Number(a?.kills_total || 0);
       const bk = Number(b?.kills_total || 0);
@@ -169,7 +197,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     return rows;
   }
 
-  // ✅ v2.4.2: rows を “その試合の順位(placement)” で正規化して lastMatchResultRows に保存
+  // ✅ rows を “その試合の順位(placement)” で正規化して lastMatchResultRows に保存
   function _normalizeMatchRows(state, rows){
     const arr = Array.isArray(rows) ? rows.slice() : [];
 
@@ -495,7 +523,7 @@ window.MOBBR.sim = window.MOBBR.sim || {};
     }
   }
 
-  // ✅ v2.4.2 修正：マッチチャンピオンは “その試合結果の1位” だけを見る
+  // ✅ マッチチャンピオンは “その試合結果の1位” だけを見る
   function getChampionName(state){
     try{
       let rows = state?.lastMatchResultRows;
