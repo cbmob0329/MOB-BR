@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
-   sim_tournament_core_step.js（FULL） v5.8
+   sim_tournament_core_step.js（FULL） v5.8a
    - 2分割：base（sim_tournament_core_step_base.js）を先に読み込む前提
    - 親ファイル名はそのまま維持
    - world系は sim_tournament_core_step.world.js へ分離
@@ -26,6 +26,10 @@
         → lastchance_match_total_result_wait_next
         → national_match_total_result_wait_next
         を復元
+   - ✅ v5.8a（今回の順位バグ修正）
+      - matchFlow.resolveBattle を安全ラップして H2H を state.h2h に記録
+      - プレイヤー敗北後の高速処理で fastForwardToMatchEnd を重ねて呼ばない
+        → 残り試合の二重進行を防止
 ========================================================= */
 
 window.MOBBR = window.MOBBR || {};
@@ -100,6 +104,67 @@ window.MOBBR.sim = window.MOBBR.sim || {};
   const getNewlyLitIdsThisMatch = B.getNewlyLitIdsThisMatch;
   const markLitAnnounced = B.markLitAnnounced;
   const buildLitNamesLine = B.buildLitNamesLine;
+
+  // =========================================================
+  // H2H helper
+  // =========================================================
+  function _ensureH2HShape(state){
+    if (!state) return;
+    if (!state.h2h || typeof state.h2h !== 'object'){
+      state.h2h = {};
+    }
+  }
+
+  function _recordH2HResult(state, winnerId, loserId){
+    try{
+      if (!state) return;
+      const w = String(winnerId || '');
+      const l = String(loserId || '');
+      if (!w || !l || w === l) return;
+
+      _ensureH2HShape(state);
+
+      if (!state.h2h[w] || typeof state.h2h[w] !== 'object') state.h2h[w] = {};
+      if (!state.h2h[l] || typeof state.h2h[l] !== 'object') state.h2h[l] = {};
+
+      state.h2h[w][l] = 1;
+      state.h2h[l][w] = -1;
+    }catch(_){}
+  }
+
+  function _ensureResolveBattleH2HHook(){
+    try{
+      const mf = window.MOBBR?.sim?.matchFlow;
+      if (!mf || typeof mf.resolveBattle !== 'function') return;
+
+      if (mf.resolveBattle._mobbrH2HWrapped) return;
+
+      const raw = mf.resolveBattle;
+
+      const wrapped = function(teamA, teamB, round, ctx){
+        const res = raw.apply(this, arguments);
+
+        try{
+          const st = (typeof T.getState === 'function') ? T.getState() : null;
+          if (st && res && res.winnerId && res.loserId){
+            _recordH2HResult(st, res.winnerId, res.loserId);
+          }
+        }catch(_){}
+
+        return res;
+      };
+
+      wrapped._mobbrH2HWrapped = true;
+      wrapped._mobbrH2HRaw = raw;
+
+      mf.resolveBattle = wrapped;
+    }catch(e){
+      console.error('[tournament_core_step] resolveBattle H2H hook failed:', e);
+    }
+  }
+
+  // H2H hook はこの時点で仕込んでおく
+  _ensureResolveBattleH2HHook();
 
   // =========================================================
   // world split shared export
@@ -494,6 +559,9 @@ window.MOBBR.sim = window.MOBBR.sim || {};
 
     const p = getPlayer();
 
+    // H2H hook が遅延ロードなどで外れていた場合の再保険
+    _ensureResolveBattleH2HHook();
+
     // =========================================================
     // world split delegated phases
     // =========================================================
@@ -520,7 +588,6 @@ window.MOBBR.sim = window.MOBBR.sim || {};
       }catch(_){}
 
       try{ fastForwardToMatchEnd(); }catch(_){}
-      try{ finishMatchAndBuildResult(); }catch(_){}
       try{ ensureMatchResultRows(state); }catch(_){}
       try{ ensureCurrentOverallRows(state); }catch(_){}
 
@@ -1217,8 +1284,13 @@ window.MOBBR.sim = window.MOBBR.sim || {};
         try{ state.lastMatchResultRows = []; }catch(_){}
         try{ state.currentOverallRows = Array.isArray(state.currentOverallRows) ? state.currentOverallRows : []; }catch(_){}
 
+        // ✅ ここで残り試合を最後まで解決する
+        //    以前はこの後 fastForwardToMatchEnd() も呼んでおり、
+        //    終盤進行が二重になる可能性があったため削除
         resolveFullMatchToEndAfterPlayerEliminated(state);
-        try{ fastForwardToMatchEnd(); }catch(_){}
+
+        // match 完了状態として明示
+        state.round = 7;
 
         const championName = getChampionNameSafe(state);
 
